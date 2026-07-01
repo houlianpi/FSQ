@@ -27,6 +27,15 @@ fsq-agent init --config config.local.web.yaml
 fsq-agent run --config config.local.web.yaml --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
 ```
 
+For Windows desktop runs with a locally installed application:
+
+```bash
+python -m pip install -e ".[dev,windows]"
+copy .env.example .env
+fsq-agent init --config config.local.windows.yaml
+fsq-agent run --config config.local.windows.yaml --goal "Launch Edge, search for Windows, and verify the results page is visible."
+```
+
 ## Runtime Configuration
 
 For Android runs, install the Android extra, connect an emulator/device, and keep only the platform/backend in config:
@@ -90,6 +99,28 @@ platform: web
 - pageSnapshot
 - closeBrowser
 ```
+
+For Windows runs, install the Windows extra, then select the Windows platform and point `harness.windows.app_path` at the desktop application executable to launch:
+
+```yaml
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+    backend_kind: uia
+    app_path: "C:/Program Files (x86)/Microsoft/Edge Beta/Application/msedge.exe"
+    window_title_re: ".*Microsoft.*Edge Beta"
+    launch_args:
+      - "--no-first-run"
+      - "--window-size=1280,920"
+
+execution:
+  post_action_delay_seconds:
+    platform: 1.0
+    common: 0.0
+```
+
+  `harness.windows.backend` supports `pywinauto`; `backend_kind` selects the pywinauto UI automation backend (`uia` default, or `win32`). `harness.windows.app_path` is required and must point to an existing application executable file; configuration validation checks it before external actions begin. `harness.windows.window_title_re` is optional and resolves the launched application main window by title regex instead of the top window, which is useful for apps such as Microsoft Edge Beta. `harness.windows.launch_args` is optional and provides command-line arguments prepended to launch. pywinauto packages are operator-managed through the `windows` extra.
 
 For account-dependent cases, put secret values in `.env` and allow only those names in config:
 
