@@ -10,12 +10,21 @@ from fsq_agent.config._settings import Settings
 from fsq_agent.models import ConfigurationError
 
 
-DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"), Path("config.example.yaml"))
+DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
+PLATFORM_CONFIG_PATHS = {
+    "android": Path("config.android.yaml"),
+    "web": Path("config.web.yaml"),
+    "windows": Path("config.windows.yaml"),
+    "macos": Path("config.macos.yaml"),
+}
 DEFAULT_ENV_PATH = Path(".env")
 ANDROID_APP_ID_ENV = "FSQ_ANDROID_APP_ID"
 ANDROID_SERIAL_ENV = "FSQ_ANDROID_SERIAL"
 WEB_BROWSER_EXECUTABLE_PATH_ENV = "FSQ_WEB_BROWSER_EXECUTABLE_PATH"
 WINDOWS_APP_PATH_ENV = "FSQ_WINDOWS_APP_PATH"
+WINDOWS_BACKEND_KIND_ENV = "FSQ_WINDOWS_BACKEND_KIND"
+WINDOWS_WINDOW_TITLE_RE_ENV = "FSQ_WINDOWS_WINDOW_TITLE_RE"
+WINDOWS_LAUNCH_ARGS_ENV = "FSQ_WINDOWS_LAUNCH_ARGS"
 MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
 MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
 MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
@@ -58,6 +67,33 @@ def load_settings(path: str | Path | None = None, workspace: str | Path | None =
     _apply_environment_settings(settings)
     base_dir = config_path.parent if config_path is not None else Path.cwd()
     resolve_runtime_paths(settings, base_dir)
+    return settings
+
+
+def resolve_platform_config_path(platform: str) -> Path:
+    platform_id = platform.strip().lower()
+    config_path = PLATFORM_CONFIG_PATHS.get(platform_id)
+    if config_path is None:
+        raise ConfigurationError(
+            "Unsupported harness platform.",
+            context={"platform": platform, "supported": sorted(PLATFORM_CONFIG_PATHS)},
+        )
+    if not config_path.is_file():
+        raise ConfigurationError(
+            "Platform configuration file is missing.",
+            context={"platform": platform_id, "path": str(config_path)},
+        )
+    return config_path
+
+
+def load_platform_settings(platform: str, workspace: str | Path | None = None) -> Settings:
+    platform_id = platform.strip().lower()
+    settings = load_settings(resolve_platform_config_path(platform_id), workspace)
+    if settings.harness.platform != platform_id:
+        raise ConfigurationError(
+            "Platform configuration does not match requested platform.",
+            context={"platform": platform_id, "configured_platform": settings.harness.platform},
+        )
     return settings
 
 
@@ -142,8 +178,17 @@ def _apply_environment_settings(settings: Settings) -> None:
     if browser_executable_path:
         settings.harness.web.browser_executable_path = browser_executable_path
     windows_app_path = _env_value(WINDOWS_APP_PATH_ENV)
+    windows_backend_kind = _env_value(WINDOWS_BACKEND_KIND_ENV)
+    windows_window_title_re = _env_value(WINDOWS_WINDOW_TITLE_RE_ENV)
+    windows_launch_args = _env_value(WINDOWS_LAUNCH_ARGS_ENV)
     if windows_app_path:
         settings.harness.windows.app_path = Path(windows_app_path)
+    if windows_backend_kind:
+        settings.harness.windows.backend_kind = _validate_windows_backend_kind(windows_backend_kind)
+    if windows_window_title_re:
+        settings.harness.windows.window_title_re = windows_window_title_re
+    if windows_launch_args:
+        settings.harness.windows.launch_args = _parse_windows_launch_args(windows_launch_args)
     macos_appium_server_url = _env_value(MACOS_APPIUM_SERVER_URL_ENV)
     macos_bundle_id = _env_value(MACOS_BUNDLE_ID_ENV)
     macos_app_path = _env_value(MACOS_APP_PATH_ENV)
@@ -176,6 +221,74 @@ def _env_value(name: str) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _validate_windows_backend_kind(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"uia", "win32"}:
+        return normalized
+    raise ConfigurationError(
+        f"Windows pywinauto backend kind environment variable {WINDOWS_BACKEND_KIND_ENV} is invalid.",
+        context={"backend_kind_env": WINDOWS_BACKEND_KIND_ENV, "value": value, "supported": ["uia", "win32"]},
+    )
+
+
+def _parse_windows_launch_args(value: str) -> list[str]:
+    try:
+        return _split_windows_command_line(value)
+    except ValueError as exc:
+        raise ConfigurationError(
+            f"Windows launch arguments environment variable {WINDOWS_LAUNCH_ARGS_ENV} could not be parsed.",
+            context={"launch_args_env": WINDOWS_LAUNCH_ARGS_ENV, "error": str(exc)},
+        ) from exc
+
+
+def _split_windows_command_line(value: str) -> list[str]:
+    args: list[str] = []
+    arg: list[str] = []
+    in_quotes = False
+    token_started = False
+    index = 0
+    length = len(value)
+    while index < length:
+        char = value[index]
+        if char.isspace() and not in_quotes:
+            if token_started:
+                args.append("".join(arg))
+                arg = []
+                token_started = False
+            index += 1
+            continue
+        if char == "\\":
+            slash_start = index
+            while index < length and value[index] == "\\":
+                index += 1
+            slash_count = index - slash_start
+            if index < length and value[index] == '"':
+                arg.extend("\\" * (slash_count // 2))
+                if slash_count % 2:
+                    arg.append('"')
+                else:
+                    in_quotes = not in_quotes
+                token_started = True
+                index += 1
+                continue
+            arg.extend("\\" * slash_count)
+            token_started = True
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+            token_started = True
+            index += 1
+            continue
+        arg.append(char)
+        token_started = True
+        index += 1
+    if in_quotes:
+        raise ValueError("No closing quotation")
+    if token_started:
+        args.append("".join(arg))
+    return args
 
 
 def validate_runtime_settings(settings: Settings) -> None:
@@ -296,18 +409,18 @@ def _validate_windows_harness_settings(settings: Settings) -> None:
     app_path = settings.harness.windows.app_path
     if app_path is None:
         raise ConfigurationError(
-            "Windows app path is not configured.",
-            context={"config_key": "harness.windows.app_path"},
+            f"Windows app path environment variable {WINDOWS_APP_PATH_ENV} is not set.",
+            context={"app_path_env": WINDOWS_APP_PATH_ENV, "legacy_config_key": "harness.windows.app_path"},
         )
     if not app_path.exists():
         raise ConfigurationError(
             "Configured Windows app path does not exist.",
-            context={"config_key": "harness.windows.app_path", "path": str(app_path)},
+            context={"app_path_env": WINDOWS_APP_PATH_ENV, "path": str(app_path)},
         )
     if not app_path.is_file():
         raise ConfigurationError(
             "Configured Windows app path must point to the application executable file.",
-            context={"config_key": "harness.windows.app_path", "path": str(app_path)},
+            context={"app_path_env": WINDOWS_APP_PATH_ENV, "path": str(app_path)},
         )
 
 

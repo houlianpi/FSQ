@@ -154,6 +154,7 @@ from fsq_agent.models._settings import (
     PrePlanKnowledgeSettings,
     RuntimeSecretSettings,
     WebHarnessSettings,
+    WindowsHarnessSettings,
     WorkspaceSettings,
 )
 from fsq_agent.models._skills import SkillBundle, SkillConfig
@@ -343,6 +344,7 @@ __all__ = [
     "HarnessSettings",
     "AndroidHarnessSettings",
     "WebHarnessSettings",
+    "WindowsHarnessSettings",
     "MacOSHarnessSettings",
     "PostActionDelaySettings",
     "AgentContextSettings",
