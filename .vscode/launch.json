@@ -58,6 +58,26 @@
       "envFile": "${workspaceFolder}/.env"
     },
     {
+      "name": "fsq-agent: run windows goal",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "fsq_agent.cli",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "run",
+        "--config",
+        "config.local.windows.yaml",
+        "--goal",
+        "${input:windowsGoal}",
+        "--record",
+        "--record-on-failure"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
       "name": "fsq-agent: run case yaml (LLM raw)",
       "type": "debugpy",
       "request": "launch",
@@ -168,6 +188,12 @@
       "type": "promptString",
       "description": "Goal for dynamic Web execution",
       "default": "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
+    },
+    {
+      "id": "windowsGoal",
+      "type": "promptString",
+      "description": "Goal for dynamic Windows execution",
+      "default": "Launch Edge, search for Windows, and verify the results page is visible."
     },
     {
       "id": "caseYaml",

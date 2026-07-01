@@ -27,6 +27,15 @@ fsq-agent init --config config.local.web.yaml
 fsq-agent run --config config.local.web.yaml --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
 ```
 
+For Windows desktop runs with a locally installed application:
+
+```bash
+python -m pip install -e ".[dev,windows]"
+copy .env.example .env
+fsq-agent init --config config.local.windows.yaml
+fsq-agent run --config config.local.windows.yaml --goal "Launch Edge, search for Windows, and verify the results page is visible."
+```
+
 For macOS runs with Appium Mac2:
 
 Before running fsq-agent, set up Appium on the Mac that will be automated and start the Appium server yourself. fsq-agent connects to the configured server URL; it does not install Appium, install the Mac2 driver, or start the server process.
@@ -106,6 +115,31 @@ platform: web
 - pageSnapshot
 - closeBrowser
 ```
+
+For Windows runs, install the Windows extra, set the application executable path in `.env`, then select the Windows platform in YAML:
+
+```dotenv
+FSQ_WINDOWS_APP_PATH=C:\Program Files\Microsoft\Edge\Application\msedge.exe
+```
+
+```yaml
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+    backend_kind: uia
+    window_title_re: ".*Microsoft.*Edge"
+    launch_args:
+      - "--no-first-run"
+      - "--disable-features=msImplicitSignin"
+
+execution:
+  post_action_delay_seconds:
+    platform: 1.0
+    common: 0.0
+```
+
+`FSQ_WINDOWS_APP_PATH` is required for Windows runs and must point to an existing application executable file. `harness.windows.backend` supports `pywinauto`; `backend_kind` selects the pywinauto UI automation backend (`uia` default, or `win32`). `harness.windows.window_title_re` is optional and resolves the launched application main window by title regex instead of the top window, which is useful for apps such as Microsoft Edge. `harness.windows.launch_args` is optional and provides command-line arguments prepended to launch. pywinauto packages are operator-managed through the `windows` extra.
 
 For macOS runs, install the macOS extra, configure Appium 2 with the Mac2 driver on the target Mac, start the Appium server before running fsq-agent, keep stable harness defaults in YAML, and set local Appium/app identity values in `.env`:
 

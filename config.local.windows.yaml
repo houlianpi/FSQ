@@ -8,13 +8,10 @@ harness:
     backend: pywinauto
     backend_kind: uia
     # Set FSQ_WINDOWS_APP_PATH in .env for the local executable path.
-    window_title_re: ".*Microsoft.*Edge Beta"
+    window_title_re: ".*Microsoft.*Edge"
     launch_args:
       - "--no-first-run"
       - "--disable-features=msImplicitSignin"
-      - "--force-device-scale-factor=0.8"
-      - "--force-local-ntp"
-      - "--window-size=1280,920"
 
 execution:
   post_action_delay_seconds:
