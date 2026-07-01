@@ -1,10 +1,8 @@
 # fsq-agent
 
-fsq-agent is a goal-driven automated testing agent for FSQ YAML-guided tasks. It uses OpenAI Agents SDK with GitHub Copilot by default or Azure OpenAI when explicitly selected, executes harness-generated platform actions plus common local utilities, captures evidence, verifies one pre-plan-derived goal, and generates reports.
+fsq-agent is a goal-driven automated testing agent for FSQ YAML-guided tasks. It executes harness-generated platform actions plus common local utilities, captures evidence, verifies one pre-plan-derived goal, and generates reports.
 
 The project follows spec-driven development. See root [SPEC.md](SPEC.md) and each relevant module `SPEC.md` before changing public interfaces.
-
-See [docs/openai-agent-loop.md](docs/openai-agent-loop.md) for how task execution loops through OpenAI Agents SDK, harness tools, local utilities, verification, and reporting.
 
 ## Quick Start
 
@@ -31,13 +29,6 @@ fsq-agent run --config config.local.web.yaml --goal "Open https://www.bing.com, 
 
 ## Runtime Configuration
 
-GitHub Copilot is the default model provider:
-
-- `openai_agents.provider: github_copilot` uses the fixed Copilot model `gpt-5.5`. On first run it prompts for GitHub device-code auth and caches the OAuth token under the fsq-agent workspace auth directory.
-- `openai_agents.provider: azure_openai` keeps only the provider selector in YAML. Set `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_MODEL`, and `AZURE_OPENAI_API_KEY` in process env or `.env`.
-
-Tracing is enabled by default with `openai_agents.tracing_enabled: true`. Use `fsq-agent run --no-tracing ...` or `fsq-agent run --tracing ...` to override it for one run. OpenAI Agents SDK trace export requires `OPENAI_API_KEY`; when it is absent, fsq-agent disables SDK tracing for that run instead of logging repeated missing-key warnings.
-
 For Android runs, install the Android extra, connect an emulator/device, and keep only the platform/backend in config:
 
 ```yaml
@@ -52,14 +43,11 @@ execution:
     common: 0.0
 ```
 
-Set Android and Azure user values in `.env`:
+Set Android user values in `.env`:
 
 ```dotenv
 FSQ_ANDROID_APP_ID=com.microsoft.emmx
 FSQ_ANDROID_SERIAL=
-AZURE_OPENAI_BASE_URL=
-AZURE_OPENAI_MODEL=
-AZURE_OPENAI_API_KEY=
 ```
 
 `FSQ_ANDROID_APP_ID` is required for dynamic LLM runs and for strict cases that do not provide `appId` in FSQ case metadata. Set `FSQ_ANDROID_SERIAL` to an `adb devices` serial when more than one device is connected; otherwise leave it blank.
@@ -158,7 +146,7 @@ fsq-agent run --config config.local.yaml --strict --case-yaml path/to/case.codex
 fsq-agent run --config config.local.yaml --strict --case-dir path/to/cases
 ```
 
-`init` initializes the workspace and reports readiness for both the default LLM run path and the strict-core path. Strict-only users do not need OpenAI credentials just to initialize or run `--strict` cases.
+`init` initializes the workspace and reports readiness for both the default LLM run path and the strict-core path. Strict-only users do not need model-provider credentials just to initialize or run `--strict` cases.
 
 You can also create goal-only `.codex.yaml` cases by providing only case metadata. The case name is the goal, and key actions are derived at runtime:
 
@@ -179,6 +167,6 @@ fsq-agent run --config config.local.yaml --case-yaml path/to/goal-only.codex.yam
 
 ## Current Scope
 
-This implementation provides validated models, configuration loading, OpenAI Agents SDK runtime wiring, harness/driver configuration, common local tooling, descriptive skill loading, evidence manifests, and report generation. Task execution requires the OpenAI Agents SDK package and authentication for the selected `openai_agents.provider`.
+This implementation provides validated models, configuration loading, runtime wiring, harness/driver configuration, common local tooling, descriptive skill loading, evidence manifests, and report generation. Task execution requires authentication for the selected model provider.
 
 Runtime artifacts are written under the fsq-agent workspace `output` directory. Shell execution settings are no longer part of runtime configuration.
