@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide the public command line surface for fsq-agent: initialize/check runtime readiness, bootstrap lightweight platform-selected capability registries, run either dynamic LLM goal/reference execution or strict-core YAML execution for Android or Web with optional explicit provider-backed `assertWithAI`, optionally record dynamic LLM runs into strict-replay FSQ YAML artifacts from capability replay metadata, print stored reports from prior runs, and start the local browser playground.
+Provide the public command line surface for fsq-agent: initialize/check runtime readiness, bootstrap lightweight platform-selected capability registries, run either dynamic LLM goal/reference execution or strict-core YAML execution for the active platform with optional explicit provider-backed `assertWithAI`, optionally record dynamic LLM runs into strict-replay FSQ YAML artifacts from capability replay metadata, print stored reports from prior runs, and start the local browser playground.
 
 ## Dependencies
 
@@ -66,7 +66,7 @@ bundle = run_fsq_core_case(
 
 This helper is not a public CLI command. It exists to give `run --strict` and tests a single entry-layer path for running one FSQ case through the deterministic core. It should receive or build a lightweight active-platform capability registry, load the FSQ case, convert commands to canonical `ExecutableStep` records with a registry snapshot, resolve strict replay refs in memory, run them through `StepSequenceRunner` and `StepRunner` with caller-supplied harness/backend bindings and post-action delay settings, rely on `StepRunner` for capability-derived evidence and delay policy, write `evidence-manifest.json`, and return an `EvidenceBundle` whose `manifest_path` points to the written manifest.
 
-The helper must not construct real platform drivers, choose Android backend settings, or add retry/report policy. Those remain future entry-layer responsibilities after the core execution contract is stable.
+The helper must not construct real platform drivers, choose backend settings, or add retry/report policy. Those remain future entry-layer responsibilities after the core execution contract is stable.
 
 Internal strict deterministic-core entry:
 
@@ -104,6 +104,14 @@ Web CLI behavior:
 - Web strict runs build `WebHarness` with `PlaywrightWebDriver` without launching a browser. Authored `startBrowser` starts or reuses the browser/page; authored `closeBrowser` closes it. CLI must not inject either command, and `navigateTo` must not be treated as startup.
 - Web strict runs capture `screenshot`/`page_snapshot` evidence only when the active Web driver has a started page.
 - Web strict navigation must use fully qualified URLs or the configured Web base URL policy.
+
+macOS CLI behavior:
+
+- macOS strict runs do not require Android app id or serial and do not require Web browser executable settings.
+- macOS strict runs validate `harness.macos.backend == "appium_mac2"` plus environment-backed Appium server and target app settings before external UI actions begin.
+- macOS strict runs build `MacOSHarness` with `AppiumMac2Driver` without connecting to Appium or launching the app during registry bootstrap or YAML parsing. Authored `launchApp` creates or reuses the Mac2 session and target app, and authored `killApp` terminates or closes it according to the driver contract. CLI must not inject either command.
+- macOS strict runs capture `screenshot`/`ui_snapshot` evidence for capture-enabled PlatformTools and use `uiSnapshot` for explicit observation commands.
+- macOS strict runs support deterministic desktop assertions including `assertVisible` and `assertElementsOrder`; wrong element order is an assertion failure, while missing required elements are target-resolution failures.
 
 Future platform CLI behavior:
 
@@ -152,7 +160,7 @@ This helper is not a public CLI command. It reads a completed dynamic run direct
 
 CLI commands catch `FsqAgentError` subclasses from `models`, render concise user-facing messages, and exit nonzero. Unexpected exceptions are logged with trace details and summarized in the console.
 
-Input validation failures, including missing input source, multiple input sources, `--strict --goal`, invalid record flag combinations, unreadable dynamic case files, invalid strict YAML, empty case directories, missing strict Android app id from `FSQ_ANDROID_APP_ID` or FSQ case metadata when the active platform is Android, invalid Web navigation/base URL policy when the active platform is Web, missing strict replay secret allowlist/presence, missing provider readiness for authored strict `assertWithAI`, or unresolved reports must fail before external UI actions begin. Dynamic `--case-yaml` input must not fail merely because the file is invalid YAML, because that path does not parse YAML.
+Input validation failures, including missing input source, multiple input sources, `--strict --goal`, invalid record flag combinations, unreadable dynamic case files, invalid strict YAML, empty case directories, missing strict Android app id from `FSQ_ANDROID_APP_ID` or FSQ case metadata when the active platform is Android, invalid Web navigation/base URL policy when the active platform is Web, invalid or missing macOS Appium/target settings when the active platform is macOS, missing strict replay secret allowlist/presence, missing provider readiness for authored strict `assertWithAI`, or unresolved reports must fail before external UI actions begin. Dynamic `--case-yaml` input must not fail merely because the file is invalid YAML, because that path does not parse YAML.
 
 Recording failures happen after a dynamic run and must not change that dynamic run's status. The CLI should log and summarize recording errors, including no replayable commands, ambiguous secret binding, redacted values with no matching runtime secret, unsupported replay commands, generated YAML validation failures, and existing `recorded.codex.yaml` conflicts. Directory runs continue after per-case recording failures.
 
@@ -176,7 +184,7 @@ Recording failures happen after a dynamic run and must not change that dynamic r
 - Dynamic run recording is post-run evidence transformation, not task execution. It reads persisted normalized capability events after `FsqAgent.run` returns and writes only under that run directory.
 - Recorded cases reflect actual successfully completed capabilities with `ReplayPolicy(kind="fsq_command")` plus supported dependency capabilities with `ReplayPolicy(kind="dependency")`. The recorder must not invent setup, teardown, Web `startBrowser`/`closeBrowser`, assertions, locator fallback, recovery actions, or source YAML mutations. Missing assertions or lifecycle actions produce warnings.
 - Runtime secrets in recorded cases are represented by environment variable names through `runtimeSecret` refs. Secret values are resolved only in memory during strict replay and are never written to generated YAML, event previews, manifests, reports, recording manifests, or logs.
-- `run --strict` is strict-core execution. It parses FSQ YAML, uses config-owned active platform settings, and does not construct or invoke LLM components for planning, recovery, locator fallback, action repair, or final verification. Android strict runs use Android aliases, `AndroidHarness`, `CommonPlatformTools`, and the selected Android backend driver; Web strict runs use Web aliases, `WebHarness`, `CommonPlatformTools`, and the selected Web backend driver. The sole provider-backed exception is an explicitly authored `assertWithAI` step, for which CLI may build and inject an AI assertion evaluator into the active harness/backend support before execution.
+- `run --strict` is strict-core execution. It parses FSQ YAML, uses config-owned active platform settings, and does not construct or invoke LLM components for planning, recovery, locator fallback, action repair, or final verification. Android strict runs use Android aliases, `AndroidHarness`, `CommonPlatformTools`, and the selected Android backend driver; Web strict runs use Web aliases, `WebHarness`, `CommonPlatformTools`, and the selected Web backend driver; macOS strict runs use macOS aliases, `MacOSHarness`, `CommonPlatformTools`, and `AppiumMac2Driver`. The sole provider-backed exception is an explicitly authored `assertWithAI` step, for which CLI may build and inject an AI assertion evaluator into the active harness/backend support before execution.
 - Directory execution is intentionally serial because UI automation cases share external device and application state. Each case still creates independent run state so SDK sessions, harness context, AgentTool state, and platform CommonTool state do not leak across cases.
 - `report` is a lookup/print command only; report generation happens during execution. It resolves either LLM reports or strict-core reports without exposing separate report commands.
 - `playground` is a local developer convenience entry point. CLI owns only argument parsing, settings loading, and server startup; the `playground` module owns HTTP routes, browser assets, session state, execution adapters, screenshot preview, replay video handling, and report lookup.

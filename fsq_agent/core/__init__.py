@@ -1,6 +1,7 @@
 from fsq_agent.core._capabilities import CapabilityRegistry
 from fsq_agent.core._default_capabilities import (
     android_capability_definitions,
+    macos_capability_definitions,
     web_capability_definitions,
     windows_capability_definitions,
 )
@@ -10,7 +11,10 @@ from fsq_agent.core.harness import (
     AndroidDriverInterface,
     AndroidHarness,
     AIAssertionEvaluatorProtocol,
+    AppiumMac2Driver,
     HarnessInterface,
+    MacOSDriverInterface,
+    MacOSHarness,
     PlaywrightWebDriver,
     PywinautoWindowsDriver,
     UiAutomator2AndroidDriver,
@@ -25,11 +29,14 @@ __all__ = [
     "AndroidDriverInterface",
     "AndroidHarness",
     "AIAssertionEvaluatorProtocol",
+    "AppiumMac2Driver",
     "ArtifactStore",
     "CapabilityRegistry",
     "CommonPlatformTools",
     "EvidenceRecorder",
     "HarnessInterface",
+    "MacOSDriverInterface",
+    "MacOSHarness",
     "PlaywrightWebDriver",
     "PywinautoWindowsDriver",
     "StepRunner",
@@ -40,6 +47,7 @@ __all__ = [
     "WindowsDriverInterface",
     "WindowsHarness",
     "android_capability_definitions",
+    "macos_capability_definitions",
     "web_capability_definitions",
     "windows_capability_definitions",
 ]

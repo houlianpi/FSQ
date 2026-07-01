@@ -12,6 +12,11 @@ harness:
   #   channel: chrome
   #   headless: false
   #   base_url: null
+  # For macOS runs, set platform: macos and configure stable defaults only:
+  # macos:
+  #   backend: appium_mac2
+  #   page_source_max_depth: 12
+  #   action_timeout_seconds: 10
 
 execution:
   post_action_delay_seconds:
@@ -44,6 +49,12 @@ agent_context:
         #   description: Web harness action selection and recovery guidance.
         #   kind: markdown
         #   path: web-harness.md
+        #   required: true
+        # For macOS runs, replace android-harness with:
+        # - name: macos-harness
+        #   description: macOS Appium Mac2 harness action selection and recovery guidance.
+        #   kind: markdown
+        #   path: macos-harness.md
         #   required: true
     pre_plan:
       dir: project_android_v1

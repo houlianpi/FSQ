@@ -20,13 +20,13 @@ Target `__init__.py` exports via `__all__`:
 - `CapabilityActionCatalog`: Mapping type alias from authored action name to `CapabilityActionDefinition`.
 - `capability`: Neutral low-level decorator that attaches capability declaration metadata to a function or method. It can declare CommonTool or PlatformTool capabilities, but it does not register or execute them.
 - `common_capability`: Thin helper around `capability` for CommonTool declarations owned by core platform tool providers.
-- `platform_capability`: Thin helper around `capability` for non-driver platform-level PlatformTool declarations. Current Android/Web backend actions, including `assert_with_ai`, use catalog-backed driver declarations instead.
+- `platform_capability`: Thin helper around `capability` for non-driver platform-level PlatformTool declarations. Current Android/Web/Windows/macOS backend actions, including `assert_with_ai`, use catalog-backed driver declarations instead.
 - `harness_capability`: Backward-compatible helper for legacy harness-owned declarations; new platform behavior should use `platform_capability` or catalog-backed `platform_driver_capability`.
 - `driver_capability`: Compatibility helper for explicit driver-backed PlatformTool declarations that do not need a platform action catalog.
 - `platform_driver_capability`: Factory that binds a platform/backend/catalog and returns a decorator for catalog-backed driver-backed PlatformTool declarations.
 - `discover_capability_definitions(target: object, *, metadata: dict[str, object] | None = None) -> list[CapabilityDefinition]`: Inspect a decorated class or instance without invoking methods and return serializable capability definitions.
 
-The neutral decorator API accepts canonical name, aliases, tool family or compatibility executor kind, owner, parameter model, description, platform, backend, step kind, evidence flag, optional post-action delay override, sensitivity flag, replay policy, strict schema flag, safe metadata, and optional catalog/action name inputs. `post_action_delay_seconds=None` means inherit the configured family default; `0` explicitly disables runner-owned post-action delay for that capability; positive values override the configured default. Domain helpers should be preferred at call sites so CommonTool and PlatformTool declarations remain readable. Android and Web platform actions must be declared through catalog-backed `platform_driver_capability` helpers rather than platform-specific decorator semantics.
+The neutral decorator API accepts canonical name, aliases, tool family or compatibility executor kind, owner, parameter model, description, platform, backend, step kind, evidence flag, optional post-action delay override, sensitivity flag, replay policy, strict schema flag, safe metadata, and optional catalog/action name inputs. `post_action_delay_seconds=None` means inherit the configured family default; `0` explicitly disables runner-owned post-action delay for that capability; positive values override the configured default. Domain helpers should be preferred at call sites so CommonTool and PlatformTool declarations remain readable. Android, Web, Windows, and macOS platform actions must be declared through catalog-backed `platform_driver_capability` helpers rather than platform-specific decorator semantics.
 
 ## Platform Declaration Blocks
 
@@ -45,6 +45,12 @@ Web declaration block:
 
 - Web Playwright driver methods use catalog-backed `platform_driver_capability` entries with Web aliases and parameter models, including explicit browser lifecycle actions `startBrowser`/`closeBrowser` alongside page actions such as `navigateTo` and `pageSnapshot`.
 - Web platform-level assertions use `platform_capability` when behavior is not a backend driver method.
+
+macOS declaration block:
+
+- macOS Appium Mac2 driver methods use catalog-backed `platform_driver_capability` entries with macOS desktop aliases and parameter models, including lifecycle actions `launchApp`/`killApp`, desktop interactions such as `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, and `dragTo`, observations such as `takeScreenshot` and `uiSnapshot`, and assertions such as `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
+- macOS reuses the existing neutral decorators, catalog validation, discovery, replay metadata, evidence metadata, and backend metadata contracts. It must not introduce a macOS-only decorator, direct MCP schema importer, or runtime Appium discovery path in `capabilities`.
+- macOS catalog entries are declaration-time validation inputs only. Registry/bootstrap code chooses whether macOS entries are active based on `harness.platform == "macos"`.
 
 Future platform declaration block:
 
@@ -87,15 +93,15 @@ Duplicate capability names, alias conflicts, ambiguous aliases, and executable r
 ## Testing Contract
 
 - Unit tests: neutral decorator metadata, domain helper defaults, post-action delay override validation, catalog lookup/validation, method-name and parameter-model validation, discovery from class and instance targets, safe metadata merging, and no method invocation during discovery.
-- Regression tests: `common_capability` produces the `CapabilityDefinition` shape expected by platform provider registry/bootstrap; catalog-backed Android and Web PlatformTool declarations produce the expected canonical names, aliases, parameter models, replay metadata, owner, platform/backend, evidence flags, and post-action delay overrides.
+- Regression tests: `common_capability` produces the `CapabilityDefinition` shape expected by platform provider registry/bootstrap; catalog-backed Android, Web, Windows, and macOS PlatformTool declarations produce the expected canonical names, aliases, parameter models, replay metadata, owner, platform/backend, evidence flags, and post-action delay overrides.
 - Boundary tests: `capabilities` imports only `models` among project modules and has no dependency on `core`, `tools`, SDK objects, or concrete backend libraries.
 - Verification commands: `./.venv/Scripts/python.exe -m pytest tests/test_capabilities.py tests/test_tools.py tests/test_android_harness.py` plus broader capability/runner tests when implementations change.
 
 ## Design Decisions
 
-- One declaration mechanism prevents CommonTool, Android, Web, future desktop, and future iOS PlatformTool capabilities from growing separate decorator semantics.
+- One declaration mechanism prevents CommonTool, Android, Web, Windows, macOS, future desktop, and future iOS PlatformTool capabilities from growing separate decorator semantics.
 - Domain helper decorators are intentionally thin wrappers around the neutral decorator. They preserve readability while keeping one metadata format.
-- Platform differences belong in action catalogs, not in per-platform decorator implementations. Android and Web catalogs reuse `platform_driver_capability`; future platforms should follow the same pattern.
+- Platform differences belong in action catalogs, not in per-platform decorator implementations. Android, Web, Windows, and macOS catalogs reuse `platform_driver_capability`; future platforms should follow the same pattern.
 - `CapabilityDefinition` remains the runtime contract and registry input. Decorators attach declaration metadata to functions, including optional post-action delay overrides; discovery converts that metadata into serializable definitions.
 - Discovery must be side-effect free. It may inspect method signatures and type hints, but it must not call methods, connect to devices, instantiate SDK tools, or build providers.
 - Runtime routing is out of scope. Tool family or compatibility `executor_kind` metadata is consumed by `core.StepRunner`; `capabilities` never invokes the selected provider or executor.

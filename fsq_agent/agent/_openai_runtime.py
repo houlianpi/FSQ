@@ -9,7 +9,18 @@ from collections.abc import Callable
 from typing import Any
 
 from fsq_agent.config import Settings, validate_runtime_settings
-from fsq_agent.core import AndroidHarness, ArtifactStore, HarnessInterface, PlaywrightWebDriver, PywinautoWindowsDriver, UiAutomator2AndroidDriver, WebHarness, WindowsHarness
+from fsq_agent.core import (
+    AndroidHarness,
+    AppiumMac2Driver,
+    ArtifactStore,
+    HarnessInterface,
+    MacOSHarness,
+    PlaywrightWebDriver,
+    PywinautoWindowsDriver,
+    UiAutomator2AndroidDriver,
+    WebHarness,
+    WindowsHarness,
+)
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
 from fsq_agent.models import AgentFinalOutput, ConfigurationError, GoalPrePlan, KnowledgeBundle, PlanningError, RunEvent, RunEventSink, SkillBundle, StepResult, Task
 from fsq_agent.providers import build_ai_assertion_evaluator, build_model_provider_session
@@ -479,6 +490,18 @@ class OpenAIAgentsRuntime:
                     "window_title_re_configured": windows.window_title_re is not None,
                 }
             )
+        if self.settings.harness.platform == "macos":
+            macos = self.settings.harness.macos
+            payload.update(
+                {
+                    "backend": macos.backend,
+                    "appium_server_configured": macos.appium_server_url is not None,
+                    "bundle_id_configured": macos.bundle_id is not None,
+                    "app_path_configured": macos.app_path is not None,
+                    "action_timeout_seconds": macos.action_timeout_seconds,
+                    "configured_skill_names": [skill.name for skill in self.settings.skills],
+                }
+            )
         if harness is not None:
             payload["harness_class"] = type(harness).__name__
             driver = getattr(harness, "driver", None)
@@ -805,6 +828,23 @@ class OpenAIAgentsRuntime:
                 launch_args=windows.launch_args,
             )
             return WindowsHarness(
+                driver=driver,
+                artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
+                ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
+                runtime_secret_settings=self.settings.runtime_secrets,
+            )
+        if self.settings.harness.platform == "macos":
+            macos = self.settings.harness.macos
+            if macos.backend != "appium_mac2":
+                raise ConfigurationError("Unsupported macOS harness backend.", context={"backend": macos.backend})
+            driver = AppiumMac2Driver(
+                server_url=macos.appium_server_url or "",
+                bundle_id=macos.bundle_id,
+                app_path=macos.app_path,
+                page_source_max_depth=macos.page_source_max_depth,
+                action_timeout_seconds=macos.action_timeout_seconds,
+            )
+            return MacOSHarness(
                 driver=driver,
                 artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
                 ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),

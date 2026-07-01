@@ -86,11 +86,11 @@ class PlaygroundServer:
             return 200, self.state.status()
         if path == "/session":
             if self.settings.harness.platform != "android":
-                return 200, self._android_unavailable("Android session selection is unavailable for the active Web platform.")
+                return 200, self._android_unavailable(f"Android session selection is unavailable for the active {self.settings.harness.platform} platform.")
             return 200, self.state.session.to_json()
         if path == "/session/setup":
             if self.settings.harness.platform != "android":
-                return 200, self._android_unavailable("Android setup is unavailable for the active Web platform.")
+                return 200, self._android_unavailable(f"Android setup is unavailable for the active {self.settings.harness.platform} platform.")
             return 200, build_android_setup_schema(self.settings)
         if path == "/runtime-info":
             return 200, self._runtime_info()
@@ -172,7 +172,7 @@ class PlaygroundServer:
     def handle_post(self, path: str, body: dict[str, object]) -> tuple[int, object]:
         if path == "/session":
             if self.settings.harness.platform != "android":
-                return 409, self._android_unavailable("Android session selection is unavailable for the active Web platform.")
+                return 409, self._android_unavailable(f"Android session selection is unavailable for the active {self.settings.harness.platform} platform.")
             device_id = body.get("deviceId")
             if not isinstance(device_id, str) or not device_id.strip():
                 return 400, {"error": "deviceId is required."}
@@ -182,7 +182,7 @@ class PlaygroundServer:
                 return 409, {"error": str(exc)}
         if path == "/session/auto":
             if self.settings.harness.platform != "android":
-                return 409, self._android_unavailable("Android auto session selection is unavailable for the active Web platform.")
+                return 409, self._android_unavailable(f"Android auto session selection is unavailable for the active {self.settings.harness.platform} platform.")
             try:
                 session, info = resolve_auto_session(self.settings)
                 if session is None:
@@ -249,7 +249,7 @@ class PlaygroundServer:
     def handle_delete(self, path: str) -> tuple[int, object]:
         if path == "/session":
             if self.settings.harness.platform != "android":
-                return 409, self._android_unavailable("Android session selection is unavailable for the active Web platform.")
+                return 409, self._android_unavailable(f"Android session selection is unavailable for the active {self.settings.harness.platform} platform.")
             try:
                 return 200, {"session": self.state.destroy_session(), "runtimeInfo": self._runtime_info()}
             except BusyError as exc:
@@ -306,6 +306,24 @@ class PlaygroundServer:
                     "lastRun": self.state.last_run,
                 },
             }
+        if self.settings.harness.platform == "macos":
+            macos = self.settings.harness.macos
+            return {
+                "platformId": "macos",
+                "title": "FSQ-Agent macOS Playground",
+                "interface": {"type": "macOS", "description": "FSQ-Agent Appium Mac2 harness"},
+                "preview": {"kind": "screenshot", "screenshotPath": "/screenshot", "live": False},
+                "session": self._android_unavailable("Android session selection is unavailable for the active macOS platform."),
+                "metadata": {
+                    "backend": macos.backend,
+                    "appiumServerConfigured": macos.appium_server_url is not None,
+                    "bundleIdPresent": macos.bundle_id is not None,
+                    "appPathConfigured": macos.app_path is not None,
+                    "actionTimeoutSeconds": macos.action_timeout_seconds,
+                    "busy": self.state.current_request_id is not None,
+                    "lastRun": self.state.last_run,
+                },
+            }
         return {
             "platformId": "android",
             "title": "FSQ-Agent Android Playground",
@@ -336,7 +354,7 @@ class PlaygroundServer:
             return 200, {
                 "available": False,
                 "platform": self.settings.harness.platform,
-                "error": "No active Web harness execution.",
+                "error": f"No active {self.settings.harness.platform} harness execution.",
             }
         handle = self._execution_handles.get(request_id)
         harness = handle.current_harness() if handle is not None else None
@@ -344,7 +362,7 @@ class PlaygroundServer:
             return 200, {
                 "available": False,
                 "platform": self.settings.harness.platform,
-                "error": "Live screenshot preview is not available before Web harness execution.",
+                "error": f"Live screenshot preview is not available before {self.settings.harness.platform} harness execution.",
             }
         try:
             context = harness.get_context()
@@ -354,6 +372,12 @@ class PlaygroundServer:
                     "available": False,
                     "platform": self.settings.harness.platform,
                     "error": "Browser is not started. Call startBrowser before Web page actions.",
+                }
+            if self.settings.harness.platform == "macos" and getattr(context, "session_id", None) is None:
+                return 200, {
+                    "available": False,
+                    "platform": self.settings.harness.platform,
+                    "error": "Appium Mac2 session is not available. Call launchApp before macOS Appium actions.",
                 }
             screenshot = harness.screenshot()
             payload = {

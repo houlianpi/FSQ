@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Load FSQ AI Test DSL YAML cases from the merged FSQ testcase repository, including generated strict replay refs and pure waits, resolve authored Android or Web action names through the platform-selected capability registry, and convert parsed cases into deterministic canonical execution-core steps for strict-core execution. Dynamic LLM execution that uses a YAML file reads that file as raw text in the CLI layer and deliberately bypasses this module.
+Load FSQ AI Test DSL YAML cases from the merged FSQ testcase repository, including generated strict replay refs and pure waits, resolve authored action names through the platform-selected capability registry, and convert parsed cases into deterministic canonical execution-core steps for strict-core execution. Dynamic LLM execution that uses a YAML file reads that file as raw text in the CLI layer and deliberately bypasses this module.
 
 Goal-only FSQ cases may omit the command document or provide an empty command list; parsed goal-only cases produce no executable steps.
 
@@ -27,7 +27,7 @@ adapter = FsqExecutableStepAdapter(registry_snapshot=registry.snapshot())
 steps = adapter.to_executable_steps(case)
 ```
 
-`FsqExecutableStepAdapter` resolves authored FSQ action names and replay aliases through the registry and stores the canonical capability name in `ExecutableStep.action_name`. Authored names such as `tapOn`, `inputText`, `pressKey`, `assertVisible`, `assert`, `assertWithAI`, `startBrowser`, `closeBrowser`, and generated replay alias `waitMs` are preserved in `ExecutableStep.metadata["authored_action_name"]`.
+`FsqExecutableStepAdapter` resolves authored FSQ action names and replay aliases through the registry and stores the canonical capability name in `ExecutableStep.action_name`. Authored names such as `tapOn`, `inputText`, `pressKey`, `assertVisible`, `assert`, `assertWithAI`, `startBrowser`, `closeBrowser`, `clickOn`, `typeText`, `uiSnapshot`, `assertElementsOrder`, and generated replay alias `waitMs` are preserved in `ExecutableStep.metadata["authored_action_name"]`.
 
 The adapter should normalize each known YAML command into `ExecutableStep.params` by resolving the action alias to a `CapabilityDefinition`, validating object-shaped payloads against `capability.params_model`, then storing `model_dump(mode="json", exclude_none=True)`. Known action payloads should be authored in the same field shape as their parameter models rather than relying on action-specific scalar shorthand. The first-batch canonical forms are grouped by active platform PlatformTools plus inherited CommonTool commands. AgentTools are not present in strict registries and cannot appear as executable FSQ commands.
 
@@ -65,6 +65,26 @@ Web command block:
 | `assertText: {text: {contains: Welcome}}` | `assert_text` | validated `WebAssertTextParams` dump |
 | `pageSnapshot: {}` | `page_snapshot` | validated `WebPageSnapshotParams` dump |
 
+macOS command block:
+
+| FSQ command shape | canonical `action_name` | `params` |
+|---|---|---|
+| `launchApp: {}` | `launch_app` | validated `MacOSLaunchAppParams` dump |
+| `killApp: {}` | `kill_app` | validated `MacOSKillAppParams` dump |
+| `clickOn: {target: Submit}` | `click_on` | validated `MacOSClickOnParams` dump |
+| `clickOn: {point: {x: 120, y: 240}}` | `click_on` | validated `MacOSClickOnParams` dump with explicit point |
+| `doubleClickOn: {target: File}` | `double_click_on` | validated `MacOSDoubleClickOnParams` dump |
+| `rightClickOn: {target: File}` | `right_click_on` | validated `MacOSRightClickOnParams` dump |
+| `typeText: {target: Search, text: query}` | `type_text` | validated `MacOSTypeTextParams` dump |
+| `pressKey: {key: Enter}` | `press_key` | validated `MacOSPressKeyParams` dump |
+| `hoverOn: {target: Menu}` | `hover_on` | validated `MacOSHoverOnParams` dump |
+| `dragTo: {source: {target: File}, destination: {target: Folder}}` | `drag_to` | validated `MacOSDragToParams` dump |
+| `takeScreenshot: {}` | `take_screenshot` | validated `MacOSTakeScreenshotParams` dump |
+| `uiSnapshot: {}` | `ui_snapshot` | validated `MacOSUiSnapshotParams` dump |
+| `assertVisible: {target: Done}` | `assert_visible` | validated `MacOSAssertVisibleParams` dump |
+| `assertElementsOrder: {direction: vertical, elements: [...]}` | `assert_elements_order` | validated `MacOSAssertElementsOrderParams` dump |
+| `assertWithAI: {prompt: ...}` | `assert_with_ai` | validated `MacOSAssertWithAIParams` dump |
+
 Shared command block:
 
 | FSQ command shape | canonical `action_name` | `params` |
@@ -83,8 +103,8 @@ Step kind mapping for known actions is owned by capability metadata:
 | `killApp` | `teardown` |
 | `startBrowser` | `setup` |
 | `closeBrowser` | `teardown` |
-| `assert`, `assertVisible`, `assertNotVisible`, `assertText`, `assertWithAI` | `assertion` |
-| `takeScreenshot`, `startRecording`, `stopRecording`, `pageSnapshot` | `observation` |
+| `assert`, `assertVisible`, `assertNotVisible`, `assertText`, `assertElementsOrder`, `assertWithAI` | `assertion` |
+| `takeScreenshot`, `startRecording`, `stopRecording`, `pageSnapshot`, `uiSnapshot` | `observation` |
 | `waitMs` | `action` |
 | all other commands | `action` |
 
@@ -131,6 +151,7 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported 
 - `waitMs` is a generated strict replay alias for the inherited `wait_ms` CommonTool capability. It is validated by `WaitMsParams`, converted into an `ExecutableStep(action_name="wait_ms")`, and later handled by `StepRunner` through the normal registry path without invoking Android gesture or Web page actions.
 - `assertWithAI` is parsed and validated like any other authored assertion command. This module does not evaluate AI assertions, build provider-backed evaluators, capture screenshots, or decide assertion verdicts.
 - Web aliases such as `startBrowser`, `closeBrowser`, `navigateTo`, `navigateBack`, `clickOn`, `typeText`, `selectOption`, `hoverOn`, `waitFor`, `takeScreenshot`, `assertText`, and `pageSnapshot` are accepted only when the supplied registry snapshot contains the corresponding Web capabilities. Android registries must not accept Web-only aliases, and Web registries must not accept Android-only aliases.
+- macOS aliases such as `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI` are accepted only when the supplied registry snapshot contains the corresponding macOS capabilities. Shared aliases resolve to the active platform's capability definition from the registry snapshot; aliases unique to another platform remain invalid.
 - `launchApp`/`killApp` and `startBrowser`/`closeBrowser` are treated as setup and teardown step kinds for strict-core execution. A trailing `closeBrowser` command should be passed to `StepSequenceRunner` as teardown so it still executes after an earlier normal-step failure.
 - Commands marked `optional: true` are still converted into executable steps; optional/non-blocking execution semantics do not belong to this adapter.
 - Parsed FSQ cases are not converted into LLM `Task` descriptions. For normal LLM `run --case-yaml` and `run --case-dir`, the CLI reads raw file text and builds goal/reference tasks without calling this module.

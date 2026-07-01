@@ -3,18 +3,11 @@ openai_agents:
   tracing_enabled: true
 
 harness:
-  platform: windows
-  windows:
-    backend: pywinauto
-    backend_kind: uia
-    # Set FSQ_WINDOWS_APP_PATH in .env for the local executable path.
-    window_title_re: ".*Microsoft.*Edge Beta"
-    launch_args:
-      - "--no-first-run"
-      - "--disable-features=msImplicitSignin"
-      - "--force-device-scale-factor=0.8"
-      - "--force-local-ntp"
-      - "--window-size=1280,920"
+  platform: macos
+  macos:
+    backend: appium_mac2
+    page_source_max_depth: 12
+    action_timeout_seconds: 10
 
 execution:
   post_action_delay_seconds:
@@ -37,8 +30,8 @@ agent_context:
           kind: markdown
           path: automation-basics.md
           required: true
-        - name: windows-harness
-          description: Windows harness action selection and recovery guidance.
+        - name: macos-harness
+          description: macOS Appium Mac2 harness action selection and recovery guidance.
           kind: markdown
-          path: windows-harness.md
+          path: macos-harness.md
           required: true

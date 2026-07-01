@@ -153,13 +153,49 @@ class WindowsHarnessSettings(BaseModel):
         return normalized or None
 
 
+class MacOSHarnessSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["appium_mac2"] = "appium_mac2"
+    page_source_max_depth: int = Field(default=12, ge=1)
+    action_timeout_seconds: int = Field(default=10, ge=1)
+    _appium_server_url: str | None = PrivateAttr(default=None)
+    _bundle_id: str | None = PrivateAttr(default=None)
+    _app_path: Path | None = PrivateAttr(default=None)
+
+    @property
+    def appium_server_url(self) -> str | None:
+        return self._appium_server_url
+
+    @appium_server_url.setter
+    def appium_server_url(self, value: str | None) -> None:
+        self._appium_server_url = value.strip() if isinstance(value, str) and value.strip() else None
+
+    @property
+    def bundle_id(self) -> str | None:
+        return self._bundle_id
+
+    @bundle_id.setter
+    def bundle_id(self, value: str | None) -> None:
+        self._bundle_id = value.strip() if isinstance(value, str) and value.strip() else None
+
+    @property
+    def app_path(self) -> Path | None:
+        return self._app_path
+
+    @app_path.setter
+    def app_path(self, value: str | Path | None) -> None:
+        self._app_path = Path(value) if value else None
+
+
 class HarnessSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    platform: Literal["android", "web", "windows"] = "android"
+    platform: Literal["android", "web", "windows", "macos"] = "android"
     android: AndroidHarnessSettings = Field(default_factory=AndroidHarnessSettings)
     web: WebHarnessSettings = Field(default_factory=WebHarnessSettings)
     windows: WindowsHarnessSettings = Field(default_factory=WindowsHarnessSettings)
+    macos: MacOSHarnessSettings = Field(default_factory=MacOSHarnessSettings)
 
 
 class PostActionDelaySettings(BaseModel):

@@ -33,7 +33,9 @@ Android runs should configure `android-harness.md` alongside shared automation g
 
 Web runs should configure `web-harness.md` alongside shared automation guidance. The Web harness skill should mirror Playwright's LLM-facing guidance: start browser-owned workflows with `start_browser`, close them with `close_browser`, prefer `page_snapshot` over screenshots for target selection, use replayable semantic locators or stable selectors, use `navigate_to`, `navigate_back`, `click_on`, `type_text`, `select_option`, `hover_on`, `press_key`, `wait_for`, `take_screenshot`, assertion tools, and `assert_with_ai` according to active schemas, avoid `Alt+F4`/`Control+W` as browser lifecycle controls, and reserve unsupported Playwright MCP capability families for future SPEC-reviewed opt-in tools.
 
-Future platform skills must be separate platform-specific Markdown bundles instead of expanding Android or Web skill files with unrelated platform rules.
+macOS runs should configure `macos-harness.md` alongside shared automation guidance. The macOS harness skill should describe desktop aliases, stable accessibility locators, explicit coordinate fallback, Appium Mac2 lifecycle expectations, `ui_snapshot` usage, deterministic assertions such as `assert_visible` and `assert_elements_order`, visual assertions through `assert_with_ai`, and secret handling through `get_runtime_secret`.
+
+Future platform skills must be separate platform-specific Markdown bundles instead of expanding existing platform skill files with unrelated platform rules.
 
 ## Design Decisions
 

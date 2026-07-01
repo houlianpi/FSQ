@@ -32,6 +32,24 @@ platform: web
 """
 
 
+MACOS_FSQ_CASE = """
+schemaVersion: fsq.ai-test/v1
+name: Strict macOS CLI Case
+platform: macos
+---
+- launchApp
+- clickOn:
+        point:
+            x: 100
+            y: 200
+- assertElementsOrder:
+        elements:
+            - target: File
+            - target: Edit
+- killApp
+"""
+
+
 def _config(tmp_path: Path, body: str = "") -> Path:
     workspace = tmp_path / "workspace"
     cases_dir = tmp_path / "cases"
@@ -315,6 +333,64 @@ harness:
     assert [step.action_name for step in calls["strict"]["steps"]] == ["start_browser", "navigate_to", "page_snapshot", "close_browser"]
     assert calls["strict"]["registry"].resolve("pageSnapshot") is not None
     assert calls["strict"]["registry"].resolve("startBrowser") is not None
+    assert calls["strict"]["registry"].resolve("tapOn") is None
+
+
+def test_run_strict_macos_case_builds_macos_harness_from_env_without_android_app_id(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
+    monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
+    config_path = _config(
+        tmp_path,
+        """
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+    page_source_max_depth: 7
+    action_timeout_seconds: 11
+""",
+    )
+    case_path = tmp_path / "cases" / "strict_macos.codex.yaml"
+    case_path.write_text(MACOS_FSQ_CASE, encoding="utf-8")
+    calls = {}
+
+    class FakeMacOSDriver:
+        def __init__(self, **kwargs) -> None:
+            calls["driver"] = kwargs
+
+    def fake_run_strict_fsq_core_case(**kwargs):
+        calls["strict"] = kwargs
+        report_path = kwargs["output_dir"] / "core-report.md"
+        manifest_path = kwargs["output_dir"] / "evidence-manifest.json"
+        kwargs["output_dir"].mkdir(parents=True, exist_ok=True)
+        report_path.write_text("report", encoding="utf-8")
+        manifest_path.write_text("{}", encoding="utf-8")
+        return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
+
+    monkeypatch.setattr("fsq_agent.cli._main.AppiumMac2Driver", FakeMacOSDriver)
+    monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
+
+    result = CliRunner().invoke(main, ["run", "--config", str(config_path), "--strict", "--case-yaml", "strict_macos.codex.yaml"])
+
+    assert result.exit_code == 0, result.output
+    assert calls["driver"] == {
+        "server_url": "http://127.0.0.1:4723",
+        "bundle_id": "com.example.MacApp",
+        "app_path": None,
+        "page_source_max_depth": 7,
+        "action_timeout_seconds": 11,
+    }
+    assert calls["strict"]["case_path"] == case_path.resolve()
+    assert calls["strict"]["run_id"] == "strict_macos"
+    assert [step.action_name for step in calls["strict"]["steps"]] == [
+        "launch_app",
+        "click_on",
+        "assert_elements_order",
+        "kill_app",
+    ]
+    assert calls["strict"]["registry"].resolve("assertElementsOrder") is not None
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
 

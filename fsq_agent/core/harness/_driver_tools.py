@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from fsq_agent.capabilities import CapabilityActionDefinition, driver_capability, discover_capability_definitions, platform_driver_capability
 from fsq_agent.models import (
     ANDROID_ACTION_DEFINITIONS,
+    MACOS_ACTION_DEFINITIONS,
     WEB_ACTION_DEFINITIONS,
     WINDOWS_ACTION_DEFINITIONS,
     CapabilityDefinition,
@@ -84,6 +85,28 @@ _windows_driver_capability = platform_driver_capability(
     catalog=WINDOWS_DRIVER_ACTION_CATALOG,
 )
 
+MACOS_DRIVER_ACTION_CATALOG = {
+    definition.fsq_action_name: CapabilityActionDefinition(
+        action_name=definition.fsq_action_name,
+        canonical_name=definition.driver_method,
+        executor_kind="driver",
+        owner=definition.owner,
+        params_model=definition.params_model,
+        step_kind=definition.step_kind,
+        method_name=definition.driver_method,
+        replay=ReplayPolicy(kind="fsq_command", alias=definition.fsq_action_name),
+        strict=definition.strict,
+        capture_evidence=definition.capture_evidence,
+    )
+    for definition in MACOS_ACTION_DEFINITIONS
+    if definition.owner == "driver"
+}
+_macos_driver_capability = platform_driver_capability(
+    platform="macos",
+    backend=None,
+    catalog=MACOS_DRIVER_ACTION_CATALOG,
+)
+
 
 def driver_tool(
     *,
@@ -157,6 +180,23 @@ def _windows_driver_tool(
     metadata: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     return _windows_driver_capability(
+        fsq_action_name,
+        description=description,
+        strict=strict,
+        capture_evidence=capture_evidence,
+        metadata=metadata,
+    )
+
+
+def _macos_driver_tool(
+    fsq_action_name: str,
+    *,
+    description: str,
+    strict: bool | None = None,
+    capture_evidence: bool | None = None,
+    metadata: dict[str, object] | None = None,
+) -> Callable[[F], F]:
+    return _macos_driver_capability(
         fsq_action_name,
         description=description,
         strict=strict,

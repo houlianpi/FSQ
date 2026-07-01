@@ -16,7 +16,15 @@ from fsq_agent.cli._strict_case_recording import StrictCaseRecording, record_dyn
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
 from fsq_agent.config import Settings, load_settings, validate_runtime_settings, validate_strict_core_settings
-from fsq_agent.core import AndroidHarness, ArtifactStore, PlaywrightWebDriver, UiAutomator2AndroidDriver, WebHarness
+from fsq_agent.core import (
+    AndroidHarness,
+    AppiumMac2Driver,
+    ArtifactStore,
+    MacOSHarness,
+    PlaywrightWebDriver,
+    UiAutomator2AndroidDriver,
+    WebHarness,
+)
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task
 from fsq_agent.playground import PlaygroundServerOptions, run_playground
@@ -383,7 +391,12 @@ def _build_strict_harness(settings: Settings, case: FsqCase, run_dir: Path, requ
         return _build_strict_android_harness(settings, _strict_case_app_id(settings, case), run_dir, requires_ai_assertion)
     if settings.harness.platform == "web":
         return _build_strict_web_harness(settings, run_dir, requires_ai_assertion)
-    raise ConfigurationError("Unsupported harness platform.", context={"platform": settings.harness.platform, "supported": ["android", "web"]})
+    if settings.harness.platform == "macos":
+        return _build_strict_macos_harness(settings, run_dir, requires_ai_assertion)
+    raise ConfigurationError(
+        "Unsupported harness platform.",
+        context={"platform": settings.harness.platform, "supported": ["android", "web", "macos"]},
+    )
 
 
 def _build_strict_android_harness(settings: Settings, app_id: str, run_dir: Path, requires_ai_assertion: bool = False) -> AndroidHarness:
@@ -409,6 +422,24 @@ def _build_strict_web_harness(settings: Settings, run_dir: Path, requires_ai_ass
     )
     evaluator = build_ai_assertion_evaluator(settings) if requires_ai_assertion else None
     return WebHarness(
+        driver=driver,
+        artifact_store=ArtifactStore(run_dir=run_dir),
+        ai_assertion_evaluator=evaluator,
+        runtime_secret_settings=settings.runtime_secrets,
+    )
+
+
+def _build_strict_macos_harness(settings: Settings, run_dir: Path, requires_ai_assertion: bool = False) -> MacOSHarness:
+    macos = settings.harness.macos
+    driver = AppiumMac2Driver(
+        server_url=macos.appium_server_url or "",
+        bundle_id=macos.bundle_id,
+        app_path=macos.app_path,
+        page_source_max_depth=macos.page_source_max_depth,
+        action_timeout_seconds=macos.action_timeout_seconds,
+    )
+    evaluator = build_ai_assertion_evaluator(settings) if requires_ai_assertion else None
+    return MacOSHarness(
         driver=driver,
         artifact_store=ArtifactStore(run_dir=run_dir),
         ai_assertion_evaluator=evaluator,
