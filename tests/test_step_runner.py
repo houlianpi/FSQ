@@ -176,6 +176,13 @@ def _web_runner(harness: Any) -> StepRunner:
     )
 
 
+def _macos_runner(harness: Any) -> StepRunner:
+    return StepRunner(
+        harness=harness,
+        capability_registry=build_capability_registry(platform="macos"),
+    )
+
+
 def test_step_runner_runs_successful_step_through_three_phases() -> None:
     harness = SuccessfulHarness()
     runner = _runner(harness)
@@ -434,6 +441,34 @@ def test_step_runner_derives_web_page_snapshot_policy_from_capability_metadata()
     assert "invoke:click_on:session-1" in harness.calls
     assert "capture:screenshot:before-action:step-1:prepare" in harness.calls
     assert "capture:page_snapshot:after-action:step-1:finalize" in harness.calls
+
+
+def test_step_runner_derives_macos_ui_snapshot_policy_from_capability_metadata() -> None:
+    class MacOSCapturingHarness(CapturingHarness):
+        def get_context(self) -> HarnessContext:
+            self.calls.append("get_context")
+            return HarnessContext(platform="macos", session_id="session-1")
+
+    harness = MacOSCapturingHarness()
+    runner = _macos_runner(harness)
+    step = ExecutableStep(
+        step_id="step-1",
+        kind="action",
+        action_name="clickOn",
+        params={"target": "Search"},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    prepare_report = result.phase_reports[0]
+    finalize_report = result.phase_reports[2]
+    assert result.status == "passed"
+    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert "before:click_on:session-1" in harness.calls
+    assert "invoke:click_on:session-1" in harness.calls
+    assert "capture:screenshot:before-action:step-1:prepare" in harness.calls
+    assert "capture:ui_snapshot:after-action:step-1:finalize" in harness.calls
 
 
 def test_step_runner_preserves_explicit_evidence_policy_over_capability_metadata() -> None:

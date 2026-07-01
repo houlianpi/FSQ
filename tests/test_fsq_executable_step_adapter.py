@@ -60,6 +60,10 @@ def _web_adapter() -> FsqExecutableStepAdapter:
     return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="web").snapshot())
 
 
+def _macos_adapter() -> FsqExecutableStepAdapter:
+    return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="macos").snapshot())
+
+
 def test_fsq_executable_step_adapter_preserves_order_and_canonical_action_names(tmp_path: Path) -> None:
     case = _load_case(tmp_path)
 
@@ -353,3 +357,56 @@ platform: web
 
     assert steps[0].action_name == "type_text"
     assert steps[0].params == {"text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}, "target": "Password field"}
+
+
+def test_fsq_executable_step_adapter_resolves_macos_aliases_and_asserts_order(tmp_path: Path) -> None:
+    case_path = tmp_path / "macos_case.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: macOS Case
+platform: macos
+---
+- launchApp
+- clickOn:
+    point:
+      x: 120
+      y: 240
+- typeText:
+    target: Search field
+    text:
+      runtimeSecret: TEST_ACCOUNT_PASSWORD
+- assertElementsOrder:
+    direction: horizontal
+    elements:
+      - target: File
+      - locator:
+          accessibilityId: Edit
+    expected_order:
+      - 0
+      - 1
+- killApp
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+
+    steps = _macos_adapter().to_executable_steps(case)
+
+    assert [step.action_name for step in steps] == [
+        "launch_app",
+        "click_on",
+        "type_text",
+        "assert_elements_order",
+        "kill_app",
+    ]
+    assert [step.kind for step in steps] == ["setup", "action", "action", "assertion", "teardown"]
+    assert steps[1].params == {"point": {"x": 120, "y": 240}}
+    assert steps[2].params == {"target": "Search field", "text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}}
+    assert steps[3].params == {
+        "elements": [{"target": "File"}, {"locator": {"accessibilityId": "Edit"}}],
+        "direction": "horizontal",
+        "expected_order": [0, 1],
+        "require_all": True,
+    }
+    assert all(step.metadata["platform"] == "macos" for step in steps)

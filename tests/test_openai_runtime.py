@@ -390,6 +390,59 @@ def test_runtime_builds_configured_web_harness(monkeypatch: pytest.MonkeyPatch, 
     assert completed_payload["driver_class"] == "_FakeWebDriver"
 
 
+def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: dict[str, Any] = {}
+
+    class _FakeMacOSDriver:
+        def __init__(self, **kwargs: Any) -> None:
+            calls["driver"] = kwargs
+
+    import fsq_agent.agent._openai_runtime as runtime_module
+
+    monkeypatch.setattr(runtime_module, "AppiumMac2Driver", _FakeMacOSDriver)
+    monkeypatch.setattr(runtime_module, "build_ai_assertion_evaluator", lambda _settings: "ai-evaluator")
+    settings = Settings(
+        harness={
+            "platform": "macos",
+            "macos": {
+                "backend": "appium_mac2",
+                "page_source_max_depth": 7,
+                "action_timeout_seconds": 11,
+            },
+        },
+        output={"root_dir": tmp_path / "output"},
+        openai_agents=OpenAIAgentsSettings(),
+    )
+    settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
+    settings.harness.macos.bundle_id = "com.example.MacApp"
+    settings.output.runs_dir = tmp_path / "runs"
+    runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
+
+    payload = runtime._harness_setup_payload()
+    harness = runtime._build_harness("mac-run")
+    completed_payload = runtime._harness_setup_payload(harness)
+
+    assert calls["driver"] == {
+        "server_url": "http://127.0.0.1:4723",
+        "bundle_id": "com.example.MacApp",
+        "app_path": None,
+        "page_source_max_depth": 7,
+        "action_timeout_seconds": 11,
+    }
+    assert payload == {
+        "platform": "macos",
+        "timeout_seconds": 60,
+        "backend": "appium_mac2",
+        "appium_server_configured": True,
+        "bundle_id_configured": True,
+        "app_path_configured": False,
+        "action_timeout_seconds": 11,
+        "configured_skill_names": [],
+    }
+    assert completed_payload["harness_class"] == "MacOSHarness"
+    assert completed_payload["driver_class"] == "_FakeMacOSDriver"
+
+
 def test_runtime_builds_step_results_from_structured_pre_plan() -> None:
     settings = Settings(openai_agents=OpenAIAgentsSettings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())

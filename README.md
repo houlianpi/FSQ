@@ -36,6 +36,22 @@ fsq-agent init --config config.local.windows.yaml
 fsq-agent run --config config.local.windows.yaml --goal "Launch Edge, search for Windows, and verify the results page is visible."
 ```
 
+For macOS runs with Appium Mac2:
+
+Before running fsq-agent, set up Appium on the Mac that will be automated and start the Appium server yourself. fsq-agent connects to the configured server URL; it does not install Appium, install the Mac2 driver, or start the server process.
+
+```bash
+python -m pip install -e ".[dev,macos]"
+cp .env.example .env
+# Example Appium setup, run before fsq-agent commands if not already configured:
+# npm install -g appium
+# appium driver install mac2
+# appium --address 127.0.0.1 --port 4723
+fsq-agent init --config config.local.macos.yaml
+fsq-agent run --config config.local.macos.yaml --goal "Open the configured macOS app, inspect the visible window, and verify the expected controls are visible."
+fsq-agent run --config config.local.macos.yaml --strict --case-yaml cases/macos/example.codex.yaml
+```
+
 ## Runtime Configuration
 
 For Android runs, install the Android extra, connect an emulator/device, and keep only the platform/backend in config:
@@ -100,7 +116,11 @@ platform: web
 - closeBrowser
 ```
 
-For Windows runs, install the Windows extra, then select the Windows platform and point `harness.windows.app_path` at the desktop application executable to launch:
+For Windows runs, install the Windows extra, set the application executable path in `.env`, then select the Windows platform in YAML:
+
+```dotenv
+FSQ_WINDOWS_APP_PATH=C:\Program Files\Microsoft\Edge\Application\msedge.exe
+```
 
 ```yaml
 harness:
@@ -108,11 +128,10 @@ harness:
   windows:
     backend: pywinauto
     backend_kind: uia
-    app_path: "C:/Program Files (x86)/Microsoft/Edge Beta/Application/msedge.exe"
-    window_title_re: ".*Microsoft.*Edge Beta"
+    window_title_re: ".*Microsoft.*Edge"
     launch_args:
       - "--no-first-run"
-      - "--window-size=1280,920"
+      - "--disable-features=msImplicitSignin"
 
 execution:
   post_action_delay_seconds:
@@ -120,7 +139,52 @@ execution:
     common: 0.0
 ```
 
-  `harness.windows.backend` supports `pywinauto`; `backend_kind` selects the pywinauto UI automation backend (`uia` default, or `win32`). `harness.windows.app_path` is required and must point to an existing application executable file; configuration validation checks it before external actions begin. `harness.windows.window_title_re` is optional and resolves the launched application main window by title regex instead of the top window, which is useful for apps such as Microsoft Edge Beta. `harness.windows.launch_args` is optional and provides command-line arguments prepended to launch. pywinauto packages are operator-managed through the `windows` extra.
+`FSQ_WINDOWS_APP_PATH` is required for Windows runs and must point to an existing application executable file. `harness.windows.backend` supports `pywinauto`; `backend_kind` selects the pywinauto UI automation backend (`uia` default, or `win32`). `harness.windows.window_title_re` is optional and resolves the launched application main window by title regex instead of the top window, which is useful for apps such as Microsoft Edge. `harness.windows.launch_args` is optional and provides command-line arguments prepended to launch. pywinauto packages are operator-managed through the `windows` extra.
+
+For macOS runs, install the macOS extra, configure Appium 2 with the Mac2 driver on the target Mac, start the Appium server before running fsq-agent, keep stable harness defaults in YAML, and set local Appium/app identity values in `.env`:
+
+```yaml
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+    page_source_max_depth: 12
+    action_timeout_seconds: 10
+
+execution:
+  post_action_delay_seconds:
+    platform: 1.0
+    common: 0.0
+```
+
+```dotenv
+FSQ_MACOS_APPIUM_SERVER_URL=http://127.0.0.1:4723
+FSQ_MACOS_BUNDLE_ID=com.example.MacApp
+FSQ_MACOS_APP_PATH=
+```
+
+`FSQ_MACOS_APPIUM_SERVER_URL` is required and must point to an already-running Appium server. Set at least one of `FSQ_MACOS_BUNDLE_ID` or `FSQ_MACOS_APP_PATH`; use the bundle id when the app is installed and use the app path when launching a local bundle or executable. macOS Appium sessions are not created during config loading, registry bootstrap, or dynamic harness construction. Authored `launchApp` creates or reuses the Mac2 session through that server, and authored `killApp` terminates or closes it.
+
+macOS FSQ cases should model app lifecycle explicitly and use accessibility-backed targets where possible:
+
+```yaml
+schemaVersion: fsq.ai-test/v1
+name: macOS Example
+platform: macos
+---
+- launchApp
+- uiSnapshot
+- clickOn:
+    target: File
+- assertElementsOrder:
+    direction: horizontal
+    elements:
+      - target: File
+      - target: Edit
+- killApp
+```
+
+Use `uiSnapshot` to inspect the macOS accessibility tree, `assertVisible` for deterministic presence checks, and `assertElementsOrder` for required vertical or horizontal ordering. Coordinates are supported through `point`, but they should be a fallback when accessibility metadata is not available.
 
 For account-dependent cases, put secret values in `.env` and allow only those names in config:
 
@@ -170,7 +234,7 @@ fsq-agent run --config config.local.yaml --case-yaml path/to/case.codex.yaml
 fsq-agent run --config config.local.yaml --case-dir path/to/cases
 ```
 
-Use `run --strict` for deterministic strict-core execution of authored FSQ YAML. This path parses `.codex.yaml`, runs it through the configured Android driver, writes `evidence-manifest.json`, and generates `core-report.md/json` without LLM participation.
+Use `run --strict` for deterministic strict-core execution of authored FSQ YAML. This path parses `.codex.yaml`, runs it through the configured platform harness, writes `evidence-manifest.json`, and generates `core-report.md/json` without LLM participation.
 
 ```bash
 fsq-agent run --config config.local.yaml --strict --case-yaml path/to/case.codex.yaml

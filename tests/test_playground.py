@@ -541,6 +541,25 @@ def test_playground_web_platform_does_not_require_android_session(monkeypatch) -
     assert captured["device_id"] is None
 
 
+def test_playground_macos_platform_does_not_require_android_session(monkeypatch) -> None:
+    settings = Settings(harness={"platform": "macos"})
+    settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
+    settings.harness.macos.bundle_id = "com.example.MacApp"
+    captured = {}
+
+    def fake_start_dynamic_goal_execution(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    server = PlaygroundServer(settings)
+
+    status, payload = server.handle_post("/execute", {"goal": "Do it"})
+
+    assert status == 202
+    assert payload["requestId"]
+    assert captured["device_id"] is None
+
+
 def test_playground_web_platform_session_endpoints_are_unavailable() -> None:
     chrome_path = Path("C:/Chrome/chrome.exe")
     settings = Settings(
@@ -612,6 +631,37 @@ def test_playground_windows_platform_runtime_info_and_session_endpoints() -> Non
     assert runtime_payload["metadata"]["launchArgsCount"] == 1
 
 
+def test_playground_macos_platform_runtime_info_and_session_endpoints() -> None:
+    settings = Settings(harness={"platform": "macos", "macos": {"action_timeout_seconds": 11}})
+    settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
+    settings.harness.macos.bundle_id = "com.example.MacApp"
+    server = PlaygroundServer(settings)
+
+    session_status, session_payload = server.handle_get("/session", {})
+    setup_status, setup_payload = server.handle_get("/session/setup", {})
+    auto_status, auto_payload = server.handle_post("/session/auto", {})
+    delete_status, delete_payload = server.handle_delete("/session")
+    runtime_status, runtime_payload = server.handle_get("/runtime-info", {})
+
+    assert session_status == 200
+    assert session_payload["available"] is False
+    assert "macos" in session_payload["message"]
+    assert setup_status == 200
+    assert setup_payload["available"] is False
+    assert auto_status == 409
+    assert auto_payload["available"] is False
+    assert delete_status == 409
+    assert delete_payload["available"] is False
+    assert "macos" in delete_payload["message"]
+    assert runtime_status == 200
+    assert runtime_payload["platformId"] == "macos"
+    assert runtime_payload["metadata"]["backend"] == "appium_mac2"
+    assert runtime_payload["metadata"]["appiumServerConfigured"] is True
+    assert runtime_payload["metadata"]["bundleIdPresent"] is True
+    assert runtime_payload["metadata"]["appPathConfigured"] is False
+    assert runtime_payload["metadata"]["actionTimeoutSeconds"] == 11
+
+
 def test_playground_web_screenshot_uses_active_harness(tmp_path: Path) -> None:
     class FakeWebHarness:
         def get_context(self) -> HarnessContext:
@@ -638,6 +688,55 @@ def test_playground_web_screenshot_uses_active_harness(tmp_path: Path) -> None:
     frames = sorted((settings.output.runs_dir / "run-1" / "playground-replay").glob("frame-*.png"))
     assert len(frames) == 1
     assert frames[0].read_bytes() == b"png"
+
+
+def test_playground_macos_screenshot_uses_active_harness(tmp_path: Path) -> None:
+    class FakeMacOSHarness:
+        def get_context(self) -> HarnessContext:
+            return HarnessContext(platform="macos", session_id="mac2:session")
+
+        def screenshot(self) -> bytes:
+            return b"mac-png"
+
+    settings = Settings(harness={"platform": "macos"})
+    settings.output.runs_dir = tmp_path / "runs"
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    request_id = server.state.start_task("macOS preview")
+    server.state.add_event(request_id, RunEvent(run_id="run-1", task_id="task", type="run_started", title="Run started"))
+    handle = PlaygroundExecutionHandle(request_id=request_id)
+    handle.bind_harness(FakeMacOSHarness())
+    server._execution_handles[request_id] = handle
+
+    status, payload = server.handle_get("/screenshot", {})
+
+    assert status == 200
+    assert payload["available"] is True
+    assert payload["platform"] == "macos"
+    assert base64.b64decode(payload["screenshot"]) == b"mac-png"
+
+
+def test_playground_macos_screenshot_requires_launched_session(tmp_path: Path) -> None:
+    class FakeMacOSHarness:
+        def get_context(self) -> HarnessContext:
+            return HarnessContext(platform="macos")
+
+        def screenshot(self) -> bytes:
+            raise AssertionError("screenshot should not be called before launch")
+
+    settings = Settings(harness={"platform": "macos"})
+    settings.output.runs_dir = tmp_path / "runs"
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    request_id = server.state.start_task("macOS preview")
+    handle = PlaygroundExecutionHandle(request_id=request_id)
+    handle.bind_harness(FakeMacOSHarness())
+    server._execution_handles[request_id] = handle
+
+    status, payload = server.handle_get("/screenshot", {})
+
+    assert status == 200
+    assert payload["available"] is False
+    assert payload["platform"] == "macos"
+    assert "launchApp" in payload["error"]
 
 
 def test_playground_web_screenshot_reports_not_started(tmp_path: Path) -> None:

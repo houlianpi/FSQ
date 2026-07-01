@@ -15,6 +15,10 @@ DEFAULT_ENV_PATH = Path(".env")
 ANDROID_APP_ID_ENV = "FSQ_ANDROID_APP_ID"
 ANDROID_SERIAL_ENV = "FSQ_ANDROID_SERIAL"
 WEB_BROWSER_EXECUTABLE_PATH_ENV = "FSQ_WEB_BROWSER_EXECUTABLE_PATH"
+WINDOWS_APP_PATH_ENV = "FSQ_WINDOWS_APP_PATH"
+MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
+MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
+MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
 AZURE_OPENAI_BASE_URL_ENV = "AZURE_OPENAI_BASE_URL"
 AZURE_OPENAI_MODEL_ENV = "AZURE_OPENAI_MODEL"
 AZURE_OPENAI_API_KEY_ENV = "AZURE_OPENAI_API_KEY"
@@ -137,6 +141,18 @@ def _apply_environment_settings(settings: Settings) -> None:
     browser_executable_path = _env_value(WEB_BROWSER_EXECUTABLE_PATH_ENV)
     if browser_executable_path:
         settings.harness.web.browser_executable_path = browser_executable_path
+    windows_app_path = _env_value(WINDOWS_APP_PATH_ENV)
+    if windows_app_path:
+        settings.harness.windows.app_path = Path(windows_app_path)
+    macos_appium_server_url = _env_value(MACOS_APPIUM_SERVER_URL_ENV)
+    macos_bundle_id = _env_value(MACOS_BUNDLE_ID_ENV)
+    macos_app_path = _env_value(MACOS_APP_PATH_ENV)
+    if macos_appium_server_url:
+        settings.harness.macos.appium_server_url = macos_appium_server_url
+    if macos_bundle_id:
+        settings.harness.macos.bundle_id = macos_bundle_id
+    if macos_app_path:
+        settings.harness.macos.app_path = macos_app_path
 
     if settings.openai_agents.provider == "github_copilot":
         settings.openai_agents.model = GITHUB_COPILOT_MODEL
@@ -211,9 +227,12 @@ def _validate_harness_settings(settings: Settings) -> None:
     if settings.harness.platform == "windows":
         _validate_windows_harness_settings(settings)
         return
+    if settings.harness.platform == "macos":
+        _validate_macos_harness_settings(settings)
+        return
     raise ConfigurationError(
         "Unsupported harness platform.",
-        context={"platform": settings.harness.platform, "supported": ["android", "web", "windows"]},
+        context={"platform": settings.harness.platform, "supported": ["android", "web", "windows", "macos"]},
     )
 
 
@@ -289,4 +308,36 @@ def _validate_windows_harness_settings(settings: Settings) -> None:
         raise ConfigurationError(
             "Configured Windows app path must point to the application executable file.",
             context={"config_key": "harness.windows.app_path", "path": str(app_path)},
+        )
+
+
+def _validate_macos_harness_settings(settings: Settings) -> None:
+    if settings.harness.macos.backend != "appium_mac2":
+        raise ConfigurationError(
+            "Unsupported macOS harness backend.",
+            context={"backend": settings.harness.macos.backend, "supported": ["appium_mac2"]},
+        )
+    if not settings.harness.macos.appium_server_url:
+        raise ConfigurationError(
+            "macOS Appium server URL environment variable is not set.",
+            context={"server_url_env": MACOS_APPIUM_SERVER_URL_ENV},
+        )
+    app_path = settings.harness.macos.app_path
+    bundle_id = settings.harness.macos.bundle_id
+    if app_path is None and bundle_id is None:
+        raise ConfigurationError(
+            "macOS app identity is not configured.",
+            context={"bundle_id_env": MACOS_BUNDLE_ID_ENV, "app_path_env": MACOS_APP_PATH_ENV},
+        )
+    if app_path is None:
+        return
+    if not app_path.exists():
+        raise ConfigurationError(
+            "Configured macOS app path does not exist.",
+            context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
+        )
+    if not (app_path.is_dir() or app_path.is_file()):
+        raise ConfigurationError(
+            "Configured macOS app path must point to an application bundle or executable.",
+            context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
         )

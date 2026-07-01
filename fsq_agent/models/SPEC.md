@@ -104,6 +104,25 @@ Web platform exports:
 - `WebPageSnapshotParams`: Pydantic model for the read-only `page_snapshot` Web observation capability. It accepts optional exact snapshot `target` or non-empty `locator`, optional `depth`, and optional `boxes` so dynamic agents and strict Web cases can request a current accessibility/DOM-oriented page snapshot through the normal harness action schema path.
 - `WebAssertWithAIParams`: Pydantic model for authored Web visual/page assertion parameters with a required prompt and optional assertion metadata. This parameter model is consumed by decorated Web backend driver tools such as `PlaywrightWebDriver.assert_with_ai`.
 
+macOS platform exports:
+
+- `MacOSLocator`: Pydantic model for macOS target locators with optional serialized fields `accessibilityId`, `name`, `label`, `value`, `role`, `controlType`, `className`, `xpath`, `predicate`, and `point`. macOS action parameter models that accept a locator require at least one populated locator signal when no semantic `target` or explicit `point` is supplied.
+- `MacOSPoint`: Pydantic model for integer macOS screen coordinates with `x` and `y` fields.
+- `MacOSLaunchAppParams`: Pydantic model for `launch_app` driver parameters, including optional `bundle_id`, `app_path`, `arguments`, and `environment`. Runtime defaults for target app identity come from environment-backed settings rather than shareable YAML.
+- `MacOSKillAppParams`: Pydantic model for `kill_app` driver parameters, including optional `bundle_id` and optional session-close behavior.
+- `MacOSClickOnParams`: Pydantic model for `click_on` parameters. It requires a semantic `target`, non-empty `locator`, or explicit `point`, with optional modifier metadata.
+- `MacOSDoubleClickOnParams`: Pydantic model for `double_click_on` parameters. It uses the same target/locator/point contract as `MacOSClickOnParams`.
+- `MacOSRightClickOnParams`: Pydantic model for `right_click_on` parameters. It uses the same target/locator/point contract as `MacOSClickOnParams`.
+- `MacOSHoverOnParams`: Pydantic model for `hover_on` parameters. It uses the same target/locator/point contract as `MacOSClickOnParams`.
+- `MacOSTypeTextParams`: Pydantic model for `type_text` parameters. It requires `text` and accepts an optional semantic `target`, non-empty `locator`, or explicit `point` for focusing before input.
+- `MacOSPressKeyParams`: Pydantic model for `press_key` parameters with one required key or key sequence and an optional modifier list.
+- `MacOSDragToParams`: Pydantic model for `drag_to` parameters. It requires source and destination values, each expressed as a semantic target, non-empty locator, or explicit point, with optional duration metadata.
+- `MacOSTakeScreenshotParams`: Pydantic model for `take_screenshot` parameters. It accepts optional full-screen/window metadata; artifact paths are owned by `ArtifactStore`, not by user payloads.
+- `MacOSUiSnapshotParams`: Pydantic model for the read-only `ui_snapshot` macOS observation capability. It accepts optional maximum depth and simplification flags and returns a bounded Appium Mac2 page-source/control-tree snapshot.
+- `MacOSAssertVisibleParams`: Pydantic model for macOS `assert_visible` parameters. It requires a semantic `target`, non-empty `locator`, or explicit `point` plus optional assertion metadata.
+- `MacOSAssertElementsOrderParams`: Pydantic model for `assert_elements_order` parameters. It requires an ordered `elements` list whose items contain a semantic target or macOS locator, accepts `direction` constrained to `vertical` or `horizontal`, optional zero-based `expected_order`, optional pixel `tolerance`, and `require_all` defaulting to true. Driver output for this assertion includes `direction`, `elements_found`, `elements_total`, `actual_order`, `expected_order`, and per-element center positions.
+- `MacOSAssertWithAIParams`: Pydantic model for authored macOS visual assertion parameters with a required prompt and optional assertion metadata. This parameter model is consumed by decorated Appium Mac2 backend driver tools such as `AppiumMac2Driver.assert_with_ai`.
+
 Provider-backed assertion exports:
 
 - `AIAssertionRequest`: Pydantic model describing one provider-backed platform visual assertion request. It includes platform, prompt, screenshot artifact reference or screenshot path, optional UI/context metadata, run/step metadata, and provider/model metadata fields safe for reports.
@@ -124,6 +143,7 @@ Platform settings exports:
 - `HarnessSettings`: Pydantic model selecting the platform harness configuration used by goal-driven task execution. It contains platform-specific harness settings only; runner-owned execution pacing belongs to `ExecutionSettings`.
 - `AndroidHarnessSettings`: Pydantic model for the built-in Android harness runtime construction. YAML selects the Android backend; configuration loading fills optional `app_id` and device `serial` from `FSQ_ANDROID_APP_ID` and `FSQ_ANDROID_SERIAL`. Strict-core execution does not enable AI assertion evaluators through this settings model.
 - `WebHarnessSettings`: Pydantic model for the built-in Web harness runtime construction. YAML selects the Playwright backend, local browser channel, headless mode, optional base URL, and optional viewport settings; configuration loading fills the required local browser executable path from `FSQ_WEB_BROWSER_EXECUTABLE_PATH`. Strict-core execution does not enable AI assertion evaluators through this settings model.
+- `MacOSHarnessSettings`: Pydantic model for the built-in macOS harness runtime construction. YAML selects backend `appium_mac2` and stable non-sensitive defaults such as page-source depth and action timeout seconds; configuration loading fills operator-local Appium server URL, bundle id, and app path from `FSQ_MACOS_APPIUM_SERVER_URL`, `FSQ_MACOS_BUNDLE_ID`, and `FSQ_MACOS_APP_PATH`. Strict-core execution does not enable AI assertion evaluators through this settings model.
 - `AgentContextSettings`: Pydantic model grouping knowledge-root resources used to build agent context.
 - `AgentKnowledgeSettings`: Pydantic model containing the configured private knowledge `root_dir`, nested skill resource configuration, and optional pre-plan page-knowledge configuration.
 - `KnowledgeSkillSettings`: Pydantic model containing the skill directory under the knowledge root and the configured `SkillConfig` items loaded from that directory.
@@ -165,6 +185,13 @@ Web contracts:
 - Web observation is represented as `page_snapshot`/`pageSnapshot`; it is distinct from Android `ui_tree`.
 - Web action parameter design follows Playwright MCP's LLM-facing core automation conventions where appropriate: action targets are replayable semantic locators or stable unique selectors, optional `element` fields are human-readable descriptions for interaction permission/auditing, screenshots are evidence/debugging observations rather than the normal action-selection substrate, and unsafe/opt-in capability families are excluded from the first batch.
 
+macOS contracts:
+
+- macOS parameter models include locator, point, lifecycle, desktop click variants, hover, drag/drop, text input, key input, screenshot, UI snapshot, deterministic visibility/order assertions, and macOS AI assertion models.
+- macOS settings are grouped under `MacOSHarnessSettings` and are selected by `HarnessSettings.platform == "macos"`.
+- macOS observation is represented as `ui_snapshot`/`uiSnapshot`; it is distinct from Android `ui_tree` and Web `page_snapshot`.
+- macOS action parameter design follows desktop conventions shared with Windows where possible: public aliases use `clickOn`, `typeText`, `pressKey`, and `uiSnapshot`; coordinate actions are represented as explicit point payloads inside semantic actions rather than as separate public aliases.
+
 Future platform contracts:
 
 - New platforms must add their own parameter and settings blocks here before implementation.
@@ -179,7 +206,7 @@ Future platform contracts:
 - `_fsq.py`: FSQ AI Test DSL case metadata and case models.
 - `_tools.py`: Unified capability metadata, replay policy, invocation/result contracts, registry snapshot models, AgentTool definition/call/result models, and temporary backward-compatible diagnostic aliases.
 - `_ai_assertion.py`: Provider-backed platform AI assertion request/result models.
-- `_core.py`: Shared execution-core contract models for executable steps, strict replay refs, pure wait params, runner phases/events, harness context/results, artifact references, evidence manifests, and Android/Web parameter models used across `fsq`, `cli`, and `core`.
+- `_core.py`: Shared execution-core contract models for executable steps, strict replay refs, pure wait params, runner phases/events, harness context/results, artifact references, evidence manifests, and active platform parameter models used across `fsq`, `cli`, and `core`.
 - `_settings.py`: Settings value models.
 - `_skills.py`: Skill configuration and loaded skill bundle models.
 - `_report.py`: Report artifact and evidence models.
@@ -214,10 +241,13 @@ All custom exceptions inherit from `FsqAgentError`. Exceptions carry concise hum
 - `capture_evidence` on capability metadata is a typed cross-module execution contract for reviewed harness and driver capabilities whose default `EvidencePolicy()` should receive the standard screenshot and UI-tree evidence policy before the action, after the action, and on failure in both dynamic execution and strict replay. The flag defaults to `False` and is not user YAML configuration.
 - Android driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside driver parameter models.
 - Web driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside Web driver parameter models.
+- macOS driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, redaction state, and step identifiers stays on `ExecutableStep` rather than inside macOS driver parameter models.
 - `RuntimeSecretRef` is a pre-resolution FSQ replay reference, not a driver parameter value. Strict entry-layer code must resolve it to a string in memory and then validate the resolved payload against the appropriate Android driver parameter model before `core` invokes a harness.
 - `WaitMsParams` belongs to the inherited `wait_ms` CommonTool capability and its strict replay alias `waitMs`. It lets recorded strict cases replay pure waits without routing through Android gesture or driver APIs.
 - Web browser lifecycle is represented by explicit no-field parameter models `WebStartBrowserParams` and `WebCloseBrowserParams`; `navigate_to` is navigation on an already-started browser/page, not an implicit startup contract.
 - Web `page_snapshot` is a driver-owned, read-only observation capability with canonical alias `pageSnapshot`. It returns a Web page snapshot and must not reuse Android-oriented `ui_tree` or `uiTree` naming.
+- macOS `ui_snapshot` is a driver-owned, read-only observation capability with canonical alias `uiSnapshot`. It returns a bounded Appium Mac2 page-source/control-tree snapshot and must not reuse Android-oriented `ui_tree` or Web-oriented `page_snapshot` naming.
+- macOS `assert_elements_order` is a deterministic assertion contract. It compares resolved element center positions on the requested axis, returns assertion-oriented structured order metadata, and is distinct from AI visual assertions or raw `ui_snapshot` narration.
 - Pydantic is used at boundaries where external inputs, config files, agent output, and tool output enter the system.
 - The agent final output contract is model-owned. The runtime always uses the current `AgentFinalOutput` schema through OpenAI Agents SDK structured output. The schema version is emitted in the final output for traceability, but schema selection is not a user-facing configuration.
 - Task verification data is split from execution planning data. `key_actions` preserves caller-supplied or internally generated execution guidance, while `verification_goal` records the single final outcome the evidence-based verifier must check. Dynamic CLI inputs do not use typed assertion/operation verifier contracts or configurable verification modes.
@@ -233,7 +263,7 @@ All custom exceptions inherit from `FsqAgentError`. Exceptions carry concise hum
 - Runtime secrets are model-owned as an allowlist of environment variable names. This keeps credential values out of cases and config YAML while allowing inherited CommonTool providers to expose only explicitly approved values to the SDK runner and allowing recorded strict cases to reference approved names through `RuntimeSecretRef`. Secret values must be redacted from user-visible events, artifact output, model-facing previews, strict evidence, recording manifests, and final reports.
 - AgentTool request/result models are serializable and SDK-neutral. The tools module adapts AgentTools to OpenAI Agents SDK `FunctionTool` objects, but shared models must not import SDK types.
 - AI assertion request/result models are serializable execution evidence. They describe explicit authored platform assertions and provider-backed verdicts; they do not represent locator fallback, testcase mutation, recovery, or hidden model reasoning.
-- Harness and driver selection is model-owned through `HarnessSettings` and platform-specific nested settings for Android and Web. Runner-owned post-action delay defaults are model-owned through `ExecutionSettings.post_action_delay_seconds` because they apply to both dynamic and strict `StepRunner` execution, not provider behavior, dynamic recording logic, or FSQ command semantics. Concrete platform behavior is implemented by the entry/runtime layer and the `core` harness/driver modules so configuration parsing does not own execution logic.
+- Harness and driver selection is model-owned through `HarnessSettings` and platform-specific nested settings for Android, Web, Windows, and macOS. Runner-owned post-action delay defaults are model-owned through `ExecutionSettings.post_action_delay_seconds` because they apply to both dynamic and strict `StepRunner` execution, not provider behavior, dynamic recording logic, or FSQ command semantics. Concrete platform behavior is implemented by the entry/runtime layer and the `core` harness/driver modules so configuration parsing does not own execution logic.
 - fsq-agent does not expose MCP as a runtime capability path. Screenshots, UI trees, page sources, and other platform observations are represented by platform evidence artifacts or AgentTool artifact references rather than by MCP tool output.
 - Page knowledge is represented as a compact graph-like Markdown/JSON format owned by shared models so external generators can produce compatible files. `index.md` is a concise JSON index for page lookup; each `pages/*.md` file contains one JSON page node. Page identifiers are semantic descriptions without locators. Element locators are explicitly reference locators, not authoritative runtime truth.
 - Internal dynamic goal planning is represented separately from execution results. It produces ordered key actions from a goal/reference task and loaded page knowledge, but it does not execute UI actions or verify runtime state.

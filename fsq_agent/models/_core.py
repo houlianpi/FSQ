@@ -41,6 +41,7 @@ WebMouseButton: TypeAlias = Literal["left", "right", "middle"]
 WebWaitUntil: TypeAlias = Literal["commit", "domcontentloaded", "load", "networkidle"]
 WebWaitForState: TypeAlias = Literal["visible", "hidden", "attached", "detached"]
 WindowsMouseButton: TypeAlias = Literal["left", "right", "middle"]
+MacOSOrderDirection: TypeAlias = Literal["vertical", "horizontal"]
 
 
 class SourceRef(BaseModel):
@@ -704,6 +705,238 @@ WINDOWS_ACTION_DEFINITIONS: tuple[WindowsActionDefinition, ...] = (
 )
 WINDOWS_ACTION_DEFINITIONS_BY_NAME: dict[str, WindowsActionDefinition] = {
     definition.fsq_action_name: definition for definition in WINDOWS_ACTION_DEFINITIONS
+}
+
+
+class MacOSPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: int
+    y: int
+
+
+class MacOSLocator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accessibilityId: str | None = None
+    name: str | None = None
+    label: str | None = None
+    value: str | None = None
+    role: str | None = None
+    controlType: str | None = None
+    className: str | None = None
+    xpath: str | None = None
+    predicate: str | None = None
+    point: MacOSPoint | None = None
+
+    def has_value(self) -> bool:
+        if self.point is not None:
+            return True
+        return any(
+            isinstance(value, str) and value.strip()
+            for value in (
+                self.accessibilityId,
+                self.name,
+                self.label,
+                self.value,
+                self.role,
+                self.controlType,
+                self.className,
+                self.xpath,
+                self.predicate,
+            )
+        )
+
+
+class _MacOSTargetParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: str | None = None
+    locator: MacOSLocator | None = None
+    point: MacOSPoint | None = None
+
+    @model_validator(mode="after")
+    def _require_target(self) -> "_MacOSTargetParams":
+        if self._has_target_value():
+            return self
+        raise ValueError("requires target, non-empty locator, or point")
+
+    def _has_target_value(self) -> bool:
+        if isinstance(self.target, str) and self.target.strip():
+            return True
+        if self.locator is not None and self.locator.has_value():
+            return True
+        return self.point is not None
+
+
+class _MacOSElementRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: str | None = None
+    locator: MacOSLocator | None = None
+
+    @model_validator(mode="after")
+    def _require_element_ref(self) -> "_MacOSElementRef":
+        if isinstance(self.target, str) and self.target.strip():
+            return self
+        if self.locator is not None and self.locator.has_value():
+            return self
+        raise ValueError("requires target or non-empty locator")
+
+
+class MacOSLaunchAppParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bundle_id: str | None = None
+    app_path: str | None = None
+    arguments: list[str] | None = None
+    environment: dict[str, str] | None = None
+
+
+class MacOSKillAppParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bundle_id: str | None = None
+    close_session: bool | None = None
+
+
+class MacOSClickOnParams(_MacOSTargetParams):
+    modifiers: list[str] | None = None
+
+
+class MacOSDoubleClickOnParams(_MacOSTargetParams):
+    modifiers: list[str] | None = None
+
+
+class MacOSRightClickOnParams(_MacOSTargetParams):
+    modifiers: list[str] | None = None
+
+
+class MacOSHoverOnParams(_MacOSTargetParams):
+    duration_ms: int | None = Field(default=None, ge=1)
+
+
+class MacOSTypeTextParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    target: str | None = None
+    locator: MacOSLocator | None = None
+    point: MacOSPoint | None = None
+    clear: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_text(self) -> "MacOSTypeTextParams":
+        if isinstance(self.text, str):
+            return self
+        raise ValueError("requires text")
+
+
+class MacOSPressKeyParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    modifiers: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _require_key(self) -> "MacOSPressKeyParams":
+        if self.key.strip():
+            return self
+        raise ValueError("requires non-empty key")
+
+
+class MacOSDragEndpoint(_MacOSTargetParams):
+    pass
+
+
+class MacOSDragToParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: MacOSDragEndpoint
+    destination: MacOSDragEndpoint
+    duration_ms: int | None = Field(default=None, ge=1)
+
+
+class MacOSTakeScreenshotParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_screen: bool | None = None
+
+
+class MacOSUiSnapshotParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_depth: int | None = Field(default=None, ge=1)
+    include_attributes: bool | None = None
+
+
+class MacOSAssertVisibleParams(_MacOSTargetParams):
+    optional: bool | None = None
+
+
+class MacOSAssertElementsOrderParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    elements: list[_MacOSElementRef] = Field(min_length=2)
+    direction: MacOSOrderDirection = "vertical"
+    expected_order: list[int] | None = None
+    tolerance: float | None = Field(default=None, ge=0)
+    require_all: bool = True
+
+    @model_validator(mode="after")
+    def _validate_expected_order(self) -> "MacOSAssertElementsOrderParams":
+        if self.expected_order is None:
+            return self
+        expected = self.expected_order
+        if len(expected) != len(self.elements):
+            raise ValueError("expected_order length must match elements length")
+        if sorted(expected) != list(range(len(self.elements))):
+            raise ValueError("expected_order must contain each zero-based element index exactly once")
+        return self
+
+
+class MacOSAssertWithAIParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str
+    optional: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_prompt(self) -> "MacOSAssertWithAIParams":
+        if self.prompt.strip():
+            return self
+        raise ValueError("requires non-empty prompt")
+
+
+@dataclass(frozen=True)
+class MacOSActionDefinition:
+    fsq_action_name: str
+    driver_method: str
+    params_model: type[BaseModel]
+    step_kind: ExecutableStepKind
+    owner: Literal["driver", "platform", "harness"] = "driver"
+    strict: bool = True
+    capture_evidence: bool = False
+
+
+MACOS_ACTION_DEFINITIONS: tuple[MacOSActionDefinition, ...] = (
+    MacOSActionDefinition("launchApp", "launch_app", MacOSLaunchAppParams, "setup", capture_evidence=True),
+    MacOSActionDefinition("killApp", "kill_app", MacOSKillAppParams, "teardown"),
+    MacOSActionDefinition("clickOn", "click_on", MacOSClickOnParams, "action", capture_evidence=True),
+    MacOSActionDefinition("doubleClickOn", "double_click_on", MacOSDoubleClickOnParams, "action", capture_evidence=True),
+    MacOSActionDefinition("rightClickOn", "right_click_on", MacOSRightClickOnParams, "action", capture_evidence=True),
+    MacOSActionDefinition("typeText", "type_text", MacOSTypeTextParams, "action", capture_evidence=True),
+    MacOSActionDefinition("pressKey", "press_key", MacOSPressKeyParams, "action", capture_evidence=True),
+    MacOSActionDefinition("hoverOn", "hover_on", MacOSHoverOnParams, "action"),
+    MacOSActionDefinition("dragTo", "drag_to", MacOSDragToParams, "action", capture_evidence=True),
+    MacOSActionDefinition("takeScreenshot", "take_screenshot", MacOSTakeScreenshotParams, "observation"),
+    MacOSActionDefinition("uiSnapshot", "ui_snapshot", MacOSUiSnapshotParams, "observation"),
+    MacOSActionDefinition("assertVisible", "assert_visible", MacOSAssertVisibleParams, "assertion"),
+    MacOSActionDefinition("assertElementsOrder", "assert_elements_order", MacOSAssertElementsOrderParams, "assertion"),
+    MacOSActionDefinition("assertWithAI", "assert_with_ai", MacOSAssertWithAIParams, "assertion"),
+)
+MACOS_ACTION_DEFINITIONS_BY_NAME: dict[str, MacOSActionDefinition] = {
+    definition.fsq_action_name: definition for definition in MACOS_ACTION_DEFINITIONS
 }
 
 

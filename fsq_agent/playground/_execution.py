@@ -14,7 +14,18 @@ from pydantic import ValidationError
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings
-from fsq_agent.core import AndroidHarness, ArtifactStore, EvidenceRecorder, PlaywrightWebDriver, StepRunner, StepSequenceRunner, UiAutomator2AndroidDriver, WebHarness
+from fsq_agent.core import (
+	AndroidHarness,
+	AppiumMac2Driver,
+	ArtifactStore,
+	EvidenceRecorder,
+	MacOSHarness,
+	PlaywrightWebDriver,
+	StepRunner,
+	StepSequenceRunner,
+	UiAutomator2AndroidDriver,
+	WebHarness,
+)
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, RuntimeSecretRef, Task, TaskResult, VerificationResult
 from fsq_agent.playground._recording import record_dynamic_result
@@ -285,7 +296,7 @@ async def _run_agent_task_async(
 	task: Task,
 	handle: PlaygroundExecutionHandle | None = None,
 ) -> TaskResult:
-	harness_factory = _web_preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform == "web" else None
+	harness_factory = _preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform in {"web", "macos"} else None
 	agent = FsqAgent.from_settings(settings, harness_factory=harness_factory) if harness_factory is not None else FsqAgent.from_settings(settings)
 	return await agent.run(
 		task,
@@ -324,7 +335,7 @@ def _run_strict_case_yaml(
 		registry_snapshot,
 	)
 	harness = _build_strict_harness(settings, case, run_dir, requires_ai_assertion)
-	if handle is not None and settings.harness.platform == "web":
+	if handle is not None and settings.harness.platform in {"web", "macos"}:
 		handle.bind_harness(harness)
 	cancellable_harness = _CancellableHarness(harness, state, request_id)
 	artifact = _run_strict_core_steps(
@@ -551,16 +562,25 @@ def _build_strict_harness(settings: Settings, case, run_dir: Path, requires_ai_a
 		)
 	if settings.harness.platform == "web":
 		return _build_web_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
+	if settings.harness.platform == "macos":
+		return _build_macos_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
 	raise ValueError(f"Unsupported harness platform: {settings.harness.platform}")
 
 
-def _web_preview_harness_factory(settings: Settings, handle: PlaygroundExecutionHandle):
+def _preview_harness_factory(settings: Settings, handle: PlaygroundExecutionHandle):
 	def factory(run_id: str):
-		harness = _build_web_harness(
-			settings,
-			Path(settings.output.runs_dir) / run_id,
-			requires_ai_assertion=True,
-		)
+		if settings.harness.platform == "macos":
+			harness = _build_macos_harness(
+				settings,
+				Path(settings.output.runs_dir) / run_id,
+				requires_ai_assertion=True,
+			)
+		else:
+			harness = _build_web_harness(
+				settings,
+				Path(settings.output.runs_dir) / run_id,
+				requires_ai_assertion=True,
+			)
 		handle.bind_harness(harness)
 		return harness
 
@@ -577,6 +597,22 @@ def _build_web_harness(settings: Settings, run_dir: Path, *, requires_ai_asserti
 			headless=web.headless,
 			base_url=web.base_url,
 			viewport=viewport,
+		),
+		artifact_store=ArtifactStore(run_dir=run_dir),
+		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
+		runtime_secret_settings=settings.runtime_secrets,
+	)
+
+
+def _build_macos_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> MacOSHarness:
+	macos = settings.harness.macos
+	return MacOSHarness(
+		driver=AppiumMac2Driver(
+			server_url=macos.appium_server_url or "",
+			bundle_id=macos.bundle_id,
+			app_path=macos.app_path,
+			page_source_max_depth=macos.page_source_max_depth,
+			action_timeout_seconds=macos.action_timeout_seconds,
 		),
 		artifact_store=ArtifactStore(run_dir=run_dir),
 		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,

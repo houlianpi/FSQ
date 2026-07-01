@@ -190,6 +190,93 @@ harness:
     assert settings.harness.web.browser_executable_path == chrome_path
 
 
+def test_load_settings_accepts_macos_harness_settings_and_env_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_path = tmp_path / "Example.app"
+    app_path.mkdir()
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
+    monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
+    monkeypatch.setenv("FSQ_MACOS_APP_PATH", str(app_path))
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+    page_source_max_depth: 8
+    action_timeout_seconds: 15
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    validate_runtime_settings(settings)
+    validate_strict_core_settings(settings)
+    assert settings.harness.platform == "macos"
+    assert settings.harness.macos.backend == "appium_mac2"
+    assert settings.harness.macos.page_source_max_depth == 8
+    assert settings.harness.macos.action_timeout_seconds == 15
+    assert settings.harness.macos.appium_server_url == "http://127.0.0.1:4723"
+    assert settings.harness.macos.bundle_id == "com.example.MacApp"
+    assert settings.harness.macos.app_path == app_path
+
+
+def test_load_settings_rejects_macos_env_backed_values_in_yaml(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+    appium_server_url: http://127.0.0.1:4723
+    bundle_id: com.example.MacApp
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="Invalid configuration"):
+        load_settings(config_path)
+
+
+def test_validate_runtime_settings_rejects_missing_macos_env_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FSQ_MACOS_APPIUM_SERVER_URL", raising=False)
+    monkeypatch.delenv("FSQ_MACOS_BUNDLE_ID", raising=False)
+    monkeypatch.delenv("FSQ_MACOS_APP_PATH", raising=False)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+""",
+        ),
+        encoding="utf-8",
+    )
+    settings = load_settings(config_path)
+
+    with pytest.raises(ConfigurationError, match="Appium server URL"):
+        validate_runtime_settings(settings)
+
+    settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
+    with pytest.raises(ConfigurationError, match="app identity"):
+        validate_runtime_settings(settings)
+
+
 def test_validate_runtime_settings_rejects_missing_web_browser_executable_path(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
