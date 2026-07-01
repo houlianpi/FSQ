@@ -70,6 +70,14 @@ Web playground behavior:
 - Web dynamic and strict execution construct `WebHarness`/`PlaywrightWebDriver` without launching a browser; `startBrowser` and `closeBrowser` remain explicit task/FSQ capabilities and are not injected by playground routes.
 - Web screenshot preview uses the active Web harness/driver screenshot path when a page is started and returns a structured unavailable/error response before `startBrowser` or after `closeBrowser`.
 
+Windows playground behavior:
+
+- Android session/setup endpoints return structured unavailable responses when Windows is active.
+- Windows runtime info reports backend, pywinauto backend kind, app path configured state, window title regex presence, launch-args count, busy state, and last-run summary.
+- Windows dynamic and strict execution construct `WindowsHarness`/`PywinautoWindowsDriver` without launching the app during route setup, registry bootstrap, or YAML parsing; `launchApp` and `killApp` remain explicit task/FSQ capabilities and are not injected by playground routes.
+- Windows strict execution parses aliases such as `launchApp`, `clickOn`, `typeText`, `pressKey`, `uiSnapshot`, `assertVisible`, and `assertWithAI` through the Windows registry snapshot.
+- Windows screenshot preview uses the active Windows harness/driver screenshot path when a pywinauto window is available and returns a structured unavailable/error response before `launchApp` or after app cleanup.
+
 macOS playground behavior:
 
 - Android session/setup endpoints return structured unavailable responses when macOS is active.

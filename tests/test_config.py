@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from fsq_agent.config import load_settings, validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.config import load_platform_settings, load_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.models import ConfigurationError
 
 
@@ -23,6 +23,12 @@ def _chrome_executable(tmp_path: Path) -> Path:
     chrome_path = tmp_path / "chrome.exe"
     chrome_path.write_text("", encoding="utf-8")
     return chrome_path
+
+
+def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
+    app_path = tmp_path / name
+    app_path.write_text("", encoding="utf-8")
+    return app_path
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +74,55 @@ openai_agents:
     assert settings.agent_context.knowledge.root_dir == tmp_path / "knowledge"
     assert settings.agent_context.knowledge.skills.dir == tmp_path / "knowledge" / "skills"
     assert settings.agent_context.knowledge.pre_plan.dir is None
+
+
+def test_load_platform_settings_loads_committed_platform_preset(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.web.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: web
+  web:
+    backend: playwright
+    base_url: https://www.bing.com
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_platform_settings("web")
+
+    assert settings.harness.platform == "web"
+    assert settings.harness.web.backend == "playwright"
+    assert settings.harness.web.base_url == "https://www.bing.com"
+
+
+def test_load_platform_settings_rejects_missing_platform_preset() -> None:
+    with pytest.raises(ConfigurationError, match="Platform configuration file is missing") as exc_info:
+        load_platform_settings("windows")
+
+    assert exc_info.value.context == {"platform": "windows", "path": "config.windows.yaml"}
+
+
+def test_load_platform_settings_rejects_platform_mismatch(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.web.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: android
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="does not match requested platform") as exc_info:
+        load_platform_settings("web")
+
+    assert exc_info.value.context == {"platform": "web", "configured_platform": "android"}
 
 
 def test_load_settings_defaults_workspace_to_config_directory(tmp_path: Path) -> None:
@@ -188,6 +243,120 @@ harness:
     validate_runtime_settings(settings)
     assert settings.harness.web.channel == "chrome"
     assert settings.harness.web.browser_executable_path == chrome_path
+
+
+def test_load_settings_accepts_windows_env_backed_adapter_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_path = _windows_executable(tmp_path)
+    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
+    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "win32")
+    monkeypatch.setenv("FSQ_WINDOWS_WINDOW_TITLE_RE", ".*Legacy App")
+    monkeypatch.setenv(
+        "FSQ_WINDOWS_LAUNCH_ARGS",
+        r'--flag "two words" --profile="C:\Temp\Edge Profile" --kv=value',
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+    backend_kind: uia
+    app_path: C:/Old/app.exe
+    window_title_re: Old Title
+    launch_args:
+      - --old
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    validate_runtime_settings(settings)
+    assert settings.harness.platform == "windows"
+    assert settings.harness.windows.backend == "pywinauto"
+    assert settings.harness.windows.app_path == app_path
+    assert settings.harness.windows.backend_kind == "win32"
+    assert settings.harness.windows.window_title_re == ".*Legacy App"
+    assert settings.harness.windows.launch_args == [
+        "--flag",
+        "two words",
+        r"--profile=C:\Temp\Edge Profile",
+        "--kv=value",
+    ]
+
+
+def test_load_settings_rejects_invalid_windows_backend_kind_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_path = _windows_executable(tmp_path)
+    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
+    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "uia2")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_BACKEND_KIND"):
+        load_settings(config_path)
+
+
+def test_load_settings_rejects_invalid_windows_launch_args_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_path = _windows_executable(tmp_path)
+    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
+    monkeypatch.setenv("FSQ_WINDOWS_LAUNCH_ARGS", '"unterminated')
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_LAUNCH_ARGS"):
+        load_settings(config_path)
+
+
+def test_validate_runtime_settings_rejects_missing_windows_app_path_env(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: windows
+  windows:
+    backend: pywinauto
+""",
+        ),
+        encoding="utf-8",
+    )
+    settings = load_settings(config_path)
+
+    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_APP_PATH"):
+        validate_runtime_settings(settings)
 
 
 def test_load_settings_accepts_macos_harness_settings_and_env_values(

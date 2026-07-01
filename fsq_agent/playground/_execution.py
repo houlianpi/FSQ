@@ -21,10 +21,12 @@ from fsq_agent.core import (
 	EvidenceRecorder,
 	MacOSHarness,
 	PlaywrightWebDriver,
+	PywinautoWindowsDriver,
 	StepRunner,
 	StepSequenceRunner,
 	UiAutomator2AndroidDriver,
 	WebHarness,
+	WindowsHarness,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, RuntimeSecretRef, Task, TaskResult, VerificationResult
@@ -93,7 +95,6 @@ def start_dynamic_goal_execution(
 	thread = threading.Thread(
 		target=_run_dynamic_task_thread,
 		kwargs={
-		"handle": handle,
 		"settings": settings,
 		"state": state,
 		"request_id": request_id,
@@ -274,7 +275,7 @@ async def _run_dynamic_task_async(
 	except asyncio.CancelledError:
 		state.request_cancel(request_id)
 		raise
-	except PlaygroundTaskCancelled as exc:
+	except PlaygroundTaskCancelled:
 		state.request_cancel(request_id)
 	except BaseException as exc:  # noqa: BLE001 - background failures must be visible through progress state.
 		state.fail_task(request_id, exc)
@@ -296,7 +297,7 @@ async def _run_agent_task_async(
 	task: Task,
 	handle: PlaygroundExecutionHandle | None = None,
 ) -> TaskResult:
-	harness_factory = _preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform in {"web", "macos"} else None
+	harness_factory = _preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform in {"web", "windows", "macos"} else None
 	agent = FsqAgent.from_settings(settings, harness_factory=harness_factory) if harness_factory is not None else FsqAgent.from_settings(settings)
 	return await agent.run(
 		task,
@@ -335,7 +336,7 @@ def _run_strict_case_yaml(
 		registry_snapshot,
 	)
 	harness = _build_strict_harness(settings, case, run_dir, requires_ai_assertion)
-	if handle is not None and settings.harness.platform in {"web", "macos"}:
+	if handle is not None and settings.harness.platform in {"web", "windows", "macos"}:
 		handle.bind_harness(harness)
 	cancellable_harness = _CancellableHarness(harness, state, request_id)
 	artifact = _run_strict_core_steps(
@@ -562,6 +563,8 @@ def _build_strict_harness(settings: Settings, case, run_dir: Path, requires_ai_a
 		)
 	if settings.harness.platform == "web":
 		return _build_web_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
+	if settings.harness.platform == "windows":
+		return _build_windows_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
 	if settings.harness.platform == "macos":
 		return _build_macos_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
 	raise ValueError(f"Unsupported harness platform: {settings.harness.platform}")
@@ -571,6 +574,12 @@ def _preview_harness_factory(settings: Settings, handle: PlaygroundExecutionHand
 	def factory(run_id: str):
 		if settings.harness.platform == "macos":
 			harness = _build_macos_harness(
+				settings,
+				Path(settings.output.runs_dir) / run_id,
+				requires_ai_assertion=True,
+			)
+		elif settings.harness.platform == "windows":
+			harness = _build_windows_harness(
 				settings,
 				Path(settings.output.runs_dir) / run_id,
 				requires_ai_assertion=True,
@@ -597,6 +606,21 @@ def _build_web_harness(settings: Settings, run_dir: Path, *, requires_ai_asserti
 			headless=web.headless,
 			base_url=web.base_url,
 			viewport=viewport,
+		),
+		artifact_store=ArtifactStore(run_dir=run_dir),
+		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
+		runtime_secret_settings=settings.runtime_secrets,
+	)
+
+
+def _build_windows_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> WindowsHarness:
+	windows = settings.harness.windows
+	return WindowsHarness(
+		driver=PywinautoWindowsDriver(
+			app_path=windows.app_path,
+			backend_kind=windows.backend_kind,
+			window_title_re=windows.window_title_re,
+			launch_args=windows.launch_args,
 		),
 		artifact_store=ArtifactStore(run_dir=run_dir),
 		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,

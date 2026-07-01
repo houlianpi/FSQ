@@ -15,15 +15,17 @@ from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.config import Settings, load_settings, validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, load_platform_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
     AndroidHarness,
     AppiumMac2Driver,
     ArtifactStore,
     MacOSHarness,
     PlaywrightWebDriver,
+    PywinautoWindowsDriver,
     UiAutomator2AndroidDriver,
     WebHarness,
+    WindowsHarness,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task
@@ -33,6 +35,7 @@ from fsq_agent.report import resolve_report_path
 
 
 logger = logging.getLogger(__name__)
+PLATFORM_CHOICE = click.Choice(["android", "web", "windows", "macos"])
 
 
 @click.group()
@@ -41,11 +44,11 @@ def main() -> None:
 
 
 @main.command()
-@click.option("--config", "config_path", type=click.Path(exists=False, dir_okay=False), default=None)
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
-def init(config_path: str | None, workspace_path: str | None) -> None:
+def init(platform: str, workspace_path: str | None) -> None:
     try:
-        settings = load_settings(config_path, workspace_path)
+        settings = load_platform_settings(platform, workspace_path)
         logger.info("Initialized fsq-agent workspace: %s", settings.workspace.root_dir)
         logger.info("Output root: %s", settings.output.root_dir)
         _log_readiness("LLM run", lambda: validate_runtime_settings(settings))
@@ -57,7 +60,7 @@ def init(config_path: str | None, workspace_path: str | None) -> None:
 
 
 @main.command()
-@click.option("--config", "config_path", type=click.Path(exists=False, dir_okay=False), default=None)
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--strict", is_flag=True, default=False, show_default=True)
 @click.option("--goal", default=None)
@@ -69,7 +72,7 @@ def init(config_path: str | None, workspace_path: str | None) -> None:
 @click.option("--record-on-failure", is_flag=True, default=False, show_default=True)
 @click.option("--tracing/--no-tracing", "tracing", default=None)
 def run(
-    config_path: str | None,
+    platform: str,
     workspace_path: str | None,
     strict: bool,
     goal: str | None,
@@ -90,7 +93,7 @@ def run(
             record=record,
             record_on_failure=record_on_failure,
         )
-        settings = load_settings(config_path, workspace_path)
+        settings = load_platform_settings(platform, workspace_path)
         if tracing is not None:
             settings.openai_agents.tracing_enabled = tracing
         if strict:
@@ -114,13 +117,13 @@ def run(
 
 
 @main.command()
-@click.option("--config", "config_path", type=click.Path(exists=False, dir_okay=False), default=None)
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--run-id", required=True)
 @click.option("--format", "report_format", type=click.Choice(["markdown", "json"]), default="markdown")
-def report(config_path: str | None, workspace_path: str | None, run_id: str, report_format: str) -> None:
+def report(platform: str, workspace_path: str | None, run_id: str, report_format: str) -> None:
     try:
-        settings = load_settings(config_path, workspace_path)
+        settings = load_platform_settings(platform, workspace_path)
         path = resolve_report_path(Path(settings.output.runs_dir), run_id, report_format)  # type: ignore[arg-type]
         click.echo(path.read_text(encoding="utf-8"), nl=False)
     except FsqAgentError as exc:
@@ -129,20 +132,20 @@ def report(config_path: str | None, workspace_path: str | None, run_id: str, rep
 
 
 @main.command()
-@click.option("--config", "config_path", type=click.Path(exists=False, dir_okay=False), default=None)
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8765, show_default=True, type=click.IntRange(1, 65535))
 @click.option("--open-browser/--no-open-browser", "open_browser", default=True, show_default=True)
 def playground(
-    config_path: str | None,
+    platform: str,
     workspace_path: str | None,
     host: str,
     port: int,
     open_browser: bool,
 ) -> None:
     try:
-        settings = load_settings(config_path, workspace_path)
+        settings = load_platform_settings(platform, workspace_path)
         run_playground(
             settings,
             PlaygroundServerOptions(host=host, port=port, open_browser=open_browser),
@@ -391,11 +394,13 @@ def _build_strict_harness(settings: Settings, case: FsqCase, run_dir: Path, requ
         return _build_strict_android_harness(settings, _strict_case_app_id(settings, case), run_dir, requires_ai_assertion)
     if settings.harness.platform == "web":
         return _build_strict_web_harness(settings, run_dir, requires_ai_assertion)
+    if settings.harness.platform == "windows":
+        return _build_strict_windows_harness(settings, run_dir, requires_ai_assertion)
     if settings.harness.platform == "macos":
         return _build_strict_macos_harness(settings, run_dir, requires_ai_assertion)
     raise ConfigurationError(
         "Unsupported harness platform.",
-        context={"platform": settings.harness.platform, "supported": ["android", "web", "macos"]},
+        context={"platform": settings.harness.platform, "supported": ["android", "web", "windows", "macos"]},
     )
 
 
@@ -422,6 +427,23 @@ def _build_strict_web_harness(settings: Settings, run_dir: Path, requires_ai_ass
     )
     evaluator = build_ai_assertion_evaluator(settings) if requires_ai_assertion else None
     return WebHarness(
+        driver=driver,
+        artifact_store=ArtifactStore(run_dir=run_dir),
+        ai_assertion_evaluator=evaluator,
+        runtime_secret_settings=settings.runtime_secrets,
+    )
+
+
+def _build_strict_windows_harness(settings: Settings, run_dir: Path, requires_ai_assertion: bool = False) -> WindowsHarness:
+    windows = settings.harness.windows
+    driver = PywinautoWindowsDriver(
+        app_path=windows.app_path,
+        backend_kind=windows.backend_kind,
+        window_title_re=windows.window_title_re,
+        launch_args=windows.launch_args,
+    )
+    evaluator = build_ai_assertion_evaluator(settings) if requires_ai_assertion else None
+    return WindowsHarness(
         driver=driver,
         artifact_store=ArtifactStore(run_dir=run_dir),
         ai_assertion_evaluator=evaluator,

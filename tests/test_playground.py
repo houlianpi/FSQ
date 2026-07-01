@@ -1100,6 +1100,89 @@ platform: web
     assert captured["steps"][-1].metadata["authored_action_name"] == "closeBrowser"
 
 
+def test_playground_strict_windows_yaml_execution_uses_windows_harness(tmp_path: Path, monkeypatch) -> None:
+    app_path = tmp_path / "windows-app.exe"
+    app_path.write_text("", encoding="utf-8")
+    settings = Settings(
+        harness={
+            "platform": "windows",
+            "windows": {
+                "backend": "pywinauto",
+                "backend_kind": "win32",
+                "window_title_re": ".*Legacy App",
+                "launch_args": ["--flag", "two words"],
+            },
+        }
+    )
+    settings.harness.windows.app_path = app_path
+    settings.cases.dir = tmp_path / "cases"
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "strict_windows.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Strict Windows Case
+platform: windows
+---
+- launchApp
+- uiSnapshot
+- killApp
+""",
+        encoding="utf-8",
+    )
+    state = PlaygroundState()
+    request_id = state.start_task("Strict Windows")
+    captured = {}
+
+    class FakeWindowsDriver:
+        def __init__(self, **kwargs):
+            captured["driver"] = kwargs
+
+    def fake_run_strict_core_steps(**kwargs):
+        captured["steps"] = kwargs["steps"]
+        captured["registry"] = kwargs["registry"]
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "core-report.md"
+        json_path = output_dir / "core-report.json"
+        manifest_path = output_dir / "evidence-manifest.json"
+        report_path.write_text("report", encoding="utf-8")
+        json_path.write_text('{"summary":{"status":"passed","failed_steps":0}}', encoding="utf-8")
+        manifest_path.write_text("{}", encoding="utf-8")
+        return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
+
+    monkeypatch.setattr("fsq_agent.playground._execution.PywinautoWindowsDriver", FakeWindowsDriver)
+    monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
+
+    _run_dynamic_task(
+        settings=settings,
+        state=state,
+        request_id=request_id,
+        goal=None,
+        case_yaml_path=None,
+        strict_case_yaml_path="strict_windows.codex.yaml",
+        device_id=None,
+        record=True,
+        record_on_failure=True,
+    )
+
+    progress = state.get_task(request_id)
+    assert progress is not None
+    assert progress["result"]["status"] == "success"
+    assert captured["driver"] == {
+        "app_path": app_path,
+        "backend_kind": "win32",
+        "window_title_re": ".*Legacy App",
+        "launch_args": ["--flag", "two words"],
+    }
+    assert captured["registry"].resolve("uiSnapshot") is not None
+    assert captured["registry"].resolve("pageSnapshot") is None
+    assert [step.action_name for step in captured["steps"]] == ["launch_app", "ui_snapshot", "kill_app"]
+    assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"
+    assert captured["steps"][-1].metadata["authored_action_name"] == "killApp"
+
+
 def test_playground_strict_yaml_runs_outside_async_event_loop(monkeypatch) -> None:
     settings = Settings()
     state = PlaygroundState()

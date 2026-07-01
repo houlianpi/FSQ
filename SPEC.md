@@ -47,16 +47,17 @@ Dynamic LLM `--case-yaml` and `--case-dir` runs read authored case files as raw 
 
 ## Runtime Configuration Defaults
 
-Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Azure OpenAI remains available only when config explicitly selects `openai_agents.provider: azure_openai`; Azure endpoint, deployment/model, and API key values come from fixed environment variable names rather than YAML fields. YAML config owns stable, shareable platform policy and defaults such as provider selection, tracing default, harness platform/backend, non-sensitive browser/base URL policy, execution post-action delay defaults, runtime secret allowlist, agent context knowledge-root resources, workspace root, cases root, and output root. Local user values that must be set by an operator, vary per machine, contain secrets, or point to local runtime targets belong in process environment or `.env`; examples include Android app id, Android device serial, Web browser executable path, macOS Appium server URL, macOS bundle id or app path, user-local desktop executable paths, account secrets, and Azure provider values.
+Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Azure OpenAI remains available only when config explicitly selects `openai_agents.provider: azure_openai`; Azure endpoint, deployment/model, and API key values come from fixed environment variable names rather than YAML fields. Repository-owned platform YAML presets are committed as `config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, and `config.macos.yaml`; `config.example.yaml` is not a runtime preset. Each platform preset owns stable, shareable platform policy and defaults such as provider selection, tracing default, harness platform/backend, non-sensitive browser/base URL policy, execution post-action delay defaults, runtime secret allowlist names, agent context knowledge-root resources, workspace root, cases root, and output root. Local user values that must be set by an operator, vary per machine, contain secrets, or point to local runtime targets belong in process environment or `.env`; examples include Android app id, Android device serial, Web browser executable path, Windows application executable path, Windows pywinauto adapter mode, Windows launched-window title matcher, Windows default launch arguments, macOS Appium server URL, macOS bundle id or app path, account secrets, and Azure provider values.
 
 ## Platform Blocks
 
 Shared platform rules:
 
 - `harness.platform` selects exactly one active platform for normal dynamic, strict, and playground execution.
+- CLI entry points select the active platform with `--platform android|web|windows|macos`; config loading maps that platform id to the corresponding repository-owned `config.<platform>.yaml` preset before validation.
 - Entry layers build a platform-selected capability registry: inherited CommonTool capabilities plus only the active platform's PlatformTool capabilities.
 - `StepRunner`, `StepSequenceRunner`, evidence, recording, report generation, and FSQ parsing stay platform-neutral and consume capability metadata rather than platform action-name branches.
-- YAML config owns stable platform defaults and policy; environment variables own required operator-provided values, local paths, local server URLs, target identifiers, credentials, and other machine-specific values. Compatibility shims for older YAML-owned local paths must be explicit in module SPECs and examples should prefer the env-owned shape.
+- Repository-owned platform YAML presets own stable platform defaults and policy; environment variables own required operator-provided values, local paths, local server URLs, target identifiers, credentials, and other machine-specific values. Compatibility shims for older YAML-owned local paths must be explicit in module SPECs and examples should prefer the env-owned shape.
 - Platform-specific behavior belongs in platform parameter models, action catalogs, harnesses, drivers, config blocks, and configured skill Markdown.
 
 Android platform block:
@@ -78,6 +79,15 @@ Web platform block:
 - Observation artifact: `page_snapshot` with alias `pageSnapshot`; Web must not expose Android `ui_tree`/`uiTree` naming.
 - First-batch action surface follows Playwright MCP core automation semantics: snapshot-first targets, semantic actions, screenshots as observation/evidence, and unsafe/opt-in capability families deferred to later SPEC-reviewed groups.
 - Harness skill: `web-harness.md`.
+
+Windows platform block:
+
+- Platform id: `windows`.
+- First backend: `pywinauto`.
+- Operator-local values come from environment variables: `FSQ_WINDOWS_APP_PATH`, `FSQ_WINDOWS_BACKEND_KIND`, `FSQ_WINDOWS_WINDOW_TITLE_RE`, and `FSQ_WINDOWS_LAUNCH_ARGS`. YAML owns only stable Windows platform/backend selection. `FSQ_WINDOWS_BACKEND_KIND` selects pywinauto's UI automation mode (`uia` by default, or `win32`) and is not a second FSQ Windows backend.
+- First-batch action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `assertVisible`, `uiSnapshot`, and `assertWithAI`.
+- Observation artifact: `ui_snapshot` with alias `uiSnapshot`; Windows must not expose Android `ui_tree`/`uiTree` or Web `page_snapshot`/`pageSnapshot` naming.
+- Harness skill: `windows-harness.md`.
 
 macOS platform block:
 

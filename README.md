@@ -4,260 +4,156 @@ fsq-agent is a goal-driven automated testing agent for FSQ YAML-guided tasks. It
 
 The project follows spec-driven development. See root [SPEC.md](SPEC.md) and each relevant module `SPEC.md` before changing public interfaces.
 
-## Quick Start
+## Platform Setup
 
-For Android runs:
+Platform defaults are maintained by the repository for now. For normal local use, copy the example environment file, edit `.env`, choose the target platform in the CLI command, and run.
 
-```bash
-python -m pip install -e ".[dev,android]"
+On Windows PowerShell:
+
+```powershell
 copy .env.example .env
-fsq-agent init --config config.example.yaml
-fsq-agent run --config config.example.yaml --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
-fsq-agent run --config config.example.yaml --case-yaml cases/android/example.codex.yaml
-fsq-agent run --config config.example.yaml --strict --case-yaml cases/android/example.codex.yaml
-fsq-agent report --config config.example.yaml --run-id RUN_ID --format markdown
 ```
 
-For Web runs with your locally installed Chrome:
+On macOS/Linux shells:
 
 ```bash
-python -m pip install -e ".[dev,web]"
-copy .env.example .env
-fsq-agent init --config config.local.web.yaml
-fsq-agent run --config config.local.web.yaml --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
-```
-
-For Windows desktop runs with a locally installed application:
-
-```bash
-python -m pip install -e ".[dev,windows]"
-copy .env.example .env
-fsq-agent init --config config.local.windows.yaml
-fsq-agent run --config config.local.windows.yaml --goal "Launch Edge, search for Windows, and verify the results page is visible."
-```
-
-For macOS runs with Appium Mac2:
-
-Before running fsq-agent, set up Appium on the Mac that will be automated and start the Appium server yourself. fsq-agent connects to the configured server URL; it does not install Appium, install the Mac2 driver, or start the server process.
-
-```bash
-python -m pip install -e ".[dev,macos]"
 cp .env.example .env
-# Example Appium setup, run before fsq-agent commands if not already configured:
-# npm install -g appium
-# appium driver install mac2
-# appium --address 127.0.0.1 --port 4723
-fsq-agent init --config config.local.macos.yaml
-fsq-agent run --config config.local.macos.yaml --goal "Open the configured macOS app, inspect the visible window, and verify the expected controls are visible."
-fsq-agent run --config config.local.macos.yaml --strict --case-yaml cases/macos/example.codex.yaml
 ```
 
-## Runtime Configuration
+### Android
 
-For Android runs, install the Android extra, connect an emulator/device, and keep only the platform/backend in config:
+Install the Android extra and connect an emulator or device with ADB:
 
-```yaml
-harness:
-  platform: android
-  android:
-    backend: uiautomator2
-
-execution:
-  post_action_delay_seconds:
-    platform: 1.0
-    common: 0.0
+```powershell
+python -m pip install -e ".[dev,android]"
 ```
 
-Set Android user values in `.env`:
+Set Android values in `.env`:
 
 ```dotenv
 FSQ_ANDROID_APP_ID=com.microsoft.emmx
-FSQ_ANDROID_SERIAL=
+FSQ_ANDROID_SERIAL=emulator-5554
 ```
 
-`FSQ_ANDROID_APP_ID` is required for dynamic LLM runs and for strict cases that do not provide `appId` in FSQ case metadata. Set `FSQ_ANDROID_SERIAL` to an `adb devices` serial when more than one device is connected; otherwise leave it blank.
+Leave `FSQ_ANDROID_SERIAL` blank when only one Android target is connected.
 
-For Web runs, install the Web extra, set the browser executable path in `.env`, and select the Web platform:
+Start Android runs:
+
+```powershell
+fsq-agent init --platform android
+fsq-agent run --platform android --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
+```
+
+### Web With Local Edge
+
+Install the Web extra and point fsq-agent at the local browser executable:
+
+```powershell
+python -m pip install -e ".[dev,web]"
+```
+
+Set Web values in `.env`:
 
 ```dotenv
-FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 ```
 
-The path is required for Web runs. It must point to an existing local Chrome executable that matches `channel: chrome`.
+Start Web runs:
 
-```yaml
-harness:
-  platform: web
-  web:
-    backend: playwright
-    channel: chrome
-    headless: false
-    base_url: null
-
-execution:
-  post_action_delay_seconds:
-    platform: 1.0
-    common: 0.0
+```powershell
+fsq-agent init --platform web
+fsq-agent run --platform web --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
 ```
 
-  `channel: chrome` is the Web browser selector. When a Web task executes `startBrowser`, fsq-agent launches Playwright's Chromium engine with `FSQ_WEB_BROWSER_EXECUTABLE_PATH`, so Web runs use the user's configured local Chrome and do not require `python -m playwright install chromium`.
+### Windows Desktop With Edge
 
-Web FSQ cases should model browser lifecycle explicitly:
+Install the Windows extra and point fsq-agent at the target application:
 
-```yaml
-schemaVersion: fsq.ai-test/v1
-name: Web Example
-platform: web
----
-- startBrowser
-- navigateTo:
-    url: https://www.bing.com
-- pageSnapshot
-- closeBrowser
+```powershell
+python -m pip install -e ".[dev,windows]"
 ```
 
-For Windows runs, install the Windows extra, set the application executable path in `.env`, then select the Windows platform in YAML:
+Set Windows values in `.env`:
 
 ```dotenv
-FSQ_WINDOWS_APP_PATH=C:\Program Files\Microsoft\Edge\Application\msedge.exe
+FSQ_WINDOWS_APP_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+FSQ_WINDOWS_BACKEND_KIND=uia
+FSQ_WINDOWS_WINDOW_TITLE_RE=.*Microsoft.*Edge.*
+FSQ_WINDOWS_LAUNCH_ARGS=--no-first-run --disable-features=msImplicitSignin
 ```
 
-```yaml
-harness:
-  platform: windows
-  windows:
-    backend: pywinauto
-    backend_kind: uia
-    window_title_re: ".*Microsoft.*Edge"
-    launch_args:
-      - "--no-first-run"
-      - "--disable-features=msImplicitSignin"
+`FSQ_WINDOWS_BACKEND_KIND` is the pywinauto automation mode for the target app. Use `uia` first; switch to `win32` only when the app exposes better controls through the older Win32 backend.
 
-execution:
-  post_action_delay_seconds:
-    platform: 1.0
-    common: 0.0
+Start Windows desktop runs:
+
+```powershell
+fsq-agent init --platform windows
+fsq-agent run --platform windows --goal "Launch Edge, search for Windows automation, and verify the results page is visible."
 ```
 
-`FSQ_WINDOWS_APP_PATH` is required for Windows runs and must point to an existing application executable file. `harness.windows.backend` supports `pywinauto`; `backend_kind` selects the pywinauto UI automation backend (`uia` default, or `win32`). `harness.windows.window_title_re` is optional and resolves the launched application main window by title regex instead of the top window, which is useful for apps such as Microsoft Edge. `harness.windows.launch_args` is optional and provides command-line arguments prepended to launch. pywinauto packages are operator-managed through the `windows` extra.
+### macOS With Appium Mac2
 
-For macOS runs, install the macOS extra, configure Appium 2 with the Mac2 driver on the target Mac, start the Appium server before running fsq-agent, keep stable harness defaults in YAML, and set local Appium/app identity values in `.env`:
+Install the macOS extra. Appium 2 and the Mac2 driver must be installed and running on the Mac being automated:
 
-```yaml
-harness:
-  platform: macos
-  macos:
-    backend: appium_mac2
-    page_source_max_depth: 12
-    action_timeout_seconds: 10
-
-execution:
-  post_action_delay_seconds:
-    platform: 1.0
-    common: 0.0
+```bash
+python -m pip install -e ".[dev,macos]"
+npm install -g appium
+appium driver install mac2
+appium --address 127.0.0.1 --port 4723
 ```
+
+Set macOS values in `.env`:
 
 ```dotenv
 FSQ_MACOS_APPIUM_SERVER_URL=http://127.0.0.1:4723
-FSQ_MACOS_BUNDLE_ID=com.example.MacApp
-FSQ_MACOS_APP_PATH=
+FSQ_MACOS_BUNDLE_ID=com.microsoft.edgemac
+FSQ_MACOS_APP_PATH=/Applications/Microsoft Edge.app
 ```
 
-`FSQ_MACOS_APPIUM_SERVER_URL` is required and must point to an already-running Appium server. Set at least one of `FSQ_MACOS_BUNDLE_ID` or `FSQ_MACOS_APP_PATH`; use the bundle id when the app is installed and use the app path when launching a local bundle or executable. macOS Appium sessions are not created during config loading, registry bootstrap, or dynamic harness construction. Authored `launchApp` creates or reuses the Mac2 session through that server, and authored `killApp` terminates or closes it.
-
-macOS FSQ cases should model app lifecycle explicitly and use accessibility-backed targets where possible:
-
-```yaml
-schemaVersion: fsq.ai-test/v1
-name: macOS Example
-platform: macos
----
-- launchApp
-- uiSnapshot
-- clickOn:
-    target: File
-- assertElementsOrder:
-    direction: horizontal
-    elements:
-      - target: File
-      - target: Edit
-- killApp
-```
-
-Use `uiSnapshot` to inspect the macOS accessibility tree, `assertVisible` for deterministic presence checks, and `assertElementsOrder` for required vertical or horizontal ordering. Coordinates are supported through `point`, but they should be a fallback when accessibility metadata is not available.
-
-For account-dependent cases, put secret values in `.env` and allow only those names in config:
-
-```yaml
-runtime_secrets:
-  allowed_env_names:
-    - TEST_ACCOUNT_EMAIL
-    - TEST_ACCOUNT_PASSWORD
-```
-
-Existing process environment variables take precedence over `.env` values. Secret values must not be stored in config YAML.
-
-Knowledge and skills are grouped under the agent context. Relative `skills.dir` and `pre_plan.dir` values resolve under `agent_context.knowledge.root_dir`:
-
-```yaml
-agent_context:
-  knowledge:
-    root_dir: ./knowledge
-    skills:
-      dir: skills
-      items:
-        - name: automation-basics
-          description: Semantic action and evidence guidance for local runs.
-          kind: markdown
-          path: automation-basics.md
-          required: true
-    pre_plan:
-      dir: project_android_v1
-```
-
-Dynamic LLM runs do not expose a verification-mode setting. Before UI actions begin, pre-plan summarizes the input into ordered execution key actions plus one `verification_goal`; the final verifier checks that single goal against execution evidence. Existing configs that still contain `verification` or `verification.mode` fail validation so the obsolete setting is not silently ignored.
-
-## Running Tasks
-
-Use `run --goal` when you want the agent to start from a natural-language goal:
+Start macOS runs:
 
 ```bash
-fsq-agent run \
-	--config config.local.yaml \
-	--goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
+fsq-agent init --platform macos
+fsq-agent run --platform macos --goal "Open Microsoft Edge, inspect the visible window, and verify the expected controls are visible."
 ```
 
-Use `run --case-yaml` or `run --case-dir` for dynamic LLM execution from FSQ YAML reference material. In this mode the CLI reads each `.codex.yaml` file as raw UTF-8 text; it does not parse YAML, extract key actions, derive final verifier requirements, or convert commands into local steps. YAML steps are advisory and may be inaccurate; pre-plan prefers case-level intent when summarizing the final `verification_goal`.
+Existing process environment variables take precedence over `.env` values. Secret values such as API keys and test-account passwords should stay in `.env` or the process environment.
 
-```bash
-fsq-agent run --config config.local.yaml --case-yaml path/to/case.codex.yaml
-fsq-agent run --config config.local.yaml --case-dir path/to/cases
+## CLI Examples
+
+Use the platform that matches the target: `android`, `web`, `windows`, or `macos`.
+
+Initialize and check readiness:
+
+```powershell
+fsq-agent init --platform <platform>
 ```
 
-Use `run --strict` for deterministic strict-core execution of authored FSQ YAML. This path parses `.codex.yaml`, runs it through the configured platform harness, writes `evidence-manifest.json`, and generates `core-report.md/json` without LLM participation.
+Run from a natural-language goal:
 
-```bash
-fsq-agent run --config config.local.yaml --strict --case-yaml path/to/case.codex.yaml
-fsq-agent run --config config.local.yaml --strict --case-dir path/to/cases
+```powershell
+fsq-agent run --platform <platform> --goal "Open the target app and verify the expected page or controls are visible."
 ```
 
-`init` initializes the workspace and reports readiness for both the default LLM run path and the strict-core path. Strict-only users do not need model-provider credentials just to initialize or run `--strict` cases.
+Run from FSQ case files as dynamic reference material:
 
-You can also create goal-only `.codex.yaml` cases by providing only case metadata. The case name is the goal, and key actions are derived at runtime:
-
-```yaml
-schemaVersion: fsq.ai-test/v1
-name: Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page.
-platform: android
-appId: com.microsoft.emmx
-tags:
-	- goal-driven
+```powershell
+fsq-agent run --platform <platform> --case-yaml path/to/case.codex.yaml
+fsq-agent run --platform <platform> --case-dir path/to/cases
 ```
 
-Run it with the same command used for normal FSQ cases:
+Run authored FSQ cases through deterministic strict-core execution:
 
-```bash
-fsq-agent run --config config.local.yaml --case-yaml path/to/goal-only.codex.yaml
+```powershell
+fsq-agent run --platform <platform> --strict --case-yaml path/to/case.codex.yaml
+fsq-agent run --platform <platform> --strict --case-dir path/to/cases
+```
+
+Open the local playground or print a stored report:
+
+```powershell
+fsq-agent playground --platform <platform>
+fsq-agent report --platform <platform> --run-id RUN_ID --format markdown
 ```
 
 ## Current Scope

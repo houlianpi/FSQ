@@ -2,23 +2,26 @@
 
 ## Purpose
 
-Load, merge, normalize, and validate runtime configuration for the OpenAI Agents SDK runtime, shared model provider selection, env-backed Azure OpenAI settings, GitHub Copilot local provider authentication, env-backed Android app/device selection, Web Playwright harness settings, macOS Appium Mac2 harness settings, harness/driver/platform tool construction, runner-owned post-action delay defaults, strict-core platform readiness, strict replay secret resolution, AgentTool output policy, platform CommonTool safety policy, agent-context knowledge and skills, prompt template paths and variables, runtime secret allowlists, case input directories, internal goal-planning page knowledge, the fsq-agent workspace, and output directories.
+Load, merge, normalize, and validate runtime configuration for the OpenAI Agents SDK runtime, shared model provider selection, env-backed Azure OpenAI settings, GitHub Copilot local provider authentication, env-backed Android app/device selection, Web Playwright harness settings, env-backed Windows local desktop target and pywinauto adapter settings, macOS Appium Mac2 harness settings, harness/driver/platform tool construction, runner-owned post-action delay defaults, strict-core platform readiness, strict replay secret resolution, AgentTool output policy, platform CommonTool safety policy, agent-context knowledge and skills, prompt template paths and variables, runtime secret allowlists, case input directories, internal goal-planning page knowledge, the fsq-agent workspace, and output directories.
 
 ## Dependencies
 
-- `models`: Uses `AgentSettings`, `OpenAIAgentsSettings`, `RuntimeSecretSettings`, `HarnessSettings`, `AndroidHarnessSettings`, `WebHarnessSettings`, `MacOSHarnessSettings`, `StrictCoreHarnessSettings`, `WorkspaceSettings`, `CaseSettings`, `AgentContextSettings`, `AgentKnowledgeSettings`, `KnowledgeSkillSettings`, `PrePlanKnowledgeSettings`, `SkillConfig`, `OutputSettings`, `LocalToolOutputSettings`, and `ConfigurationError`.
+- `models`: Uses `AgentSettings`, `OpenAIAgentsSettings`, `RuntimeSecretSettings`, `HarnessSettings`, `AndroidHarnessSettings`, `WebHarnessSettings`, `WindowsHarnessSettings`, `MacOSHarnessSettings`, `StrictCoreHarnessSettings`, `WorkspaceSettings`, `CaseSettings`, `AgentContextSettings`, `AgentKnowledgeSettings`, `KnowledgeSkillSettings`, `PrePlanKnowledgeSettings`, `SkillConfig`, `OutputSettings`, `LocalToolOutputSettings`, and `ConfigurationError`.
 
 ## Public Interface
 
 Target `__init__.py` exports via `__all__` after this change:
 
 - `Settings`: Runtime settings aggregate model that combines agent runtime defaults, OpenAI Agents SDK provider selection, tracing policy, resolved provider runtime values, configurable prompt template paths and scalar variables, context trimming defaults, AgentTool output artifact policy defaults, Android/Web/Windows/macOS harness and driver selection, runner-owned post-action delay defaults, env-backed Android app/device settings, env-backed local desktop target settings, Web Playwright settings, macOS Appium Mac2 settings, strict-core platform readiness inputs, runtime secret allowlists for inherited CommonTools, workspace, case directory, output, and structured agent context rooted in a knowledge directory containing skill resources and optional pre-plan page knowledge.
-- `load_settings(path: str | Path | None = None, workspace: str | Path | None = None) -> Settings`: Loads `.env` values without overriding existing environment variables, loads YAML configuration from the provided path or default search locations, overlays fixed environment-backed local settings, normalizes provider settings, and resolves runtime paths. The optional workspace argument overrides `workspace.root_dir`.
+- `PLATFORM_CONFIG_PATHS`: Mapping from supported platform ids (`android`, `web`, `windows`, `macos`) to committed repository preset paths (`config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, `config.macos.yaml`).
+- `resolve_platform_config_path(platform: str) -> Path`: Validates a platform id and returns the corresponding committed platform preset path. Unsupported platform ids or missing preset files raise `ConfigurationError` with the platform and expected path.
+- `load_platform_settings(platform: str, workspace: str | Path | None = None) -> Settings`: Loads settings from the committed preset for the requested platform, applies `.env`/process environment overlays, normalizes provider settings, verifies that the loaded `harness.platform` matches the requested platform id, and resolves runtime paths. This is the user-facing config loading path used by CLI entry points.
+- `load_settings(path: str | Path | None = None, workspace: str | Path | None = None) -> Settings`: Lower-level loader for tests and internal callers that need to load a specific YAML path. It loads `.env` values without overriding existing environment variables, loads YAML configuration from the provided path or developer default search locations, overlays fixed environment-backed local settings, normalizes provider settings, and resolves runtime paths. Developer default discovery may use `config.yaml` or `config.yml`; it must not use `config.example.yaml`.
 - `resolve_runtime_paths(settings: Settings, base_dir: Path | None = None) -> None`: Ensures the fsq-agent workspace is initialized and marked, resolves case directories, agent context knowledge root, knowledge-root-relative skills directory, optional pre-plan knowledge directory, optional prompt template paths, and creates output directories under the workspace.
 - `validate_runtime_settings(settings: Settings) -> None`: Validates provider-specific environment/auth requirements, Azure OpenAI base URL shape when selected, resolved model name, LLM harness/driver/platform tool settings, AgentTool policy, platform CommonTool policy, and local path constraints before a default LLM run starts.
 - `validate_strict_core_settings(settings: Settings, requires_ai_assertion: bool = False) -> None`: Validates strict-core harness/driver settings not provided by a case file. It does not require provider credentials unless the caller knows the strict run contains an authored `assertWithAI` step or otherwise requires a provider-backed AI assertion evaluator. Strict replay runtime-secret refs are validated by entry-layer code after the case is parsed because the referenced names come from the case, not from static settings.
 
-Developer-owned YAML shape for execution post-action delay defaults and agent context must include this structure:
+Repository-owned platform YAML presets contain stable execution post-action delay defaults and agent context. The Android preset must include this shape:
 
 ```yaml
 harness:
@@ -58,6 +61,24 @@ harness:
 		base_url: null
 ```
 
+Windows runs use the same shape with `harness.platform: windows` and a nested Windows settings object containing only stable platform/backend selection:
+
+```yaml
+harness:
+	platform: windows
+	windows:
+		backend: pywinauto
+```
+
+Required or operator-selected Windows values come from environment variables or `.env`:
+
+```text
+FSQ_WINDOWS_APP_PATH=C:\Program Files\Microsoft\Edge\Application\msedge.exe
+FSQ_WINDOWS_BACKEND_KIND=uia
+FSQ_WINDOWS_WINDOW_TITLE_RE=.*Microsoft.*Edge
+FSQ_WINDOWS_LAUNCH_ARGS=--no-first-run --disable-features=msImplicitSignin
+```
+
 macOS runs use the same shape with `harness.platform: macos` and a nested macOS settings object containing only stable, shareable defaults:
 
 ```yaml
@@ -82,9 +103,10 @@ FSQ_MACOS_APP_PATH=/Applications/Example.app
 Shared configuration rules:
 
 - `harness.platform` selects the active platform for dynamic, strict, and playground entry surfaces.
+- User-facing entry surfaces select one committed platform preset by platform id. `android` maps to `config.android.yaml`, `web` maps to `config.web.yaml`, `windows` maps to `config.windows.yaml`, and `macos` maps to `config.macos.yaml`.
 - Platform-specific settings live under `harness.<platform>`.
 - Validation must reject unsupported platform/backend combinations before external actions begin.
-- YAML config owns stable, non-sensitive, repo-shareable platform policy and defaults, including active platform, backend, action timeouts, page-source/snapshot bounds, headless/channel policy, and configured skill lists.
+- Repository-owned YAML presets own stable, non-sensitive, repo-shareable platform policy and defaults, including active platform, backend, action timeouts, page-source/snapshot bounds, headless/channel policy, and configured skill lists.
 - Environment variables and `.env` own values the user must actually set, values that differ by machine or operator, local paths, local server URLs, target identifiers, credentials, and secrets. Process environment variables take precedence over `.env` values.
 
 Android configuration:
@@ -104,8 +126,12 @@ Web configuration:
 Windows configuration:
 
 - `harness.windows.backend` supports `pywinauto` in the first Windows backend.
-- `harness.windows.backend_kind` selects the pywinauto UI automation backend, with `uia` (default) and `win32` supported. `harness.windows.window_title_re` and `harness.windows.launch_args` are YAML-owned stable launch policy. Local application executable selection should come from `FSQ_WINDOWS_APP_PATH`; existing `harness.windows.app_path` remains a compatibility input for older configs until a future migration removes it, and env values take precedence when both are present.
-- Missing pywinauto packages are reported during Windows runtime construction with actionable setup guidance, not during registry bootstrap. Missing, nonexistent, or non-file resolved Windows app path values are reported by configuration validation before external actions begin.
+- `FSQ_WINDOWS_APP_PATH` supplies the operator's local Windows application executable path.
+- `FSQ_WINDOWS_BACKEND_KIND` optionally selects pywinauto's UI automation backend, with `uia` as the default and `win32` also supported. This is a pywinauto adapter mode, not a second FSQ Windows backend.
+- `FSQ_WINDOWS_WINDOW_TITLE_RE` optionally resolves the launched application main window by title regex instead of the process top window.
+- `FSQ_WINDOWS_LAUNCH_ARGS` optionally supplies default launch arguments as a command-line string that configuration loading parses into an argument list. Per-step `launchApp.extra_args` values append after these configured defaults.
+- Existing YAML inputs `harness.windows.app_path`, `harness.windows.backend_kind`, `harness.windows.window_title_re`, and `harness.windows.launch_args` remain explicit compatibility inputs for older configs until a future migration removes them. Environment values take precedence when both YAML and environment values are present, and repo-owned examples must prefer the env-owned shape.
+- Missing pywinauto packages are reported during Windows runtime construction with actionable setup guidance, not during registry bootstrap. Invalid Windows backend-kind environment values and malformed launch-argument environment values are reported during configuration loading. Missing, nonexistent, or non-file resolved Windows app path values are reported by configuration validation before external actions begin using the relevant environment variable names where applicable.
 
 macOS configuration:
 
@@ -130,7 +156,7 @@ Future platform configuration:
 
 ## Error Handling
 
-Invalid or missing configuration raises `ConfigurationError` from `models`. Low-level YAML, path, workspace marker, environment overlay, or validation exceptions are wrapped with actionable context. Missing Azure OpenAI, Android local environment values, Web browser executable path values, Windows local app path values, or macOS Appium/target values are reported by variable name without exposing secret values. Web settings validation reports unsupported backend/channel/headless/base URL values and invalid browser executable paths without launching Playwright. macOS settings validation reports unsupported backend values, invalid page-source/action timeout defaults, invalid local app paths, and missing Appium target configuration without connecting to Appium. Negative post-action delay defaults are rejected. Obsolete `harness.strict_core.step_interval_seconds` configuration is rejected instead of silently preserving strict-only pacing; users should configure `execution.post_action_delay_seconds` instead. Obsolete `verification` configuration, including `verification.mode`, is rejected instead of ignored. Obsolete custom instruction configuration under `openai_agents.prompt.custom_instructions` or `openai_agents.prompt.custom_instructions_path` is rejected instead of ignored; users should move that guidance into `knowledge/project.md` or configured skills. Removed pre-release config keys do not require custom migration errors; they are rejected by the narrowed settings schema when present.
+Invalid or missing configuration raises `ConfigurationError` from `models`. Low-level YAML, path, workspace marker, environment overlay, or validation exceptions are wrapped with actionable context. Missing Azure OpenAI, Android local environment values, Web browser executable path values, Windows local app path values, Windows pywinauto adapter values, or macOS Appium/target values are reported by variable name without exposing secret values. Web settings validation reports unsupported backend/channel/headless/base URL values and invalid browser executable paths without launching Playwright. Windows environment overlay reports invalid pywinauto backend-kind values and malformed configured launch arguments without launching pywinauto; Windows settings validation reports unsupported backend values and invalid local app paths. macOS settings validation reports unsupported backend values, invalid page-source/action timeout defaults, invalid local app paths, and missing Appium target configuration without connecting to Appium. Negative post-action delay defaults are rejected. Obsolete `harness.strict_core.step_interval_seconds` configuration is rejected instead of silently preserving strict-only pacing; users should configure `execution.post_action_delay_seconds` instead. Obsolete `verification` configuration, including `verification.mode`, is rejected instead of ignored. Obsolete custom instruction configuration under `openai_agents.prompt.custom_instructions` or `openai_agents.prompt.custom_instructions_path` is rejected instead of ignored; users should move that guidance into `knowledge/project.md` or configured skills. Removed pre-release config keys do not require custom migration errors; they are rejected by the narrowed settings schema when present.
 
 ## Design Decisions
 
@@ -154,7 +180,7 @@ Invalid or missing configuration raises `ConfigurationError` from `models`. Low-
 - `execution.post_action_delay_seconds` controls runner-owned post-action stabilization delay defaults. `platform` defaults to `1.0` seconds and applies to PlatformTool capabilities when capability metadata does not override it. `common` defaults to `0.0` seconds and applies to inherited CommonTool capabilities when capability metadata does not override it. Values must be non-negative, and this pacing is execution timing only: it must not add `waitMs` commands, mutate parsed FSQ commands, record generated strict replay waits, or create synthetic evidence steps.
 - Android app id and device serial are environment-backed local values, not YAML values. Strict-core may fall back to `appId` from parsed FSQ case metadata when `FSQ_ANDROID_APP_ID` is absent. There are no public CLI app-id overrides. Web strict-core does not require Android app id or device serial.
 - Playwright package installation is operator-managed through the `web` extra. Browser channel selection is YAML-owned through `harness.web.channel`; browser executable selection is local-user-owned through `FSQ_WEB_BROWSER_EXECUTABLE_PATH`. Configuration validation checks the env var is configured, exists, points to a file, is executable on POSIX hosts, and matches the configured channel before external actions begin.
-- pywinauto package installation is operator-managed through the `windows` extra. `harness.windows.backend` selects the Windows backend, with `pywinauto` supported. Application executable selection is env-owned through `FSQ_WINDOWS_APP_PATH`; legacy `harness.windows.app_path` remains accepted as an explicit compatibility input. Configuration validation checks the resolved app path is configured, exists, and points to a file before external actions begin. Windows strict-core does not require Android app id or device serial.
+- pywinauto package installation is operator-managed through the `windows` extra. `harness.windows.backend` selects the Windows backend, with `pywinauto` supported. Application executable selection is env-owned through `FSQ_WINDOWS_APP_PATH`; pywinauto adapter mode is env-owned through `FSQ_WINDOWS_BACKEND_KIND`; launched-window title matching is env-owned through `FSQ_WINDOWS_WINDOW_TITLE_RE`; and default launch arguments are env-owned through `FSQ_WINDOWS_LAUNCH_ARGS`. Legacy `harness.windows.app_path`, `harness.windows.backend_kind`, `harness.windows.window_title_re`, and `harness.windows.launch_args` remain accepted as explicit compatibility inputs, with environment values taking precedence. Configuration loading parses `FSQ_WINDOWS_LAUNCH_ARGS` as a command-line string into a list before runtime construction. Configuration validation checks the resolved app path is configured, exists, and points to a file, and checks the resolved pywinauto backend kind is supported, before external actions begin. Windows strict-core does not require Android app id or device serial.
 - Appium Mac2 package installation is operator-managed through the `macos` extra. `harness.macos.backend` selects the macOS backend, with `appium_mac2` supported. Appium server URL and application target identity are env-owned through `FSQ_MACOS_APPIUM_SERVER_URL`, `FSQ_MACOS_BUNDLE_ID`, and `FSQ_MACOS_APP_PATH`; YAML owns only stable backend and default policy. Configuration validation checks local values are present and well formed before external actions begin, but registry bootstrap and strict YAML parsing must not connect to Appium or require a live server.
 - Strict-core execution remains deterministic except for explicitly authored `assertWithAI` assertion steps. When a strict run contains `assertWithAI`, entry-layer code may request provider validation and inject a provider-backed evaluator into the active harness/backend support. Missing provider readiness for such a step is a configuration failure. No AI recovery, locator fallback, or testcase mutation is enabled by this setting.
 - Strict replay secret refs remain deterministic configuration inputs. After parsing a strict case, entry-layer code validates each referenced `runtimeSecret` name against `runtime_secrets.allowed_env_names` and verifies the value is present in environment or `.env` before UI actions begin. Missing allowlist entries or values are configuration failures. Secret values are substituted only in memory and must not be written to settings, generated YAML, events, manifests, or reports.

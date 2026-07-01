@@ -10,8 +10,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "init",
-        "--config",
-        "config.local.android.yaml"
+        "--platform",
+        "android"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
@@ -26,8 +26,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--goal",
         "${input:goal}",
         "--record",
@@ -46,8 +46,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.web.yaml",
+        "--platform",
+        "web",
         "--goal",
         "${input:webGoal}",
         "--record",
@@ -66,8 +66,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.windows.yaml",
+        "--platform",
+        "windows",
         "--goal",
         "${input:windowsGoal}",
         "--record",
@@ -86,8 +86,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--case-yaml",
         "${input:caseYaml}",
         "--record",
@@ -106,8 +106,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--case-dir",
         "${input:caseDir}",
         "--record",
@@ -126,8 +126,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--strict",
         "--case-yaml",
         "${input:strictCaseYaml}"
@@ -145,8 +145,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "run",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--strict",
         "--case-dir",
         "${input:caseDir}"
@@ -164,8 +164,8 @@
       "cwd": "${workspaceFolder}",
       "args": [
         "report",
-        "--config",
-        "config.local.android.yaml",
+        "--platform",
+        "android",
         "--run-id",
         "${input:runId}",
         "--format",
