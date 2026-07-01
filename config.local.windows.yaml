@@ -7,14 +7,11 @@ harness:
   windows:
     backend: pywinauto
     backend_kind: uia
-    app_path: "C:/Program Files (x86)/Microsoft/Edge Beta/Application/msedge.exe"
-    window_title_re: ".*Microsoft.*Edge Beta"
+    app_path: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+    window_title_re: ".*Microsoft.*Edge"
     launch_args:
       - "--no-first-run"
       - "--disable-features=msImplicitSignin"
-      - "--force-device-scale-factor=0.8"
-      - "--force-local-ntp"
-      - "--window-size=1280,920"
 
 execution:
   post_action_delay_seconds:
