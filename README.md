@@ -44,7 +44,7 @@ fsq-agent init --platform android
 fsq-agent run --platform android --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
 ```
 
-### Web With Local Edge
+### Web With Local Chrome
 
 Install the Web extra and point fsq-agent at the local browser executable:
 
@@ -55,7 +55,7 @@ python -m pip install -e ".[dev,web]"
 Set Web values in `.env`:
 
 ```dotenv
-FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
 ```
 
 Start Web runs:
