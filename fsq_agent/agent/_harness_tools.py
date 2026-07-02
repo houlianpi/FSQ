@@ -134,12 +134,14 @@ class HarnessToolAdapter:
     ) -> str:
         artifact_refs = self._artifact_refs(runner_result)
         result_summary = self._result_summary(schema, step, runner_result, artifact_refs)
+        invoke_metadata = self._invoke_metadata(runner_result)
         payload = {
             "tool_name": schema.name,
             "tool_origin": self._tool_origin(schema),
             "capability_name": self._capability_name(schema),
             "executor_kind": schema.metadata.get("executor_kind"),
             "replay": schema.metadata.get("replay"),
+            "safe_replay_params": invoke_metadata.get("safe_replay_params"),
             "platform": schema.platform,
             "driver_method": schema.driver_method,
             "fsq_action_name": schema.fsq_action_name,
@@ -153,6 +155,8 @@ class HarnessToolAdapter:
             "runner_result": runner_result.model_dump(mode="json"),
             "artifact_refs": artifact_refs,
         }
+        if payload["safe_replay_params"] is None:
+            del payload["safe_replay_params"]
         return json.dumps(payload, ensure_ascii=False, default=str)
 
     def _result_summary(

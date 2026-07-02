@@ -190,7 +190,8 @@ class _RecordingCollector:
         if event.type != "tool_call_completed" or payload.get("status") not in {"passed", "success", None}:
             self._skip(start.tool_name, f"platform action status was {payload.get('status') or event.type}")
             return
-        args = _event_arguments(start.tool_arguments)
+        safe_replay_params = payload.get("safe_replay_params")
+        args = dict(safe_replay_params) if isinstance(safe_replay_params, dict) else _event_arguments(start.tool_arguments)
         if args is None:
             self._skip(start.tool_name, "platform tool arguments were not a JSON object")
             return

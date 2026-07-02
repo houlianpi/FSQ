@@ -8,6 +8,7 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
+from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.config import Settings, validate_runtime_settings
 from fsq_agent.core import (
     AndroidHarness,
@@ -551,7 +552,13 @@ class OpenAIAgentsRuntime:
             )
             result = Runner.run_streamed(
                 agent,
-                input=build_pre_plan_input(reference_text, knowledge, skills, reference_type=reference_type),
+                input=build_pre_plan_input(
+                    reference_text,
+                    knowledge,
+                    skills,
+                    reference_type=reference_type,
+                    available_platform_tools=self._pre_plan_tool_summary(),
+                ),
                 max_turns=self.settings.openai_agents.max_turns,
                 run_config=self._build_run_config(RunConfig, ToolOutputTrimmer, provider, run_id),
             )
@@ -604,6 +611,24 @@ class OpenAIAgentsRuntime:
                 on_invoke_tool=self._read_knowledge_page_tool,
             ),
         ]
+
+    def _pre_plan_tool_summary(self) -> list[dict[str, Any]]:
+        registry = build_capability_registry(platform=self.settings.harness.platform)
+        tools: list[dict[str, Any]] = []
+        for capability in registry.snapshot().capabilities:
+            tools.append(
+                {
+                    "name": capability.name,
+                    "alias": capability.replay.alias if capability.replay else None,
+                    "aliases": list(capability.aliases),
+                    "description": capability.description,
+                    "executor_kind": capability.executor_kind,
+                    "step_kind": capability.step_kind,
+                    "platform": capability.platform,
+                    "capture_evidence": capability.capture_evidence,
+                }
+            )
+        return tools
 
     def _pre_plan_knowledge_dir(self) -> Path:
         knowledge = self.settings.agent_context.knowledge
@@ -1188,6 +1213,8 @@ class OpenAIAgentsRuntime:
             "failure_category",
             "error_message",
             "duration_ms",
+            "replay",
+            "safe_replay_params",
             "runner_step_id",
         }
         for key in safe_keys:

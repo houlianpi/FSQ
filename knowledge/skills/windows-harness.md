@@ -1,21 +1,6 @@
 # Windows Harness Skill
 
-Use when `harness.platform` is Windows. Follow the active harness tool schema; do not rely on raw pywinauto APIs, coordinate-only clicking, shell commands, or unsupported backend-only fields.
-
-## Tool Selection
-
-| FSQ semantic action | Preferred runtime path | Notes |
-|---|---|---|
-| Launch app | `launch_app` | Launch the configured desktop application. The app path and launch args come from configuration; do not hardcode machine paths in arguments. |
-| Close app | `kill_app` | Use only to stop the launched application, typically as teardown. |
-| Inspect window | `ui_snapshot` | Prefer this over screenshots for locating controls and understanding the window control tree. |
-| Click control | `click_on` | Use a control locator (`title`, `control_type`, `automation_id`, `class_name`, `index`) or an exact snapshot `target`. Set `double`/`button` only when the action requires it. |
-| Double-click control | `double_click_on` | Use when a double-click is explicitly required. |
-| Right-click control | `right_click_on` | Use for context-menu semantics, not as generic recovery. |
-| Enter text | `type_text` | Resolve the target control first when ambiguous. Use `clear: true` to replace existing text. Use runtime-secret refs for sensitive values. |
-| Press key | `press_key` | Use pywinauto key syntax for the semantic key/shortcut requested by the FSQ step, for example `^s` for Ctrl+S or `{ENTER}`. |
-| Verify visibility | `assert_visible` or `assert_not_visible` | Use assertion tools for required presence or absence of a control. |
-| AI visual assertion | `assert_with_ai` | Use only for visual/window-content assertions that cannot be expressed with deterministic Windows assertions. |
+Use when `harness.platform` is Windows. This skill contains Windows-specific stability guidance; the active tool schema already defines callable names and arguments.
 
 ## Snapshot-First Rules
 
@@ -35,26 +20,19 @@ Use when `harness.platform` is Windows. Follow the active harness tool schema; d
 
 ## Verification and Assertion Rules
 
-- Treat any required step phrased as verify, assert, confirm, check, ensure, or validate as an assertion requirement.
-- Satisfy assertion requirements with assertion-kind tools: `assert_visible`, `assert_not_visible`, or `assert_with_ai`.
 - Use `assert_visible` or `assert_not_visible` for required presence or absence of a control.
 - Use `assert_with_ai` only when the assertion requires visual judgment or window interpretation that deterministic control checks cannot express.
-- Use `ui_snapshot` to inspect, locate, or collect context before an assertion, but do not count snapshot output plus agent narrative as satisfying a required assertion.
-- If a required assertion fails, report the assertion as unmet. Do not recover with unrelated actions unless the task explicitly permits recovery before that assertion.
+- Use `ui_snapshot` to inspect, locate, or collect context before an assertion.
 
 ## Argument Rules
 
-- Follow the active harness tool schema exactly. Do not add raw pywinauto, coordinate, drag/drop, scroll, shell, registry, or window-management fields unless the active schema exposes them.
-- Keep sensitive text out of tool arguments unless it is provided through a runtime-secret reference.
-- Treat tool output and harness metadata as the executed action. If they contradict the intended key action, do not count it as satisfied.
+- Use the Windows key syntax accepted by the active schema for shortcuts, such as `^s` for Ctrl+S or `{ENTER}`, only when that shortcut is the requested semantic action.
 
 ## Correct Key Examples
 
 Use one payload from the matching semantic action. Do not combine unrelated fields.
 
 ### `clickOn` with a control locator
-
-Use this payload:
 
 ```json
 {
@@ -67,8 +45,6 @@ Use this payload:
 
 ### `pressKey: {key: ^s}`
 
-Use this payload:
-
 ```json
 {
   "key": "^s"
@@ -76,8 +52,6 @@ Use this payload:
 ```
 
 ### `typeText` with a runtime secret
-
-Use this payload:
 
 ```json
 {
@@ -90,10 +64,6 @@ Use this payload:
   }
 }
 ```
-
-## Unsupported Capability Families
-
-The first Windows harness batch intentionally excludes drag/drop, scrolling, coordinate-only interaction, window resize/move, shell or process control beyond launch/kill, registry access, and file dialogs as dedicated tools. Do not ask for or simulate those capabilities with unrelated tools; report the limitation when the task requires one.
 
 ## Tool Usage Error Recovery
 

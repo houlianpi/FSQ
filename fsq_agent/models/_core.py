@@ -180,6 +180,13 @@ class AndroidPoint(BaseModel):
     y: int
 
 
+class AndroidScreenSize(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
 class _AndroidTargetParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -212,6 +219,13 @@ class AndroidKillAppParams(BaseModel):
 
 class AndroidTapOnParams(_AndroidTargetParams):
     pass
+
+
+class AndroidTapAtParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    point: AndroidPoint
+    reference_screen_size: AndroidScreenSize | None = None
 
 
 class AndroidLongPressOnParams(_AndroidTargetParams):
@@ -525,6 +539,7 @@ ANDROID_ACTION_DEFINITIONS: tuple[AndroidActionDefinition, ...] = (
     AndroidActionDefinition("launchApp", "launch_app", AndroidLaunchAppParams, "setup"),
     AndroidActionDefinition("killApp", "kill_app", AndroidKillAppParams, "teardown"),
     AndroidActionDefinition("tapOn", "tap_on", AndroidTapOnParams, "action"),
+    AndroidActionDefinition("tapAt", "tap_at", AndroidTapAtParams, "action"),
     AndroidActionDefinition("assertVisible", "assert_visible", AndroidAssertVisibleParams, "assertion"),
     AndroidActionDefinition("performActions", "perform_actions", AndroidPerformActionsParams, "action", strict=False),
     AndroidActionDefinition("assert", "assert_state", AndroidAssertStateParams, "assertion"),

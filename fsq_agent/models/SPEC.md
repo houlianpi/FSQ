@@ -66,10 +66,12 @@ Platform-neutral task, run, report, knowledge, capability, and execution exports
 Android platform exports:
 
 - `AndroidLocator`: Pydantic model for Android target locators with optional `resourceId`, `accessibilityId`, `text`, `className`, and `xpath` fields.
-- `AndroidPoint`: Pydantic model for integer Android screen coordinates used by point-based swipes.
+- `AndroidPoint`: Pydantic model for integer Android screen coordinates used by point-based taps and swipes.
+- `AndroidScreenSize`: Pydantic model for positive integer Android screen dimensions used as the coordinate reference for recorded point-based strict replay.
 - `AndroidLaunchAppParams`: Pydantic model for `launch_app` driver parameters, including optional `app_id`.
 - `AndroidKillAppParams`: Pydantic model for `kill_app` driver parameters, including optional `app_id`.
 - `AndroidTapOnParams`: Pydantic model for `tap_on` parameters. It requires either a `target` string or a non-empty `locator`.
+- `AndroidTapAtParams`: Pydantic model for `tap_at` parameters. It requires a `point` with integer `x` and `y` Android screen coordinates and accepts an optional `reference_screen_size` so strict replay can scale recorded coordinates to the current device size.
 - `AndroidLongPressOnParams`: Pydantic model for `long_press_on` parameters. It uses the same target contract as `AndroidTapOnParams`.
 - `AndroidInputTextParams`: Pydantic model for resolved `input_text` parameters. It requires string `text` plus either a `target` or non-empty `locator`. Strict replay refs such as `RuntimeSecretRef` may appear in parsed FSQ command payloads before strict entry resolution, but they are not valid Android driver parameters after resolution.
 - `AndroidPressKeyParams`: Pydantic model for `press_key` parameters with one normalized required key string.

@@ -22,6 +22,9 @@ recorded in warnings. Lifecycle commands such as launchApp and killApp are setup
 semantically central to the case.
 
 This is planning only. Do not execute UI actions, do not call UI automation tools, and do not claim runtime verification.
+The input contains available_platform_tools from the active CommonTool/PlatformTool capability registry. Use this as
+the current executable action surface when choosing key actions and final verification wording. Tool names are SDK
+function names; aliases are authored FSQ action names when available.
 Your initial context contains the knowledge index only. Use read_knowledge_page to load concrete page nodes as needed.
 When a loaded page operation points to another page_id, read that page if it is needed to continue the action chain.
 You may call read_knowledge_index again if you need to resolve a page id or recover from an uncertain route.
@@ -55,10 +58,12 @@ def build_pre_plan_input(
     knowledge: KnowledgeBundle,
     skills: list[SkillBundle],
     reference_type: str = "goal",
+    available_platform_tools: list[dict[str, Any]] | None = None,
 ) -> str:
     payload = {
         "reference_type": reference_type,
         "reference_text": reference_text,
+        "available_platform_tools": list(available_platform_tools or []),
         "knowledge_items": knowledge.items,
         "skills": [
             {

@@ -111,7 +111,7 @@ class StepRunner:
     ) -> RunnerStepResult:
         delay_seconds = self._effective_post_action_delay_seconds(capability)
         context = self._run_harness_prepare_phase(run_id, step, state)
-        action_result = self._run_harness_invoke_phase(run_id, step, state, context, delay_seconds)
+        action_result = self._run_harness_invoke_phase(run_id, step, capability, state, context, delay_seconds)
         self._apply_post_action_delay(delay_seconds)
         self._run_harness_finalize_phase(run_id, step, state, context, action_result)
         status = self._result_status(action_result, state.failure_category, state.artifact_error_message)
@@ -154,6 +154,7 @@ class StepRunner:
         self,
         run_id: str,
         step: ExecutableStep,
+        capability: CapabilityDefinition | None,
         state: _StepExecutionState,
         context: object,
         delay_seconds: float,
@@ -164,7 +165,7 @@ class StepRunner:
         phase_status: RunnerStatus = "failed"
         try:
             action_result = self.harness.invoke_action(step, context)
-            self._last_capability_execution_result = self._common_capability_execution_result(action_result)
+            self._last_capability_execution_result = self._capability_execution_result(action_result, step, capability, context)
             phase_status = action_result.status
             self._emit(run_id=run_id, event_type="harness_call_finish", step=step, phase="invoke")
             if action_result.status in {"failed", "cancelled", "skipped"}:
@@ -177,7 +178,10 @@ class StepRunner:
                 phase="invoke",
                 status=action_result.status,
                 artifact_refs=self._action_result_artifacts(run_id, step, action_result, "invoke"),
-                metadata=self._with_post_action_delay_metadata(self._action_result_metadata(action_result), delay_seconds),
+                metadata=self._with_post_action_delay_metadata(
+                    self._action_result_metadata(action_result, step, capability, context),
+                    delay_seconds,
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - runner converts phase exceptions into structured results.
             state.failure_category = self.harness.classify_error(exc, "invoke", step)
@@ -435,23 +439,97 @@ class StepRunner:
             )
         return refs
 
-    def _action_result_metadata(self, action_result: HarnessActionResult) -> dict[str, object]:
+    def _action_result_metadata(
+        self,
+        action_result: HarnessActionResult,
+        step: ExecutableStep,
+        capability: CapabilityDefinition | None,
+        context: object,
+    ) -> dict[str, object]:
         if action_result.metadata.get("executor_kind") == "common":
             metadata = dict(action_result.metadata)
             if action_result.output is not None and not metadata.get("sensitivity"):
                 metadata.setdefault("common_output", action_result.output)
             return metadata
-        metadata: dict[str, object] = {}
+        metadata: dict[str, object] = self._capability_metadata(capability, step, context)
         if action_result.metadata:
             metadata["harness_metadata"] = action_result.metadata
         if action_result.output is not None:
             metadata["harness_output"] = action_result.output
         return metadata
 
-    def _common_capability_execution_result(self, action_result: HarnessActionResult) -> CapabilityExecutionResult | None:
+    def _capability_metadata(
+        self,
+        capability: CapabilityDefinition | None,
+        step: ExecutableStep,
+        context: object,
+    ) -> dict[str, object]:
+        if capability is None:
+            return {}
+        metadata: dict[str, object] = {
+            "capability_name": capability.name,
+            "executor_kind": capability.executor_kind,
+            "step_kind": capability.step_kind,
+            "platform": capability.platform,
+            "backend": capability.backend,
+            "owner": capability.owner,
+            "capture_evidence": capability.capture_evidence,
+            "replay": capability.replay.model_dump(mode="json") if capability.replay else None,
+            "sensitivity": capability.sensitivity,
+        }
+        safe_replay_params = self._safe_replay_params(step, capability, context)
+        if safe_replay_params:
+            metadata["safe_replay_params"] = safe_replay_params
+        return metadata
+
+    def _safe_replay_params(
+        self,
+        step: ExecutableStep,
+        capability: CapabilityDefinition,
+        context: object,
+    ) -> dict[str, object]:
+        if capability.name != "tap_at":
+            return {}
+        params = dict(step.params)
+        if "reference_screen_size" in params:
+            return params
+        screen_size = getattr(context, "screen_size", None)
+        if not isinstance(screen_size, tuple) or len(screen_size) != 2:
+            return params
+        width, height = screen_size
+        if not isinstance(width, int) or not isinstance(height, int) or width < 1 or height < 1:
+            return params
+        params["reference_screen_size"] = {"width": width, "height": height}
+        return params
+
+    def _capability_execution_result(
+        self,
+        action_result: HarnessActionResult,
+        step: ExecutableStep,
+        capability: CapabilityDefinition | None,
+        context: object,
+    ) -> CapabilityExecutionResult | None:
         metadata = action_result.metadata
         if metadata.get("executor_kind") != "common":
-            return None
+            if capability is None:
+                return None
+            metadata = self._capability_metadata(capability, step, context)
+            replay = metadata.get("replay")
+            safe_replay_params = metadata.get("safe_replay_params")
+            return CapabilityExecutionResult(
+                capability_name=capability.name,
+                executor_kind=capability.executor_kind,
+                status=action_result.status,
+                output=action_result.output,
+                artifact_refs=list(action_result.artifact_refs),
+                error_message=action_result.error_message,
+                failure_category=action_result.failure_category,
+                duration_ms=action_result.duration_ms,
+                replay=ReplayPolicy.model_validate(replay) if isinstance(replay, dict) else None,
+                sensitivity=capability.sensitivity,
+                safe_replay_params=safe_replay_params if isinstance(safe_replay_params, dict) else {},
+                metadata=metadata,
+            )
         replay = metadata.get("replay")
         safe_replay_params = metadata.get("safe_replay_params")
         duration_ms = metadata.get("duration_ms")

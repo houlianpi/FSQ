@@ -11,6 +11,7 @@ from fsq_agent.models import (
     WEB_ACTION_DEFINITIONS_BY_NAME,
     AndroidPressKeyParams,
     AndroidSwipeParams,
+    AndroidTapAtParams,
     AndroidTapOnParams,
     AndroidUiTreeParams,
     EvidenceArtifactRef,
@@ -112,11 +113,18 @@ def test_harness_function_schema_is_serializable_contract() -> None:
 
 def test_android_parameter_models_produce_canonical_dumps_and_reject_extra_fields() -> None:
     tap = AndroidTapOnParams.model_validate({"target": "Login"})
+    tap_at = AndroidTapAtParams.model_validate(
+        {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
+    )
     swipe = AndroidSwipeParams.model_validate(
         {"start": {"x": 800, "y": 1900}, "end": {"x": 200, "y": 1900}, "duration": 1000}
     )
 
     assert tap.model_dump(mode="json", exclude_none=True) == {"target": "Login"}
+    assert tap_at.model_dump(mode="json", exclude_none=True) == {
+        "point": {"x": 100, "y": 200},
+        "reference_screen_size": {"width": 1080, "height": 2400},
+    }
     assert swipe.model_dump(mode="json", exclude_none=True) == {
         "start": {"x": 800, "y": 1900},
         "end": {"x": 200, "y": 1900},
@@ -136,6 +144,9 @@ def test_android_action_definitions_are_single_source_for_android_contract() -> 
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapOn"].driver_method == "tap_on"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapOn"].params_model is AndroidTapOnParams
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapOn"].step_kind == "action"
+    assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapAt"].driver_method == "tap_at"
+    assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapAt"].params_model is AndroidTapAtParams
+    assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapAt"].step_kind == "action"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["pressKey"].driver_method == "press_key"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["pressKey"].params_model is AndroidPressKeyParams
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["uiTree"].driver_method == "ui_tree"

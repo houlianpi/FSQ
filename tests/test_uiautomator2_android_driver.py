@@ -96,6 +96,9 @@ class FakeDevice:
     def press(self, key: str) -> None:
         self.calls.append(("press", key))
 
+    def click(self, x: int, y: int) -> None:
+        self.calls.append(("click", x, y))
+
     def swipe(self, sx: int, sy: int, ex: int, ey: int, duration: float) -> None:
         self.calls.append(("swipe", sx, sy, ex, ey, duration))
 
@@ -139,16 +142,18 @@ def test_uiautomator2_driver_actions_use_locator_selectors() -> None:
     driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
 
     assert driver.tap_on({"locator": {"resourceId": "login"}})["status"] == "passed"
+    assert driver.tap_at({"point": {"x": 100, "y": 200}})["status"] == "passed"
     assert driver.long_press_on({"locator": {"accessibilityId": "Menu"}})["status"] == "passed"
     assert driver.input_text({"text": "hello", "locator": {"text": "Search"}})["status"] == "passed"
     assert driver.press_key({"key": "Back"})["status"] == "passed"
     assert driver.swipe({"direction": "up", "duration": 100})["status"] == "passed"
     assert driver.assert_state({"element": {"resourceId": "url"}, "text": {"contains": "bing"}})["status"] == "passed"
 
-    assert device.calls[:12] == [
+    assert device.calls[:13] == [
         ("select", {"resourceId": "login"}),
         ("wait", {"resourceId": "login"}, {"exists": True, "timeout": 10.0}),
         ("click", {"resourceId": "login"}),
+        ("click", 100, 200),
         ("select", {"description": "Menu"}),
         ("wait", {"description": "Menu"}, {"exists": True, "timeout": 10.0}),
         ("long_click", {"description": "Menu"}),
@@ -180,6 +185,33 @@ def test_uiautomator2_driver_supports_point_based_swipe() -> None:
     assert device.calls == [("swipe", 800, 1900, 200, 1900, 1.0)]
 
 
+def test_uiautomator2_driver_supports_point_based_tap() -> None:
+    device = FakeDevice()
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.tap_at({"point": {"x": 320, "y": 640}})
+
+    assert result == {"status": "passed", "output": {"point": {"x": 320, "y": 640}}}
+    assert device.calls == [("click", 320, 640)]
+
+
+def test_uiautomator2_driver_scales_point_based_tap_from_reference_screen_size() -> None:
+    device = FakeDevice()
+    device.info["displayWidth"] = 540
+    device.info["displayHeight"] = 1200
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.tap_at(
+        {
+            "point": {"x": 100, "y": 200},
+            "reference_screen_size": {"width": 1080, "height": 2400},
+        }
+    )
+
+    assert result == {"status": "passed", "output": {"point": {"x": 50, "y": 100}}}
+    assert device.calls == [("click", 50, 100)]
+
+
 def test_uiautomator2_driver_exposes_ui_tree_output() -> None:
     device = FakeDevice()
     driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
@@ -198,6 +230,16 @@ def test_uiautomator2_driver_rejects_malformed_point_based_swipe() -> None:
     assert result["status"] == "failed"
     assert result["failure_category"] == "configuration_error"
     assert "start.x, start.y, end.x, and end.y" in str(result["error_message"])
+
+
+def test_uiautomator2_driver_rejects_malformed_point_based_tap() -> None:
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=FakeDevice())
+
+    result = driver.tap_at({"point": {"x": 320}})
+
+    assert result["status"] == "failed"
+    assert result["failure_category"] == "configuration_error"
+    assert "point.x and point.y" in str(result["error_message"])
 
 
 def test_uiautomator2_driver_waits_for_targets_before_actions() -> None:

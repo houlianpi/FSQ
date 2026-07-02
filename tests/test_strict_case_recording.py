@@ -149,3 +149,71 @@ def test_record_dynamic_web_run_validates_against_web_registry(tmp_path: Path) -
     assert docs[0]["platform"] == "web"
     assert "appId" not in docs[0]
     assert docs[1] == [{"clickOn": {"target": "Search"}}]
+
+
+def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "recorded-tap-at-run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / "events.jsonl"
+    task = Task(id="task-1", name="Tap coordinate", description="Tap a coordinate")
+    result = TaskResult(
+        task_id="task-1",
+        status="success",
+        steps=[],
+        verification=VerificationResult(status="success", summary="ok"),
+        report=ReportArtifact(run_id="recorded-tap-at-run", path=run_dir / "report.md"),
+    )
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    android_settings = AndroidHarnessSettings()
+    android_settings.app_id = "com.example"
+    settings = Settings(output=output_settings, harness=HarnessSettings(android=android_settings))
+
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-tap-at-run",
+            task_id="task-1",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="tap_at",
+            tool_call_id="call-1",
+            tool_arguments={"point": {"x": 100, "y": 200}},
+            payload={"tool_origin": "platform", "capability_name": "tap_at", "replay": {"kind": "fsq_command", "alias": "tapAt"}},
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-tap-at-run",
+            task_id="task-1",
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="tap_at",
+            tool_call_id="call-1",
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "tap_at",
+                "replay": {"kind": "fsq_command", "alias": "tapAt"},
+                "status": "passed",
+                "safe_replay_params": {
+                    "point": {"x": 100, "y": 200},
+                    "reference_screen_size": {"width": 1080, "height": 2400},
+                },
+            },
+        ),
+    )
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "recorded"
+    assert recording.validation_status == "passed"
+    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    assert docs[1] == [
+        {
+            "tapAt": {
+                "point": {"x": 100, "y": 200},
+                "reference_screen_size": {"width": 1080, "height": 2400},
+            }
+        }
+    ]

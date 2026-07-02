@@ -36,6 +36,9 @@ class FakeAndroidDriver(AIAssertionBackendToolMixin):
     def tap_on(self, params: dict[str, object]) -> dict[str, object]:
         return self._record("tap_on", params)
 
+    def tap_at(self, params: dict[str, object]) -> dict[str, object]:
+        return self._record("tap_at", params)
+
     def long_press_on(self, params: dict[str, object]) -> dict[str, object]:
         return self._record("long_press_on", params)
 
@@ -95,6 +98,7 @@ def test_android_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("launchApp", {}, "launch_app"),
         ("killApp", {}, "kill_app"),
         ("tapOn", {"target": "Menu"}, "tap_on"),
+        ("tapAt", {"point": {"x": 100, "y": 200}}, "tap_at"),
         ("assertVisible", {"target": "Menu"}, "assert_visible"),
         ("inputText", {"text": "bing.com", "target": "Search box"}, "input_text"),
         ("longPressOn", {"target": "Address bar"}, "long_press_on"),
@@ -164,6 +168,7 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
     schemas = {schema.name: schema for schema in harness.action_space()}
 
     assert "tap_on" in schemas
+    assert "tap_at" in schemas
     assert "ui_tree" in schemas
     assert "perform_actions" not in schemas
     assert "assert_with_ai" not in schemas
@@ -178,12 +183,16 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
     assert schemas["tap_on"].metadata["executor_kind"] == "driver"
     assert schemas["tap_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "tapOn"}
     assert "target" in schemas["tap_on"].params_json_schema["properties"]
+    assert schemas["tap_at"].driver_method == "tap_at"
+    assert schemas["tap_at"].fsq_action_name == "tapAt"
+    assert schemas["tap_at"].capture_evidence is True
+    assert "point" in schemas["tap_at"].params_json_schema["properties"]
     assert schemas["ui_tree"].driver_method == "ui_tree"
     assert schemas["ui_tree"].fsq_action_name == "uiTree"
     assert schemas["ui_tree"].capture_evidence is False
     assert schemas["ui_tree"].params_json_schema.get("properties") == {}
 
-    mutating_tools = {"launch_app", "kill_app", "tap_on", "long_press_on", "input_text", "press_key", "swipe"}
+    mutating_tools = {"launch_app", "kill_app", "tap_on", "tap_at", "long_press_on", "input_text", "press_key", "swipe"}
     assert {name for name, schema in schemas.items() if schema.capture_evidence} == mutating_tools
 
 

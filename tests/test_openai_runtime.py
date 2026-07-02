@@ -10,6 +10,7 @@ import pytest
 from fsq_agent.agent import OpenAIAgentsRuntime
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
 from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
+from fsq_agent.agent._pre_plan import build_pre_plan_input
 from fsq_agent.agent._verification_task import VerificationEvidenceBuilder
 from fsq_agent.config import Settings
 from fsq_agent.models import (
@@ -56,12 +57,14 @@ class _FakeHarness:
         fsq_action_name: str = "tapOn",
         capture_evidence: bool = True,
         strict: bool = True,
+        screen_size: tuple[int, int] | None = None,
     ) -> None:
         self.tool_name = tool_name
         self.driver_method = driver_method
         self.fsq_action_name = fsq_action_name
         self.capture_evidence = capture_evidence
         self.strict = strict
+        self.screen_size = screen_size
         self.steps: list[Any] = []
         self.calls: list[str] = []
 
@@ -81,7 +84,7 @@ class _FakeHarness:
 
     def get_context(self) -> HarnessContext:
         self.calls.append("get_context")
-        return HarnessContext(platform="android", session_id="session-1")
+        return HarnessContext(platform="android", session_id="session-1", screen_size=self.screen_size)
 
     def before_action(self, step: Any, context: HarnessContext) -> None:
         self.calls.append(f"before:{step.action_name}:{context.session_id}")
@@ -494,6 +497,52 @@ def test_runtime_task_input_uses_goal_only_verification_contract() -> None:
     assert "verification_goal" in task_input
 
 
+def test_pre_plan_input_includes_available_platform_tools() -> None:
+    payload = json.loads(
+        build_pre_plan_input(
+            "Open downloads.",
+            KnowledgeBundle(),
+            [],
+            available_platform_tools=[
+                {
+                    "name": "tap_on",
+                    "alias": "tapOn",
+                    "aliases": [],
+                    "executor_kind": "driver",
+                    "step_kind": "action",
+                    "platform": "android",
+                }
+            ],
+        )
+    )
+
+    assert payload["available_platform_tools"] == [
+        {
+            "name": "tap_on",
+            "alias": "tapOn",
+            "aliases": [],
+            "executor_kind": "driver",
+            "step_kind": "action",
+            "platform": "android",
+        }
+    ]
+
+
+def test_runtime_pre_plan_tool_summary_uses_active_platform_registry() -> None:
+    settings = Settings(harness={"platform": "android"}, openai_agents=OpenAIAgentsSettings())
+    runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
+
+    tools = runtime._pre_plan_tool_summary()
+
+    by_name = {tool["name"]: tool for tool in tools}
+    assert by_name["tap_on"]["alias"] == "tapOn"
+    assert by_name["tap_at"]["alias"] == "tapAt"
+    assert by_name["ui_tree"]["alias"] == "uiTree"
+    assert by_name["assert_visible"]["step_kind"] == "assertion"
+    assert by_name["get_runtime_secret"]["executor_kind"] == "common"
+    assert by_name["get_runtime_secret"]["platform"] is None
+
+
 def test_runtime_instructions_exclude_loader_diagnostics() -> None:
     settings = Settings(openai_agents=OpenAIAgentsSettings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
@@ -694,6 +743,21 @@ async def test_harness_tool_adapter_applies_evidence_policy_to_mutating_action()
     ]
 
 
+@pytest.mark.asyncio
+async def test_harness_tool_adapter_outputs_tap_at_safe_replay_params() -> None:
+    harness = _FakeHarness(tool_name="tap_at", driver_method="tap_at", fsq_action_name="tapAt", screen_size=(1080, 2400))
+    adapter = HarnessToolAdapter(harness, run_id="run-1")
+
+    tools = adapter.build_tools(_FakeFunctionTool)
+    output = await tools[0].on_invoke_tool(None, json.dumps({"point": {"x": 100, "y": 200}}))
+
+    payload = json.loads(output)
+    expected = {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
+    assert payload["tool_name"] == "tap_at"
+    assert payload["safe_replay_params"] == expected
+    assert payload["runner_result"]["phase_reports"][1]["metadata"]["safe_replay_params"] == expected
+
+
 def test_harness_tool_adapter_passes_schema_strictness() -> None:
     harness = _FakeHarness(tool_name="perform_actions", driver_method="perform_actions", fsq_action_name="performActions", strict=False)
     adapter = HarnessToolAdapter(harness, run_id="run-1")
@@ -810,6 +874,8 @@ def test_runtime_tool_output_payload_preserves_runner_evidence_fields() -> None:
             "tool_name": "tap_on",
             "tool_origin": "harness",
             "status": "passed",
+            "replay": {"kind": "fsq_command", "alias": "tapAt"},
+            "safe_replay_params": {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}},
             "runner_step_id": "agent-tap_on-1",
             "runner_result": {"step_id": "agent-tap_on-1", "status": "passed"},
             "artifact_refs": [{"kind": "screenshot", "path": "artifacts/screenshots/before.png"}],
@@ -822,6 +888,8 @@ def test_runtime_tool_output_payload_preserves_runner_evidence_fields() -> None:
     payload = runtime._tool_output_payload(output)
 
     assert payload["runner_step_id"] == "agent-tap_on-1"
+    assert payload["replay"] == {"kind": "fsq_command", "alias": "tapAt"}
+    assert payload["safe_replay_params"] == {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
     assert payload["runner_result"] == {"step_id": "agent-tap_on-1", "status": "passed"}
     assert payload["artifact_refs"] == [{"kind": "screenshot", "path": "artifacts/screenshots/before.png"}]
 

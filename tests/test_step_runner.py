@@ -111,6 +111,12 @@ class CapturingHarness(SuccessfulHarness):
         )
 
 
+class ScreenSizeHarness(SuccessfulHarness):
+    def get_context(self) -> HarnessContext:
+        self.calls.append("get_context")
+        return HarnessContext(platform="android", session_id="session-1", screen_size=(1080, 2400))
+
+
 class FailingCaptureHarness(SuccessfulHarness):
     def capture_artifact(
         self,
@@ -278,6 +284,20 @@ def test_step_runner_applies_platform_delay_after_invoke_before_finalize(monkeyp
     assert result.phase_reports[1].metadata["post_action_delay_seconds"] == 0.25
     invoke_finish_events = [event for event in runner.events if event.event_type == "phase_finish" and event.phase == "invoke"]
     assert invoke_finish_events[0].payload == {"status": "passed", "post_action_delay_seconds": 0.25}
+
+
+def test_step_runner_adds_reference_screen_size_for_tap_at_replay() -> None:
+    harness = ScreenSizeHarness()
+    runner = _runner(harness)
+    step = ExecutableStep(step_id="tap-at-1", kind="action", action_name="tapAt", params={"point": {"x": 100, "y": 200}})
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    expected = {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
+    assert result.status == "passed"
+    assert result.phase_reports[1].metadata["safe_replay_params"] == expected
+    assert runner.last_capability_execution_result is not None
+    assert runner.last_capability_execution_result.safe_replay_params == expected
 
 
 def test_step_runner_uses_common_delay_and_skips_zero_sleep(monkeypatch) -> None:

@@ -12,6 +12,7 @@ from fsq_agent.models import (
     AndroidPerformActionsParams,
     AndroidPressKeyParams,
     AndroidSwipeParams,
+    AndroidTapAtParams,
     AndroidTapOnParams,
     AndroidUiTreeParams,
 )
@@ -29,6 +30,9 @@ class AndroidDriverInterface(Protocol):
         ...
 
     def tap_on(self, params: AndroidTapOnParams) -> dict[str, object]:
+        ...
+
+    def tap_at(self, params: AndroidTapAtParams) -> dict[str, object]:
         ...
 
     def long_press_on(self, params: AndroidLongPressOnParams) -> dict[str, object]:

@@ -130,6 +130,31 @@ def test_fsq_executable_step_adapter_normalizes_params_and_source_refs(tmp_path:
     assert steps[1].metadata["raw_command"] == case.commands[1]
 
 
+def test_fsq_executable_step_adapter_supports_android_tap_at(tmp_path: Path) -> None:
+    case_path = tmp_path / "tap_at.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Tap At Coordinate
+platform: android
+---
+- tapAt:
+    point:
+      x: 100
+      y: 200
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+
+    steps = _adapter().to_executable_steps(case)
+
+    assert len(steps) == 1
+    assert steps[0].action_name == "tap_at"
+    assert steps[0].params == {"point": {"x": 100, "y": 200}}
+    assert steps[0].metadata["authored_action_name"] == "tapAt"
+
+
 def test_fsq_executable_step_adapter_preserves_runtime_secret_refs_and_waits(tmp_path: Path) -> None:
     case_path = tmp_path / "recorded.codex.yaml"
     case_path.write_text(

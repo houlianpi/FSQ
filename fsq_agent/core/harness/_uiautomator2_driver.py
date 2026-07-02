@@ -17,6 +17,7 @@ from fsq_agent.models import (
     AndroidPerformActionsParams,
     AndroidPressKeyParams,
     AndroidSwipeParams,
+    AndroidTapAtParams,
     AndroidTapOnParams,
     AndroidUiTreeParams,
     ConfigurationError,
@@ -73,6 +74,16 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
             return self._target_missing(data)
         selector.click()
         return self._passed()
+
+    @_android_driver_tool("tapAt", description="Tap Android screen coordinates.", capture_evidence=True)
+    def tap_at(self, params: AndroidTapAtParams) -> dict[str, object]:
+        data = self._param_data(params)
+        point = self._point_payload(data)
+        if point is None:
+            return self._configuration_error("tapAt requires integer point.x and point.y parameters.")
+        x, y = self._scaled_point(point, data.get("reference_screen_size"))
+        self.device.click(x, y)
+        return self._passed({"point": {"x": x, "y": y}})
 
     @_android_driver_tool("longPressOn", description="Long press an Android UI target.", capture_evidence=True)
     def long_press_on(self, params: AndroidLongPressOnParams) -> dict[str, object]:
@@ -301,6 +312,31 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         if not all(isinstance(value, int) for value in [sx, sy, ex, ey]):
             return None
         return sx, sy, ex, ey
+
+    def _point_payload(self, params: dict[str, object]) -> tuple[int, int] | None:
+        point = params.get("point")
+        if not isinstance(point, dict):
+            return None
+        x = point.get("x")
+        y = point.get("y")
+        if not isinstance(x, int) or not isinstance(y, int):
+            return None
+        return x, y
+
+    def _scaled_point(self, point: tuple[int, int], reference_screen_size: object) -> tuple[int, int]:
+        if not isinstance(reference_screen_size, dict):
+            return point
+        reference_width = reference_screen_size.get("width")
+        reference_height = reference_screen_size.get("height")
+        if not isinstance(reference_width, int) or not isinstance(reference_height, int) or reference_width < 1 or reference_height < 1:
+            return point
+        width, height = self._screen_size()
+        x = round(point[0] * width / reference_width)
+        y = round(point[1] * height / reference_height)
+        return self._clamp_coordinate(x, width), self._clamp_coordinate(y, height)
+
+    def _clamp_coordinate(self, value: int, limit: int) -> int:
+        return max(0, min(value, max(limit - 1, 0)))
 
     def _duration_seconds(self, params: dict[str, object]) -> float:
         duration_ms = params.get("duration") if isinstance(params.get("duration"), int) else 200

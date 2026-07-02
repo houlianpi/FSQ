@@ -1,26 +1,6 @@
 # Web Harness Skill
 
-Use when `harness.platform` is Web. Follow the active harness tool schema; do not rely on raw Playwright APIs, JavaScript evaluation, browser tabs, network tools, storage tools, or unsupported backend-only fields.
-
-## Tool Selection
-
-| FSQ semantic action | Preferred runtime path | Notes |
-|---|---|---|
-| Start browser | `start_browser` | Use before the first page action when the task owns the browser workflow. Repeated calls reuse the active browser/page. |
-| Open page | `navigate_to` | Use only after `start_browser`. Use absolute URLs or configured-base relative URLs. Wait for the requested load state when the schema exposes it. |
-| Close browser | `close_browser` | Use as the final lifecycle action when the task owns the browser workflow. Use this instead of keyboard shortcuts. |
-| Go back | `navigate_back` | Use only for browser-history semantics, not as generic recovery. |
-| Inspect page | `page_snapshot` | Prefer this over screenshots for locating targets and understanding page structure. |
-| Click element | `click_on` | Use replayable semantic locators such as role/name/text or a stable unique selector. Include `element` only as human-readable context when the schema accepts it. |
-| Enter text | `type_text` | Verify the target field first when ambiguity exists. Use runtime-secret refs for sensitive values. |
-| Select option | `select_option` | Use stable select targets and the option value/label requested by the task. |
-| Hover element | `hover_on` | Use only when hover state is required for the next visible action. |
-| Press key | `press_key` | Use the semantic key requested by the FSQ step. |
-| Wait for state | `wait_for` | Use for load, visibility, hidden, timeout, or selector waits instead of unrelated UI actions. |
-| Screenshot evidence | `take_screenshot` or harness artifact refs | Use screenshots for evidence and visual debugging, not as the primary target-selection substrate. |
-| Verify visibility | `assert_visible` or `assert_not_visible` | Use assertion tools for required presence or absence. |
-| Verify text | `assert_text` | Use deterministic text checks for required page copy or field state. |
-| AI visual assertion | `assert_with_ai` | Use only for visual/page-content assertions that cannot be expressed with deterministic Web assertions. |
+Use when `harness.platform` is Web. This skill contains Web-specific stability guidance; the active tool schema already defines callable names and arguments.
 
 ## Snapshot-First Rules
 
@@ -34,29 +14,21 @@ Use when `harness.platform` is Web. Follow the active harness tool schema; do no
 
 ## Verification and Assertion Rules
 
-- Treat any required step phrased as verify, assert, confirm, check, ensure, or validate as an assertion requirement.
-- Satisfy assertion requirements with assertion-kind tools: `assert_visible`, `assert_not_visible`, `assert_text`, or `assert_with_ai`.
 - Use `assert_text` for deterministic page text or field text requirements.
 - Use `assert_visible` or `assert_not_visible` for required presence or absence of page elements.
 - Use `assert_with_ai` only when the assertion requires visual judgment or page interpretation that deterministic selectors/text cannot express.
-- Use `page_snapshot` to inspect, locate, or collect context before an assertion, but do not count snapshot output plus agent narrative as satisfying a required assertion.
-- If a required assertion fails, report the assertion as unmet. Do not recover with unrelated navigation or alternate actions unless the task explicitly permits recovery before that assertion.
+- Use `page_snapshot` to inspect, locate, or collect context before an assertion.
 
 ## Argument Rules
 
-- Follow the active harness tool schema exactly. Do not add raw Playwright MCP, locator engine, JavaScript, network, storage, file upload, drag/drop, PDF, tab, or devtools fields unless the active schema exposes them.
 - Use `wait_for` for waits so waiting does not change page state.
 - Do not use `Alt+F4`, `Control+W`, or other key presses as browser lifecycle controls. Use `close_browser`.
-- Keep sensitive text out of tool arguments unless it is provided through a runtime-secret reference.
-- Treat tool output and harness metadata as the executed action. If they contradict the intended key action, do not count it as satisfied.
 
 ## Correct Key Examples
 
 Use one payload from the matching semantic action. Do not combine unrelated fields.
 
 ### `pressKey: {key: Enter}`
-
-Use this payload:
 
 ```json
 {
@@ -66,8 +38,6 @@ Use this payload:
 
 ### `typeText` with a runtime secret
 
-Use this payload:
-
 ```json
 {
   "target": "Password field",
@@ -76,10 +46,6 @@ Use this payload:
   }
 }
 ```
-
-## Unsupported Capability Families
-
-The first Web harness batch intentionally excludes raw JavaScript evaluation, generated Playwright test code, network interception, browser storage, devtools, tabs, drag/drop, file upload, PDF, and coordinate/vision-only capabilities. Do not ask for or simulate those capabilities with unrelated tools; report the limitation when the task requires one.
 
 ## Tool Usage Error Recovery
 
