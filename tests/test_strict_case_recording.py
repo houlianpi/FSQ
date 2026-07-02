@@ -217,3 +217,75 @@ def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: 
             }
         }
     ]
+
+
+def test_record_dynamic_android_point_swipe_includes_reference_screen_size(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "recorded-swipe-run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / "events.jsonl"
+    task = Task(id="task-1", name="Swipe coordinate", description="Swipe by coordinates")
+    result = TaskResult(
+        task_id="task-1",
+        status="success",
+        steps=[],
+        verification=VerificationResult(status="success", summary="ok"),
+        report=ReportArtifact(run_id="recorded-swipe-run", path=run_dir / "report.md"),
+    )
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    android_settings = AndroidHarnessSettings()
+    android_settings.app_id = "com.example"
+    settings = Settings(output=output_settings, harness=HarnessSettings(android=android_settings))
+
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-swipe-run",
+            task_id="task-1",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="swipe",
+            tool_call_id="call-1",
+            tool_arguments={"start": {"x": 800, "y": 1900}, "end": {"x": 200, "y": 1900}, "duration": 1000},
+            payload={"tool_origin": "platform", "capability_name": "swipe", "replay": {"kind": "fsq_command", "alias": "swipe"}},
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-swipe-run",
+            task_id="task-1",
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="swipe",
+            tool_call_id="call-1",
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "swipe",
+                "replay": {"kind": "fsq_command", "alias": "swipe"},
+                "status": "passed",
+                "safe_replay_params": {
+                    "start": {"x": 800, "y": 1900},
+                    "end": {"x": 200, "y": 1900},
+                    "duration": 1000,
+                    "reference_screen_size": {"width": 1080, "height": 2400},
+                },
+            },
+        ),
+    )
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "recorded"
+    assert recording.validation_status == "passed"
+    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    assert docs[1] == [
+        {
+            "swipe": {
+                "start": {"x": 800, "y": 1900},
+                "end": {"x": 200, "y": 1900},
+                "duration": 1000,
+                "reference_screen_size": {"width": 1080, "height": 2400},
+            }
+        }
+    ]

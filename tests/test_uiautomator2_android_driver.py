@@ -212,6 +212,28 @@ def test_uiautomator2_driver_scales_point_based_tap_from_reference_screen_size()
     assert device.calls == [("click", 50, 100)]
 
 
+def test_uiautomator2_driver_scales_point_based_swipe_from_reference_screen_size() -> None:
+    device = FakeDevice()
+    device.info["displayWidth"] = 540
+    device.info["displayHeight"] = 1200
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.swipe(
+        {
+            "start": {"x": 800, "y": 1900},
+            "end": {"x": 200, "y": 1900},
+            "reference_screen_size": {"width": 1080, "height": 2400},
+            "duration": 1000,
+        }
+    )
+
+    assert result == {
+        "status": "passed",
+        "output": {"start": {"x": 400, "y": 950}, "end": {"x": 100, "y": 950}},
+    }
+    assert device.calls == [("swipe", 400, 950, 100, 950, 1.0)]
+
+
 def test_uiautomator2_driver_exposes_ui_tree_output() -> None:
     device = FakeDevice()
     driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)

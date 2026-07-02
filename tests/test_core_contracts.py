@@ -117,7 +117,12 @@ def test_android_parameter_models_produce_canonical_dumps_and_reject_extra_field
         {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
     )
     swipe = AndroidSwipeParams.model_validate(
-        {"start": {"x": 800, "y": 1900}, "end": {"x": 200, "y": 1900}, "duration": 1000}
+        {
+            "start": {"x": 800, "y": 1900},
+            "end": {"x": 200, "y": 1900},
+            "reference_screen_size": {"width": 1080, "height": 2400},
+            "duration": 1000,
+        }
     )
 
     assert tap.model_dump(mode="json", exclude_none=True) == {"target": "Login"}
@@ -128,6 +133,7 @@ def test_android_parameter_models_produce_canonical_dumps_and_reject_extra_field
     assert swipe.model_dump(mode="json", exclude_none=True) == {
         "start": {"x": 800, "y": 1900},
         "end": {"x": 200, "y": 1900},
+        "reference_screen_size": {"width": 1080, "height": 2400},
         "duration": 1000,
     }
     with pytest.raises(ValidationError):

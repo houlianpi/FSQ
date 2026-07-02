@@ -300,6 +300,30 @@ def test_step_runner_adds_reference_screen_size_for_tap_at_replay() -> None:
     assert runner.last_capability_execution_result.safe_replay_params == expected
 
 
+def test_step_runner_adds_reference_screen_size_for_point_based_swipe_replay() -> None:
+    harness = ScreenSizeHarness()
+    runner = _runner(harness)
+    step = ExecutableStep(
+        step_id="swipe-1",
+        kind="action",
+        action_name="swipe",
+        params={"start": {"x": 800, "y": 1900}, "end": {"x": 200, "y": 1900}, "duration": 1000},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    expected = {
+        "start": {"x": 800, "y": 1900},
+        "end": {"x": 200, "y": 1900},
+        "duration": 1000,
+        "reference_screen_size": {"width": 1080, "height": 2400},
+    }
+    assert result.status == "passed"
+    assert result.phase_reports[1].metadata["safe_replay_params"] == expected
+    assert runner.last_capability_execution_result is not None
+    assert runner.last_capability_execution_result.safe_replay_params == expected
+
+
 def test_step_runner_uses_common_delay_and_skips_zero_sleep(monkeypatch) -> None:
     sleep_calls: list[float] = []
     monkeypatch.setattr("fsq_agent.core.runner._runner.time.sleep", lambda seconds: sleep_calls.append(seconds))

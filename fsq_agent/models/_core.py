@@ -254,6 +254,7 @@ class AndroidSwipeParams(BaseModel):
     direction: AndroidSwipeDirection | None = None
     start: AndroidPoint | None = None
     end: AndroidPoint | None = None
+    reference_screen_size: AndroidScreenSize | None = None
     duration: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")

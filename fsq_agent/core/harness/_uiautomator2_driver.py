@@ -128,6 +128,8 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
             if points is None:
                 return self._configuration_error("swipe point payload requires integer start.x, start.y, end.x, and end.y parameters.")
             sx, sy, ex, ey = points
+            sx, sy = self._scaled_point((sx, sy), data.get("reference_screen_size"))
+            ex, ey = self._scaled_point((ex, ey), data.get("reference_screen_size"))
             duration = self._duration_seconds(data)
             self.device.swipe(sx, sy, ex, ey, duration)
             return self._passed({"start": {"x": sx, "y": sy}, "end": {"x": ex, "y": ey}})

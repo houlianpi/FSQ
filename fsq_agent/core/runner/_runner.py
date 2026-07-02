@@ -488,9 +488,11 @@ class StepRunner:
         capability: CapabilityDefinition,
         context: object,
     ) -> dict[str, object]:
-        if capability.name != "tap_at":
+        if capability.name not in {"tap_at", "swipe"}:
             return {}
         params = dict(step.params)
+        if capability.name == "swipe" and not self._has_swipe_points(params):
+            return {}
         if "reference_screen_size" in params:
             return params
         screen_size = getattr(context, "screen_size", None)
@@ -501,6 +503,9 @@ class StepRunner:
             return params
         params["reference_screen_size"] = {"width": width, "height": height}
         return params
+
+    def _has_swipe_points(self, params: dict[str, object]) -> bool:
+        return isinstance(params.get("start"), dict) and isinstance(params.get("end"), dict)
 
     def _capability_execution_result(
         self,

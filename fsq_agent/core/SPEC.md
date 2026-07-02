@@ -76,7 +76,7 @@ For each invocation, `StepRunner` must:
 10. Emit structured events containing safe capability metadata, replay payload fields, artifact refs, post-action delay metadata, and status.
 11. Return `RunnerStepResult`.
 
-For replayable PlatformTools, `StepRunner` must include capability-derived `safe_replay_params` in invoke metadata and `last_capability_execution_result` when safe replay params differ from raw tool arguments. Android `tap_at` must record the invocation `point` plus the current `HarnessContext.screen_size` as `reference_screen_size` when a reference is not already supplied, so dynamic recording can produce strict YAML that replays proportionally on a different device resolution.
+For replayable PlatformTools, `StepRunner` must include capability-derived `safe_replay_params` in invoke metadata and `last_capability_execution_result` when safe replay params differ from raw tool arguments. Android `tap_at` and point-based `swipe` must record invocation coordinates plus the current `HarnessContext.screen_size` as `reference_screen_size` when a reference is not already supplied, so dynamic recording can produce strict YAML that replays proportionally on a different device resolution.
 
 `StepRunner` must not contain action-name branches for `waitMs`, `wait_ms`, `get_runtime_secret`, platform action names, or evidence-enabled platform mutations. A pure wait is an inherited CommonTool capability. Runtime secret lookup is a sensitive inherited CommonTool capability.
 
@@ -97,7 +97,7 @@ Android LLM-exposed capabilities in this SPEC cycle include inherited CommonTool
 
 Android owns `AndroidHarness`, `AndroidDriverInterface`, `UiAutomator2AndroidDriver`, Android catalog-backed platform declarations, and Android default capability definitions. `UiAutomator2AndroidDriver.assert_with_ai` is a decorated backend tool that calls shared AI assertion support. Android artifact capture supports `screenshot` and `ui_tree`.
 
-`UiAutomator2AndroidDriver.tap_at` accepts absolute Android screen coordinates for the current invocation. When params include `reference_screen_size`, the driver must scale the supplied point from that reference width/height to the current device screen width/height, clamp the computed coordinate inside the current screen bounds, and click the scaled coordinate. This scaling exists for generated strict replay artifacts; dynamic agents should still prefer locator-based actions for normal UI elements.
+`UiAutomator2AndroidDriver.tap_at` and point-based `swipe` accept absolute Android screen coordinates for the current invocation. When params include `reference_screen_size`, the driver must scale supplied points from that reference width/height to the current device screen width/height, clamp computed coordinates inside the current screen bounds, and execute the scaled coordinate action. This scaling exists for generated strict replay artifacts; dynamic agents should still prefer locator-based actions for normal UI elements.
 
 ### Web Platform Block
 

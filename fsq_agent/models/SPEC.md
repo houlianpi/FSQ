@@ -75,7 +75,7 @@ Android platform exports:
 - `AndroidLongPressOnParams`: Pydantic model for `long_press_on` parameters. It uses the same target contract as `AndroidTapOnParams`.
 - `AndroidInputTextParams`: Pydantic model for resolved `input_text` parameters. It requires string `text` plus either a `target` or non-empty `locator`. Strict replay refs such as `RuntimeSecretRef` may appear in parsed FSQ command payloads before strict entry resolution, but they are not valid Android driver parameters after resolution.
 - `AndroidPressKeyParams`: Pydantic model for `press_key` parameters with one normalized required key string.
-- `AndroidSwipeParams`: Pydantic model for `swipe` parameters. It accepts either a direction string or both `start` and `end` points, with optional duration in milliseconds.
+- `AndroidSwipeParams`: Pydantic model for `swipe` parameters. It accepts either a direction string or both `start` and `end` points, with optional `reference_screen_size` for point-based strict replay scaling and optional duration in milliseconds.
 - `AndroidUiTreeParams`: Pydantic model for the read-only `ui_tree` driver tool parameters. It accepts no fields and exists so dynamic agents can request the current Android UI hierarchy through the normal harness action schema path.
 - `AndroidPerformActionsParams`: Pydantic model for future `perform_actions` parameters that wraps a W3C actions array as `actions`. The model existing in `models` is not sufficient to expose the action to dynamic LLM runs; concrete backend exposure requires an implemented, decorated driver capability that appears in harness `action_space()`.
 - `AndroidAssertVisibleParams`: Pydantic model for `assert_visible` parameters. It uses the Android target contract plus optional assertion metadata.
