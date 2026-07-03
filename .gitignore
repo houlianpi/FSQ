@@ -1,4 +1,6 @@
 .venv/
+.DS_Store
+.vscode/launch.json
 __pycache__/
 *.py[cod]
 .pytest_cache/

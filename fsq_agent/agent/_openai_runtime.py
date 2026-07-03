@@ -196,6 +196,7 @@ class OpenAIAgentsRuntime:
         try:
             from agents import Agent, FunctionTool, OpenAIProvider, RunConfig, Runner, set_tracing_disabled
             from agents.extensions import ToolOutputTrimmer
+            from agents.model_settings import ModelSettings
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ConfigurationError("openai-agents and openai packages are required when SDK runtime is enabled.") from exc
@@ -304,6 +305,7 @@ class OpenAIAgentsRuntime:
                 agent = Agent(
                     name=self.settings.agent.name,
                     model=self.settings.openai_agents.model,
+                    model_settings=ModelSettings(reasoning={"effort": "medium"}, verbosity="medium"),
                     instructions=self._build_instructions(knowledge, skills),
                     tools=[*agent_tools, *harness_tools],
                     output_type=AgentFinalOutput,
@@ -525,6 +527,7 @@ class OpenAIAgentsRuntime:
         try:
             from agents import Agent, FunctionTool, OpenAIProvider, RunConfig, Runner, set_tracing_disabled
             from agents.extensions import ToolOutputTrimmer
+            from agents.model_settings import ModelSettings
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ConfigurationError("openai-agents and openai packages are required when SDK runtime is enabled.") from exc
@@ -546,6 +549,7 @@ class OpenAIAgentsRuntime:
             agent = Agent(
                 name=f"{self.settings.agent.name} pre-planner",
                 model=self.settings.openai_agents.model,
+                model_settings=ModelSettings(reasoning={"effort": "medium"}, verbosity="medium"),
                 instructions=PRE_PLAN_AGENT_INSTRUCTIONS,
                 tools=self._build_pre_plan_tools(FunctionTool),
                 output_type=GoalPrePlan,
@@ -695,6 +699,7 @@ class OpenAIAgentsRuntime:
         try:
             from agents import Agent, OpenAIProvider, RunConfig, Runner, set_tracing_disabled
             from agents.extensions import ToolOutputTrimmer
+            from agents.model_settings import ModelSettings
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise ConfigurationError("openai-agents and openai packages are required when SDK runtime is enabled.") from exc
@@ -722,6 +727,7 @@ class OpenAIAgentsRuntime:
             agent = Agent(
                 name=f"{self.settings.agent.name} verifier",
                 model=self.settings.openai_agents.model,
+                model_settings=ModelSettings(reasoning={"effort": "medium"}, verbosity="medium"),
                 instructions=VERIFICATION_AGENT_INSTRUCTIONS,
                 tools=[],
                 output_type=AgentFinalOutput,

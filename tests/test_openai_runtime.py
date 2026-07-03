@@ -15,6 +15,7 @@ from fsq_agent.agent._verification_task import VerificationEvidenceBuilder
 from fsq_agent.config import Settings
 from fsq_agent.models import (
     AgentFinalOutput,
+    GoalPrePlan,
     HarnessActionResult,
     HarnessArtifactRef,
     HarnessContext,
@@ -176,8 +177,11 @@ class _FakeProviderSession:
 
 
 class _FakeAgent:
+    instances: list["_FakeAgent"] = []
+
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
+        self.instances.append(self)
 
 
 class _FakeRunConfig:
@@ -191,7 +195,8 @@ class _FakeToolOutputTrimmer:
 
 
 class _FakeRunResult:
-    final_output = AgentFinalOutput(status="success", summary="Done.")
+    def __init__(self, final_output: Any | None = None) -> None:
+        self.final_output = final_output or AgentFinalOutput(status="success", summary="Done.")
 
     async def stream_events(self) -> Any:
         if False:
@@ -200,7 +205,9 @@ class _FakeRunResult:
 
 class _FakeRunner:
     @staticmethod
-    def run_streamed(*_args: Any, **_kwargs: Any) -> _FakeRunResult:
+    def run_streamed(agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _FakeRunResult:
+        if agent.kwargs.get("output_type") is GoalPrePlan:
+            return _FakeRunResult(GoalPrePlan(goal="Open the app.", verification_goal="The app is open."))
         return _FakeRunResult()
 
 
@@ -209,6 +216,7 @@ def _patch_runtime_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     import agents.extensions
     import fsq_agent.agent._openai_runtime as runtime_module
 
+    _FakeAgent.instances = []
     monkeypatch.setattr(runtime_module, "build_model_provider_session", lambda _settings: _FakeProviderSession())
     monkeypatch.setattr(agents, "Agent", _FakeAgent)
     monkeypatch.setattr(agents, "FunctionTool", _FakeFunctionTool)
@@ -272,6 +280,32 @@ async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: py
     harness_completed = events[titles.index("Harness setup completed")]
     assert harness_completed.payload["harness_class"] == "_FakeHarness"
     assert "driver_class" not in harness_completed.payload
+
+
+@pytest.mark.asyncio
+async def test_runtime_constructs_sdk_agents_with_explicit_medium_model_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agents.model_settings import ModelSettings
+
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
+    _patch_runtime_sdk(monkeypatch)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), _fake_harness_factory)
+    task = Task(id="explicit-model-settings", name="Model Settings", description="Run with stable SDK settings.")
+
+    await runtime.run_pre_plan("Open the app.", KnowledgeBundle(), [], "explicit-model-settings-run")
+    await runtime.run_task(task, KnowledgeBundle(), [], "explicit-model-settings-run")
+    await runtime._run_verification_task(task, [], "explicit-model-settings-run")
+
+    assert [agent.kwargs["name"] for agent in _FakeAgent.instances] == [
+        "fsq-agent pre-planner",
+        "fsq-agent",
+        "fsq-agent verifier",
+    ]
+    for agent in _FakeAgent.instances:
+        model_settings = agent.kwargs["model_settings"]
+        assert isinstance(model_settings, ModelSettings)
+        assert model_settings.reasoning is not None
+        assert model_settings.reasoning.effort == "medium"
+        assert model_settings.verbosity == "medium"
 
 
 @pytest.mark.asyncio
