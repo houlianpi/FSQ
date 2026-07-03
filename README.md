@@ -4,6 +4,26 @@ fsq-agent is a goal-driven automated testing agent for FSQ YAML-guided tasks. It
 
 The project follows spec-driven development. See root [SPEC.md](SPEC.md) and each relevant module `SPEC.md` before changing public interfaces.
 
+## Environment Setup
+
+This project uses `uv` for dependency management. Install `uv` once, then sync the locked project environment from `pyproject.toml` and `uv.lock`.
+
+On Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv sync --extra dev
+```
+
+On macOS/Linux shells:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync --extra dev
+```
+
+Run CLI commands through `uv run` so they use the synced virtual environment. When project dependencies change, refresh and commit the lock file with `uv lock`.
+
 ## Platform Setup
 
 Platform defaults are maintained by the repository for now. For normal local use, copy the example environment file, edit `.env`, choose the target platform in the CLI command, and run.
@@ -25,7 +45,7 @@ cp .env.example .env
 Install the Android extra and connect an emulator or device with ADB:
 
 ```powershell
-python -m pip install -e ".[dev,android]"
+uv sync --extra dev --extra android
 ```
 
 Set Android values in `.env`:
@@ -40,8 +60,8 @@ Leave `FSQ_ANDROID_SERIAL` blank when only one Android target is connected.
 Start Android runs:
 
 ```powershell
-fsq-agent init --platform android
-fsq-agent run --platform android --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
+uv run fsq-agent init --platform android
+uv run fsq-agent run --platform android --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
 ```
 
 ### Web With Local Chrome
@@ -49,7 +69,7 @@ fsq-agent run --platform android --goal "Access Downloads through the browser ov
 Install the Web extra and point fsq-agent at the local browser executable:
 
 ```powershell
-python -m pip install -e ".[dev,web]"
+uv sync --extra dev --extra web
 ```
 
 Set Web values in `.env`:
@@ -61,8 +81,8 @@ FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrom
 Start Web runs:
 
 ```powershell
-fsq-agent init --platform web
-fsq-agent run --platform web --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
+uv run fsq-agent init --platform web
+uv run fsq-agent run --platform web --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
 ```
 
 ### Windows Desktop With Edge
@@ -70,7 +90,7 @@ fsq-agent run --platform web --goal "Open https://www.bing.com, search for Playw
 Install the Windows extra and point fsq-agent at the target application:
 
 ```powershell
-python -m pip install -e ".[dev,windows]"
+uv sync --extra dev --extra windows
 ```
 
 Set Windows values in `.env`:
@@ -87,8 +107,8 @@ FSQ_WINDOWS_LAUNCH_ARGS=--no-first-run --disable-features=msImplicitSignin
 Start Windows desktop runs:
 
 ```powershell
-fsq-agent init --platform windows
-fsq-agent run --platform windows --goal "Launch Edge, search for Windows automation, and verify the results page is visible."
+uv run fsq-agent init --platform windows
+uv run fsq-agent run --platform windows --goal "Launch Edge, search for Windows automation, and verify the results page is visible."
 ```
 
 ### macOS With Appium Mac2
@@ -96,7 +116,7 @@ fsq-agent run --platform windows --goal "Launch Edge, search for Windows automat
 Install the macOS extra. Appium 2 and the Mac2 driver must be installed and running on the Mac being automated:
 
 ```bash
-python -m pip install -e ".[dev,macos]"
+uv sync --extra dev --extra macos
 npm install -g appium
 appium driver install mac2
 appium --address 127.0.0.1 --port 4723
@@ -113,8 +133,8 @@ FSQ_MACOS_APP_PATH=/Applications/Microsoft Edge.app
 Start macOS runs:
 
 ```bash
-fsq-agent init --platform macos
-fsq-agent run --platform macos --goal "Open Microsoft Edge, inspect the visible window, and verify the expected controls are visible."
+uv run fsq-agent init --platform macos
+uv run fsq-agent run --platform macos --goal "Open Microsoft Edge, inspect the visible window, and verify the expected controls are visible."
 ```
 
 Existing process environment variables take precedence over `.env` values. Secret values such as API keys and test-account passwords should stay in `.env` or the process environment.
@@ -126,34 +146,34 @@ Use the platform that matches the target: `android`, `web`, `windows`, or `macos
 Initialize and check readiness:
 
 ```powershell
-fsq-agent init --platform <platform>
+uv run fsq-agent init --platform <platform>
 ```
 
 Run from a natural-language goal:
 
 ```powershell
-fsq-agent run --platform <platform> --goal "Open the target app and verify the expected page or controls are visible."
+uv run fsq-agent run --platform <platform> --goal "Open the target app and verify the expected page or controls are visible."
 ```
 
 Run from FSQ case files as dynamic reference material:
 
 ```powershell
-fsq-agent run --platform <platform> --case-yaml path/to/case.codex.yaml
-fsq-agent run --platform <platform> --case-dir path/to/cases
+uv run fsq-agent run --platform <platform> --case-yaml path/to/case.codex.yaml
+uv run fsq-agent run --platform <platform> --case-dir path/to/cases
 ```
 
 Run authored FSQ cases through deterministic strict-core execution:
 
 ```powershell
-fsq-agent run --platform <platform> --strict --case-yaml path/to/case.codex.yaml
-fsq-agent run --platform <platform> --strict --case-dir path/to/cases
+uv run fsq-agent run --platform <platform> --strict --case-yaml path/to/case.codex.yaml
+uv run fsq-agent run --platform <platform> --strict --case-dir path/to/cases
 ```
 
 Open the local playground or print a stored report:
 
 ```powershell
-fsq-agent playground --platform <platform>
-fsq-agent report --platform <platform> --run-id RUN_ID --format markdown
+uv run fsq-agent playground --platform <platform>
+uv run fsq-agent report --platform <platform> --run-id RUN_ID --format markdown
 ```
 
 ## Current Scope
