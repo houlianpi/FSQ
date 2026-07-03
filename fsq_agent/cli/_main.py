@@ -11,6 +11,7 @@ from fsq_agent.agent import FsqAgent
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
 from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
+from fsq_agent.cli._llm_setup import setup_llm_provider
 from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
@@ -36,6 +37,7 @@ from fsq_agent.report import resolve_report_path
 
 logger = logging.getLogger(__name__)
 PLATFORM_CHOICE = click.Choice(["android", "web", "windows", "macos"])
+LLM_PROVIDER_CHOICE = click.Choice(["github_copilot", "azure_openai"])
 
 
 @click.group()
@@ -55,6 +57,27 @@ def init(platform: str, workspace_path: str | None) -> None:
         _log_readiness("Strict-core run", lambda: validate_strict_core_settings(settings))
         _log_readiness("AI assertion", lambda: validate_strict_core_settings(settings, requires_ai_assertion=True))
     except FsqAgentError as exc:
+        logger.error("Error: %s", exc)
+        raise click.Abort() from exc
+
+
+@main.group()
+def setup() -> None:
+    """Set up local fsq-agent resources."""
+
+
+@setup.command("llm")
+@click.option("--provider", type=LLM_PROVIDER_CHOICE, required=True)
+@click.option("--check-only", is_flag=True, default=False, show_default=True)
+def setup_llm(provider: str, check_only: bool) -> None:
+    try:
+        setup_llm_provider(provider=provider, check_only=check_only)
+    except FsqAgentError as exc:
+        logger.error("Error: %s", exc)
+        if exc.context:
+            logger.error("Details: %s", exc.context)
+        raise click.Abort() from exc
+    except OSError as exc:
         logger.error("Error: %s", exc)
         raise click.Abort() from exc
 

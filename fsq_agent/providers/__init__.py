@@ -1,5 +1,10 @@
 from fsq_agent.providers._ai_assertion import AIAssertionEvaluator
-from fsq_agent.providers._factory import ModelProviderFactory, build_ai_assertion_evaluator, build_model_provider_session
+from fsq_agent.providers._factory import (
+    ModelProviderFactory,
+    build_ai_assertion_evaluator,
+    build_model_provider_session,
+    prepare_model_provider_session,
+)
 from fsq_agent.providers._session import ModelProviderSession
 
 __all__ = [
@@ -8,4 +13,5 @@ __all__ = [
     "ModelProviderSession",
     "build_ai_assertion_evaluator",
     "build_model_provider_session",
+    "prepare_model_provider_session",
 ]

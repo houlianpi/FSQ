@@ -28,10 +28,12 @@ WINDOWS_LAUNCH_ARGS_ENV = "FSQ_WINDOWS_LAUNCH_ARGS"
 MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
 MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
 MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
+LLM_PROVIDER_ENV = "FSQ_LLM_PROVIDER"
 AZURE_OPENAI_BASE_URL_ENV = "AZURE_OPENAI_BASE_URL"
 AZURE_OPENAI_MODEL_ENV = "AZURE_OPENAI_MODEL"
 AZURE_OPENAI_API_KEY_ENV = "AZURE_OPENAI_API_KEY"
 GITHUB_COPILOT_MODEL = "gpt-5.5"
+SUPPORTED_LLM_PROVIDERS = ("github_copilot", "azure_openai")
 CHROME_EXECUTABLE_NAMES = {"chrome", "chrome.exe", "google chrome", "google-chrome", "google-chrome-stable"}
 
 
@@ -168,6 +170,16 @@ def _strip_env_value(value: str) -> str:
 
 
 def _apply_environment_settings(settings: Settings) -> None:
+    provider = _env_value(LLM_PROVIDER_ENV)
+    if provider:
+        normalized_provider = provider.strip().lower()
+        if normalized_provider not in SUPPORTED_LLM_PROVIDERS:
+            raise ConfigurationError(
+                f"LLM provider environment variable {LLM_PROVIDER_ENV} is invalid.",
+                context={"provider_env": LLM_PROVIDER_ENV, "value": provider, "supported": list(SUPPORTED_LLM_PROVIDERS)},
+            )
+        settings.openai_agents.provider = normalized_provider  # type: ignore[assignment]
+
     app_id = _env_value(ANDROID_APP_ID_ENV)
     serial = _env_value(ANDROID_SERIAL_ENV)
     if app_id:
@@ -291,18 +303,27 @@ def _split_windows_command_line(value: str) -> list[str]:
     return args
 
 
-def validate_runtime_settings(settings: Settings) -> None:
+def validate_provider_settings(settings: Settings) -> None:
     _validate_openai_provider_settings(settings)
+
+
+def validate_runtime_settings(settings: Settings) -> None:
+    validate_provider_settings(settings)
     _validate_harness_settings(settings)
 
 
 def validate_strict_core_settings(settings: Settings, requires_ai_assertion: bool = False) -> None:
     _validate_harness_settings(settings)
     if requires_ai_assertion:
-        _validate_openai_provider_settings(settings)
+        validate_provider_settings(settings)
 
 
 def _validate_openai_provider_settings(settings: Settings) -> None:
+    if settings.openai_agents.provider not in SUPPORTED_LLM_PROVIDERS:
+        raise ConfigurationError(
+            "OpenAI Agents SDK provider is unsupported.",
+            context={"provider_env": LLM_PROVIDER_ENV, "provider": settings.openai_agents.provider, "supported": list(SUPPORTED_LLM_PROVIDERS)},
+        )
     if not settings.openai_agents.model.strip():
         raise ConfigurationError(
             "OpenAI Agents SDK model deployment name is required.",

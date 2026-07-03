@@ -7,6 +7,7 @@ import pytest
 
 from fsq_agent.config import Settings
 from fsq_agent.models import ConfigurationError, OpenAIAgentsSettings
+from fsq_agent.providers import prepare_model_provider_session
 from fsq_agent.providers import _github_copilot as copilot
 
 
@@ -54,6 +55,17 @@ def test_resolve_github_token_authenticates_when_cache_expired(tmp_path) -> None
 
     assert token == "ghu_new"
     authenticate.assert_called_once_with(token_cache_path)
+
+
+def test_prepare_model_provider_session_noninteractive_rejects_missing_copilot_auth(tmp_path) -> None:
+    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
+    settings.workspace.root_dir = tmp_path
+
+    with patch.object(copilot, "_authenticate") as authenticate:
+        with pytest.raises(ConfigurationError, match="GitHub Copilot authentication is not configured"):
+            prepare_model_provider_session(settings, interactive_auth=False)
+
+    authenticate.assert_not_called()
 
 
 def test_get_copilot_plan_rejects_unknown_plan() -> None:

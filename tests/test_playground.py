@@ -1013,6 +1013,7 @@ appId: com.microsoft.emmx
 def test_playground_strict_web_yaml_execution_uses_web_harness(tmp_path: Path, monkeypatch) -> None:
     chrome_path = tmp_path / "chrome.exe"
     chrome_path.write_text("", encoding="utf-8")
+    chrome_path.chmod(0o755)
     settings = Settings(
         harness={
             "platform": "web",

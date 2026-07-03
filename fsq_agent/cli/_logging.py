@@ -11,8 +11,9 @@ class CLILogFormatter(logging.Formatter):
 def configure_cli_logging(level: int = logging.INFO) -> None:
     logger = logging.getLogger("fsq_agent")
     logger.setLevel(level)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(CLILogFormatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
-        logger.addHandler(handler)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    handler = logging.StreamHandler()
+    handler.setFormatter(CLILogFormatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+    logger.addHandler(handler)
     logger.propagate = False
