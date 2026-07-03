@@ -1275,20 +1275,24 @@ def test_playground_server_serves_status_over_http(tmp_path: Path) -> None:
     assert payload["busy"] is False
 
 
-def test_playground_static_progress_is_first_section_and_numbered() -> None:
+def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
     html = (static_dir / "index.html").read_text(encoding="utf-8")
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
     clear_page_body = script[script.index("function clearPage()"):script.index("async function refreshStatus()")]
 
-    assert html.index('class="section progress-section"') < html.index("<h2>Session</h2>")
+    assert 'class="section progress-section"' not in html
+    assert html.index('id="preview-tab"') < html.index('id="progress-tab"') < html.index('id="report-tab"')
+    assert html.index('id="preview-pane"') < html.index('id="progress-pane"') < html.index('id="report-pane"')
     assert "FSQ-Agent Playground" in html
     assert "status-pill status-connecting" in html
     assert "preview-tab" in html
+    assert "progress-tab" in html
     assert "report-tab" in html
     assert "report-content" in html
     assert "preview-pane" in html
+    assert "progress-pane" in html
     assert "replay-screenshots" not in html
     assert 'id="replay-video" controls' in html
     assert 'id="replay-video-play"' not in html
@@ -1368,6 +1372,7 @@ def test_playground_static_progress_is_first_section_and_numbered() -> None:
     assert "renderMarkdown" in script
     assert "escapeHtml" in script
     assert "showRightTab" in script
+    assert "showRightTab('progress')" in script
     assert "renderProgressText" in script
     assert "toolName" in script
     assert "progressRunId" in script
@@ -1461,8 +1466,9 @@ def test_playground_static_progress_is_first_section_and_numbered() -> None:
     assert "screenshot-refresh" not in styles
     assert "#22c55e" in styles
     assert "#ef4444" in styles
-    assert "grid-template-rows: auto minmax(0, 1fr) auto auto" in styles
-    assert "grid-template-rows: auto minmax(420px, 62vh) auto auto" in styles
+    assert ".progress-pane" in styles
+    assert "grid-template-rows: auto minmax(0, 1fr) auto auto" not in styles
+    assert "grid-template-rows: auto minmax(420px, 62vh) auto auto" not in styles
     assert "run-mode-row" in styles
     assert "report-pane" in styles
     assert "report-content" in styles

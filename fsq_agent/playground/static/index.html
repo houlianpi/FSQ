@@ -17,12 +17,6 @@
           <button id="refresh" type="button">Clear</button>
         </header>
 
-        <section class="section progress-section">
-          <h2>Progress</h2>
-          <div id="progress-run-id" class="progress-run-id" hidden></div>
-          <div id="progress" class="progress-log"></div>
-        </section>
-
         <section class="section">
           <h2>Session</h2>
           <div class="session-row">
@@ -47,8 +41,9 @@
       <section class="panel preview-panel">
         <header class="preview-header">
           <div>
-            <div class="preview-tabs" role="tablist" aria-label="Preview and report">
+            <div class="preview-tabs" role="tablist" aria-label="Preview, progress, and report">
               <button id="preview-tab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="preview-pane">Preview</button>
+              <button id="progress-tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="progress-pane">Progress</button>
               <button id="report-tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="report-pane">Report</button>
             </div>
           </div>
@@ -58,6 +53,10 @@
           <img id="screenshot" alt="Android screenshot preview" />
           <p id="preview-empty">Screenshot preview will appear here.</p>
         </div>
+        <section id="progress-pane" class="tab-pane progress-pane" role="tabpanel" aria-labelledby="progress-tab" hidden>
+          <div id="progress-run-id" class="progress-run-id" hidden></div>
+          <div id="progress" class="progress-log"></div>
+        </section>
         <div id="report-pane" class="tab-pane report-pane" role="tabpanel" aria-labelledby="report-tab" hidden>
           <div id="report-content" class="report-content">No report yet.</div>
         </div>

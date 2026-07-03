@@ -76,8 +76,8 @@ button:disabled {
 }
 
 .control-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -99,6 +99,7 @@ button:disabled {
 
 .preview-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 18px;
   margin-bottom: 6px;
   border-bottom: 1px solid #d8dee8;
@@ -254,13 +255,6 @@ textarea {
   margin-top: 8px;
 }
 
-.progress-section {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 .progress-run-id {
   flex: 0 0 auto;
   margin-bottom: 8px;
@@ -311,6 +305,7 @@ textarea {
 
 .progress-title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -397,6 +392,17 @@ textarea {
 
 .tab-pane {
   min-height: 0;
+}
+
+.progress-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 16px;
+  background: #ffffff;
 }
 
 .report-pane {
@@ -494,7 +500,12 @@ textarea {
     overflow: auto;
   }
 
-  .control-panel {
-    grid-template-rows: auto minmax(420px, 62vh) auto auto;
+  .preview-panel {
+    min-height: min(680px, 82vh);
+  }
+
+  .progress-pane,
+  .report-pane {
+    min-height: min(520px, 68vh);
   }
 }

@@ -37,8 +37,10 @@ const els = {
   screenshot: document.getElementById('screenshot'),
   previewEmpty: document.getElementById('preview-empty'),
   previewTab: document.getElementById('preview-tab'),
+  progressTab: document.getElementById('progress-tab'),
   reportTab: document.getElementById('report-tab'),
   previewPane: document.getElementById('preview-pane'),
+  progressPane: document.getElementById('progress-pane'),
   reportPane: document.getElementById('report-pane'),
   reportContent: document.getElementById('report-content'),
 };
@@ -251,6 +253,7 @@ async function startExecution(payload) {
   els.progress.innerHTML = '';
   els.reportContent.textContent = 'No report yet.';
   clearPreview('Loading live preview...');
+  showRightTab('progress');
   try {
     const result = await api('/execute', { method: 'POST', body: JSON.stringify(payload) });
     state.currentRequestId = result.requestId;
@@ -515,13 +518,18 @@ function escapeHtml(value) {
 }
 
 function showRightTab(tabName) {
-  const showReport = tabName === 'report';
-  els.previewPane.hidden = showReport;
-  els.reportPane.hidden = !showReport;
-  els.previewTab.classList.toggle('active', !showReport);
-  els.reportTab.classList.toggle('active', showReport);
-  els.previewTab.setAttribute('aria-selected', String(!showReport));
-  els.reportTab.setAttribute('aria-selected', String(showReport));
+  const tabs = [
+    { name: 'preview', button: els.previewTab, pane: els.previewPane },
+    { name: 'progress', button: els.progressTab, pane: els.progressPane },
+    { name: 'report', button: els.reportTab, pane: els.reportPane },
+  ];
+  const selected = tabs.some((tab) => tab.name === tabName) ? tabName : 'preview';
+  for (const tab of tabs) {
+    const active = tab.name === selected;
+    tab.pane.hidden = !active;
+    tab.button.classList.toggle('active', active);
+    tab.button.setAttribute('aria-selected', String(active));
+  }
 }
 
 function appendProgress(content, backendSequence = null, details = [], status = 'neutral') {
@@ -1054,6 +1062,7 @@ for (const input of els.runModeInputs) {
   input.addEventListener('change', updateRunMode);
 }
 els.previewTab.addEventListener('click', () => showRightTab('preview'));
+els.progressTab.addEventListener('click', () => showRightTab('progress'));
 els.reportTab.addEventListener('click', () => showRightTab('report'));
 updateRunMode();
 showRightTab('preview');

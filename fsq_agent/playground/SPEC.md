@@ -114,6 +114,7 @@ The playground returns JSON errors for API failures and does not expose tracebac
 - Playground records completed dynamic runs using the post-run recorder with `allow_failure=True`.
 - Browser progress polling is incremental: the server may project only events after the caller's last rendered sequence, and the static UI appends those events to the existing progress list instead of clearing and rebuilding the entire history on every tick.
 - Browser progress prefers a Server-Sent Events long connection (`/task-stream/{request_id}`) that pushes incremental progress payloads and falls back to `/task-progress` interval polling when `EventSource` is unavailable or the stream errors. Cancellation continues to use `POST /cancel/{request_id}`; the cancelled status arrives through the same progress stream.
+- The static UI presents Preview, Progress, and Report as right-side tabs. Starting an execution selects Progress so live events are visible; replay-video display may return the right-side view to Preview after the run completes.
 - After execution completes, the browser loads the replay frames used for replay-video generation and displays that screenshot set in the Progress pane. When a replay video is available or generated, the Preview pane displays that video directly.
 - The replay video preview uses the browser's native video controls for playback progress, seeking, and pause/resume controls.
 - The static UI does not expose a manual replay button; replay frames remain an internal source for browser-side replay video generation.
