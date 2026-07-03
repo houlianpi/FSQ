@@ -3,7 +3,13 @@ import os
 
 import pytest
 
-from fsq_agent.config import load_platform_settings, load_settings, validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.config import (
+    load_platform_settings,
+    load_settings,
+    validate_provider_settings,
+    validate_runtime_settings,
+    validate_strict_core_settings,
+)
 from fsq_agent.models import ConfigurationError
 
 
@@ -22,6 +28,7 @@ output:
 def _chrome_executable(tmp_path: Path) -> Path:
     chrome_path = tmp_path / "chrome.exe"
     chrome_path.write_text("", encoding="utf-8")
+    chrome_path.chmod(0o755)
     return chrome_path
 
 
@@ -34,6 +41,8 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
 @pytest.fixture(autouse=True)
 def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_load_settings_from_yaml(tmp_path: Path) -> None:
@@ -753,6 +762,90 @@ openai_agents:
     assert settings.openai_agents.base_url == "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
     assert settings.openai_agents.model == "gpt-5.4"
     assert settings.openai_agents.api_key_env == "AZURE_OPENAI_API_KEY"
+
+
+def test_load_settings_provider_comes_from_fsq_llm_provider_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FSQ_LLM_PROVIDER", "azure_openai")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/")
+    monkeypatch.setenv("AZURE_OPENAI_MODEL", "gpt-5.4")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
+
+    settings = load_settings(config_path)
+
+    validate_provider_settings(settings)
+    assert settings.openai_agents.provider == "azure_openai"
+    assert settings.openai_agents.base_url == "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
+    assert settings.openai_agents.model == "gpt-5.4"
+
+
+def test_load_settings_provider_env_overrides_yaml_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FSQ_LLM_PROVIDER", "github_copilot")
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+openai_agents:
+  provider: azure_openai
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    validate_provider_settings(settings)
+    assert settings.openai_agents.provider == "github_copilot"
+    assert settings.openai_agents.model == "gpt-5.5"
+
+
+def test_load_settings_rejects_invalid_fsq_llm_provider_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FSQ_LLM_PROVIDER", "local_llm")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="FSQ_LLM_PROVIDER"):
+        load_settings(config_path)
+
+
+def test_validate_provider_settings_does_not_require_platform_harness_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FSQ_LLM_PROVIDER", "github_copilot")
+    monkeypatch.delenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", raising=False)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+harness:
+  platform: web
+  web:
+    backend: playwright
+    channel: chrome
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    validate_provider_settings(settings)
+    with pytest.raises(ConfigurationError, match="Web browser executable path environment variable"):
+        validate_runtime_settings(settings)
 
 
 def test_default_github_copilot_provider_skips_azure_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

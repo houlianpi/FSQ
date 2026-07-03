@@ -1,5 +1,4 @@
 openai_agents:
-  provider: github_copilot
   tracing_enabled: true
 
 harness:

@@ -47,12 +47,12 @@ class CopilotToken:
     expires_at: float
 
 
-def build_github_copilot_client_config(settings: Settings) -> ProviderClientConfig:
+def build_github_copilot_client_config(settings: Settings, *, interactive_auth: bool = True) -> ProviderClientConfig:
     workspace_root = settings.workspace.root_dir
     if workspace_root is None:
         raise ConfigurationError("GitHub Copilot provider requires a resolved fsq-agent workspace.")
     token_cache_path = workspace_root / TOKEN_CACHE_RELATIVE_PATH
-    github_token = _resolve_github_token(token_cache_path)
+    github_token = _resolve_github_token(token_cache_path, interactive_auth=interactive_auth)
     plan = _get_copilot_plan(github_token)
     copilot_token = _get_copilot_token(github_token)
     return ProviderClientConfig(
@@ -65,10 +65,15 @@ def build_github_copilot_client_config(settings: Settings) -> ProviderClientConf
     )
 
 
-def _resolve_github_token(token_cache_path: Path) -> str:
+def _resolve_github_token(token_cache_path: Path, *, interactive_auth: bool = True) -> str:
     cached = _load_cached_token(token_cache_path)
     if cached:
         return cached
+    if not interactive_auth:
+        raise ConfigurationError(
+            "GitHub Copilot authentication is not configured. Run fsq-agent setup llm --provider github_copilot.",
+            context={"token_cache_path": str(token_cache_path)},
+        )
     return _authenticate(token_cache_path)
 
 

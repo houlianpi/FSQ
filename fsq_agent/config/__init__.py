@@ -3,6 +3,7 @@ from fsq_agent.config._loader import (
 	load_platform_settings,
 	load_settings,
 	resolve_platform_config_path,
+	validate_provider_settings,
 	validate_runtime_settings,
 	validate_strict_core_settings,
 )
@@ -16,6 +17,7 @@ __all__ = [
 	"load_settings",
 	"resolve_platform_config_path",
 	"resolve_runtime_paths",
+	"validate_provider_settings",
 	"validate_runtime_settings",
 	"validate_strict_core_settings",
 ]
