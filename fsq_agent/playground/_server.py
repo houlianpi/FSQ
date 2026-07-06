@@ -14,12 +14,22 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
 
+import yaml
+
 from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, start_dynamic_goal_execution
 from fsq_agent.playground._state import BusyError, PlaygroundState
 from fsq_agent.report import resolve_report_path
+
+
+YAML_DISPLAY_SIZE_LIMIT_BYTES = 512 * 1024
+_YAML_COMMAND_CONTROL_KEYS = {"optional", "timeout", "timeout_ms", "evidence", "evidencePolicy"}
+_YAML_SETUP_ACTIONS = {"launchApp", "startBrowser"}
+_YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
+_YAML_ASSERTION_ACTIONS = {"assert", "assertVisible", "assertNotVisible", "assertText", "assertElementsOrder", "assertWithAI"}
+_YAML_OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording", "pageSnapshot", "uiSnapshot"}
 
 
 @dataclass(frozen=True)
@@ -94,6 +104,11 @@ class PlaygroundServer:
             return 200, build_android_setup_schema(self.settings)
         if path == "/runtime-info":
             return 200, self._runtime_info()
+        if path == "/yaml/input":
+            return self._yaml_input_response(query)
+        if path.startswith("/yaml/recorded/"):
+            yaml_id = unquote(path.removeprefix("/yaml/recorded/")).strip()
+            return self._yaml_recorded_response(yaml_id)
         if path == "/screenshot":
             if self.settings.harness.platform != "android":
                 return self._web_screenshot_response()
@@ -401,6 +416,244 @@ class PlaygroundServer:
             return 200, {"runId": run_id, "format": report_format, "path": str(report_path), "content": report_path.read_text(encoding="utf-8")}
         except Exception as exc:  # noqa: BLE001 - API returns structured errors.
             return 404, {"error": str(exc) or exc.__class__.__name__}
+
+    def _yaml_input_response(self, query: dict[str, list[str]]) -> tuple[int, object]:
+        path_text = (query.get("path") or [""])[0].strip()
+        if not path_text:
+            return 400, {"available": False, "error": "path is required."}
+        try:
+            resolved_path = self._resolve_yaml_input_path(path_text)
+            size_bytes = resolved_path.stat().st_size
+            if size_bytes > YAML_DISPLAY_SIZE_LIMIT_BYTES:
+                return 413, {
+                    "available": False,
+                    "error": f"YAML file is too large to display ({size_bytes} bytes).",
+                    "limitBytes": YAML_DISPLAY_SIZE_LIMIT_BYTES,
+                }
+            content = resolved_path.read_text(encoding="utf-8")
+            return 200, {
+                "kind": "input",
+                "path": path_text,
+                "resolvedPath": str(resolved_path),
+                "sizeBytes": size_bytes,
+                "display": self._yaml_display_model(content, source_path=path_text),
+                "content": content,
+            }
+        except IsADirectoryError:
+            return 400, {"available": False, "error": f"Case YAML path is a directory: {path_text}"}
+        except FileNotFoundError:
+            return 404, {"available": False, "error": f"Case YAML not found: {path_text}"}
+        except UnicodeDecodeError:
+            return 400, {"available": False, "error": f"Case YAML must be UTF-8 text: {path_text}"}
+        except ValueError as exc:
+            return 400, {"available": False, "error": str(exc) or "Unable to parse YAML for display."}
+        except OSError as exc:
+            return 400, {"available": False, "error": str(exc) or exc.__class__.__name__}
+
+    def _resolve_yaml_input_path(self, path_text: str) -> Path:
+        requested = Path(path_text.strip())
+        candidates = [requested] if requested.is_absolute() else [self.settings.cases.dir / requested, Path.cwd() / requested]
+        for candidate in candidates:
+            if candidate.exists():
+                if candidate.is_dir():
+                    raise IsADirectoryError(str(candidate))
+                if candidate.is_file():
+                    return candidate.resolve()
+        raise FileNotFoundError(path_text)
+
+    def _yaml_recorded_response(self, yaml_id: str) -> tuple[int, object]:
+        if not yaml_id:
+            return 404, {"available": False, "error": "Recorded YAML not found."}
+        run_id = self.state.run_id_for_request(yaml_id) or yaml_id
+        runs_dir = Path(self.settings.output.runs_dir).resolve()
+        run_dir = (runs_dir / run_id).resolve()
+        if not _is_relative_to(run_dir, runs_dir) or not run_dir.is_dir():
+            return 404, {"available": False, "error": "Recorded YAML not found.", "runId": run_id}
+        recording_path = run_dir / "recording.json"
+        if not recording_path.exists():
+            return 404, {"available": False, "error": "Recording metadata not found.", "runId": run_id}
+        try:
+            recording = self._read_recording_json(recording_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return 400, {"available": False, "error": str(exc) or "Unable to read recording metadata.", "runId": run_id}
+        if recording is None:
+            return 400, {"available": False, "error": "Recording metadata must be a JSON object.", "runId": run_id}
+        recorded_case_path = self._recorded_case_path(run_dir, recording)
+        if recorded_case_path is None:
+            return 400, {"available": False, "error": "Recorded case path is outside the run directory.", "runId": run_id}
+        try:
+            content = recorded_case_path.read_text(encoding="utf-8") if recorded_case_path.is_file() else None
+        except UnicodeDecodeError:
+            return 400, {"available": False, "error": "Recorded case must be UTF-8 text.", "runId": run_id}
+        except OSError as exc:
+            return 400, {"available": False, "error": str(exc) or exc.__class__.__name__, "runId": run_id}
+        try:
+            display = self._yaml_display_model(content, source_path=str(recorded_case_path)) if content is not None else None
+        except ValueError as exc:
+            return 400, {"available": False, "error": str(exc) or "Unable to parse recorded YAML for display.", "runId": run_id}
+        return 200, {
+            "kind": "recorded",
+            "runId": run_id,
+            "status": self._recording_value(recording, "status", "missing"),
+            "validationStatus": self._recording_value(recording, "validation_status", "not_run"),
+            "draft": bool(recording.get("draft")) if isinstance(recording, dict) else False,
+            "commandCount": self._recording_int(recording, "command_count"),
+            "recordingPath": str(recording_path) if recording_path.exists() else None,
+            "recordedCasePath": str(recorded_case_path) if recorded_case_path.is_file() else None,
+            "requiredRuntimeSecretNames": self._recording_list(recording, "required_runtime_secret_names"),
+            "warnings": self._recording_list(recording, "warnings"),
+            "skippedToolCalls": self._recording_list(recording, "skipped_tool_calls"),
+            "errors": self._recording_list(recording, "errors"),
+            "display": display,
+            "content": content,
+        }
+
+    def _yaml_display_model(self, content: str, *, source_path: str | None = None) -> dict[str, object]:
+        try:
+            docs = list(yaml.safe_load_all(content))
+        except yaml.YAMLError as exc:
+            raise ValueError(str(exc) or "Unable to parse YAML for display.") from exc
+        metadata_doc = docs[0] if docs and isinstance(docs[0], dict) else {}
+        commands_doc = docs[1] if len(docs) > 1 else []
+        if commands_doc is None:
+            commands_doc = []
+        if not isinstance(commands_doc, list):
+            raise ValueError("FSQ command document must be a YAML list.")
+        return {
+            "metadata": self._yaml_metadata_display(metadata_doc, source_path=source_path),
+            "steps": [self._yaml_step_display(command, index) for index, command in enumerate(commands_doc, start=1)],
+            "documentCount": len(docs),
+        }
+
+    def _yaml_metadata_display(self, metadata: dict[object, object], *, source_path: str | None = None) -> dict[str, object]:
+        fields = []
+        for key in ("platform", "schemaVersion", "description"):
+            value = metadata.get(key)
+            if value is not None and value != "" and value != []:
+                fields.append({"key": key, "label": self._yaml_label(key), "value": value})
+        if source_path:
+            fields.append({"key": "path", "label": "Path", "value": source_path})
+        for key in ("appId", "url"):
+            value = metadata.get(key)
+            if value is not None and value != "" and value != []:
+                fields.append({"key": key, "label": self._yaml_label(key), "value": value})
+        tags = metadata.get("tags")
+        return {
+            "title": metadata.get("name") if isinstance(metadata.get("name"), str) else "Untitled case",
+            "platform": metadata.get("platform") if isinstance(metadata.get("platform"), str) else "unknown",
+            "schemaVersion": metadata.get("schemaVersion") if isinstance(metadata.get("schemaVersion"), str) else "unknown",
+            "tags": tags if isinstance(tags, list) else [],
+            "fields": fields,
+        }
+
+    def _yaml_step_display(self, command: object, index: int) -> dict[str, object]:
+        badges: list[dict[str, object]] = []
+        if isinstance(command, str):
+            action = command
+            payload = None
+        elif isinstance(command, dict):
+            action_items = [(key, value) for key, value in command.items() if str(key) not in _YAML_COMMAND_CONTROL_KEYS]
+            if action_items:
+                action, payload = action_items[0]
+            else:
+                action, payload = "command", command
+            if command.get("optional") is True:
+                badges.append({"label": "optional", "tone": "neutral"})
+            timeout = command.get("timeout") or command.get("timeout_ms")
+            if timeout is not None:
+                badges.append({"label": f"timeout {timeout}", "tone": "neutral"})
+        else:
+            action = "command"
+            payload = command
+        action_text = str(action)
+        return {
+            "index": index,
+            "action": action_text,
+            "kind": self._yaml_action_kind(action_text),
+            "badges": badges,
+            "params": self._yaml_param_entries(payload),
+        }
+
+    def _yaml_param_entries(self, payload: object) -> list[dict[str, object]]:
+        if payload in (None, {}, []):
+            return []
+        if isinstance(payload, dict):
+            return [
+                {"key": str(key), **self._yaml_display_value(value)}
+                for key, value in payload.items()
+            ]
+        return [{"key": "value", **self._yaml_display_value(payload)}]
+
+    def _yaml_display_value(self, value: object) -> dict[str, object]:
+        if isinstance(value, dict) and isinstance(value.get("runtimeSecret"), str):
+            return {"value": value["runtimeSecret"], "kind": "secret"}
+        if isinstance(value, dict):
+            return {
+                "value": "",
+                "kind": "object",
+                "fields": [
+                    {"key": str(key), **self._yaml_display_value(child_value)}
+                    for key, child_value in value.items()
+                ],
+            }
+        if isinstance(value, list):
+            return {
+                "value": "",
+                "kind": "list",
+                "fields": [
+                    {"key": str(index + 1), **self._yaml_display_value(child_value)}
+                    for index, child_value in enumerate(value)
+                ],
+            }
+        if isinstance(value, bool):
+            return {"value": "true" if value else "false", "kind": "boolean"}
+        if value is None:
+            return {"value": "null", "kind": "null"}
+        return {"value": str(value), "kind": "scalar"}
+
+    def _yaml_action_kind(self, action: str) -> str:
+        if action in _YAML_SETUP_ACTIONS:
+            return "setup"
+        if action in _YAML_TEARDOWN_ACTIONS:
+            return "teardown"
+        if action in _YAML_ASSERTION_ACTIONS:
+            return "assertion"
+        if action in _YAML_OBSERVATION_ACTIONS:
+            return "observation"
+        return "action"
+
+    def _yaml_label(self, key: str) -> str:
+        return {
+            "schemaVersion": "Schema",
+            "appId": "App ID",
+        }.get(key, key[:1].upper() + key[1:])
+
+    def _read_recording_json(self, recording_path: Path) -> dict[str, object] | None:
+        if not recording_path.exists():
+            return None
+        payload = json.loads(recording_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+
+    def _recorded_case_path(self, run_dir: Path, recording: dict[str, object] | None) -> Path | None:
+        raw_path = recording.get("recorded_case_path") if isinstance(recording, dict) else None
+        if isinstance(raw_path, str) and raw_path.strip():
+            candidate = Path(raw_path.strip())
+            resolved = candidate.resolve() if candidate.is_absolute() else (run_dir / candidate).resolve()
+        else:
+            resolved = (run_dir / "recorded.codex.yaml").resolve()
+        return resolved if _is_relative_to(resolved, run_dir) else None
+
+    def _recording_value(self, recording: dict[str, object] | None, key: str, default: str) -> str:
+        value = recording.get(key) if isinstance(recording, dict) else None
+        return value if isinstance(value, str) and value else default
+
+    def _recording_int(self, recording: dict[str, object] | None, key: str) -> int:
+        value = recording.get(key) if isinstance(recording, dict) else None
+        return int(value) if isinstance(value, int) else 0
+
+    def _recording_list(self, recording: dict[str, object] | None, key: str) -> list[object]:
+        value = recording.get(key) if isinstance(recording, dict) else None
+        return value if isinstance(value, list) else []
 
     def _record_replay_frame(self, request_id: str, screenshot_payload: dict[str, object]) -> None:
         screenshot = screenshot_payload.get("screenshot")
@@ -802,8 +1055,8 @@ def run_playground(settings: Settings, options: PlaygroundServerOptions) -> None
 
 
 def _is_api_path(path: str) -> bool:
-    return path in {"/status", "/session", "/session/setup", "/session/auto", "/runtime-info", "/screenshot"} or path.startswith(
-        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/")
+    return path in {"/status", "/session", "/session/setup", "/session/auto", "/runtime-info", "/screenshot", "/yaml/input"} or path.startswith(
+        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/", "/yaml/recorded/")
     )
 
 

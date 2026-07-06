@@ -8,7 +8,7 @@ from fsq_agent.config import Settings
 from fsq_agent.models import HarnessContext, ReportArtifact, RunEvent, TaskResult, VerificationResult
 from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, _event_sink, _run_dynamic_task, task_from_case_yaml, task_from_goal
-from fsq_agent.playground._server import PlaygroundServer, PlaygroundServerOptions
+from fsq_agent.playground._server import YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
 from fsq_agent.playground._state import BusyError, PlaygroundState
 
 
@@ -189,6 +189,291 @@ def test_playground_server_report_endpoint_returns_content(tmp_path: Path) -> No
     assert status == 200
     assert payload["runId"] == "run-1"
     assert payload["content"] == "# report"
+
+
+def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "sample.codex.yaml"
+    case_path.write_text("schemaVersion: fsq.ai-test/v1\nname: Sample\nplatform: android\ndescription: Open sample\ntags: [smoke]\n---\n- launchApp\n", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["sample.codex.yaml"]})
+
+    assert status == 200
+    assert payload["kind"] == "input"
+    assert payload["path"] == "sample.codex.yaml"
+    assert payload["resolvedPath"] == str(case_path.resolve())
+    assert payload["sizeBytes"] == case_path.stat().st_size
+    assert "launchApp" in payload["content"]
+    assert payload["display"]["metadata"]["title"] == "Sample"
+    assert payload["display"]["metadata"]["platform"] == "android"
+    assert payload["display"]["metadata"]["tags"] == ["smoke"]
+    assert payload["display"]["metadata"]["fields"] == [
+        {"key": "platform", "label": "Platform", "value": "android"},
+        {"key": "schemaVersion", "label": "Schema", "value": "fsq.ai-test/v1"},
+        {"key": "description", "label": "Description", "value": "Open sample"},
+        {"key": "path", "label": "Path", "value": "sample.codex.yaml"},
+    ]
+    assert payload["display"]["steps"] == [
+        {"index": 1, "action": "launchApp", "kind": "setup", "badges": [], "params": []}
+    ]
+
+
+def test_playground_server_yaml_input_endpoint_reports_missing_file(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["missing.codex.yaml"]})
+
+    assert status == 404
+    assert payload["available"] is False
+    assert "Case YAML not found" in payload["error"]
+
+
+def test_playground_server_yaml_input_endpoint_reports_directory(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    (settings.cases.dir / "folder.codex.yaml").mkdir(parents=True)
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["folder.codex.yaml"]})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "directory" in payload["error"]
+
+
+def test_playground_server_yaml_input_endpoint_limits_display_size(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "large.codex.yaml"
+    case_path.write_text("x" * (YAML_DISPLAY_SIZE_LIMIT_BYTES + 1), encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["large.codex.yaml"]})
+
+    assert status == 413
+    assert payload["available"] is False
+    assert payload["limitBytes"] == YAML_DISPLAY_SIZE_LIMIT_BYTES
+
+
+def test_playground_server_yaml_input_endpoint_reports_display_parse_errors(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "broken.codex.yaml"
+    case_path.write_text("schemaVersion: [\n", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["broken.codex.yaml"]})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert payload["error"]
+
+
+def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n- inputText:\n    text:\n      runtimeSecret: TEST_PASSWORD\n    target: Password\n    locator:\n      resourceId: com.example:id/password\n      text: null\n",
+        encoding="utf-8",
+    )
+    (run_dir / "recording.json").write_text(
+        json.dumps(
+            {
+                "status": "recorded",
+                "recorded_case_path": str(recorded_path),
+                "command_count": 1,
+                "validation_status": "passed",
+                "draft": False,
+                "required_runtime_secret_names": [],
+                "warnings": [],
+                "skipped_tool_calls": [],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    request_id = server.state.start_task("Recorded")
+    server.state.bind_run_id(request_id, "run-1")
+
+    status, payload = server.handle_get(f"/yaml/recorded/{request_id}", {})
+
+    assert status == 200
+    assert payload["kind"] == "recorded"
+    assert payload["runId"] == "run-1"
+    assert payload["status"] == "recorded"
+    assert payload["validationStatus"] == "passed"
+    assert payload["commandCount"] == 1
+    assert payload["recordedCasePath"] == str(recorded_path)
+    assert "inputText" in payload["content"]
+    assert payload["display"]["metadata"]["title"] == "Recorded"
+    assert {field["key"]: field["value"] for field in payload["display"]["metadata"]["fields"]}["path"] == str(recorded_path)
+    assert payload["display"]["steps"][0]["action"] == "inputText"
+    assert payload["display"]["steps"][0]["params"] == [
+        {"key": "text", "value": "TEST_PASSWORD", "kind": "secret"},
+        {"key": "target", "value": "Password", "kind": "scalar"},
+        {
+            "key": "locator",
+            "value": "",
+            "kind": "object",
+            "fields": [
+                {"key": "resourceId", "value": "com.example:id/password", "kind": "scalar"},
+                {"key": "text", "value": "null", "kind": "null"},
+            ],
+        },
+    ]
+
+
+def test_playground_server_recorded_yaml_endpoint_returns_skipped_metadata(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recording.json").write_text(
+        json.dumps(
+            {
+                "status": "skipped",
+                "recorded_case_path": None,
+                "command_count": 0,
+                "validation_status": "not_run",
+                "draft": True,
+                "warnings": ["No replayable commands found."],
+                "skipped_tool_calls": [{"tool": "helper"}],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    assert payload["status"] == "skipped"
+    assert payload["draft"] is True
+    assert payload["content"] is None
+    assert payload["warnings"] == ["No replayable commands found."]
+    assert payload["skippedToolCalls"] == [{"tool": "helper"}]
+
+
+def test_playground_server_recorded_yaml_endpoint_returns_failed_metadata(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recording.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "recorded_case_path": None,
+                "command_count": 0,
+                "validation_status": "failed",
+                "draft": False,
+                "warnings": [],
+                "errors": ["validation failed"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    assert payload["status"] == "failed"
+    assert payload["validationStatus"] == "failed"
+    assert payload["content"] is None
+    assert payload["errors"] == ["validation failed"]
+
+
+def test_playground_server_recorded_yaml_endpoint_reports_missing_run(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/missing-run", {})
+
+    assert status == 404
+    assert payload["available"] is False
+    assert payload["runId"] == "missing-run"
+
+
+def test_playground_server_recorded_yaml_endpoint_reports_missing_metadata(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recorded.codex.yaml").write_text("schemaVersion: fsq.ai-test/v1\n", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 404
+    assert payload["available"] is False
+    assert "Recording metadata not found" in payload["error"]
+
+
+def test_playground_server_recorded_yaml_endpoint_reports_invalid_metadata(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recording.json").write_text("[]", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "JSON object" in payload["error"]
+
+
+def test_playground_server_recorded_yaml_endpoint_reports_non_utf8_case(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path.write_bytes(b"\xff")
+    (run_dir / "recording.json").write_text(
+        json.dumps({"status": "recorded", "recorded_case_path": str(recorded_path)}),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "UTF-8" in payload["error"]
+
+
+def test_playground_server_recorded_yaml_endpoint_rejects_escaped_case_path(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recording.json").write_text(
+        json.dumps({"status": "recorded", "recorded_case_path": "../outside.codex.yaml"}),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "outside" in payload["error"]
 
 
 def test_playground_server_task_progress_filters_events_after_sequence(tmp_path: Path) -> None:
@@ -1294,6 +1579,9 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "report-content" in html
     assert "preview-pane" in html
     assert "progress-pane" in html
+    assert "panel-resizer" in html
+    assert "role=\"separator\"" in html
+    assert "aria-orientation=\"vertical\"" in html
     assert "replay-screenshots" not in html
     assert 'id="replay-video" controls' in html
     assert 'id="replay-video-play"' not in html
@@ -1322,6 +1610,12 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "previewToken" in script
     assert "pendingReplayVideoCleanup" in script
     assert "replayVideoInFlight" in script
+    assert "CONTROL_PANEL_WIDTH_STORAGE_KEY" in script
+    assert "initPanelResizer" in script
+    assert "applyControlPanelWidth" in script
+    assert "localStorage.setItem(CONTROL_PANEL_WIDTH_STORAGE_KEY" in script
+    assert "ArrowLeft" in script
+    assert "ArrowRight" in script
     assert "function makeReplaySeekable" in script
     assert "makeMetadataSeekable" in script
     assert "const REPLAY_FAST_ACTION_DELAY_MS = 900;" in script
@@ -1475,6 +1769,126 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "report-content" in styles
     assert "tab-button.active" in styles
     assert "[hidden]" in styles
+
+
+def test_playground_static_yaml_section_is_left_side_context() -> None:
+    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    html = (static_dir / "index.html").read_text(encoding="utf-8")
+    script = (static_dir / "playground.js").read_text(encoding="utf-8")
+    styles = (static_dir / "playground.css").read_text(encoding="utf-8")
+    run_start = html.index('class="section run-section"')
+    run_section = html[run_start:html.index("</section>", run_start)]
+    yaml_section = html[html.index('id="yaml-section"'):html.index('</section>\n\n        <section class="section">')]
+
+    assert html.index('id="yaml-section"') < html.index("<h2>Session</h2>")
+    assert html.index('id="case-yaml"') > html.index('class="section run-section"')
+    assert 'id="case-yaml"' in run_section
+    assert 'id="yaml-path-row"' in run_section
+    assert 'class="run-input-row"' in run_section
+    assert 'id="case-yaml"' not in yaml_section
+    assert "yaml-input-tab" in html
+    assert "yaml-recorded-tab" in html
+    assert "yaml-input-pane" in html
+    assert "yaml-recorded-pane" in html
+    assert "yaml-refresh" not in html
+    assert "yaml-copy" in html
+    assert "yaml-input-viewer" in html
+    assert "yaml-recorded-viewer" in html
+    assert "yaml-placeholder" not in html
+    assert "loadInputYaml" in script
+    assert "loadRecordedYaml" in script
+    assert "showYamlView" in script
+    assert "copyActiveYaml" in script
+    assert "renderYamlDisplay" in script
+    assert "renderYamlContent" not in script
+    assert "highlightYamlLine" not in script
+    assert "renderYamlCaseSummary" in script
+    assert "[metadata.platform, metadata.schemaVersion]" not in script
+    assert "renderYamlSteps" in script
+    assert "renderYamlStep" in script
+    assert "renderYamlParams" in script
+    assert "renderYamlNestedParams" in script
+    assert "formatYamlValue" in script
+    assert "setRecordedYamlNoContent" in script
+    assert "api(`/yaml/input?path=${encodeURIComponent(path)}`)" in script
+    assert "setYamlInputStatus('', 'success')" in script
+    assert "message === 'No YAML loaded.' ? '' : message" in script
+    assert "clearYamlInput('YAML path is required.')" not in script
+    assert "renderYamlEmpty(els.yamlInputViewer, error.message)" not in script
+    assert "renderYamlEmpty(els.yamlInputViewer, '')" in script
+    assert "if (!message) return" in script
+    assert "yaml.resolvedPath || path" not in script
+    assert "element.hidden = !message" in script
+    assert "api(`/yaml/recorded/${encodeURIComponent(runId)}`)" in script
+    assert "setYamlRecordedStatus('No recorded YAML yet.'" not in script
+    assert "state.yamlInputContent" in script
+    assert "state.yamlRecordedContent" in script
+    assert "state.yamlInputLastPreviewPath" in script
+    assert "yamlPathRow" in script
+    assert "yamlSection" in script
+    assert "yamlTabs" in script
+    assert "els.yamlSection.hidden = false" in script
+    assert "els.yamlCopy.hidden = !hasRecordedYaml" in script
+    assert "els.yamlCopy.hidden = false" in script
+    assert "els.yamlInputTab.hidden = true" in script
+    assert "els.yamlRecordedTab.hidden = false" in script
+    assert "els.yamlInputTab.hidden = false" in script
+    assert "els.yamlRecordedTab.hidden = true" in script
+    assert "const selectedView = viewName === 'recorded' && recordedAvailable ? 'recorded' : (inputAvailable ? 'input' : 'recorded')" in script
+    assert "els.yamlPathRow.hidden = !hasInputYaml" in script
+    assert "els.caseYaml.disabled = !hasInputYaml || Boolean(state.currentRequestId)" in script
+    assert "yamlRefresh" not in script
+    assert "els.yamlInputTab.hidden = true" in script
+    assert "els.yamlInputTab.hidden = false" in script
+    assert "showYamlView('recorded')" in script
+    assert "Input YAML inactive in Goal mode" not in script
+    assert "loadInputYaml();" in script
+    assert "copyActiveYaml" in script
+    assert "yaml-section" in styles
+    assert "flex: 1 1 auto" in styles
+    assert "min-height: 260px" in styles
+    assert "--control-panel-width: clamp(320px, 32vw, 520px)" in styles
+    assert "grid-template-columns: minmax(300px, var(--control-panel-width)) 8px minmax(0, 1fr)" in styles
+    assert "panel-resizer" in styles
+    assert "cursor: col-resize" in styles
+    assert "yaml-tabs" in styles
+    assert "width: fit-content" in styles
+    assert "border-bottom: 1px solid #d8dee8" in styles
+    assert ".yaml-tab-button.active::after" in styles
+    assert "box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12)" not in styles
+    assert "run-input-row" in styles
+    assert "grid-template-columns: minmax(0, 1fr) auto" in styles
+    assert "height: calc(100vh - 24px)" in styles
+    assert "yaml-viewer" in styles
+    assert "yaml-placeholder" not in styles
+    assert "max-height: min(32vh, 330px)" not in styles
+    assert "yaml-code-row" not in styles
+    assert "yaml-line-number" not in styles
+    assert "yaml-case-summary" in styles
+    assert "yaml-case-title-row" in styles
+    assert "position: sticky" in styles
+    assert "top: 0" in styles
+    assert "z-index: 1" in styles
+    assert "border-bottom: 1px solid #d8e8fb" in styles
+    assert "background: #eef6ff" in styles
+    assert "color: #0f4c81" in styles
+    assert "yaml-metadata-grid" in styles
+    assert "yaml-chip" in styles
+    assert "yaml-step-card" in styles
+    assert "yaml-step-header" in styles
+    assert "yaml-action-name" in styles
+    assert "width: fit-content" in styles
+    assert "border-radius: 6px" in styles
+    assert "yaml-action-name-setup" in styles
+    assert "yaml-action-name-action" in styles
+    assert "yaml-action-name-assertion" in styles
+    assert "yaml-action-name-teardown" in styles
+    assert "yaml-step-kind" not in styles
+    assert "yaml-step-kind" not in script
+    assert "yaml-param-row" in styles
+    assert "yaml-param-nested" in styles
+    assert "yaml-param-row-nested" in styles
+    assert "yaml-param-value-secret" in styles
 
 
 def test_playground_progress_prefers_sse_with_polling_fallback() -> None:
