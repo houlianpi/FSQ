@@ -14,17 +14,17 @@
             <h1>FSQ-Agent Playground</h1>
             <p id="server-status" class="status-pill status-connecting">Connecting...</p>
           </div>
-          <button id="refresh" type="button">Clear</button>
+          <button id="refresh" class="secondary-button" type="button">Clear</button>
         </header>
 
         <section id="yaml-section" class="section yaml-section">
           <div class="section-heading-row">
             <h2>YAML</h2>
-            <button id="yaml-copy" class="secondary-button" type="button" disabled>Copy</button>
           </div>
           <div class="yaml-tabs" role="tablist" aria-label="YAML views">
             <button id="yaml-input-tab" class="yaml-tab-button active" type="button" role="tab" aria-selected="true" aria-controls="yaml-input-pane">Input</button>
             <button id="yaml-recorded-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="yaml-recorded-pane">Recorded</button>
+            <button id="yaml-progress-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="progress-pane">Progress</button>
           </div>
           <div id="yaml-input-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-input-tab">
             <p id="yaml-input-status" class="yaml-status">No YAML loaded.</p>
@@ -34,6 +34,10 @@
             <p id="yaml-recorded-status" class="yaml-status">No recorded YAML yet.</p>
             <div id="yaml-recorded-viewer" class="yaml-viewer" aria-live="polite"></div>
           </div>
+          <section id="progress-pane" class="yaml-pane progress-pane" role="tabpanel" aria-labelledby="yaml-progress-tab" hidden>
+            <div id="progress-run-id" class="progress-run-id" hidden></div>
+            <div id="progress" class="progress-log"></div>
+          </section>
         </section>
 
         <section class="section">
@@ -66,22 +70,18 @@
       <section class="panel preview-panel">
         <header class="preview-header">
           <div>
-            <div class="preview-tabs" role="tablist" aria-label="Preview, progress, and report">
+            <div class="preview-tabs" role="tablist" aria-label="Preview and report">
               <button id="preview-tab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="preview-pane">Preview</button>
-              <button id="progress-tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="progress-pane">Progress</button>
               <button id="report-tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="report-pane">Report</button>
             </div>
           </div>
         </header>
         <div id="preview-pane" class="tab-pane preview-frame" role="tabpanel" aria-labelledby="preview-tab">
+          <div id="step-artifact-preview" class="step-artifact-preview" hidden></div>
           <video id="replay-video" controls hidden></video>
           <img id="screenshot" alt="Android screenshot preview" />
           <p id="preview-empty">Screenshot preview will appear here.</p>
         </div>
-        <section id="progress-pane" class="tab-pane progress-pane" role="tabpanel" aria-labelledby="progress-tab" hidden>
-          <div id="progress-run-id" class="progress-run-id" hidden></div>
-          <div id="progress" class="progress-log"></div>
-        </section>
         <div id="report-pane" class="tab-pane report-pane" role="tabpanel" aria-labelledby="report-tab" hidden>
           <div id="report-content" class="report-content">No report yet.</div>
         </div>

@@ -10,12 +10,22 @@ const state = {
   progressSequence: 0,
   lastProgressSequence: 0,
   progressDetailOpenState: new Map(),
+  selectedProgressItem: null,
+  activeProgressItem: null,
+  activeProgressItemClearTimer: null,
+  finishingRun: false,
   yamlActiveView: 'input',
   yamlInputContent: '',
   yamlRecordedContent: '',
   yamlInputDisplay: null,
   yamlRecordedDisplay: null,
   yamlInputLastPreviewPath: '',
+  selectedYamlRegion: null,
+  selectedYamlStepCard: null,
+  activeYamlStepCard: null,
+  activeYamlStepClearTimer: null,
+  stepArtifactPreviewActive: false,
+  stepArtifactStepKey: null,
   currentExecutionMode: null,
   platformId: null,
   platformLabel: null,
@@ -32,6 +42,8 @@ const CONTROL_PANEL_WIDTH_STORAGE_KEY = 'fsqPlayground.controlPanelWidth';
 const CONTROL_PANEL_MIN_WIDTH = 300;
 const CONTROL_PANEL_MAX_WIDTH = 720;
 const PREVIEW_PANEL_MIN_WIDTH = 360;
+const YAML_SELECTABLE_REGION_SELECTOR = '.yaml-param-row, .yaml-metadata-item, .yaml-step-card, .yaml-case-title-row';
+const YAML_STEP_CENTER_TOLERANCE_RATIO = 0.15;
 
 const els = {
   shell: document.querySelector('.shell'),
@@ -46,9 +58,9 @@ const els = {
   yamlPathRow: document.getElementById('yaml-path-row'),
   yamlSection: document.getElementById('yaml-section'),
   yamlTabs: document.querySelector('.yaml-tabs'),
-  yamlCopy: document.getElementById('yaml-copy'),
   yamlInputTab: document.getElementById('yaml-input-tab'),
   yamlRecordedTab: document.getElementById('yaml-recorded-tab'),
+  yamlProgressTab: document.getElementById('yaml-progress-tab'),
   yamlInputPane: document.getElementById('yaml-input-pane'),
   yamlRecordedPane: document.getElementById('yaml-recorded-pane'),
   yamlInputStatus: document.getElementById('yaml-input-status'),
@@ -63,12 +75,12 @@ const els = {
   screenshot: document.getElementById('screenshot'),
   previewEmpty: document.getElementById('preview-empty'),
   previewTab: document.getElementById('preview-tab'),
-  progressTab: document.getElementById('progress-tab'),
   reportTab: document.getElementById('report-tab'),
   previewPane: document.getElementById('preview-pane'),
   progressPane: document.getElementById('progress-pane'),
   reportPane: document.getElementById('report-pane'),
   reportContent: document.getElementById('report-content'),
+  stepArtifactPreview: document.getElementById('step-artifact-preview'),
 };
 
 async function api(path, options = {}) {
@@ -97,6 +109,7 @@ async function refreshAll() {
 }
 
 function clearPage() {
+  if (state.currentRequestId) return;
   stopProgressUpdates();
   state.replayRequestId = null;
   state.previewToken = null;
@@ -105,12 +118,16 @@ function clearPage() {
   state.lastProgressSequence = 0;
   state.progressDetailOpenState.clear();
   state.currentExecutionMode = null;
+  state.finishingRun = false;
+  clearStepArtifactPreview();
 
   els.goal.value = '';
   els.caseYaml.value = '';
   clearYamlInput();
   clearRecordedYaml();
   clearRunId();
+  clearActiveProgressItem();
+  clearSelectedProgressItem();
   els.progress.innerHTML = '';
   els.reportContent.textContent = '';
   clearPreview();
@@ -129,6 +146,8 @@ async function refreshStatus() {
     setServerStatus(status.busy ? 'Running' : 'Ready', status.busy ? 'running' : 'ready');
     if (state.currentRequestId) {
       setRunButtonCancel();
+    } else if (state.finishingRun) {
+      setRunButtonCancel({ disabled: true });
     } else {
       setRunButtonIdle({ disabled: Boolean(status.busy) });
     }
@@ -272,24 +291,29 @@ function updateRunMode() {
   els.caseYaml.disabled = !hasInputYaml || Boolean(state.currentRequestId);
   els.yamlSection.hidden = false;
   els.yamlTabs.hidden = false;
+  els.yamlProgressTab.hidden = false;
+  syncYamlTabOrder(mode);
   if (mode === 'goal') {
-    const hasRecordedYaml = Boolean(state.yamlRecordedContent || state.yamlRecordedDisplay);
-    els.yamlCopy.hidden = !hasRecordedYaml;
     els.yamlInputTab.hidden = true;
     els.yamlRecordedTab.hidden = false;
-    showYamlView('recorded');
+    showYamlView('progress');
   } else if (mode === 'strict-yaml') {
-    els.yamlCopy.hidden = false;
     els.yamlInputTab.hidden = false;
     els.yamlRecordedTab.hidden = true;
     showYamlView('input');
   } else {
-    els.yamlCopy.hidden = false;
     els.yamlInputTab.hidden = false;
     els.yamlRecordedTab.hidden = false;
     showYamlView('input');
   }
-  if (!state.currentRequestId) setRunButtonIdle();
+  if (!state.currentRequestId && !state.finishingRun) setRunButtonIdle();
+}
+
+function syncYamlTabOrder(mode) {
+  const tabs = mode === 'goal'
+    ? [els.yamlProgressTab, els.yamlInputTab, els.yamlRecordedTab]
+    : [els.yamlInputTab, els.yamlRecordedTab, els.yamlProgressTab];
+  for (const tab of tabs) els.yamlTabs.appendChild(tab);
 }
 
 async function startExecution(payload) {
@@ -299,15 +323,19 @@ async function startExecution(payload) {
   state.lastProgressSequence = 0;
   state.progressDetailOpenState.clear();
   state.replayRequestId = null;
+  clearStepArtifactPreview();
   clearRecordedYaml();
   clearRunId();
+  clearActiveProgressItem();
+  clearSelectedProgressItem();
   els.progress.innerHTML = '';
   els.reportContent.textContent = 'No report yet.';
   clearPreview('Loading live preview...');
-  showRightTab('progress');
+  els.refresh.disabled = true;
   try {
     const result = await api('/execute', { method: 'POST', body: JSON.stringify(payload) });
     state.currentRequestId = result.requestId;
+    state.finishingRun = false;
     state.replayRequestId = result.requestId;
     setRunButtonCancel();
     updateRunMode();
@@ -315,6 +343,8 @@ async function startExecution(payload) {
     await refreshStatus();
   } catch (error) {
     state.currentExecutionMode = null;
+    state.finishingRun = false;
+    els.refresh.disabled = false;
     updateRunMode();
     appendProgress(`Error: ${error.message}`);
   }
@@ -330,6 +360,7 @@ async function cancelExecution() {
     appendProgress('Cancelled by user', null, [], 'failed');
     state.currentRequestId = null;
     state.currentExecutionMode = null;
+    state.finishingRun = false;
     state.replayRequestId = progress.result?.runId || progress.runId || state.replayRequestId;
     setRunButtonIdle();
     updateRunMode();
@@ -343,14 +374,14 @@ async function cancelExecution() {
 function setRunButtonCancel({ disabled = false } = {}) {
   els.runSelected.textContent = 'Cancel';
   els.runSelected.classList.remove('primary');
-  els.runSelected.classList.add('cancel');
+  els.runSelected.classList.add('secondary-button');
   els.runSelected.disabled = disabled;
 }
 
 function setRunButtonIdle({ disabled = false } = {}) {
   els.runSelected.textContent = 'Run';
   els.runSelected.classList.add('primary');
-  els.runSelected.classList.remove('cancel');
+  els.runSelected.classList.remove('secondary-button');
   els.runSelected.disabled = disabled;
 }
 
@@ -402,6 +433,7 @@ async function applyProgress(progress) {
   if (!state.currentRequestId) return;
   for (const event of progress.events || []) {
     if (event.type === 'run_started') setRunId(event.run_id || event.runId);
+    syncYamlStepWithProgressEvent(event);
     appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event));
     updateLastProgressSequence(event.sequence);
   }
@@ -411,7 +443,9 @@ async function applyProgress(progress) {
   if (progress.status !== 'running') {
     stopProgressUpdates();
     state.currentRequestId = null;
-    setRunButtonIdle({ disabled: true });
+    state.finishingRun = true;
+    setRunButtonCancel({ disabled: true });
+    scheduleClearActiveYamlStepCard();
     appendProgress(`Finished: ${progress.status}`, null, [], statusFromValue(progress.status));
     if (progress.error) appendProgress(`Error: ${progress.error}`, null, [], 'failed');
     if (progress.result?.runId) {
@@ -438,7 +472,10 @@ async function applyProgress(progress) {
         appendProgress(`Replay video was not generated: ${error.message}`, null, [], 'failed');
       }
     }
+    scheduleClearActiveProgressItem();
     setRunButtonIdle();
+    els.refresh.disabled = false;
+    state.finishingRun = false;
     state.currentExecutionMode = null;
     updateRunMode();
     await refreshStatus();
@@ -463,6 +500,7 @@ async function refreshPreview(requestId, token) {
     const preview = await api(`/preview/${encodeURIComponent(requestId)}`);
     const src = `data:image/png;base64,${preview.screenshot}`;
     await preloadImage(src);
+    clearStepArtifactPreview();
     state.previewToken = token;
     els.replayVideo.hidden = true;
     els.replayVideo.style.display = 'none';
@@ -517,7 +555,6 @@ async function loadInputYaml() {
     renderYamlEmpty(els.yamlInputViewer, '');
     setYamlInputStatus(error.message, 'error');
   }
-  updateYamlCopyButton();
 }
 
 async function loadRecordedYaml(runId, recording) {
@@ -543,16 +580,13 @@ async function loadRecordedYaml(runId, recording) {
     }
     setYamlRecordedStatus(recordingStatusSummary(yaml), statusFromValue(yaml.status));
     els.yamlSection.hidden = false;
-    showYamlView('recorded');
   } catch (error) {
     state.yamlRecordedContent = '';
     state.yamlRecordedDisplay = null;
     renderYamlEmpty(els.yamlRecordedViewer, error.message);
     setYamlRecordedStatus(error.message, 'error');
     els.yamlSection.hidden = false;
-    showYamlView('recorded');
   }
-  updateYamlCopyButton();
 }
 
 function clearYamlInput(message = 'No YAML loaded.') {
@@ -561,7 +595,6 @@ function clearYamlInput(message = 'No YAML loaded.') {
   state.yamlInputLastPreviewPath = '';
   setYamlInputStatus(message === 'No YAML loaded.' ? '' : message, 'neutral');
   renderYamlEmpty(els.yamlInputViewer, message);
-  updateYamlCopyButton();
 }
 
 function clearRecordedYaml() {
@@ -569,7 +602,6 @@ function clearRecordedYaml() {
   state.yamlRecordedDisplay = null;
   setYamlRecordedStatus('', 'neutral');
   renderYamlEmpty(els.yamlRecordedViewer, 'No recorded YAML yet.');
-  updateYamlCopyButton();
 }
 
 function setRecordedYamlNoContent(message, status = 'neutral') {
@@ -577,7 +609,6 @@ function setRecordedYamlNoContent(message, status = 'neutral') {
   state.yamlRecordedDisplay = null;
   setYamlRecordedStatus(message, status);
   renderYamlEmpty(els.yamlRecordedViewer, message);
-  updateYamlCopyButton();
 }
 
 function setYamlInputStatus(message, status) {
@@ -597,41 +628,29 @@ function setYamlStatus(element, message, status) {
 function showYamlView(viewName) {
   const inputAvailable = !els.yamlInputTab.hidden;
   const recordedAvailable = !els.yamlRecordedTab.hidden;
-  const selectedView = viewName === 'recorded' && recordedAvailable ? 'recorded' : (inputAvailable ? 'input' : 'recorded');
+  const progressAvailable = !els.yamlProgressTab.hidden;
+  let selectedView = inputAvailable ? 'input' : (recordedAvailable ? 'recorded' : 'progress');
+  if (viewName === 'recorded' && recordedAvailable) selectedView = 'recorded';
+  if (viewName === 'progress' && progressAvailable) selectedView = 'progress';
+  if (viewName === 'input' && inputAvailable) selectedView = 'input';
+  const showInput = selectedView === 'input';
   const showRecorded = selectedView === 'recorded';
+  const showProgress = selectedView === 'progress';
   state.yamlActiveView = selectedView;
-  els.yamlInputPane.hidden = showRecorded;
+  els.yamlInputPane.hidden = !showInput;
   els.yamlRecordedPane.hidden = !showRecorded;
-  els.yamlInputTab.classList.toggle('active', inputAvailable && !showRecorded);
+  els.progressPane.hidden = !showProgress;
+  els.yamlInputTab.classList.toggle('active', inputAvailable && showInput);
   els.yamlRecordedTab.classList.toggle('active', recordedAvailable && showRecorded);
-  els.yamlInputTab.setAttribute('aria-selected', String(inputAvailable && !showRecorded));
+  els.yamlProgressTab.classList.toggle('active', progressAvailable && showProgress);
+  els.yamlInputTab.setAttribute('aria-selected', String(inputAvailable && showInput));
   els.yamlRecordedTab.setAttribute('aria-selected', String(recordedAvailable && showRecorded));
-  updateYamlCopyButton();
-}
-
-function updateYamlCopyButton() {
-  const content = state.yamlActiveView === 'recorded' ? state.yamlRecordedContent : state.yamlInputContent;
-  els.yamlCopy.disabled = !content;
-}
-
-async function copyActiveYaml() {
-  const content = state.yamlActiveView === 'recorded' ? state.yamlRecordedContent : state.yamlInputContent;
-  if (!content) return;
-  try {
-    await navigator.clipboard.writeText(content);
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = content;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    textarea.remove();
-  }
+  els.yamlProgressTab.setAttribute('aria-selected', String(progressAvailable && showProgress));
 }
 
 function renderYamlDisplay(root, display, emptyMessage) {
+  clearSelectedYamlRegion(root);
+  clearActiveYamlStepCard(root);
   root.innerHTML = '';
   if (!display) {
     renderYamlEmpty(root, emptyMessage);
@@ -708,6 +727,9 @@ function renderYamlSteps(steps) {
 function renderYamlStep(step) {
   const card = document.createElement('div');
   card.className = 'yaml-step-card';
+  card.dataset.yamlStepIndex = String(step.index || '');
+  card.dataset.yamlAction = step.action || 'command';
+  card.dataset.yamlActionKey = normalizeYamlActionName(step.action || 'command');
   const header = document.createElement('div');
   header.className = 'yaml-step-header';
 
@@ -788,6 +810,8 @@ function yamlParamDisplayValue(param) {
 }
 
 function renderYamlEmpty(root, message) {
+  clearSelectedYamlRegion(root);
+  clearActiveYamlStepCard(root);
   root.innerHTML = '';
   if (!message) return;
   const empty = document.createElement('div');
@@ -801,6 +825,369 @@ function formatYamlValue(value) {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function syncYamlStepWithProgressEvent(event) {
+  if (!event || !['tool_call_started', 'tool_call_completed', 'tool_call_failed', 'step_completed'].includes(event.type)) return;
+  const stepCard = yamlStepCardForEvent(event);
+  if (!stepCard) return;
+  activateYamlStepCard(stepCard);
+}
+
+function yamlStepCardForEvent(event) {
+  const stepIndex = yamlStepIndexFromEvent(event);
+  if (Number.isInteger(stepIndex) && stepIndex > 0) {
+    const byIndex = yamlStepCardByIndex(stepIndex);
+    if (byIndex) return byIndex;
+  }
+  const actionKey = normalizeYamlActionName(yamlActionFromEvent(event));
+  if (!actionKey) return null;
+  return Array.from(els.yamlInputViewer.querySelectorAll('.yaml-step-card'))
+    .find((card) => card.dataset.yamlActionKey === actionKey) || null;
+}
+
+function yamlStepCardByIndex(stepIndex) {
+  return Array.from(els.yamlInputViewer.querySelectorAll('.yaml-step-card'))
+    .find((card) => Number(card.dataset.yamlStepIndex) === stepIndex) || null;
+}
+
+function yamlStepIndexFromEvent(event) {
+  const payload = event.payload || {};
+  const runnerResult = payload.runner_result || {};
+  const sourceRef = runnerResult.source_ref || {};
+  for (const value of [payload.step_index, payload.stepIndex]) {
+    const numeric = Number(value);
+    if (Number.isInteger(numeric) && numeric > 0) return numeric;
+  }
+  const sourceIndex = Number(sourceRef.step_index);
+  if (Number.isInteger(sourceIndex) && sourceIndex >= 0) return sourceIndex + 1;
+  for (const value of [payload.step_id, payload.stepId, payload.runner_step_id, payload.runnerStepId, runnerResult.step_id]) {
+    const parsed = yamlStepIndexFromStepId(value);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function yamlStepIndexFromStepId(value) {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/-step-(\d+)$/);
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
+}
+
+function yamlActionFromEvent(event) {
+  const payload = event.payload || {};
+  const runnerResult = payload.runner_result || {};
+  const metadata = runnerResult.metadata || payload.metadata || {};
+  return payload.fsq_action_name
+    || metadata.authored_action_name
+    || runnerResult.action_name
+    || payload.capability_name
+    || event.tool_name
+    || '';
+}
+
+function normalizeYamlActionName(value) {
+  return String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function activateYamlStepCard(stepCard) {
+  cancelActiveYamlStepClearTimer();
+  if (state.activeYamlStepCard === stepCard) {
+    centerYamlStepCard(stepCard);
+    return;
+  }
+  clearActiveYamlStepCard();
+  state.activeYamlStepCard = stepCard;
+  stepCard.classList.add('yaml-step-card-active');
+  centerYamlStepCard(stepCard);
+}
+
+function clearActiveYamlStepCard(root = null) {
+  if (!state.activeYamlStepCard) return;
+  if (root && !root.contains(state.activeYamlStepCard)) return;
+  cancelActiveYamlStepClearTimer();
+  state.activeYamlStepCard.classList.remove('yaml-step-card-active');
+  state.activeYamlStepCard = null;
+}
+
+function scheduleClearActiveYamlStepCard(delayMs = 900) {
+  cancelActiveYamlStepClearTimer();
+  state.activeYamlStepClearTimer = window.setTimeout(() => {
+    state.activeYamlStepClearTimer = null;
+    if (!state.activeYamlStepCard) return;
+    state.activeYamlStepCard.classList.remove('yaml-step-card-active');
+    state.activeYamlStepCard = null;
+  }, delayMs);
+}
+
+function cancelActiveYamlStepClearTimer() {
+  if (!state.activeYamlStepClearTimer) return;
+  clearTimeout(state.activeYamlStepClearTimer);
+  state.activeYamlStepClearTimer = null;
+}
+
+function centerYamlStepCard(stepCard) {
+  const viewer = stepCard.closest('.yaml-viewer');
+  if (!viewer || !stepCard.getClientRects().length) return;
+  const viewerRect = viewer.getBoundingClientRect();
+  const stepRect = stepCard.getBoundingClientRect();
+  const viewerCenter = viewerRect.top + viewerRect.height / 2;
+  const stepCenter = stepRect.top + stepRect.height / 2;
+  const tolerance = Math.max(24, viewerRect.height * YAML_STEP_CENTER_TOLERANCE_RATIO);
+  if (Math.abs(stepCenter - viewerCenter) <= tolerance) return;
+  stepCard.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function clearSelectedYamlRegion(root = null) {
+  if (root && state.selectedYamlRegion && !root.contains(state.selectedYamlRegion)) return;
+  if (state.selectedYamlRegion) {
+    state.selectedYamlRegion.classList.remove('yaml-region-selected');
+  }
+  if (state.selectedYamlStepCard && state.selectedYamlStepCard !== state.selectedYamlRegion) {
+    state.selectedYamlStepCard.classList.remove('yaml-region-selected');
+  }
+  state.selectedYamlRegion = null;
+  state.selectedYamlStepCard = null;
+}
+
+function selectYamlRegion(region) {
+  if (state.selectedYamlRegion === region) return;
+  clearSelectedYamlRegion();
+  const stepCard = region.closest('.yaml-step-card');
+  state.selectedYamlRegion = region;
+  state.selectedYamlStepCard = stepCard;
+  region.classList.add('yaml-region-selected');
+  if (stepCard && stepCard !== region) stepCard.classList.add('yaml-region-selected');
+}
+
+function handleYamlRegionClick(event) {
+  const region = event.target.closest(YAML_SELECTABLE_REGION_SELECTOR);
+  if (region && (els.yamlInputViewer.contains(region) || els.yamlRecordedViewer.contains(region))) {
+    if (state.currentRequestId) return;
+    selectYamlRegion(region);
+    if (els.yamlInputViewer.contains(region) || els.yamlRecordedViewer.contains(region)) {
+      if (region.classList.contains('yaml-case-title-row')) {
+        showCompletedRunReplayPreview();
+      } else {
+        const stepCard = region.closest('.yaml-step-card');
+        if (stepCard) loadStepArtifactsForCard(stepCard);
+      }
+    }
+    return;
+  }
+  clearSelectedYamlRegion();
+}
+
+function completedRunId() {
+  return !state.currentRequestId && state.replayRequestId ? state.replayRequestId : '';
+}
+
+async function showCompletedRunReplayPreview() {
+  const runId = completedRunId();
+  if (!runId) return;
+  clearStepArtifactPreview();
+  showRightTab('preview');
+  try {
+    const replayVideo = await ensureReplayVideoGenerated(runId);
+    if (replayVideo?.videoUrl) {
+      await showReplayVideoPreview(replayVideo.videoUrl);
+    } else {
+      clearPreview('No replay video is available for this run.');
+    }
+  } catch (error) {
+    clearPreview(`Replay video could not be loaded: ${error.message}`);
+  }
+}
+
+async function loadStepArtifactsForCard(stepCard) {
+  const runId = completedRunId();
+  if (!runId) return;
+  const stepIdentifier = stepCard.dataset.yamlStepId || stepCard.dataset.yamlStepIndex || '';
+  if (!stepIdentifier) return;
+  const previewKey = `${runId}:${stepIdentifier}`;
+  state.stepArtifactPreviewActive = true;
+  state.stepArtifactStepKey = previewKey;
+  showRightTab('preview');
+  const shouldShowLoading = els.stepArtifactPreview.hidden || !els.stepArtifactPreview.hasChildNodes();
+  if (shouldShowLoading) renderStepArtifactLoading(stepCard);
+  try {
+    const payload = await api(`/step-artifacts/${encodeURIComponent(runId)}/${encodeURIComponent(stepIdentifier)}`);
+    if (state.stepArtifactStepKey !== previewKey) return;
+    await preloadStepArtifactScreenshots(payload);
+    if (state.stepArtifactStepKey !== previewKey) return;
+    renderStepArtifactPreview(payload, stepCard);
+  } catch (error) {
+    if (state.stepArtifactStepKey !== previewKey) return;
+    renderStepArtifactError(stepCard, error.message);
+  }
+}
+
+function clearStepArtifactPreview() {
+  state.stepArtifactPreviewActive = false;
+  state.stepArtifactStepKey = null;
+  if (!els.stepArtifactPreview) return;
+  els.stepArtifactPreview.hidden = true;
+  els.stepArtifactPreview.innerHTML = '';
+}
+
+function showStepArtifactContainer() {
+  cancelPendingReplayVideoReadyWait();
+  if (els.replayVideo.src) {
+    els.replayVideo.pause();
+  }
+  els.replayVideo.hidden = true;
+  els.replayVideo.style.display = 'none';
+  els.screenshot.removeAttribute('src');
+  els.screenshot.style.display = 'none';
+  els.previewEmpty.style.display = 'none';
+  els.stepArtifactPreview.hidden = false;
+}
+
+function renderStepArtifactLoading(stepCard) {
+  showStepArtifactContainer();
+  const shell = stepArtifactShell(stepCard, 'Loading artifacts...');
+  els.stepArtifactPreview.replaceChildren(shell);
+}
+
+function renderStepArtifactError(stepCard, message) {
+  showStepArtifactContainer();
+  const shell = stepArtifactShell(stepCard);
+  const error = document.createElement('div');
+  error.className = 'step-artifact-error';
+  error.textContent = message || 'Unable to load step artifacts.';
+  shell.appendChild(error);
+  els.stepArtifactPreview.replaceChildren(shell);
+}
+
+function renderStepArtifactPreview(payload, stepCard) {
+  showStepArtifactContainer();
+  const artifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
+  const shell = stepArtifactShell(stepCard, payload?.message || 'No artifacts for this step yet.');
+  if (artifacts.length > 0) {
+    shell.querySelector('.step-artifact-empty')?.remove();
+    const screenshots = artifacts.filter((artifact) => artifact.kind === 'screenshot' && artifact.contentBase64);
+    const textArtifacts = artifacts.filter((artifact) => artifact.kind !== 'screenshot' && typeof artifact.content === 'string');
+    if (screenshots.length > 0) shell.appendChild(renderStepArtifactScreenshots(screenshots));
+    if (textArtifacts.length > 0) shell.appendChild(renderStepArtifactTextArtifacts(textArtifacts));
+  }
+  els.stepArtifactPreview.replaceChildren(shell);
+}
+
+async function preloadStepArtifactScreenshots(payload) {
+  const artifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
+  const sources = artifacts
+    .filter((artifact) => artifact.kind === 'screenshot' && artifact.contentBase64)
+    .map((artifact) => stepArtifactImageSrc(artifact));
+  await Promise.allSettled(sources.map((src) => loadImageElement(src)));
+}
+
+function stepArtifactShell(stepCard, emptyMessage = '') {
+  const shell = document.createElement('div');
+  shell.className = 'step-artifact-shell';
+  const title = document.createElement('div');
+  title.className = 'step-artifact-title';
+  title.textContent = stepArtifactTitle(stepCard);
+  shell.appendChild(title);
+  if (emptyMessage) {
+    const empty = document.createElement('div');
+    empty.className = 'step-artifact-empty';
+    empty.textContent = emptyMessage;
+    shell.appendChild(empty);
+  }
+  return shell;
+}
+
+function stepArtifactTitle(stepCard) {
+  const index = stepCard.dataset.yamlStepIndex || '?';
+  const action = stepCard.dataset.yamlAction || 'command';
+  return `${String(index).padStart(2, '0')} ${action}`;
+}
+
+function renderStepArtifactScreenshots(screenshots) {
+  const section = document.createElement('section');
+  section.className = 'step-artifact-section';
+  const heading = document.createElement('div');
+  heading.className = 'step-artifact-section-title';
+  heading.textContent = 'Screenshots';
+  section.appendChild(heading);
+  const primary = primaryScreenshotArtifacts(screenshots);
+  const row = document.createElement('div');
+  row.className = `step-artifact-screenshot-row${primary.length === 2 ? ' step-artifact-compare' : ''}`;
+  row.appendChild(renderStepArtifactImage(primary[0]));
+  if (primary.length === 2) {
+    const connector = document.createElement('div');
+    connector.className = 'step-artifact-connector';
+    connector.setAttribute('aria-hidden', 'true');
+    row.appendChild(connector);
+    row.appendChild(renderStepArtifactImage(primary[1]));
+  }
+  section.appendChild(row);
+  return section;
+}
+
+function primaryScreenshotArtifacts(screenshots) {
+  const before = screenshots.find((artifact) => stepArtifactLabel(artifact).toLowerCase().includes('before'));
+  const after = screenshots.find((artifact) => stepArtifactLabel(artifact).toLowerCase().includes('after'));
+  if (before && after && before !== after) return [before, after];
+  if (screenshots.length > 1) return [screenshots[0], screenshots[screenshots.length - 1]];
+  return [screenshots[0]];
+}
+
+function renderStepArtifactImage(artifact) {
+  const card = document.createElement('figure');
+  card.className = 'step-artifact-image-card';
+  const label = document.createElement('figcaption');
+  label.className = 'step-artifact-image-label';
+  label.textContent = stepArtifactLabel(artifact);
+  const image = document.createElement('img');
+  image.alt = label.textContent;
+  image.src = stepArtifactImageSrc(artifact);
+  card.appendChild(label);
+  card.appendChild(image);
+  return card;
+}
+
+function stepArtifactImageSrc(artifact) {
+  return `data:${artifact.mimeType || 'image/png'};base64,${artifact.contentBase64}`;
+}
+
+function renderStepArtifactTextArtifacts(artifacts) {
+  const section = document.createElement('section');
+  section.className = 'step-artifact-section';
+  const heading = document.createElement('div');
+  heading.className = 'step-artifact-section-title';
+  heading.textContent = 'Structured artifacts';
+  section.appendChild(heading);
+  for (const artifact of artifacts) {
+    const card = document.createElement('div');
+    card.className = 'step-artifact-text-card';
+    const label = document.createElement('div');
+    label.className = 'step-artifact-text-label';
+    label.textContent = `${artifact.kind || 'artifact'} · ${stepArtifactLabel(artifact)}`;
+    const pre = document.createElement('pre');
+    pre.className = isXmlStepArtifact(artifact) ? 'step-artifact-xml' : '';
+    pre.textContent = artifact.content || '';
+    card.appendChild(label);
+    card.appendChild(pre);
+    section.appendChild(card);
+  }
+  return section;
+}
+
+function isXmlStepArtifact(artifact) {
+  const content = String(artifact.content || '').trimStart();
+  const mimeType = String(artifact.mimeType || '').toLowerCase();
+  const path = String(artifact.path || '').toLowerCase();
+  return mimeType.includes('xml') || path.endsWith('.xml') || content.startsWith('<');
+}
+
+function stepArtifactLabel(artifact) {
+  const combined = `${artifact.reason || ''} ${artifact.phase || ''}`.toLowerCase();
+  if (combined.includes('before') || combined.includes('prepare')) return 'Before';
+  if (combined.includes('after') || combined.includes('finalize')) return 'After';
+  if (combined.includes('failure')) return 'Failure';
+  return artifact.phase || artifact.reason || artifact.kind || 'Artifact';
 }
 
 function recordingStatusSummary(recording) {
@@ -903,7 +1290,6 @@ function escapeHtml(value) {
 function showRightTab(tabName) {
   const tabs = [
     { name: 'preview', button: els.previewTab, pane: els.previewPane },
-    { name: 'progress', button: els.progressTab, pane: els.progressPane },
     { name: 'report', button: els.reportTab, pane: els.reportPane },
   ];
   const selected = tabs.some((tab) => tab.name === tabName) ? tabName : 'preview';
@@ -924,6 +1310,7 @@ function appendProgress(content, backendSequence = null, details = [], status = 
   }
   const item = document.createElement('div');
   item.className = 'progress-item';
+  item.tabIndex = 0;
   const sequence = String(hasBackendSequence ? backendSequence : state.progressSequence).padStart(3, '0');
   const number = document.createElement('span');
   number.className = 'progress-number';
@@ -942,7 +1329,62 @@ function appendProgress(content, backendSequence = null, details = [], status = 
     item.appendChild(renderProgressDetail(eventKey, detail.label, detail.value));
   }
   els.progress.appendChild(item);
+  activateProgressItem(item);
   scheduleProgressScroll();
+}
+
+function activateProgressItem(item) {
+  cancelActiveProgressItemClearTimer();
+  if (state.activeProgressItem === item) return;
+  clearActiveProgressItem();
+  state.activeProgressItem = item;
+  item.classList.add('progress-item-active');
+}
+
+function clearActiveProgressItem() {
+  if (!state.activeProgressItem) return;
+  cancelActiveProgressItemClearTimer();
+  state.activeProgressItem.classList.remove('progress-item-active');
+  state.activeProgressItem = null;
+}
+
+function scheduleClearActiveProgressItem(delayMs = 900) {
+  cancelActiveProgressItemClearTimer();
+  state.activeProgressItemClearTimer = window.setTimeout(() => {
+    state.activeProgressItemClearTimer = null;
+    if (!state.activeProgressItem) return;
+    state.activeProgressItem.classList.remove('progress-item-active');
+    state.activeProgressItem = null;
+  }, delayMs);
+}
+
+function cancelActiveProgressItemClearTimer() {
+  if (!state.activeProgressItemClearTimer) return;
+  clearTimeout(state.activeProgressItemClearTimer);
+  state.activeProgressItemClearTimer = null;
+}
+
+function clearSelectedProgressItem() {
+  if (!state.selectedProgressItem) return;
+  state.selectedProgressItem.classList.remove('progress-item-selected');
+  state.selectedProgressItem = null;
+}
+
+function selectProgressItem(item) {
+  if (state.selectedProgressItem === item) return;
+  clearSelectedProgressItem();
+  state.selectedProgressItem = item;
+  item.classList.add('progress-item-selected');
+}
+
+function handleProgressItemClick(event) {
+  const item = event.target.closest('.progress-item');
+  if (item && els.progress.contains(item)) {
+    if (state.currentRequestId || state.finishingRun) return;
+    selectProgressItem(item);
+    return;
+  }
+  clearSelectedProgressItem();
 }
 
 function scheduleProgressScroll() {
@@ -1280,6 +1722,7 @@ function replayVideoMimeType() {
 }
 
 async function showReplayVideoPreview(videoUrl) {
+  clearStepArtifactPreview();
   cancelPendingReplayVideoReadyWait();
   if (els.replayVideo.src !== videoUrl) {
     els.replayVideo.src = videoUrl;
@@ -1390,6 +1833,7 @@ function buildCuesFromClusters(elements, trackNumber) {
 }
 
 function showReplayFrame(frame) {
+  clearStepArtifactPreview();
   cancelPendingReplayVideoReadyWait();
   els.replayVideo.hidden = true;
   els.replayVideo.style.display = 'none';
@@ -1425,6 +1869,7 @@ function blobToBase64(blob) {
 }
 
 function clearPreview(message = '') {
+  clearStepArtifactPreview();
   cancelPendingReplayVideoReadyWait();
   els.previewEmpty.textContent = message;
   els.previewEmpty.style.display = 'block';
@@ -1520,9 +1965,11 @@ function persistControlPanelWidth() {
 
 els.refresh.addEventListener('click', clearPage);
 els.runSelected.addEventListener('click', runSelected);
-els.yamlCopy.addEventListener('click', copyActiveYaml);
 els.yamlInputTab.addEventListener('click', () => showYamlView('input'));
 els.yamlRecordedTab.addEventListener('click', () => showYamlView('recorded'));
+els.yamlProgressTab.addEventListener('click', () => showYamlView('progress'));
+document.addEventListener('click', handleYamlRegionClick);
+document.addEventListener('click', handleProgressItemClick);
 els.caseYaml.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   event.preventDefault();
@@ -1541,7 +1988,6 @@ for (const input of els.runModeInputs) {
   });
 }
 els.previewTab.addEventListener('click', () => showRightTab('preview'));
-els.progressTab.addEventListener('click', () => showRightTab('progress'));
 els.reportTab.addEventListener('click', () => showRightTab('report'));
 clearYamlInput();
 clearRecordedYaml();

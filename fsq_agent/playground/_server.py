@@ -25,11 +25,20 @@ from fsq_agent.report import resolve_report_path
 
 
 YAML_DISPLAY_SIZE_LIMIT_BYTES = 512 * 1024
+STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 512 * 1024
 _YAML_COMMAND_CONTROL_KEYS = {"optional", "timeout", "timeout_ms", "evidence", "evidencePolicy"}
 _YAML_SETUP_ACTIONS = {"launchApp", "startBrowser"}
 _YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
 _YAML_ASSERTION_ACTIONS = {"assert", "assertVisible", "assertNotVisible", "assertText", "assertElementsOrder", "assertWithAI"}
 _YAML_OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording", "pageSnapshot", "uiSnapshot"}
+_STEP_TEXT_ARTIFACT_KINDS = {"ui_tree", "page_snapshot", "ui_snapshot"}
+
+
+class _StepArtifactTextTooLarge(Exception):
+    def __init__(self, *, size_bytes: int, limit_bytes: int) -> None:
+        super().__init__(f"Step artifact text is too large to display ({size_bytes} bytes).")
+        self.size_bytes = size_bytes
+        self.limit_bytes = limit_bytes
 
 
 @dataclass(frozen=True)
@@ -127,6 +136,13 @@ class PlaygroundServer:
         if path.startswith("/replay-video/"):
             replay_id = unquote(path.removeprefix("/replay-video/")).strip()
             return self._replay_video_response(replay_id)
+        if path.startswith("/step-artifacts/"):
+            parts = path.removeprefix("/step-artifacts/").split("/", 1)
+            if len(parts) != 2:
+                return 400, {"available": False, "error": "Step artifact id and step id or index are required."}
+            artifact_id = unquote(parts[0]).strip()
+            step_id_or_index = unquote(parts[1]).strip()
+            return self._step_artifacts_response(artifact_id, step_id_or_index)
         if path.startswith("/task-progress/"):
             request_id = unquote(path.removeprefix("/task-progress/")).strip()
             task = self.state.get_task(request_id, after_sequence=_after_sequence(query))
@@ -655,6 +671,347 @@ class PlaygroundServer:
         value = recording.get(key) if isinstance(recording, dict) else None
         return value if isinstance(value, list) else []
 
+    def _step_artifacts_response(self, artifact_id: str, step_id_or_index: str) -> tuple[int, object]:
+        if not artifact_id or not step_id_or_index:
+            return 400, {"available": False, "error": "Step artifact id and step id or index are required."}
+        run_id = self.state.run_id_for_request(artifact_id) or artifact_id
+        runs_root = Path(self.settings.output.runs_dir).resolve()
+        run_dir = (runs_root / run_id).resolve()
+        if not _is_relative_to(run_dir, runs_root):
+            return 400, {"available": False, "error": "Run id resolves outside the runs directory."}
+        if not run_dir.exists() or not run_dir.is_dir():
+            return 404, {"available": False, "error": f"Run not found: {run_id}", "runId": run_id}
+        selector = self._step_selector(step_id_or_index)
+        if selector is None:
+            return 400, {"available": False, "error": "Step id or 1-based step index is required.", "runId": run_id}
+        try:
+            refs = self._step_artifact_refs(run_dir, selector)
+            artifacts = self._step_artifact_payloads(run_dir, refs)
+        except _StepArtifactTextTooLarge as exc:
+            return 413, {
+                "available": False,
+                "error": str(exc),
+                "runId": run_id,
+                "sizeBytes": exc.size_bytes,
+                "limitBytes": exc.limit_bytes,
+            }
+        except UnicodeDecodeError:
+            return 400, {"available": False, "error": "Step artifact text must be UTF-8.", "runId": run_id}
+        except ValueError as exc:
+            return 400, {"available": False, "error": str(exc), "runId": run_id}
+        response = {
+            "available": bool(artifacts),
+            "runId": run_id,
+            "stepId": selector.get("step_id"),
+            "stepIndex": selector.get("step_index"),
+            "artifacts": artifacts,
+        }
+        if not artifacts:
+            response["message"] = "No artifacts for this step yet."
+        return 200, response
+
+    def _step_selector(self, step_id_or_index: str) -> dict[str, object] | None:
+        value = step_id_or_index.strip()
+        if not value:
+            return None
+        if value.isdecimal():
+            step_index = int(value)
+            return {"step_index": step_index} if step_index > 0 else None
+        selector: dict[str, object] = {"step_id": value}
+        parsed_index = _step_index_from_step_id(value)
+        if parsed_index is not None:
+            selector["step_index"] = parsed_index
+        return selector
+
+    def _step_artifact_refs(self, run_dir: Path, selector: dict[str, object]) -> list[dict[str, object]]:
+        refs: list[dict[str, object]] = []
+        manifest = self._read_evidence_manifest(run_dir)
+        if manifest is not None:
+            event_metadata = self._artifact_event_metadata(manifest)
+            artifacts = manifest.get("artifacts")
+            if isinstance(artifacts, list):
+                for artifact in artifacts:
+                    if not isinstance(artifact, dict) or not self._artifact_matches_step(artifact, selector):
+                        continue
+                    refs.append(self._artifact_with_event_metadata(artifact, event_metadata))
+        refs.extend(self._step_artifact_refs_from_events(run_dir, selector))
+        return self._dedupe_step_artifact_refs(refs)
+
+    def _read_evidence_manifest(self, run_dir: Path) -> dict[str, object] | None:
+        manifest_path = run_dir / "evidence-manifest.json"
+        if not manifest_path.exists():
+            return None
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            return None
+        bundle = manifest.get("bundle")
+        return bundle if isinstance(bundle, dict) else manifest
+
+    def _artifact_event_metadata(self, manifest: dict[str, object]) -> dict[str, dict[str, object]]:
+        metadata: dict[str, dict[str, object]] = {}
+        events = manifest.get("events")
+        if not isinstance(events, list):
+            return metadata
+        for event in events:
+            if not isinstance(event, dict) or event.get("event_type") != "artifact_captured":
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            path = payload.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            metadata[path] = {
+                "timestamp": self._timestamp_ms(event.get("timestamp")),
+                "reason": payload.get("reason"),
+                "phase": payload.get("phase") or event.get("phase"),
+            }
+        return metadata
+
+    def _artifact_with_event_metadata(self, artifact: dict[str, object], event_metadata: dict[str, dict[str, object]]) -> dict[str, object]:
+        path = artifact.get("path")
+        metadata = event_metadata.get(path, {}) if isinstance(path, str) else {}
+        merged = dict(artifact)
+        for key in ("timestamp", "reason", "phase"):
+            current = merged.get(key)
+            replacement = metadata.get(key)
+            if (current is None or current == "") and replacement is not None and replacement != "":
+                merged[key] = metadata[key]
+        return merged
+
+    def _step_artifact_refs_from_events(self, run_dir: Path, selector: dict[str, object]) -> list[dict[str, object]]:
+        events_path = run_dir / "events.jsonl"
+        if not events_path.exists():
+            return []
+        refs: list[dict[str, object]] = []
+        recorded_step_index = 0
+        for line in events_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("type") not in {"tool_call_completed", "tool_call_failed"}:
+                continue
+            is_recorded_step = self._event_is_recorded_replay_command(event)
+            if is_recorded_step:
+                recorded_step_index += 1
+            if not self._event_matches_step(event, selector) and not self._event_matches_recorded_step_index(selector, is_recorded_step, recorded_step_index):
+                continue
+            timestamp = self._timestamp_ms(event.get("timestamp"))
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            artifact_refs = payload.get("artifact_refs")
+            if isinstance(artifact_refs, list):
+                for ref in artifact_refs:
+                    if isinstance(ref, dict):
+                        refs.append({**ref, "timestamp": ref.get("timestamp") or timestamp})
+            artifact_path = payload.get("artifact_path")
+            if isinstance(artifact_path, str) and artifact_path:
+                refs.append({"kind": "screenshot", "path": artifact_path, "timestamp": timestamp})
+            inline_ref = self._event_inline_observation_ref(event, timestamp)
+            if inline_ref is not None:
+                refs.append(inline_ref)
+        return refs
+
+    def _event_matches_recorded_step_index(self, selector: dict[str, object], is_recorded_step: bool, recorded_step_index: int) -> bool:
+        selector_step_index = selector.get("step_index")
+        return bool(is_recorded_step and isinstance(selector_step_index, int) and selector_step_index == recorded_step_index)
+
+    def _event_is_recorded_replay_command(self, event: dict[str, object]) -> bool:
+        if event.get("type") != "tool_call_completed":
+            return False
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        if payload.get("tool_origin") not in {"platform", "harness", "common"}:
+            return False
+        if payload.get("status") not in {"passed", "success", None}:
+            return False
+        replay = self._event_replay_policy(payload)
+        return replay.get("kind") == "fsq_command" and isinstance(replay.get("alias"), str) and bool(replay.get("alias"))
+
+    def _event_replay_policy(self, payload: dict[str, object]) -> dict[str, object]:
+        replay = payload.get("replay")
+        if isinstance(replay, dict):
+            return replay
+        replay_kind = payload.get("replay_kind")
+        if isinstance(replay_kind, str) and replay_kind:
+            return {"kind": "fsq_command", "alias": replay_kind}
+        return {}
+
+    def _event_inline_observation_ref(self, event: dict[str, object], timestamp: int | None) -> dict[str, object] | None:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        kind = self._event_observation_kind(event)
+        if kind is None:
+            return None
+        content = self._event_harness_output_content(payload, kind)
+        if content is None:
+            return None
+        mime_type = "application/xml" if kind == "ui_tree" and content.lstrip().startswith("<") else "application/json"
+        return {
+            "kind": kind,
+            "content": content,
+            "mime_type": mime_type,
+            "reason": "output",
+            "phase": "invoke",
+            "timestamp": timestamp,
+        }
+
+    def _event_observation_kind(self, event: dict[str, object]) -> str | None:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        value = payload.get("fsq_action_name") or payload.get("tool_name") or event.get("tool_name")
+        normalized = str(value or "").replace("_", "").lower()
+        if normalized == "uitree":
+            return "ui_tree"
+        if normalized == "pagesnapshot":
+            return "page_snapshot"
+        if normalized == "uisnapshot":
+            return "ui_snapshot"
+        return None
+
+    def _event_harness_output_content(self, payload: dict[str, object], kind: str) -> str | None:
+        runner_result = payload.get("runner_result") if isinstance(payload.get("runner_result"), dict) else {}
+        phase_reports = runner_result.get("phase_reports") if isinstance(runner_result.get("phase_reports"), list) else []
+        for phase_report in phase_reports:
+            if not isinstance(phase_report, dict):
+                continue
+            metadata = phase_report.get("metadata") if isinstance(phase_report.get("metadata"), dict) else {}
+            output = metadata.get("harness_output")
+            if not isinstance(output, dict):
+                continue
+            if kind == "ui_tree" and isinstance(output.get("xml"), str):
+                return output["xml"]
+            if output:
+                return json.dumps(output, indent=2, ensure_ascii=False)
+        return None
+
+    def _artifact_matches_step(self, artifact: dict[str, object], selector: dict[str, object]) -> bool:
+        selector_step_id = selector.get("step_id")
+        selector_step_index = selector.get("step_index")
+        artifact_step_id = artifact.get("step_id") or artifact.get("stepId")
+        if isinstance(selector_step_id, str) and artifact_step_id == selector_step_id:
+            return True
+        if isinstance(selector_step_index, int):
+            if isinstance(artifact_step_id, str) and _step_index_from_step_id(artifact_step_id) == selector_step_index:
+                return True
+            path = artifact.get("path")
+            if isinstance(path, str) and _step_index_from_step_id(path) == selector_step_index:
+                return True
+        return False
+
+    def _event_matches_step(self, event: dict[str, object], selector: dict[str, object]) -> bool:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        runner_result = payload.get("runner_result") if isinstance(payload.get("runner_result"), dict) else {}
+        source_ref = runner_result.get("source_ref") if isinstance(runner_result.get("source_ref"), dict) else {}
+        selector_step_id = selector.get("step_id")
+        selector_step_index = selector.get("step_index")
+        step_ids = [
+            payload.get("step_id"),
+            payload.get("runner_step_id"),
+            runner_result.get("step_id"),
+        ]
+        if isinstance(selector_step_id, str) and selector_step_id in step_ids:
+            return True
+        if isinstance(selector_step_index, int):
+            for step_id in step_ids:
+                if isinstance(step_id, str) and _step_index_from_step_id(step_id) == selector_step_index:
+                    return True
+            source_index = source_ref.get("step_index")
+            if isinstance(source_index, int) and source_index + 1 == selector_step_index:
+                return True
+        return False
+
+    def _dedupe_step_artifact_refs(self, refs: list[dict[str, object]]) -> list[dict[str, object]]:
+        deduped: list[dict[str, object]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for ref in refs:
+            key = (str(ref.get("kind") or ""), str(ref.get("path") or ""), str(ref.get("phase") or ref.get("reason") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(ref)
+        return sorted(deduped, key=self._step_artifact_sort_key)
+
+    def _step_artifact_sort_key(self, ref: dict[str, object]) -> tuple[int, int, str]:
+        phase_value = f"{ref.get('reason') or ''} {ref.get('phase') or ''}".lower()
+        if "before" in phase_value or "prepare" in phase_value:
+            phase_order = 0
+        elif "after" in phase_value or "finalize" in phase_value:
+            phase_order = 1
+        elif "failure" in phase_value:
+            phase_order = 2
+        else:
+            phase_order = 3
+        kind_order = 0 if ref.get("kind") == "screenshot" else 1
+        return (kind_order, phase_order, str(ref.get("path") or ""))
+
+    def _step_artifact_payloads(self, run_dir: Path, refs: list[dict[str, object]]) -> list[dict[str, object]]:
+        artifacts: list[dict[str, object]] = []
+        for ref in refs:
+            payload = self._step_artifact_payload(run_dir, ref)
+            if payload is not None:
+                artifacts.append(payload)
+        return artifacts
+
+    def _step_artifact_payload(self, run_dir: Path, ref: dict[str, object]) -> dict[str, object] | None:
+        kind = str(ref.get("kind") or "")
+        if kind != "screenshot" and kind not in _STEP_TEXT_ARTIFACT_KINDS:
+            return None
+        inline_content = ref.get("content")
+        if isinstance(inline_content, str):
+            return {
+                "kind": kind,
+                "path": str(ref.get("path") or ""),
+                "phase": ref.get("phase"),
+                "reason": ref.get("reason"),
+                "timestamp": ref.get("timestamp") or self._artifact_timestamp(ref),
+                "mimeType": ref.get("mime_type") or ref.get("mimeType"),
+                "content": inline_content,
+            }
+        artifact_path, relative_path = self._safe_run_artifact_path(run_dir, ref.get("path"))
+        if not artifact_path.exists() or not artifact_path.is_file():
+            return None
+        payload: dict[str, object] = {
+            "kind": kind,
+            "path": relative_path,
+            "phase": ref.get("phase"),
+            "reason": ref.get("reason"),
+            "timestamp": ref.get("timestamp") or self._artifact_timestamp(ref),
+            "mimeType": ref.get("mime_type") or ref.get("mimeType") or mimetypes.guess_type(artifact_path.name)[0],
+        }
+        if kind == "screenshot":
+            payload["contentBase64"] = base64.b64encode(artifact_path.read_bytes()).decode("ascii")
+            return payload
+        size_bytes = artifact_path.stat().st_size
+        if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
+            raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
+        content, content_mime_type = self._step_text_artifact_content(kind, artifact_path)
+        payload["content"] = content
+        if content_mime_type is not None:
+            payload["mimeType"] = content_mime_type
+        return payload
+
+    def _step_text_artifact_content(self, kind: str, artifact_path: Path) -> tuple[str, str | None]:
+        content = artifact_path.read_text(encoding="utf-8")
+        if kind != "ui_tree":
+            return content, None
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            return content, None
+        if not isinstance(payload, dict):
+            return content, None
+        xml = payload.get("xml")
+        if isinstance(xml, str) and xml.strip():
+            return xml, "application/xml"
+        return content, None
+
+    def _safe_run_artifact_path(self, run_dir: Path, path_value: object) -> tuple[Path, str]:
+        if not isinstance(path_value, str) or not path_value.strip():
+            raise ValueError("Artifact path is required.")
+        candidate = Path(path_value.strip())
+        resolved = candidate.resolve() if candidate.is_absolute() else (run_dir / candidate).resolve()
+        if not _is_relative_to(resolved, run_dir):
+            raise ValueError("Artifact path resolves outside the run directory.")
+        return resolved, resolved.relative_to(run_dir).as_posix()
+
     def _record_replay_frame(self, request_id: str, screenshot_payload: dict[str, object]) -> None:
         screenshot = screenshot_payload.get("screenshot")
         timestamp = screenshot_payload.get("timestamp")
@@ -1056,7 +1413,7 @@ def run_playground(settings: Settings, options: PlaygroundServerOptions) -> None
 
 def _is_api_path(path: str) -> bool:
     return path in {"/status", "/session", "/session/setup", "/session/auto", "/runtime-info", "/screenshot", "/yaml/input"} or path.startswith(
-        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/", "/yaml/recorded/")
+        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/", "/step-artifacts/", "/yaml/recorded/")
     )
 
 
@@ -1066,6 +1423,13 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _step_index_from_step_id(value: str) -> int | None:
+    match = re.search(r"(?:^|[-_/])step[-_](\d+)(?:\D|$)", value)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def _parse_byte_range(range_header: str | None, total_size: int) -> tuple[int, int] | None:
