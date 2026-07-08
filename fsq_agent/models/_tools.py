@@ -42,6 +42,12 @@ class CapabilityDefinition(BaseModel):
     def params_json_schema(self) -> dict[str, Any]:
         return self.params_model.model_json_schema()
 
+    @property
+    def fsq_command_alias(self) -> str | None:
+        if self.replay is not None and self.replay.kind == "fsq_command":
+            return self.replay.alias
+        return None
+
     def safe_metadata(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "capability_name": self.name,
@@ -69,15 +75,9 @@ class CapabilityRegistrySnapshot(BaseModel):
 
     def resolve(self, name_or_alias: str) -> CapabilityDefinition | None:
         for capability in self.capabilities:
-            if capability.name == name_or_alias or _fsq_command_alias(capability) == name_or_alias:
+            if capability.name == name_or_alias or capability.fsq_command_alias == name_or_alias:
                 return capability
         return None
-
-
-def _fsq_command_alias(capability: CapabilityDefinition) -> str | None:
-    if capability.replay is not None and capability.replay.kind == "fsq_command":
-        return capability.replay.alias
-    return None
 
 
 class CapabilityInvocation(BaseModel):

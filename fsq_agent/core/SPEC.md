@@ -149,7 +149,7 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `harness/_windows_driver.py`: `WindowsDriverInterface` protocol and driver-owned contracts.
 - `harness/_macos.py`: Built-in `MacOSHarness` implementation and macOS runtime-service delegation.
 - `harness/_macos_driver.py`: `MacOSDriverInterface` protocol and driver-owned contracts.
-- `harness/_driver_tools.py`: Thin platform declaration compatibility helpers, Android/Web/Windows/macOS action catalog wiring, and function schema/capability discovery wrappers backed by `capabilities`.
+- `harness/_driver_tools.py`: Thin platform declaration compatibility helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
 - `harness/_uiautomator2_driver.py`: Optional uiautomator2 backend implementation with lazy dependency import and fake-device injection for tests.
 - `harness/_playwright_driver.py`: Optional Playwright backend implementation with lazy dependency import, browser/page lifecycle management, and fake-page injection for tests.
 - `harness/_pywinauto_driver.py`: Optional pywinauto backend implementation with lazy dependency import, application/window lifecycle management, and fake-window injection for tests.

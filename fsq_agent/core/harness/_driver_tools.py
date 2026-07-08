@@ -195,36 +195,10 @@ def _discover_driver_function_schemas(
     platform: HarnessPlatform,
     metadata: dict[str, object] | None = None,
 ) -> list[HarnessFunctionSchema]:
-    schemas: list[HarnessFunctionSchema] = []
-    for definition in _discover_driver_capability_definitions(driver, platform=platform, metadata=metadata):
-        driver_method = _metadata_str(definition.metadata, "driver_method") or definition.name
-        fsq_action_name = _metadata_str(definition.metadata, "fsq_action_name")
-        schema_metadata = dict(definition.metadata)
-        schema_metadata.update(
-            {
-                "capability_name": definition.name,
-                "executor_kind": definition.executor_kind,
-                "driver_method": driver_method,
-                "owner": definition.owner,
-                "step_kind": definition.step_kind,
-                "replay": definition.replay.model_dump(mode="json") if definition.replay else None,
-            }
-        )
-        if fsq_action_name is not None:
-            schema_metadata["fsq_action_name"] = fsq_action_name
-        schemas.append(
-            HarnessFunctionSchema(
-                name=definition.name,
-                description=definition.description,
-                params_json_schema=definition.params_json_schema,
-                platform=definition.platform or platform,
-                driver_method=driver_method,
-                fsq_action_name=fsq_action_name,
-                capture_evidence=definition.capture_evidence,
-                metadata=schema_metadata,
-            )
-        )
-    return schemas
+    return [
+        _schema_from_capability_definition(definition, platform=platform)
+        for definition in _discover_driver_capability_definitions(driver, platform=platform, metadata=metadata)
+    ]
 
 
 def _discover_driver_capability_definitions(
@@ -251,3 +225,49 @@ def _discover_driver_capability_definitions(
 def _metadata_str(metadata: dict[str, object], key: str) -> str | None:
     value = metadata.get(key)
     return value if isinstance(value, str) else None
+
+
+def _capability_matches(definition: CapabilityDefinition, name_or_alias: str) -> bool:
+    return definition.name == name_or_alias or definition.fsq_command_alias == name_or_alias
+
+
+def _with_driver_metadata(definition: CapabilityDefinition, updates: dict[str, object]) -> CapabilityDefinition:
+    metadata = dict(definition.metadata)
+    metadata.update(updates)
+    model_updates: dict[str, object] = {"metadata": metadata}
+    backend = updates.get("backend")
+    if isinstance(backend, str):
+        model_updates["backend"] = backend
+    return definition.model_copy(update=model_updates)
+
+
+def _schema_from_capability_definition(
+    definition: CapabilityDefinition,
+    *,
+    platform: HarnessPlatform,
+) -> HarnessFunctionSchema:
+    driver_method = _metadata_str(definition.metadata, "driver_method") or definition.name
+    fsq_action_name = _metadata_str(definition.metadata, "fsq_action_name")
+    schema_metadata = dict(definition.metadata)
+    schema_metadata.update(
+        {
+            "capability_name": definition.name,
+            "executor_kind": definition.executor_kind,
+            "driver_method": driver_method,
+            "owner": definition.owner,
+            "step_kind": definition.step_kind,
+            "replay": definition.replay.model_dump(mode="json") if definition.replay else None,
+        }
+    )
+    if fsq_action_name is not None:
+        schema_metadata["fsq_action_name"] = fsq_action_name
+    return HarnessFunctionSchema(
+        name=definition.name,
+        description=definition.description,
+        params_json_schema=definition.params_json_schema,
+        platform=definition.platform or platform,
+        driver_method=driver_method,
+        fsq_action_name=fsq_action_name,
+        capture_evidence=definition.capture_evidence,
+        metadata=schema_metadata,
+    )

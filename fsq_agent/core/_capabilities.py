@@ -22,7 +22,7 @@ class CapabilityRegistry:
                 context={"name": definition.name, "existing_capability": self._replay_aliases[definition.name]},
             )
         alias_map = dict(self._replay_aliases)
-        alias = self._fsq_command_alias(definition)
+        alias = definition.fsq_command_alias
         if alias is not None:
             if alias != definition.name and alias in self._definitions:
                 raise ConfigurationError(
@@ -52,8 +52,3 @@ class CapabilityRegistry:
 
     def snapshot(self) -> CapabilityRegistrySnapshot:
         return CapabilityRegistrySnapshot(capabilities=self.list_capabilities())
-
-    def _fsq_command_alias(self, definition: CapabilityDefinition) -> str | None:
-        if definition.replay is not None and definition.replay.kind == "fsq_command":
-            return definition.replay.alias
-        return None

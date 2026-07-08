@@ -157,7 +157,7 @@ class CommonPlatformTools:
 
     def common_capability_for(self, name_or_alias: str) -> CapabilityDefinition | None:
         for definition in self.capability_definitions():
-            if definition.name == name_or_alias or self._fsq_command_alias(definition) == name_or_alias:
+            if definition.name == name_or_alias or definition.fsq_command_alias == name_or_alias:
                 return definition
         return None
 
@@ -173,8 +173,3 @@ class CommonPlatformTools:
             capture_evidence=definition.capture_evidence,
             metadata=metadata,
         )
-
-    def _fsq_command_alias(self, definition: CapabilityDefinition) -> str | None:
-        if definition.replay is not None and definition.replay.kind == "fsq_command":
-            return definition.replay.alias
-        return None

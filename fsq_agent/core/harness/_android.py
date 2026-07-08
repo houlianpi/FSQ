@@ -3,7 +3,7 @@ from pydantic import BaseModel, ValidationError
 from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core._platform_tools import CommonPlatformTools
 from fsq_agent.core.harness._android_driver import AndroidDriverInterface
-from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
+from fsq_agent.core.harness._driver_tools import _capability_matches, _discover_driver_capability_definitions, _schema_from_capability_definition
 from fsq_agent.core.harness._interface import AIAssertionEvaluatorProtocol
 from fsq_agent.models import (
     CapabilityDefinition,
@@ -152,7 +152,7 @@ class AndroidHarness:
 
     def _capability_for(self, name_or_alias: str) -> CapabilityDefinition | None:
         for capability in self._capability_definitions():
-            if capability.name == name_or_alias or self._fsq_command_alias(capability) == name_or_alias:
+            if _capability_matches(capability, name_or_alias):
                 return capability
         return None
 
@@ -169,34 +169,7 @@ class AndroidHarness:
         return definitions
 
     def _schema_from_capability(self, definition: CapabilityDefinition) -> HarnessFunctionSchema:
-        driver_method = self._metadata_str(definition.metadata, "driver_method") or definition.name
-        fsq_action_name = self._metadata_str(definition.metadata, "fsq_action_name")
-        schema_metadata = dict(definition.metadata)
-        schema_metadata.update(
-            {
-                "capability_name": definition.name,
-                "executor_kind": definition.executor_kind,
-                "driver_method": driver_method,
-                "owner": definition.owner,
-                "step_kind": definition.step_kind,
-                "replay": definition.replay.model_dump(mode="json") if definition.replay else None,
-            }
-        )
-        return HarnessFunctionSchema(
-            name=definition.name,
-            description=definition.description,
-            params_json_schema=definition.params_json_schema,
-            platform="android",
-            driver_method=driver_method,
-            fsq_action_name=fsq_action_name,
-            capture_evidence=definition.capture_evidence,
-            metadata=schema_metadata,
-        )
-
-    def _fsq_command_alias(self, definition: CapabilityDefinition) -> str | None:
-        if definition.replay is not None and definition.replay.kind == "fsq_command":
-            return definition.replay.alias
-        return None
+        return _schema_from_capability_definition(definition, platform="android")
 
     def _configure_driver_ai_assertion_tool(self) -> None:
         configure = getattr(self.driver, "configure_ai_assertion_tool", None)

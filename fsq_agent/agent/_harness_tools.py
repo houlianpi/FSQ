@@ -132,6 +132,7 @@ class HarnessToolAdapter:
         runner_result: RunnerStepResult,
         duration_ms: int,
     ) -> str:
+        step_kind = self._step_kind(schema)
         artifact_refs = self._artifact_refs(runner_result)
         result_summary = self._result_summary(schema, step, runner_result, artifact_refs)
         invoke_metadata = self._invoke_metadata(runner_result)
@@ -140,7 +141,7 @@ class HarnessToolAdapter:
             "tool_origin": self._tool_origin(schema),
             "capability_name": self._capability_name(schema),
             "executor_kind": schema.metadata.get("executor_kind"),
-            "step_kind": self._step_kind(schema),
+            "step_kind": step_kind,
             "replay": schema.metadata.get("replay"),
             "safe_replay_params": invoke_metadata.get("safe_replay_params"),
             "platform": schema.platform,
@@ -167,13 +168,14 @@ class HarnessToolAdapter:
         runner_result: RunnerStepResult,
         artifact_refs: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        step_kind = self._step_kind(schema)
         invoke_metadata = self._invoke_metadata(runner_result)
         metadata: dict[str, Any] = {
             "tool_origin": self._tool_origin(schema),
             "tool_name": schema.name,
             "capability_name": self._capability_name(schema),
             "executor_kind": schema.metadata.get("executor_kind"),
-            "step_kind": self._step_kind(schema),
+            "step_kind": step_kind,
             "replay": schema.metadata.get("replay"),
             "platform": schema.platform,
             "driver_method": schema.driver_method,
@@ -209,13 +211,14 @@ class HarnessToolAdapter:
     def _format_failure(self, schema: HarnessFunctionSchema, error: Exception, duration_ms: int) -> str:
         error_message = str(error) or error.__class__.__name__
         action_name = self._capability_name(schema)
+        step_kind = self._step_kind(schema)
         return json.dumps(
             {
                 "tool_name": schema.name,
                 "tool_origin": self._tool_origin(schema),
                 "capability_name": action_name,
                 "executor_kind": schema.metadata.get("executor_kind"),
-                "step_kind": self._step_kind(schema),
+                "step_kind": step_kind,
                 "replay": schema.metadata.get("replay"),
                 "platform": schema.platform,
                 "driver_method": schema.driver_method,
@@ -235,7 +238,7 @@ class HarnessToolAdapter:
                         "tool_name": schema.name,
                         "capability_name": action_name,
                         "executor_kind": schema.metadata.get("executor_kind"),
-                        "step_kind": self._step_kind(schema),
+                        "step_kind": step_kind,
                         "replay": schema.metadata.get("replay"),
                         "platform": schema.platform,
                         "driver_method": schema.driver_method,
