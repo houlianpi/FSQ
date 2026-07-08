@@ -25,7 +25,6 @@ class CapabilityDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     name: str
-    aliases: list[str] = Field(default_factory=list)
     executor_kind: CapabilityExecutorKind
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind = "action"
@@ -37,7 +36,6 @@ class CapabilityDefinition(BaseModel):
     post_action_delay_seconds: float | None = Field(default=None, ge=0)
     sensitivity: bool = False
     replay: ReplayPolicy | None = None
-    strict: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -47,7 +45,6 @@ class CapabilityDefinition(BaseModel):
     def safe_metadata(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "capability_name": self.name,
-            "aliases": list(self.aliases),
             "executor_kind": self.executor_kind,
             "step_kind": self.step_kind,
             "platform": self.platform,
@@ -72,9 +69,15 @@ class CapabilityRegistrySnapshot(BaseModel):
 
     def resolve(self, name_or_alias: str) -> CapabilityDefinition | None:
         for capability in self.capabilities:
-            if capability.name == name_or_alias or name_or_alias in capability.aliases:
+            if capability.name == name_or_alias or _fsq_command_alias(capability) == name_or_alias:
                 return capability
         return None
+
+
+def _fsq_command_alias(capability: CapabilityDefinition) -> str | None:
+    if capability.replay is not None and capability.replay.kind == "fsq_command":
+        return capability.replay.alias
+    return None
 
 
 class CapabilityInvocation(BaseModel):

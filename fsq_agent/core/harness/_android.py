@@ -152,7 +152,7 @@ class AndroidHarness:
 
     def _capability_for(self, name_or_alias: str) -> CapabilityDefinition | None:
         for capability in self._capability_definitions():
-            if capability.name == name_or_alias or name_or_alias in capability.aliases:
+            if capability.name == name_or_alias or self._fsq_command_alias(capability) == name_or_alias:
                 return capability
         return None
 
@@ -186,13 +186,17 @@ class AndroidHarness:
             name=definition.name,
             description=definition.description,
             params_json_schema=definition.params_json_schema,
-            strict=definition.strict,
             platform="android",
             driver_method=driver_method,
             fsq_action_name=fsq_action_name,
             capture_evidence=definition.capture_evidence,
             metadata=schema_metadata,
         )
+
+    def _fsq_command_alias(self, definition: CapabilityDefinition) -> str | None:
+        if definition.replay is not None and definition.replay.kind == "fsq_command":
+            return definition.replay.alias
+        return None
 
     def _configure_driver_ai_assertion_tool(self) -> None:
         configure = getattr(self.driver, "configure_ai_assertion_tool", None)

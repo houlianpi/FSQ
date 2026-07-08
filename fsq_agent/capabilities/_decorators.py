@@ -22,7 +22,6 @@ _SAFE_METADATA_SCALARS = (str, int, float, bool, type(None))
 @dataclass(frozen=True)
 class CapabilityDeclaration:
     name: str | None
-    aliases: tuple[str, ...]
     executor_kind: CapabilityExecutorKind
     owner: str | None = None
     params_model: type[BaseModel] | None = None
@@ -34,7 +33,6 @@ class CapabilityDeclaration:
     post_action_delay_seconds: float | None = None
     sensitivity: bool = False
     replay: ReplayPolicy | None = None
-    strict: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
     action_name: str | None = None
     required_method_name: str | None = None
@@ -44,7 +42,6 @@ def capability(
     *,
     executor_kind: CapabilityExecutorKind,
     name: str | None = None,
-    aliases: list[str] | None = None,
     owner: str | None = None,
     params_model: type[BaseModel] | None = None,
     description: str = "",
@@ -55,14 +52,12 @@ def capability(
     post_action_delay_seconds: float | None = None,
     sensitivity: bool = False,
     replay: ReplayPolicy | None = None,
-    strict: bool | None = None,
     metadata: dict[str, Any] | None = None,
     action_catalog: CapabilityActionCatalog | None = None,
     action_name: str | None = None,
 ) -> Callable[[F], F]:
     declaration = _declaration_from_args(
         name=name,
-        aliases=aliases,
         executor_kind=executor_kind,
         owner=owner,
         params_model=params_model,
@@ -74,7 +69,6 @@ def capability(
         post_action_delay_seconds=post_action_delay_seconds,
         sensitivity=sensitivity,
         replay=replay,
-        strict=strict,
         metadata=metadata,
         action_catalog=action_catalog,
         action_name=action_name,
@@ -93,18 +87,15 @@ def common_capability(
     name: str,
     description: str,
     params_model: type[BaseModel],
-    aliases: list[str] | None = None,
     step_kind: ExecutableStepKind = "action",
     replay: ReplayPolicy | None = None,
     sensitivity: bool = False,
-    strict: bool = True,
     capture_evidence: bool = False,
     post_action_delay_seconds: float | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Callable[[F], F]:
     return capability(
         name=name,
-        aliases=aliases,
         executor_kind="common",
         owner="common",
         params_model=params_model,
@@ -112,7 +103,6 @@ def common_capability(
         step_kind=step_kind,
         replay=replay,
         sensitivity=sensitivity,
-        strict=strict,
         capture_evidence=capture_evidence,
         post_action_delay_seconds=post_action_delay_seconds,
         metadata=metadata,
@@ -124,19 +114,16 @@ def driver_capability(
     name: str | None = None,
     description: str,
     params_model: type[BaseModel] | None = None,
-    aliases: list[str] | None = None,
     platform: HarnessPlatform | None = None,
     backend: str | None = None,
     step_kind: ExecutableStepKind = "action",
     replay: ReplayPolicy | None = None,
-    strict: bool = True,
     capture_evidence: bool = False,
     post_action_delay_seconds: float | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Callable[[F], F]:
     return capability(
         name=name,
-        aliases=aliases,
         executor_kind="driver",
         owner="driver",
         params_model=params_model,
@@ -145,7 +132,6 @@ def driver_capability(
         backend=backend,
         step_kind=step_kind,
         replay=replay,
-        strict=strict,
         capture_evidence=capture_evidence,
         post_action_delay_seconds=post_action_delay_seconds,
         metadata=metadata,
@@ -157,13 +143,11 @@ def harness_capability(
     name: str,
     description: str,
     params_model: type[BaseModel],
-    aliases: list[str] | None = None,
     platform: HarnessPlatform | None = None,
     backend: str | None = None,
     owner: str = "harness",
     step_kind: ExecutableStepKind = "action",
     replay: ReplayPolicy | None = None,
-    strict: bool = True,
     capture_evidence: bool = False,
     post_action_delay_seconds: float | None = None,
     sensitivity: bool = False,
@@ -171,7 +155,6 @@ def harness_capability(
 ) -> Callable[[F], F]:
     return capability(
         name=name,
-        aliases=aliases,
         executor_kind="harness",
         owner=owner,
         params_model=params_model,
@@ -180,7 +163,6 @@ def harness_capability(
         backend=backend,
         step_kind=step_kind,
         replay=replay,
-        strict=strict,
         capture_evidence=capture_evidence,
         post_action_delay_seconds=post_action_delay_seconds,
         sensitivity=sensitivity,
@@ -193,12 +175,10 @@ def platform_capability(
     name: str,
     description: str,
     params_model: type[BaseModel],
-    aliases: list[str] | None = None,
     platform: HarnessPlatform | None = None,
     backend: str | None = None,
     step_kind: ExecutableStepKind = "action",
     replay: ReplayPolicy | None = None,
-    strict: bool = True,
     capture_evidence: bool = False,
     post_action_delay_seconds: float | None = None,
     sensitivity: bool = False,
@@ -206,7 +186,6 @@ def platform_capability(
 ) -> Callable[[F], F]:
     return capability(
         name=name,
-        aliases=aliases,
         executor_kind="harness",
         owner="platform",
         params_model=params_model,
@@ -215,7 +194,6 @@ def platform_capability(
         backend=backend,
         step_kind=step_kind,
         replay=replay,
-        strict=strict,
         capture_evidence=capture_evidence,
         post_action_delay_seconds=post_action_delay_seconds,
         sensitivity=sensitivity,
@@ -233,7 +211,6 @@ def platform_driver_capability(
         action_name: str,
         *,
         description: str,
-        strict: bool | None = None,
         capture_evidence: bool | None = None,
         post_action_delay_seconds: float | None = None,
         metadata: dict[str, Any] | None = None,
@@ -245,7 +222,6 @@ def platform_driver_capability(
             description=description,
             platform=platform,
             backend=backend,
-            strict=action_definition.strict if strict is None else strict,
             capture_evidence=action_definition.capture_evidence if capture_evidence is None else capture_evidence,
             post_action_delay_seconds=post_action_delay_seconds,
             metadata=metadata,
@@ -270,7 +246,6 @@ def get_capability_declaration(candidate: object) -> CapabilityDeclaration | Non
 def _declaration_from_args(
     *,
     name: str | None,
-    aliases: list[str] | None,
     executor_kind: CapabilityExecutorKind,
     owner: str | None,
     params_model: type[BaseModel] | None,
@@ -282,18 +257,15 @@ def _declaration_from_args(
     post_action_delay_seconds: float | None,
     sensitivity: bool,
     replay: ReplayPolicy | None,
-    strict: bool | None,
     metadata: dict[str, Any] | None,
     action_catalog: CapabilityActionCatalog | None,
     action_name: str | None,
 ) -> CapabilityDeclaration:
     _validate_basic_combination(executor_kind, action_catalog, action_name)
-    resolved_strict = True if strict is None else strict
     resolved_capture_evidence = False if capture_evidence is None else capture_evidence
     safe_metadata = dict(metadata or {})
     _validate_safe_metadata(safe_metadata)
     _validate_post_action_delay(post_action_delay_seconds)
-    resolved_aliases = list(aliases or [])
     required_method_name: str | None = None
     resolved_post_action_delay_seconds = post_action_delay_seconds
 
@@ -307,7 +279,6 @@ def _declaration_from_args(
         if step_kind == "action":
             step_kind = action_definition.step_kind
         replay = replay or action_definition.replay
-        resolved_strict = action_definition.strict if strict is None else strict
         resolved_capture_evidence = action_definition.capture_evidence if capture_evidence is None else capture_evidence
         resolved_post_action_delay_seconds = (
             action_definition.post_action_delay_seconds
@@ -317,12 +288,9 @@ def _declaration_from_args(
         required_method_name = action_definition.method_name
         safe_metadata = {**action_definition.metadata, **safe_metadata}
         _validate_safe_metadata(safe_metadata)
-        if action_definition.action_name != name and action_definition.action_name not in resolved_aliases:
-            resolved_aliases.append(action_definition.action_name)
 
     return CapabilityDeclaration(
         name=name,
-        aliases=tuple(_unique_aliases(name, resolved_aliases)),
         executor_kind=executor_kind,
         owner=owner,
         params_model=params_model,
@@ -334,7 +302,6 @@ def _declaration_from_args(
         post_action_delay_seconds=resolved_post_action_delay_seconds,
         sensitivity=sensitivity,
         replay=replay,
-        strict=resolved_strict,
         metadata=safe_metadata,
         action_name=action_name,
         required_method_name=required_method_name,
@@ -444,15 +411,6 @@ def _validate_method(declaration: CapabilityDeclaration, method: Callable[..., A
                 "actual_model": getattr(annotated_model, "__name__", str(annotated_model)),
             },
         )
-
-
-def _unique_aliases(name: str | None, aliases: list[str]) -> list[str]:
-    unique: list[str] = []
-    for alias in aliases:
-        if alias == name or alias in unique:
-            continue
-        unique.append(alias)
-    return unique
 
 
 def _validate_safe_metadata(value: Any, *, path: str = "metadata") -> None:

@@ -6,7 +6,7 @@ import pytest
 
 from fsq_agent.core import AndroidDriverInterface, UiAutomator2AndroidDriver
 from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
-from fsq_agent.models import AndroidAssertWithAIParams, ConfigurationError
+from fsq_agent.models import AndroidAssertWithAIParams, ConfigurationError, ReplayPolicy
 
 
 class FakeSelector:
@@ -467,7 +467,7 @@ def test_uiautomator2_driver_owns_ai_assertion_backend_tool() -> None:
     }
     result = driver.assert_with_ai(AndroidAssertWithAIParams(prompt="Verify the screen."))
 
-    assert definitions["assert_with_ai"].aliases == ["assertWithAI"]
+    assert definitions["assert_with_ai"].replay == ReplayPolicy(kind="fsq_command", alias="assertWithAI")
     assert definitions["assert_with_ai"].executor_kind == "driver"
     assert definitions["assert_with_ai"].owner == "driver"
     assert result["status"] == "failed"

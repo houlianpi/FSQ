@@ -105,7 +105,7 @@ def test_harness_function_schema_is_serializable_contract() -> None:
     dumped = schema.model_dump(mode="json")
 
     assert dumped["name"] == "tap_on"
-    assert dumped["strict"] is True
+    assert "strict" not in dumped
     assert dumped["capture_evidence"] is True
     assert dumped["params_json_schema"]["type"] == "object"
     assert dumped["metadata"] == {"backend": "uiautomator2"}

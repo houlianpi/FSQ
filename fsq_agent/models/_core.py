@@ -133,7 +133,6 @@ class HarnessFunctionSchema(BaseModel):
     name: str
     description: str = ""
     params_json_schema: dict[str, Any] = Field(default_factory=dict)
-    strict: bool = True
     platform: HarnessPlatform
     driver_method: str
     fsq_action_name: str | None = None
@@ -533,7 +532,6 @@ class AndroidActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    strict: bool = True
 
 
 ANDROID_ACTION_DEFINITIONS: tuple[AndroidActionDefinition, ...] = (
@@ -542,7 +540,7 @@ ANDROID_ACTION_DEFINITIONS: tuple[AndroidActionDefinition, ...] = (
     AndroidActionDefinition("tapOn", "tap_on", AndroidTapOnParams, "action"),
     AndroidActionDefinition("tapAt", "tap_at", AndroidTapAtParams, "action"),
     AndroidActionDefinition("assertVisible", "assert_visible", AndroidAssertVisibleParams, "assertion"),
-    AndroidActionDefinition("performActions", "perform_actions", AndroidPerformActionsParams, "action", strict=False),
+    AndroidActionDefinition("performActions", "perform_actions", AndroidPerformActionsParams, "action"),
     AndroidActionDefinition("assert", "assert_state", AndroidAssertStateParams, "assertion"),
     AndroidActionDefinition("pressKey", "press_key", AndroidPressKeyParams, "action"),
     AndroidActionDefinition("inputText", "input_text", AndroidInputTextParams, "action"),
@@ -564,7 +562,6 @@ class WebActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    strict: bool = True
     capture_evidence: bool = False
 
 
@@ -703,7 +700,6 @@ class WindowsActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    strict: bool = True
     capture_evidence: bool = False
 
 
@@ -931,7 +927,6 @@ class MacOSActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    strict: bool = True
     capture_evidence: bool = False
 
 
