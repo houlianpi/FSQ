@@ -183,9 +183,15 @@ class _RecordingCollector:
     def _collect_harness(self, start: RunEvent, event: RunEvent, commands: list[dict[str, Any]]) -> None:
         payload = event.payload
         replay = self._replay_policy(payload) or self._replay_policy(start.payload)
-        fsq_action_name = replay.get("alias") or payload.get("fsq_action_name") or start.payload.get("fsq_action_name")
+        if replay.get("kind") != "fsq_command":
+            self._skip(start.tool_name, "platform tool did not include fsq_command replay metadata")
+            return
+        if self._step_kind(start, event) == "observation":
+            self._skip(start.tool_name, "observation tool is not recorded")
+            return
+        fsq_action_name = replay.get("alias")
         if not isinstance(fsq_action_name, str) or not fsq_action_name:
-            self._skip(start.tool_name, "platform tool did not include fsq_action_name")
+            self._skip(start.tool_name, "platform tool did not include fsq_command replay alias")
             return
         if event.type != "tool_call_completed" or payload.get("status") not in {"passed", "success", None}:
             self._skip(start.tool_name, f"platform action status was {payload.get('status') or event.type}")
@@ -243,6 +249,8 @@ class _RecordingCollector:
         if isinstance(replay, dict):
             return replay
         replay_kind = payload.get("replay_kind")
+        # Legacy event logs used replay_kind before structured replay metadata existed.
+        # New recorder behavior must not infer replayability from tool names or fsq_action_name.
         if replay_kind == "runtimeSecret":
             return {"kind": "dependency", "alias": "runtimeSecret"}
         if replay_kind == "waitMs":
@@ -250,6 +258,18 @@ class _RecordingCollector:
         if isinstance(replay_kind, str) and replay_kind:
             return {"kind": "fsq_command", "alias": replay_kind}
         return {}
+
+    def _step_kind(self, start: RunEvent, event: RunEvent) -> str | None:
+        for payload in (event.payload, start.payload):
+            value = payload.get("step_kind")
+            if isinstance(value, str):
+                return value
+            metadata = payload.get("metadata")
+            if isinstance(metadata, dict):
+                value = metadata.get("step_kind")
+                if isinstance(value, str):
+                    return value
+        return None
 
     def _pop_unpaired_start(self, starts: list[RunEvent], event: RunEvent) -> RunEvent | None:
         if event.tool_name:

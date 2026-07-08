@@ -57,14 +57,12 @@ class _FakeHarness:
         driver_method: str = "tap_on",
         fsq_action_name: str = "tapOn",
         capture_evidence: bool = True,
-        strict: bool = True,
         screen_size: tuple[int, int] | None = None,
     ) -> None:
         self.tool_name = tool_name
         self.driver_method = driver_method
         self.fsq_action_name = fsq_action_name
         self.capture_evidence = capture_evidence
-        self.strict = strict
         self.screen_size = screen_size
         self.steps: list[Any] = []
         self.calls: list[str] = []
@@ -79,7 +77,6 @@ class _FakeHarness:
                 driver_method=self.driver_method,
                 fsq_action_name=self.fsq_action_name,
                 capture_evidence=self.capture_evidence,
-                strict=self.strict,
             )
         ]
 
@@ -792,14 +789,14 @@ async def test_harness_tool_adapter_outputs_tap_at_safe_replay_params() -> None:
     assert payload["runner_result"]["phase_reports"][1]["metadata"]["safe_replay_params"] == expected
 
 
-def test_harness_tool_adapter_passes_schema_strictness() -> None:
-    harness = _FakeHarness(tool_name="perform_actions", driver_method="perform_actions", fsq_action_name="performActions", strict=False)
+def test_harness_tool_adapter_uses_default_strict_schema_for_capability_tools() -> None:
+    harness = _FakeHarness(tool_name="perform_actions", driver_method="perform_actions", fsq_action_name="performActions")
     adapter = HarnessToolAdapter(harness, run_id="run-1")
 
     tools = adapter.build_tools(_FakeFunctionTool)
 
     assert tools[0].name == "perform_actions"
-    assert tools[0].strict_json_schema is False
+    assert tools[0].strict_json_schema is True
 
 
 @pytest.mark.asyncio

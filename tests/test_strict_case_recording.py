@@ -151,6 +151,158 @@ def test_record_dynamic_web_run_validates_against_web_registry(tmp_path: Path) -
     assert docs[1] == [{"clickOn": {"target": "Search"}}]
 
 
+def test_record_dynamic_run_does_not_infer_replay_from_fsq_action_name(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "recorded-missing-replay-run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / "events.jsonl"
+    task = Task(id="task-1", name="Tap", description="Tap a target")
+    result = TaskResult(
+        task_id="task-1",
+        status="success",
+        steps=[],
+        verification=VerificationResult(status="success", summary="ok"),
+        report=ReportArtifact(run_id="recorded-missing-replay-run", path=run_dir / "report.md"),
+    )
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    android_settings = AndroidHarnessSettings()
+    android_settings.app_id = "com.example"
+    settings = Settings(output=output_settings, harness=HarnessSettings(android=android_settings))
+
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-missing-replay-run",
+            task_id="task-1",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="tap_on",
+            tool_call_id="call-1",
+            tool_arguments={"target": "Login"},
+            payload={"tool_origin": "platform", "capability_name": "tap_on", "fsq_action_name": "tapOn"},
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-missing-replay-run",
+            task_id="task-1",
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="tap_on",
+            tool_call_id="call-1",
+            payload={"tool_origin": "platform", "capability_name": "tap_on", "fsq_action_name": "tapOn", "status": "passed"},
+        ),
+    )
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "failed"
+    assert not (run_dir / "recorded.codex.yaml").exists()
+    assert recording.skipped_tool_calls == [
+        {"tool_name": "tap_on", "reason": "platform tool did not include fsq_command replay metadata"}
+    ]
+
+
+def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "recorded-observation-run"
+    run_dir.mkdir(parents=True)
+    events_path = run_dir / "events.jsonl"
+    task = Task(id="task-1", name="Tap and observe", description="Tap then inspect UI tree")
+    result = TaskResult(
+        task_id="task-1",
+        status="success",
+        steps=[],
+        verification=VerificationResult(status="success", summary="ok"),
+        report=ReportArtifact(run_id="recorded-observation-run", path=run_dir / "report.md"),
+    )
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    android_settings = AndroidHarnessSettings()
+    android_settings.app_id = "com.example"
+    settings = Settings(output=output_settings, harness=HarnessSettings(android=android_settings))
+
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-observation-run",
+            task_id="task-1",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="tap_on",
+            tool_call_id="call-1",
+            tool_arguments={"target": "Login"},
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "tap_on",
+                "step_kind": "action",
+                "replay": {"kind": "fsq_command", "alias": "tapOn"},
+            },
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-observation-run",
+            task_id="task-1",
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="tap_on",
+            tool_call_id="call-1",
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "tap_on",
+                "step_kind": "action",
+                "replay": {"kind": "fsq_command", "alias": "tapOn"},
+                "status": "passed",
+            },
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-observation-run",
+            task_id="task-1",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="ui_tree",
+            tool_call_id="call-2",
+            tool_arguments={},
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "ui_tree",
+                "step_kind": "observation",
+                "replay": {"kind": "fsq_command", "alias": "uiTree"},
+            },
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id="recorded-observation-run",
+            task_id="task-1",
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="ui_tree",
+            tool_call_id="call-2",
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "ui_tree",
+                "step_kind": "observation",
+                "replay": {"kind": "fsq_command", "alias": "uiTree"},
+                "status": "passed",
+            },
+        ),
+    )
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "recorded"
+    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    assert docs[1] == [{"tapOn": {"target": "Login"}}]
+    assert recording.skipped_tool_calls == [{"tool_name": "ui_tree", "reason": "observation tool is not recorded"}]
+
+
 def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: Path) -> None:
     run_dir = tmp_path / "runs" / "recorded-tap-at-run"
     run_dir.mkdir(parents=True)

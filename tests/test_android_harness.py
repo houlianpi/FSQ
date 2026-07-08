@@ -175,7 +175,6 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
     assert schemas["tap_on"].driver_method == "tap_on"
     assert schemas["tap_on"].fsq_action_name == "tapOn"
     assert schemas["tap_on"].platform == "android"
-    assert schemas["tap_on"].strict is True
     assert schemas["tap_on"].capture_evidence is True
     assert schemas["tap_on"].metadata["driver_class"] == "UiAutomator2AndroidDriver"
     assert schemas["tap_on"].metadata["backend"] == "uiautomator2"

@@ -37,7 +37,6 @@ def _definition_from_declaration(
         capability_metadata.setdefault("fsq_action_name", declaration.action_name)
     return CapabilityDefinition(
         name=declaration.name or method_name,
-        aliases=list(declaration.aliases),
         executor_kind=declaration.executor_kind,
         params_model=params_model,
         step_kind=declaration.step_kind,
@@ -49,7 +48,6 @@ def _definition_from_declaration(
         post_action_delay_seconds=declaration.post_action_delay_seconds,
         sensitivity=declaration.sensitivity,
         replay=declaration.replay,
-        strict=declaration.strict,
         metadata=capability_metadata,
     )
 
