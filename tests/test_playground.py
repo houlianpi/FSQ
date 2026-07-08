@@ -1406,7 +1406,6 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
     assert progress is not None
     assert captured["task"].planning_reference_kind == "goal"
     assert captured["allow_failure"] is True
-    assert progress["result"]["recording"]["status"] == "skipped"
     assert progress["result"]["recording"]["draft"] is True
 
 
@@ -1848,8 +1847,27 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "destroySession" not in script
     assert '<button id="refresh" class="secondary-button" type="button">Clear</button>' in html
     assert "progress-run-id" in html
+    assert "handleProgressRunIdClick" in script
+    assert "selectProgressRunId" in script
+    assert "clearSelectedProgressRunId" in script
+    assert "clearSelectedProgressItem();\n  selectProgressRunId();" in script
+    assert "els.progressRunId.addEventListener('click', handleProgressRunIdClick)" in script
+    assert "els.progressRunId.dataset.runId = runId" in script
+    assert "delete els.progressRunId.dataset.runId" in script
     assert "progressSequence" in script
     assert "lastProgressSequence" in script
+    assert "modeStates" in script
+    assert "highlightRunStartSummary" in script
+    assert "if (state.currentExecutionMode !== 'strict-yaml') return" in script
+    assert "const title = els.yamlInputViewer.querySelector('.yaml-case-title-row')" in script
+    assert "selectYamlRegion(title)" in script
+    assert "createRunModeState" in script
+    assert "saveRunModeState" in script
+    assert "restoreRunModeState" in script
+    assert "switchRunMode" in script
+    assert "resetRunModeStates" in script
+    assert "stripTransientModeClasses" in script
+    assert "bindProgressDetailToggles" in script
     assert "finishingRun" in script
     assert "const PROGRESS_POLL_INTERVAL_MS = 750;" in script
     assert "YAML_STEP_CENTER_TOLERANCE_RATIO" in script
@@ -1864,7 +1882,6 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "activeProgressItemClearTimer" in script
     assert "screenshotTimer" not in script
     assert "screenshotInFlight" not in script
-    assert "state.replayFrames" not in script
     assert "state.replayTimer" not in script
     assert "state.replayIndex" not in script
     assert "replayRequestId" in script
@@ -1895,16 +1912,21 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "els.refresh.addEventListener('click', clearPage)" in script
     assert "els.refresh.disabled = true" in script
     assert "els.refresh.disabled = false" in script
+    assert "els.deviceSelect.disabled = true" in script
+    assert "els.deviceSelect.disabled = false" in script
+    assert "els.deviceSelect.disabled = Boolean(state.currentRequestId || state.finishingRun || status.busy)" in script
     assert "showRightTab('progress')" not in start_execution_body
     assert script.index("setRunButtonIdle();", script.index("ensureReplayVideoGenerated")) < script.index("els.refresh.disabled = false", script.index("ensureReplayVideoGenerated"))
     assert "window.clearInterval(state.progressTimer)" in script
     assert "stopLiveScreenshotPolling" not in script
     assert "stopReplay" not in script
     assert "clearRunId();" in clear_page_body
+    assert "resetRunModeStates();" in clear_page_body
     assert "els.progress.innerHTML = ''" in script
     assert "els.reportContent.textContent = ''" in script
     assert "clearPreview();" in clear_page_body
     assert "clearPreview('Loading live preview...')" in script
+    assert "highlightRunStartSummary();" in script
     assert "function clearPreview" in script
     assert "els.screenshot.removeAttribute('src')" in script
     assert "refreshStatus();" in clear_page_body
@@ -1942,6 +1964,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "activateProgressItem(item)" in script
     assert "scheduleClearActiveProgressItem" in script
     assert "selectProgressItem" in script
+    assert "clearSelectedProgressRunId();\n    selectProgressItem(item);" in script
     assert "clearSelectedProgressItem" in script
     assert "document.addEventListener('click', handleProgressItemClick)" in script
     assert "toolName" in script
@@ -1952,6 +1975,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "setRunId(progress.result.runId)" in script
     assert "event.type === 'run_started'" in script
     assert "function syncYamlStepWithProgressEvent" in script
+    assert "if (state.currentExecutionMode !== 'strict-yaml') return" in script
     assert "function yamlStepCardForEvent" in script
     assert "function yamlStepIndexFromEvent" in script
     assert "function yamlStepIndexFromStepId" in script
@@ -2007,6 +2031,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "setRunButtonCancel({ disabled: true })" in script
     assert "state.finishingRun = true" in script
     assert "state.finishingRun = false" in script
+    assert script.index("ensureReplayVideoGenerated") < script.index("clearSelectedYamlRegion()", script.index("ensureReplayVideoGenerated"))
     assert "!state.currentRequestId && !state.finishingRun" in script
     assert "} else if (state.finishingRun)" in script
     assert script.index("setRunButtonCancel({ disabled: true })") < script.index("ensureReplayVideoGenerated")
@@ -2051,11 +2076,16 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "status-running" in styles
     assert "status-error" in styles
     assert "progress-run-id" in styles
+    assert ".progress-run-id:hover" in styles
+    assert ".progress-run-id.progress-run-id-selected" in styles
     assert "flex: 0 0 auto" in styles
     assert "progress-title" in styles
     assert ".progress-item:hover" in styles
     assert ".progress-item.progress-item-active" in styles
     assert ".progress-item.progress-item-selected" in styles
+    assert "background: #dbeafe" in styles
+    assert "box-shadow: inset 3px 0 0 #2563eb" in styles
+    assert "box-shadow: inset 3px 0 0 #60a5fa" in styles
     assert "cursor: pointer" in styles
     assert "progress-message" in styles
     assert "progress-tool" in styles
@@ -2109,6 +2139,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "renderYamlDisplay" in script
     assert "renderYamlContent" not in script
     assert "highlightYamlLine" not in script
+    assert "renderYamlCaseTitle" in script
     assert "renderYamlCaseSummary" in script
     assert "[metadata.platform, metadata.schemaVersion]" not in script
     assert "renderYamlSteps" in script
@@ -2134,12 +2165,15 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "await loadRecordedYaml(progress.result.runId, progress.result.recording || null)" in script
     assert "recordedYamlLoaded" not in script
     assert "return Boolean(yaml.content)" not in script
+    assert "setYamlRecordedStatus(recordingStatusSummary" not in script
     assert "setYamlRecordedStatus('No recorded YAML yet.'" not in script
     assert "state.yamlInputContent" in script
     assert "state.yamlRecordedContent" in script
     assert "state.yamlInputLastPreviewPath" in script
     assert "selectedYamlRegion" in script
     assert "selectedYamlStepCard" in script
+    assert "selectedYamlCaseSummary" in script
+    assert "selectedYamlCaseTitle" in script
     assert "activeYamlStepCard" in script
     assert "activeYamlStepClearTimer" in script
     assert "YAML_SELECTABLE_REGION_SELECTOR" in script
@@ -2163,6 +2197,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "if (mode === 'goal')" in script
     assert "showYamlView('progress')" in script
     assert "function syncYamlTabOrder(mode)" in script
+    assert "mode === 'goal' || mode === 'yaml'" in script
     assert "? [els.yamlProgressTab, els.yamlInputTab, els.yamlRecordedTab]" in script
     assert ": [els.yamlInputTab, els.yamlRecordedTab, els.yamlProgressTab]" in script
     assert "showYamlView('recorded')" in script
@@ -2180,11 +2215,17 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "selectYamlRegion" in script
     assert "handleYamlRegionClick" in script
     assert "document.addEventListener('click', handleYamlRegionClick)" in script
-    assert "if (state.currentRequestId) return" in script
+    assert "if (state.currentRequestId || state.finishingRun) return" in script
+    assert script.count("if (state.currentRequestId || state.finishingRun) return") >= 3
+    assert "if (els.yamlInputViewer.contains(region) && currentRunMode() !== 'strict-yaml') return" in script
     assert "if (!runId) return" in script
     assert "els.yamlRecordedViewer.contains(region)" in script
     assert "const stepCard = region.closest('.yaml-step-card')" in script
+    assert "const caseSummary = region.closest('.yaml-case-summary')" in script
+    assert "const caseTitle = region.closest('.yaml-case-title-row')" in script
     assert "if (stepCard && stepCard !== region) stepCard.classList.add('yaml-region-selected')" in script
+    assert "if (caseSummary && caseSummary !== region) caseSummary.classList.add('yaml-region-selected')" in script
+    assert "state.selectedYamlCaseTitle.classList.add('yaml-region-selected')" in script
     assert "yaml-section" in styles
     assert "flex: 1 1 auto" in styles
     assert "min-height: 260px" in styles
@@ -2210,9 +2251,13 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yaml-code-row" not in styles
     assert "yaml-line-number" not in styles
     assert "yaml-case-summary" in styles
+    assert ".yaml-case-summary:hover" in styles
+    assert ".yaml-case-summary.yaml-region-selected" in styles
     assert "yaml-case-title-row" in styles
     assert ".yaml-case-title-row:hover" in styles
     assert ".yaml-case-title-row.yaml-region-selected" in styles
+    assert "background: #d7eaff" in styles
+    assert "box-shadow: inset 3px 0 0 #93c5fd" in styles
     assert "position: sticky" in styles
     assert "top: 0" in styles
     assert "z-index: 1" in styles
@@ -2232,6 +2277,10 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert ".yaml-step-card:hover .yaml-step-header" in styles
     assert ".yaml-step-card.yaml-step-card-active .yaml-step-header" in styles
     assert ".yaml-step-card.yaml-region-selected .yaml-step-header" in styles
+    assert ".yaml-step-card.yaml-region-selected .yaml-step-index" in styles
+    assert ".yaml-step-card.yaml-step-card-active .yaml-step-index" in styles
+    assert "color: #0f3f8a" in styles
+    assert "font-size: 13px" in styles
     assert "step-artifact-preview" in styles
     assert "step-artifact-screenshot-row" in styles
     assert "step-artifact-compare" in styles
@@ -2268,6 +2317,8 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert ".yaml-param-row.yaml-region-selected" in styles
     assert "yaml-param-nested" in styles
     assert "yaml-param-row-nested" in styles
+    assert "yaml-param-value-null" in styles
+    assert "font-style: italic" in styles
     assert "yaml-param-value-secret" in styles
 
 

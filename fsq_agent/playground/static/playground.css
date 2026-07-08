@@ -354,6 +354,19 @@ h2 {
 .yaml-case-summary {
   border-bottom: 1px solid #e5e9f0;
   background: #ffffff;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.yaml-case-summary:hover {
+  border-bottom-color: #cbdcf0;
+  background: #f1f7ff;
+}
+
+.yaml-case-summary.yaml-region-selected {
+  border-bottom-color: #a9c6e8;
+  background: #eaf3ff;
+  box-shadow: inset 3px 0 0 #93c5fd;
 }
 
 .yaml-case-title-row {
@@ -371,14 +384,16 @@ h2 {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+.yaml-case-summary:hover .yaml-case-title-row,
 .yaml-case-title-row:hover {
-  border-bottom-color: #bfdbfe;
-  background: #e0f0ff;
+  border-bottom-color: #bdd4ee;
+  background: #e5f1ff;
 }
 
+.yaml-case-summary.yaml-region-selected .yaml-case-title-row,
 .yaml-case-title-row.yaml-region-selected {
-  border-bottom-color: #93c5fd;
-  background: #dbeafe;
+  border-bottom-color: #9fc2ea;
+  background: #d7eaff;
 }
 
 .yaml-case-title {
@@ -469,11 +484,21 @@ h2 {
 }
 
 .yaml-step-card:hover,
-.yaml-step-card:focus-within,
-.yaml-step-card.yaml-step-card-active,
+.yaml-step-card:focus-within {
+  border-color: #93b4d8;
+  background: #eef6ff;
+}
+
 .yaml-step-card.yaml-region-selected {
-  border-color: #b8c7da;
-  background: #f8fbff;
+  border-color: #7aa7d9;
+  background: #e4f1ff;
+  box-shadow: inset 3px 0 0 #60a5fa;
+}
+
+.yaml-step-card.yaml-step-card-active {
+  border-color: #3b82f6;
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 #2563eb;
 }
 
 .yaml-step-header {
@@ -487,18 +512,31 @@ h2 {
 }
 
 .yaml-step-card:hover .yaml-step-header,
-.yaml-step-card:focus-within .yaml-step-header,
-.yaml-step-card.yaml-step-card-active .yaml-step-header,
+.yaml-step-card:focus-within .yaml-step-header {
+  border-bottom-color: #cfe2f7;
+  background: #ddecff;
+}
+
 .yaml-step-card.yaml-region-selected .yaml-step-header {
-  border-bottom-color: #dbe8f7;
-  background: #f1f7ff;
+  border-bottom-color: #bdd7f3;
+  background: #d7eaff;
+}
+
+.yaml-step-card.yaml-step-card-active .yaml-step-header {
+  border-bottom-color: #93c5fd;
+  background: #bfdbfe;
 }
 
 .yaml-step-index {
-  color: #64748b;
+  color: #1d4ed8;
   font-family: Consolas, monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+}
+
+.yaml-step-card.yaml-region-selected .yaml-step-index,
+.yaml-step-card.yaml-step-card-active .yaml-step-index {
+  color: #0f3f8a;
 }
 
 .yaml-action-name {
@@ -606,6 +644,11 @@ h2 {
   font-size: 11px;
 }
 
+.yaml-param-value-null {
+  color: #64748b;
+  font-style: italic;
+}
+
 .yaml-param-value-secret {
   color: #7c2d12;
   font-family: Consolas, monospace;
@@ -696,6 +739,20 @@ textarea {
   font-size: 13px;
   font-weight: 650;
   overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.progress-run-id:hover,
+.progress-run-id:focus-visible {
+  border-color: #93b4d8;
+  background: #ddecff;
+}
+
+.progress-run-id.progress-run-id-selected {
+  border-color: #7aa7d9;
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 #60a5fa;
 }
 
 .progress-log {
@@ -726,12 +783,17 @@ textarea {
 
 .progress-item:hover,
 .progress-item:focus-visible {
-  background: #f1f7ff;
+  background: #eef6ff;
 }
 
-.progress-item.progress-item-active,
 .progress-item.progress-item-selected {
-  background: #e8f1fb;
+  background: #e4f1ff;
+  box-shadow: inset 3px 0 0 #60a5fa;
+}
+
+.progress-item.progress-item-active {
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 #2563eb;
 }
 
 .progress-number {
