@@ -624,7 +624,6 @@ class OpenAIAgentsRuntime:
                 {
                     "name": capability.name,
                     "alias": capability.replay.alias if capability.replay else None,
-                    "aliases": list(capability.aliases),
                     "description": capability.description,
                     "executor_kind": capability.executor_kind,
                     "step_kind": capability.step_kind,
@@ -911,6 +910,7 @@ class OpenAIAgentsRuntime:
                         "platform": schema.platform,
                         "driver_method": schema.driver_method,
                         "fsq_action_name": schema.fsq_action_name,
+                        "step_kind": schema.metadata.get("step_kind"),
                         "metadata": schema.metadata,
                     }
                 )
@@ -1219,6 +1219,7 @@ class OpenAIAgentsRuntime:
             "failure_category",
             "error_message",
             "duration_ms",
+            "step_kind",
             "replay",
             "safe_replay_params",
             "runner_step_id",

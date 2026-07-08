@@ -19,7 +19,7 @@ Core may consume shared declaration decorators, platform action catalog helpers,
 
 Target `__init__.py` exports via `__all__`:
 
-- `CapabilityRegistry`: Validated runtime registry for decorated capabilities. It resolves canonical names and aliases, rejects duplicate names and ambiguous aliases, exposes serializable snapshots, and validates that every capability has a parameter model/schema and executor binding.
+- `CapabilityRegistry`: Validated runtime registry for decorated capabilities. It resolves canonical names and `ReplayPolicy(kind="fsq_command").alias` values, rejects duplicate names and ambiguous replay aliases, exposes serializable snapshots, and validates that every capability has a parameter model/schema and executor binding.
 - `HarnessInterface`: Protocol describing platform capabilities required by StepRunner. Concrete Android, Web, iOS, and fake harnesses may satisfy the protocol structurally.
 - `StepRunner`: Executes one canonical `ExecutableStep` or capability invocation by looking up metadata in `CapabilityRegistry`, validating params with the declared model, applying evidence, post-action delay, and sensitivity policy, invoking the active `HarnessInterface`, normalizing backend/provider output, emitting structured safe events, and returning `RunnerStepResult`.
 - `StepSequenceRunner`: Executes ordered `ExecutableStep` records with `StepRunner`, records events and step results, stops normal execution on blocking failures, and always executes supplied teardown steps. It does not own configured sleep or pacing behavior; post-action stabilization is handled inside `StepRunner`.
@@ -127,7 +127,7 @@ macOS owns `MacOSHarness`, `MacOSDriverInterface`, `AppiumMac2Driver`, macOS cat
 
 Future Web-adjacent capability groups and future platforms must add their own platform block, parameter models, default capability definitions, harness/driver contracts, and verification expectations before implementation. New platform blocks must keep `StepRunner` and `StepSequenceRunner` platform-neutral.
 
-Capability metadata, not a static Android action table, is the runtime source of truth for platform method name, parameter model, step kind, owner, platform/backend metadata, replay alias, and evidence capture intent. Platform action catalog entries are declaration-time validation inputs that generate capability metadata; they are not an execution path or parser fallback.
+Capability metadata, not a static Android action table, is the runtime source of truth for platform method name, parameter model, step kind, owner, platform/backend metadata, replay alias, and evidence capture intent. Platform action catalog entries are declaration-time validation inputs that generate capability metadata; they are not an execution path or parser fallback. Capability metadata does not include per-tool SDK schema strictness; SDK adapters expose active capabilities with strict JSON schema by default.
 
 ## Internal Structure
 
@@ -149,7 +149,7 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `harness/_windows_driver.py`: `WindowsDriverInterface` protocol and driver-owned contracts.
 - `harness/_macos.py`: Built-in `MacOSHarness` implementation and macOS runtime-service delegation.
 - `harness/_macos_driver.py`: `MacOSDriverInterface` protocol and driver-owned contracts.
-- `harness/_driver_tools.py`: Thin platform declaration compatibility helpers, Android/Web/Windows/macOS action catalog wiring, and function schema/capability discovery wrappers backed by `capabilities`.
+- `harness/_driver_tools.py`: Thin platform declaration compatibility helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
 - `harness/_uiautomator2_driver.py`: Optional uiautomator2 backend implementation with lazy dependency import and fake-device injection for tests.
 - `harness/_playwright_driver.py`: Optional Playwright backend implementation with lazy dependency import, browser/page lifecycle management, and fake-page injection for tests.
 - `harness/_pywinauto_driver.py`: Optional pywinauto backend implementation with lazy dependency import, application/window lifecycle management, and fake-window injection for tests.
@@ -173,7 +173,7 @@ Core must not define Pydantic models shared across modules. Shared models belong
 
 ## Error Handling
 
-Registry bootstrap failures are configuration errors and must occur before YAML parsing or SDK tool exposure. Duplicate names, ambiguous aliases, ambiguous replay aliases, missing parameter models, unsupported executor kinds, invalid sensitivity result shapes, and eager backend connections during registry build fail fast.
+Registry bootstrap failures are configuration errors and must occur before YAML parsing or SDK tool exposure. Duplicate names, duplicate or ambiguous `fsq_command` replay aliases, replay aliases that conflict with another canonical name, missing parameter models, unsupported executor kinds, invalid sensitivity result shapes, and eager backend connections during registry build fail fast.
 
 Runner phases preserve failure boundaries:
 

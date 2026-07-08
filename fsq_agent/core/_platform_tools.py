@@ -83,7 +83,6 @@ class CommonPlatformTools:
         executor_kind="common",
         owner="common",
         params_model=WaitMsParams,
-        aliases=["waitMs"],
         replay=ReplayPolicy(kind="fsq_command", alias="waitMs"),
     )
     def _wait_ms_result(self, params: WaitMsParams) -> CapabilityExecutionResult:
@@ -158,7 +157,7 @@ class CommonPlatformTools:
 
     def common_capability_for(self, name_or_alias: str) -> CapabilityDefinition | None:
         for definition in self.capability_definitions():
-            if definition.name == name_or_alias or name_or_alias in definition.aliases:
+            if definition.name == name_or_alias or definition.fsq_command_alias == name_or_alias:
                 return definition
         return None
 
@@ -168,7 +167,6 @@ class CommonPlatformTools:
             name=definition.name,
             description=definition.description,
             params_json_schema=definition.params_json_schema,
-            strict=definition.strict,
             platform=self.platform,
             driver_method=definition.name,
             fsq_action_name=definition.replay.alias if definition.replay and definition.replay.kind == "fsq_command" else None,
