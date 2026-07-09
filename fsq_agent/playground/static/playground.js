@@ -594,13 +594,13 @@ async function applyProgress(progress) {
   if (!state.currentRequestId) return;
   for (const event of progress.events || []) {
     if (event.type === 'run_started') setRunId(event.run_id || event.runId);
-    syncYamlStepWithProgressEvent(event);
     appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event));
     updateLastProgressSequence(event.sequence);
   }
   if (progress.preview?.token && progress.preview.token !== state.previewToken) {
     await refreshPreview(progress.requestId, progress.preview.token);
   }
+  syncYamlStepWithActiveStep(progress.activeStep || null);
   if (progress.status !== 'running') {
     stopProgressUpdates();
     state.currentRequestId = null;
@@ -817,7 +817,6 @@ function showYamlView(viewName) {
 
 function renderYamlDisplay(root, display, emptyMessage) {
   clearSelectedYamlRegion(root);
-  clearActiveYamlStepCard(root);
   root.innerHTML = '';
   if (!display) {
     renderYamlEmpty(root, emptyMessage);
@@ -981,7 +980,6 @@ function yamlParamDisplayValue(param) {
 
 function renderYamlEmpty(root, message) {
   clearSelectedYamlRegion(root);
-  clearActiveYamlStepCard(root);
   root.innerHTML = '';
   if (!message) return;
   const empty = document.createElement('div');
@@ -997,69 +995,18 @@ function formatYamlValue(value) {
   return String(value);
 }
 
-function syncYamlStepWithProgressEvent(event) {
-  if (state.currentExecutionMode !== 'strict-yaml') return;
-  if (!event || !['tool_call_started', 'tool_call_completed', 'tool_call_failed', 'step_completed'].includes(event.type)) return;
-  const stepCard = yamlStepCardForEvent(event);
-  if (!stepCard) return;
-  activateYamlStepCard(stepCard);
-}
-
-function yamlStepCardForEvent(event) {
-  const stepIndex = yamlStepIndexFromEvent(event);
-  if (Number.isInteger(stepIndex) && stepIndex > 0) {
-    const byIndex = yamlStepCardByIndex(stepIndex);
-    if (byIndex) return byIndex;
-  }
-  const actionKey = normalizeYamlActionName(yamlActionFromEvent(event));
-  if (!actionKey) return null;
-  return Array.from(els.yamlInputViewer.querySelectorAll('.yaml-step-card'))
-    .find((card) => card.dataset.yamlActionKey === actionKey) || null;
-}
-
-function yamlStepCardByIndex(stepIndex) {
-  return Array.from(els.yamlInputViewer.querySelectorAll('.yaml-step-card'))
-    .find((card) => Number(card.dataset.yamlStepIndex) === stepIndex) || null;
-}
-
-function yamlStepIndexFromEvent(event) {
-  const payload = event.payload || {};
-  const runnerResult = payload.runner_result || {};
-  const sourceRef = runnerResult.source_ref || {};
-  for (const value of [payload.step_index, payload.stepIndex]) {
-    const numeric = Number(value);
-    if (Number.isInteger(numeric) && numeric > 0) return numeric;
-  }
-  const sourceIndex = Number(sourceRef.step_index);
-  if (Number.isInteger(sourceIndex) && sourceIndex >= 0) return sourceIndex + 1;
-  for (const value of [payload.step_id, payload.stepId, payload.runner_step_id, payload.runnerStepId, runnerResult.step_id]) {
-    const parsed = yamlStepIndexFromStepId(value);
-    if (parsed) return parsed;
-  }
-  return null;
-}
-
-function yamlStepIndexFromStepId(value) {
-  if (typeof value !== 'string') return null;
-  const match = value.match(/-step-(\d+)$/);
-  if (!match) return null;
-  return Number.parseInt(match[1], 10);
-}
-
-function yamlActionFromEvent(event) {
-  const payload = event.payload || {};
-  const runnerResult = payload.runner_result || {};
-  const metadata = runnerResult.metadata || payload.metadata || {};
-  return payload.fsq_action_name
-    || metadata.authored_action_name
-    || runnerResult.action_name
-    || payload.capability_name
-    || event.tool_name
-    || '';
-}
-
 function normalizeYamlActionName(value) {
   return String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+function syncYamlStepWithActiveStep(activeStep) {
+  if (state.currentExecutionMode !== 'strict-yaml' || !activeStep) return;
+  const stepIndex = Number(activeStep.stepIndex ?? activeStep.step_index);
+  if (!Number.isInteger(stepIndex) || stepIndex <= 0) return;
+  const stepCard = Array.from(els.yamlInputViewer.querySelectorAll('.yaml-step-card'))
+    .find((card) => Number(card.dataset.yamlStepIndex) === stepIndex);
+  if (!stepCard) return;
+  activateYamlStepCard(stepCard);
 }
 
 function activateYamlStepCard(stepCard) {
@@ -1274,10 +1221,67 @@ function renderStepArtifactPreview(payload, stepCard) {
     shell.querySelector('.step-artifact-empty')?.remove();
     const screenshots = artifacts.filter((artifact) => artifact.kind === 'screenshot' && artifact.contentBase64);
     const textArtifacts = artifacts.filter((artifact) => artifact.kind !== 'screenshot' && typeof artifact.content === 'string');
-    if (screenshots.length > 0) shell.appendChild(renderStepArtifactScreenshots(screenshots));
-    if (textArtifacts.length > 0) shell.appendChild(renderStepArtifactTextArtifacts(textArtifacts));
+    const body = document.createElement('div');
+    body.className = 'step-artifact-body';
+    let screenshotRegion = null;
+    if (screenshots.length > 0) {
+      screenshotRegion = wrapStepArtifactRegion(renderStepArtifactScreenshots(screenshots), 'screenshots');
+      body.appendChild(screenshotRegion);
+    }
+    if (textArtifacts.length > 0) {
+      const textRegion = wrapStepArtifactRegion(renderStepArtifactTextArtifacts(textArtifacts), 'text');
+      const diffBody = textRegion.querySelector('.step-artifact-diff-body');
+      if (screenshotRegion) body.appendChild(createSplitResizer(screenshotRegion, diffBody));
+      body.appendChild(textRegion);
+      if (diffBody) body.appendChild(createDiffHeightResizer(diffBody));
+    }
+    if (body.childElementCount > 0) shell.appendChild(body);
   }
   els.stepArtifactPreview.replaceChildren(shell);
+}
+
+function wrapStepArtifactRegion(section, variant) {
+  const region = document.createElement('div');
+  region.className = `step-artifact-region step-artifact-region-${variant}`;
+  region.appendChild(section);
+  return region;
+}
+
+function createSplitResizer(screenshotRegion, diffBody) {
+  const resizer = document.createElement('div');
+  resizer.className = 'step-artifact-resizer';
+  resizer.setAttribute('role', 'separator');
+  resizer.setAttribute('aria-orientation', 'horizontal');
+  let startY = 0;
+  let startShot = 0;
+  let startDiff = 0;
+  const shotHeight = () => {
+    const img = screenshotRegion.querySelector('.step-artifact-image-card img');
+    return img ? Math.round(img.getBoundingClientRect().height) : 320;
+  };
+  const onMove = (event) => {
+    const delta = event.clientY - startY;
+    const limit = Math.max(220, window.innerHeight * 0.9);
+    screenshotRegion.style.setProperty('--shot-max-h', `${Math.min(Math.max(140, startShot + delta), limit)}px`);
+    if (diffBody) {
+      diffBody.style.height = `${Math.min(Math.max(140, startDiff - delta), limit)}px`;
+    }
+  };
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.body.classList.remove('step-artifact-resizing');
+  };
+  resizer.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    startY = event.clientY;
+    startShot = shotHeight();
+    startDiff = diffBody ? Math.round(diffBody.getBoundingClientRect().height) : 0;
+    document.body.classList.add('step-artifact-resizing');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+  return resizer;
 }
 
 async function preloadStepArtifactScreenshots(payload) {
@@ -1363,9 +1367,12 @@ function renderStepArtifactTextArtifacts(artifacts) {
   section.className = 'step-artifact-section';
   const heading = document.createElement('div');
   heading.className = 'step-artifact-section-title';
-  heading.textContent = 'Structured artifacts';
+  heading.textContent = 'UI Tree';
   section.appendChild(heading);
+  const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
+  if (uiTreeDiff) section.appendChild(uiTreeDiff);
   for (const artifact of artifacts) {
+    if (artifact.kind === 'ui_tree') continue;
     const card = document.createElement('div');
     card.className = 'step-artifact-text-card';
     const label = document.createElement('div');
@@ -1373,12 +1380,295 @@ function renderStepArtifactTextArtifacts(artifacts) {
     label.textContent = `${artifact.kind || 'artifact'} · ${stepArtifactLabel(artifact)}`;
     const pre = document.createElement('pre');
     pre.className = isXmlStepArtifact(artifact) ? 'step-artifact-xml' : '';
+    if (artifact.kind === 'ui_tree' && ['Before', 'After'].includes(stepArtifactLabel(artifact))) {
+      pre.classList.add('step-artifact-sync-scroll');
+      pre.dataset.syncGroup = 'ui-tree-before-after';
+    }
     pre.textContent = artifact.content || '';
     card.appendChild(label);
     card.appendChild(pre);
     section.appendChild(card);
   }
+  bindSynchronizedArtifactScroll(section);
   return section;
+}
+
+function bindSynchronizedArtifactScroll(root) {
+  const scrollers = Array.from(root.querySelectorAll('.step-artifact-sync-scroll[data-sync-group]'));
+  const groups = new Map();
+  for (const scroller of scrollers) {
+    const group = scroller.dataset.syncGroup || '';
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(scroller);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    let syncing = false;
+    for (const scroller of group) {
+      scroller.addEventListener('scroll', () => {
+        if (syncing) return;
+        syncing = true;
+        for (const other of group) {
+          if (other !== scroller) other.scrollLeft = scroller.scrollLeft;
+        }
+        syncing = false;
+      });
+    }
+  }
+}
+
+function renderUiTreeDiffArtifact(artifacts) {
+  const uiTrees = artifacts.filter((artifact) => artifact.kind === 'ui_tree' && typeof artifact.content === 'string');
+  const before = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'Before');
+  const after = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'After');
+  if (!before || !after) return null;
+  let diff = diffTextLines(before.content || '', after.content || '');
+  const unchanged = diff.length === 0;
+  if (unchanged) diff = contextDiffLines(after.content || before.content || '');
+  const card = document.createElement('div');
+  card.className = 'step-artifact-diff-card';
+  const label = document.createElement('div');
+  label.className = 'step-artifact-text-label';
+  label.textContent = unchanged ? 'ui_tree (no changes)' : 'ui_tree diff';
+  const body = document.createElement('div');
+  body.className = 'step-artifact-diff-body';
+  if (diff.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'step-artifact-diff-empty';
+    empty.textContent = 'No UI tree captured.';
+    body.appendChild(empty);
+  } else {
+    const wrap = document.createElement('div');
+    wrap.className = 'step-artifact-diff-scroll';
+    const split = document.createElement('div');
+    split.className = 'step-artifact-diff-split';
+    const beforePane = renderDiffPane('before', 'Before', diff);
+    const afterPane = renderDiffPane('after', 'After', diff);
+    split.appendChild(beforePane);
+    split.appendChild(afterPane);
+    const panes = [beforePane, afterPane];
+    syncDiffPaneScroll(beforePane, afterPane);
+    wrap.appendChild(split);
+    wrap.appendChild(renderDiffOverview(diff, panes));
+    body.appendChild(wrap);
+  }
+  card.appendChild(label);
+  card.appendChild(body);
+  return card;
+}
+
+function createDiffHeightResizer(target) {
+  const resizer = document.createElement('div');
+  resizer.className = 'step-artifact-resizer';
+  resizer.setAttribute('role', 'separator');
+  resizer.setAttribute('aria-orientation', 'horizontal');
+  let startY = 0;
+  let startHeight = 0;
+  const onMove = (event) => {
+    const max = Math.max(200, window.innerHeight * 0.9);
+    const next = Math.min(Math.max(140, startHeight + (event.clientY - startY)), max);
+    target.style.height = `${next}px`;
+    resizer.scrollIntoView({ block: 'nearest' });
+  };
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.body.classList.remove('step-artifact-resizing');
+  };
+  resizer.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    startY = event.clientY;
+    startHeight = target.getBoundingClientRect().height;
+    document.body.classList.add('step-artifact-resizing');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+  return resizer;
+}
+
+function renderDiffOverview(diff, panes) {
+  const overview = document.createElement('div');
+  overview.className = 'step-artifact-diff-overview';
+  overview.title = 'Diff overview — click to jump';
+  const rowCount = diff.length + 1;
+  diff.forEach((line, index) => {
+    if (line.kind !== 'added' && line.kind !== 'removed') return;
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = `step-artifact-diff-overview-marker step-artifact-diff-overview-${line.kind}`;
+    marker.style.top = `${((index + 1) / rowCount) * 100}%`;
+    marker.title = line.kind === 'added' ? 'Added line' : 'Removed line';
+    marker.addEventListener('click', (event) => {
+      event.stopPropagation();
+      scrollDiffToRow(panes, index + 1, rowCount);
+    });
+    overview.appendChild(marker);
+  });
+  overview.addEventListener('click', (event) => {
+    const rect = overview.getBoundingClientRect();
+    const ratio = rect.height ? (event.clientY - rect.top) / rect.height : 0;
+    const pane = panes[0];
+    applyDiffScrollTop(panes, ratio * (pane.scrollHeight - pane.clientHeight));
+  });
+  return overview;
+}
+
+function scrollDiffToRow(panes, row, rowCount) {
+  const pane = panes[0];
+  const target = rowCount ? (row / rowCount) * pane.scrollHeight - pane.clientHeight / 2 : 0;
+  applyDiffScrollTop(panes, target);
+}
+
+function applyDiffScrollTop(panes, value) {
+  const pane = panes[0];
+  const max = Math.max(0, pane.scrollHeight - pane.clientHeight);
+  const clamped = Math.max(0, Math.min(max, value));
+  for (const target of panes) target.scrollTop = clamped;
+}
+
+function renderDiffPane(side, title, diff) {
+  const pane = document.createElement('div');
+  pane.className = `step-artifact-diff-pane diff-pane-${side}`;
+  const column = document.createElement('div');
+  column.className = 'step-artifact-diff-column';
+
+  const header = document.createElement('div');
+  header.className = 'step-artifact-diff-row step-artifact-diff-headrow';
+  const headerNumber = document.createElement('span');
+  headerNumber.className = 'step-artifact-diff-number';
+  const headerText = document.createElement('span');
+  headerText.className = 'step-artifact-diff-text';
+  headerText.textContent = title;
+  header.appendChild(headerNumber);
+  header.appendChild(headerText);
+  column.appendChild(header);
+
+  for (const line of diff) {
+    const row = document.createElement('div');
+    row.className = `step-artifact-diff-row step-artifact-diff-line-${line.kind}`;
+    const number = document.createElement('span');
+    number.className = 'step-artifact-diff-number';
+    const text = document.createElement('span');
+    text.className = 'step-artifact-diff-text';
+    if (side === 'before') {
+      number.textContent = line.beforeNumber ? String(line.beforeNumber) : '';
+      text.textContent = line.beforeText || '';
+    } else {
+      number.textContent = line.afterNumber ? String(line.afterNumber) : '';
+      text.textContent = line.afterText || '';
+    }
+    row.appendChild(number);
+    row.appendChild(text);
+    column.appendChild(row);
+  }
+  pane.appendChild(column);
+  return pane;
+}
+
+function syncDiffPaneScroll(first, second) {
+  let syncing = false;
+  const link = (source, target) => {
+    source.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      target.scrollLeft = source.scrollLeft;
+      target.scrollTop = source.scrollTop;
+      syncing = false;
+    });
+  };
+  link(first, second);
+  link(second, first);
+}
+
+function contextDiffLines(text) {
+  return normalizeDiffLines(text).map((value, index) => ({
+    kind: 'context',
+    beforeNumber: index + 1,
+    beforeText: value,
+    afterNumber: index + 1,
+    afterText: value,
+  }));
+}
+
+function diffTextLines(beforeText, afterText) {
+  const beforeLines = normalizeDiffLines(beforeText);
+  const afterLines = normalizeDiffLines(afterText);
+  if (beforeLines.join('\n') === afterLines.join('\n')) return [];
+  if (beforeLines.length * afterLines.length > 160000) return countBasedDiff(beforeLines, afterLines);
+  const table = Array.from({ length: beforeLines.length + 1 }, () => Array(afterLines.length + 1).fill(0));
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
+      if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
+        table[beforeIndex][afterIndex] = table[beforeIndex + 1][afterIndex + 1] + 1;
+      } else {
+        table[beforeIndex][afterIndex] = Math.max(table[beforeIndex + 1][afterIndex], table[beforeIndex][afterIndex + 1]);
+      }
+    }
+  }
+  const diff = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+  let beforeNumber = 1;
+  let afterNumber = 1;
+  while (beforeIndex < beforeLines.length && afterIndex < afterLines.length) {
+    if (beforeLines[beforeIndex] === afterLines[afterIndex]) {
+      diff.push({ kind: 'context', beforeNumber, beforeText: beforeLines[beforeIndex], afterNumber, afterText: afterLines[afterIndex] });
+      beforeIndex += 1;
+      afterIndex += 1;
+      beforeNumber += 1;
+      afterNumber += 1;
+    } else if (table[beforeIndex + 1][afterIndex] >= table[beforeIndex][afterIndex + 1]) {
+      diff.push({ kind: 'removed', beforeNumber, beforeText: beforeLines[beforeIndex] });
+      beforeIndex += 1;
+      beforeNumber += 1;
+    } else {
+      diff.push({ kind: 'added', afterNumber, afterText: afterLines[afterIndex] });
+      afterIndex += 1;
+      afterNumber += 1;
+    }
+  }
+  while (beforeIndex < beforeLines.length) {
+    diff.push({ kind: 'removed', beforeNumber, beforeText: beforeLines[beforeIndex] });
+    beforeIndex += 1;
+    beforeNumber += 1;
+  }
+  while (afterIndex < afterLines.length) {
+    diff.push({ kind: 'added', afterNumber, afterText: afterLines[afterIndex] });
+    afterIndex += 1;
+    afterNumber += 1;
+  }
+  return diff;
+}
+
+function normalizeDiffLines(text) {
+  return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+}
+
+function countBasedDiff(beforeLines, afterLines) {
+  const beforeCounts = lineCounts(beforeLines);
+  const afterCounts = lineCounts(afterLines);
+  const diff = [];
+  for (const [index, line] of beforeLines.entries()) {
+    const afterCount = afterCounts.get(line) || 0;
+    if ((beforeCounts.get(line) || 0) > afterCount) {
+      diff.push({ kind: 'removed', beforeNumber: index + 1, beforeText: line });
+      beforeCounts.set(line, (beforeCounts.get(line) || 0) - 1);
+    }
+  }
+  for (const [index, line] of afterLines.entries()) {
+    const beforeCount = beforeCounts.get(line) || 0;
+    if ((afterCounts.get(line) || 0) > beforeCount) {
+      diff.push({ kind: 'added', afterNumber: index + 1, afterText: line });
+      afterCounts.set(line, (afterCounts.get(line) || 0) - 1);
+    }
+  }
+  return diff;
+}
+
+function lineCounts(lines) {
+  const counts = new Map();
+  for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
+  return counts;
 }
 
 function isXmlStepArtifact(artifact) {

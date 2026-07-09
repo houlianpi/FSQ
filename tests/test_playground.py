@@ -761,21 +761,17 @@ def test_playground_state_assigns_sequence_for_unsequenced_events() -> None:
     assert [event["sequence"] for event in incremental_progress["events"]] == [2]
 
 
-def test_playground_strict_recorder_emits_step_progress_events(tmp_path: Path) -> None:
+def test_playground_strict_recorder_updates_active_step_without_progress_events(tmp_path: Path) -> None:
     state = PlaygroundState()
     request_id = state.start_task("Strict progress")
     recorder = _PlaygroundEvidenceRecorder(run_id="strict_case", output_dir=tmp_path, state=state, request_id=request_id)
 
     recorder.record_event(RunnerEvent(event_type="step_start", run_id="strict_case", step_id="strict_case-step-002"))
-    recorder.record_event(RunnerEvent(event_type="step_finish", run_id="strict_case", step_id="strict_case-step-002"))
 
     progress = state.get_task(request_id)
-
     assert progress is not None
-    assert [event["type"] for event in progress["events"]] == ["tool_call_started", "tool_call_completed"]
-    assert [event["title"] for event in progress["events"]] == ["Strict YAML step started", "Strict YAML step completed"]
-    assert [event["payload"]["step_id"] for event in progress["events"]] == ["strict_case-step-002", "strict_case-step-002"]
-    assert [event["payload"]["step_index"] for event in progress["events"]] == [2, 2]
+    assert progress["events"] == []
+    assert progress["activeStep"] == {"stepId": "strict_case-step-002", "stepIndex": 2}
 
 
 def test_playground_state_cancel_request_marks_task_cancelled() -> None:
@@ -1935,7 +1931,8 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "captureProgressDetailState" in script
     assert "data-detail-key" in script
     assert "event.sequence" in script
-    assert "syncYamlStepWithProgressEvent(event)" in script
+    assert "syncYamlStepWithProgressEvent(event)" not in script
+    assert "strict_yaml_step" not in script
     assert "backendSequence" in script
     assert "tool_arguments" in script
     assert "tool_output_preview" in script
@@ -1974,16 +1971,12 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "setRunId(event.run_id || event.runId)" in script
     assert "setRunId(progress.result.runId)" in script
     assert "event.type === 'run_started'" in script
-    assert "function syncYamlStepWithProgressEvent" in script
-    assert "if (state.currentExecutionMode !== 'strict-yaml') return" in script
-    assert "function yamlStepCardForEvent" in script
-    assert "function yamlStepIndexFromEvent" in script
-    assert "function yamlStepIndexFromStepId" in script
+    assert "progress.activeStep" in script
+    assert "function syncYamlStepWithActiveStep" in script
     assert "function activateYamlStepCard" in script
     assert "function centerYamlStepCard" in script
     assert "scheduleClearActiveYamlStepCard" in script
     assert "cancelActiveYamlStepClearTimer" in script
-    assert "stepCard.scrollIntoView({ block: 'center', behavior: 'smooth' })" in script
     assert "Run ID: ${runId}" in script
     assert "refreshPreviewFromReplay" in script
     assert "refreshPreview" in script
@@ -1999,6 +1992,24 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "renderStepArtifactPreview" in script
     assert "renderStepArtifactScreenshots" in script
     assert "renderStepArtifactTextArtifacts" in script
+    assert "renderUiTreeDiffArtifact" in script
+    assert "bindSynchronizedArtifactScroll" in script
+    assert "step-artifact-sync-scroll" in script
+    assert "ui-tree-before-after" in script
+    assert "other.scrollLeft = scroller.scrollLeft" in script
+    assert "renderDiffHeader" in script
+    assert "diffTextLines" in script
+    assert "compactDiffContext" not in script
+    assert "step-artifact-diff-change-marker" in script
+    assert "step-artifact-diff-card" in styles
+    assert "step-artifact-diff-header" in styles
+    assert "grid-template-columns: 44px minmax(240px, 1fr) 44px minmax(240px, 1fr) 16px" in styles
+    assert "step-artifact-diff-change-marker" in styles
+    assert "step-artifact-diff-line-added" in styles
+    assert "step-artifact-diff-line-removed" in styles
+    assert "step-artifact-diff-before" in styles
+    assert "step-artifact-diff-after" in styles
+    assert "min-width: 760px" in styles
     assert "completedRunId" in script
     assert "startLiveScreenshotPolling" not in script
     assert "refreshScreenshot({ preservePrevious: true })" not in script
@@ -2206,10 +2217,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "clipboard" not in script
     assert "execCommand('copy')" not in script
     assert "clearSelectedYamlRegion" in script
-    assert "clearActiveYamlStepCard" in script
-    assert "function clearActiveYamlStepCard(root = null)" in script
     assert "function clearSelectedYamlRegion(root = null)" in script
-    assert "if (root && !root.contains(state.activeYamlStepCard)) return" in script
     assert "if (root && state.selectedYamlRegion && !root.contains(state.selectedYamlRegion)) return" in script
     assert "clearStepArtifactPreview" in script
     assert "selectYamlRegion" in script
@@ -2271,14 +2279,12 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yaml-step-card" in styles
     assert ".yaml-step-card:hover" in styles
     assert ".yaml-step-card:focus-within" in styles
-    assert ".yaml-step-card.yaml-step-card-active" in styles
     assert ".yaml-step-card.yaml-region-selected" in styles
     assert "yaml-step-header" in styles
     assert ".yaml-step-card:hover .yaml-step-header" in styles
-    assert ".yaml-step-card.yaml-step-card-active .yaml-step-header" in styles
     assert ".yaml-step-card.yaml-region-selected .yaml-step-header" in styles
     assert ".yaml-step-card.yaml-region-selected .yaml-step-index" in styles
-    assert ".yaml-step-card.yaml-step-card-active .yaml-step-index" in styles
+    assert ".yaml-step-card.yaml-step-card-active" in styles
     assert "color: #0f3f8a" in styles
     assert "font-size: 13px" in styles
     assert "step-artifact-preview" in styles

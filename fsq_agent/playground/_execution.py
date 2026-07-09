@@ -450,7 +450,7 @@ class _PlaygroundEvidenceRecorder(EvidenceRecorder):
 
 	def record_event(self, event: RunnerEvent) -> None:
 		super().record_event(event)
-		self._record_step_progress(event)
+		self._record_active_step(event)
 		payload = event.payload or {}
 		if event.event_type != "artifact_captured" or payload.get("kind") != "screenshot":
 			return
@@ -467,26 +467,15 @@ class _PlaygroundEvidenceRecorder(EvidenceRecorder):
 			},
 		)
 
-	def _record_step_progress(self, event: RunnerEvent) -> None:
-		if event.event_type not in {"step_start", "step_finish"} or not event.step_id:
+	def _record_active_step(self, event: RunnerEvent) -> None:
+		if event.event_type != "step_start" or not event.step_id:
 			return
-		step_index = _step_index_from_step_id(event.step_id)
-		started = event.event_type == "step_start"
-		self.state.add_event(
+		self.state.set_active_step(
 			self.request_id,
-			RunEvent(
-				run_id=event.run_id,
-				task_id=event.run_id,
-				type="tool_call_started" if started else "tool_call_completed",
-				title="Strict YAML step started" if started else "Strict YAML step completed",
-				message=event.step_id,
-				tool_name="strict_yaml_step",
-				payload={
-					"step_id": event.step_id,
-					"step_index": step_index,
-					"runner_event_type": event.event_type,
-				},
-			),
+			{
+				"stepId": event.step_id,
+				"stepIndex": _step_index_from_step_id(event.step_id),
+			},
 		)
 
 
@@ -495,7 +484,6 @@ def _step_index_from_step_id(step_id: str) -> int | None:
 	if match is None:
 		return None
 	return int(match.group(1))
-
 
 def _split_trailing_teardown_steps(steps: list[ExecutableStep]) -> tuple[list[ExecutableStep], list[ExecutableStep]]:
 	split_at = len(steps)
