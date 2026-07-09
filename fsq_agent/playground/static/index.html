@@ -14,13 +14,30 @@
             <h1>FSQ-Agent Playground</h1>
             <p id="server-status" class="status-pill status-connecting">Connecting...</p>
           </div>
-          <button id="refresh" type="button">Clear</button>
+          <button id="refresh" class="secondary-button" type="button">Clear</button>
         </header>
 
-        <section class="section progress-section">
-          <h2>Progress</h2>
-          <div id="progress-run-id" class="progress-run-id" hidden></div>
-          <div id="progress" class="progress-log"></div>
+        <section id="yaml-section" class="section yaml-section">
+          <div class="section-heading-row">
+            <h2>YAML</h2>
+          </div>
+          <div class="yaml-tabs" role="tablist" aria-label="YAML views">
+            <button id="yaml-input-tab" class="yaml-tab-button active" type="button" role="tab" aria-selected="true" aria-controls="yaml-input-pane">Input</button>
+            <button id="yaml-recorded-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="yaml-recorded-pane">Recorded</button>
+            <button id="yaml-progress-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="progress-pane">Progress</button>
+          </div>
+          <div id="yaml-input-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-input-tab">
+            <p id="yaml-input-status" class="yaml-status">No YAML loaded.</p>
+            <div id="yaml-input-viewer" class="yaml-viewer" aria-live="polite"></div>
+          </div>
+          <div id="yaml-recorded-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-recorded-tab" hidden>
+            <p id="yaml-recorded-status" class="yaml-status">No recorded YAML yet.</p>
+            <div id="yaml-recorded-viewer" class="yaml-viewer" aria-live="polite"></div>
+          </div>
+          <section id="progress-pane" class="yaml-pane progress-pane" role="tabpanel" aria-labelledby="yaml-progress-tab" hidden>
+            <div id="progress-run-id" class="progress-run-id" hidden></div>
+            <div id="progress" class="progress-log"></div>
+          </section>
         </section>
 
         <section class="section">
@@ -38,11 +55,17 @@
             <label><input type="radio" name="run-mode" value="yaml" /> YAML</label>
             <label><input type="radio" name="run-mode" value="strict-yaml" /> Strict YAML</label>
           </div>
-          <textarea id="goal" rows="5" placeholder="Describe the Android task to run..."></textarea>
-          <input id="case-yaml" type="text" placeholder="Path to .codex.yaml..." hidden />
-          <button id="run-selected" type="button" class="primary">Run</button>
+          <div class="run-input-row">
+            <textarea id="goal" rows="5" placeholder="Describe the Android task to run..."></textarea>
+            <div id="yaml-path-row" class="yaml-path-row" hidden>
+              <input id="case-yaml" type="text" placeholder="Path to .codex.yaml..." />
+            </div>
+            <button id="run-selected" type="button" class="primary">Run</button>
+          </div>
         </section>
       </section>
+
+      <div id="panel-resizer" class="panel-resizer" role="separator" aria-label="Resize panels" aria-orientation="vertical" aria-valuemin="300" aria-valuemax="720" tabindex="0"></div>
 
       <section class="panel preview-panel">
         <header class="preview-header">
@@ -54,6 +77,7 @@
           </div>
         </header>
         <div id="preview-pane" class="tab-pane preview-frame" role="tabpanel" aria-labelledby="preview-tab">
+          <div id="step-artifact-preview" class="step-artifact-preview" hidden></div>
           <video id="replay-video" controls hidden></video>
           <img id="screenshot" alt="Android screenshot preview" />
           <p id="preview-empty">Screenshot preview will appear here.</p>

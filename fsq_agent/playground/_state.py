@@ -42,6 +42,7 @@ class TaskProgress:
 	completed_at: str | None = None
 	events: list[dict[str, object]] = field(default_factory=list)
 	preview: dict[str, object] | None = None
+	active_step: dict[str, object] | None = None
 	replay: dict[str, object] | None = None
 	replay_reset: bool = False
 	cancel_requested: bool = False
@@ -58,6 +59,7 @@ class TaskProgress:
 			"completedAt": self.completed_at,
 			"events": self.events,
 			"preview": self.preview,
+			"activeStep": self.active_step,
 			"replay": self.replay,
 			"cancelRequested": self.cancel_requested,
 			"result": self.result,
@@ -167,6 +169,14 @@ class PlaygroundState:
 			task.preview = preview
 			self._notify()
 
+	def set_active_step(self, request_id: str, active_step: dict[str, object] | None) -> None:
+		with self._lock:
+			task = self.tasks.get(request_id)
+			if task is None:
+				return
+			task.active_step = active_step
+			self._notify()
+
 	def mark_replay_reset(self, request_id: str) -> bool:
 		with self._lock:
 			task = self.tasks.get(request_id)
@@ -187,6 +197,7 @@ class PlaygroundState:
 			task.cancel_requested = True
 			task.status = "cancelled"
 			task.completed_at = _utc_now()
+			task.active_step = None
 			task.error = "Cancelled by user."
 			if self.current_request_id == request_id:
 				self.current_request_id = None
@@ -206,6 +217,7 @@ class PlaygroundState:
 			task.run_id = result.report.run_id
 			task.status = result.status
 			task.completed_at = _utc_now()
+			task.active_step = None
 			task.result = {
 				"taskId": result.task_id,
 				"status": result.status,
@@ -229,6 +241,7 @@ class PlaygroundState:
 					return
 				task.status = "error"
 				task.completed_at = _utc_now()
+				task.active_step = None
 				task.error = str(error) or error.__class__.__name__ if isinstance(error, BaseException) else str(error)
 			if self.current_request_id == request_id:
 				self.current_request_id = None
