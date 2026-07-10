@@ -1247,6 +1247,18 @@ function wrapStepArtifactRegion(section, variant) {
   return region;
 }
 
+function screenshotsShouldStack(region, targetHeight) {
+  const img = region.querySelector('.step-artifact-image-card img');
+  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+  const style = getComputedStyle(region);
+  const padding = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
+  const contentWidth = region.clientWidth - padding;
+  if (contentWidth <= 0) return false;
+  const columnWidth = (contentWidth - 62) / 2;
+  const aspect = img.naturalWidth / img.naturalHeight;
+  return targetHeight * aspect > columnWidth;
+}
+
 function createSplitResizer(screenshotRegion, diffBody) {
   const resizer = document.createElement('div');
   resizer.className = 'step-artifact-resizer';
@@ -1261,8 +1273,10 @@ function createSplitResizer(screenshotRegion, diffBody) {
   };
   const onMove = (event) => {
     const delta = event.clientY - startY;
-    const limit = Math.max(220, window.innerHeight * 0.9);
-    screenshotRegion.style.setProperty('--shot-max-h', `${Math.min(Math.max(140, startShot + delta), limit)}px`);
+    const limit = Math.max(2400, window.innerHeight * 2);
+    const nextShot = Math.min(Math.max(140, startShot + delta), limit);
+    screenshotRegion.style.setProperty('--shot-max-h', `${nextShot}px`);
+    screenshotRegion.classList.toggle('step-artifact-region-stacked', screenshotsShouldStack(screenshotRegion, nextShot));
     if (diffBody) {
       diffBody.style.height = `${Math.min(Math.max(140, startDiff - delta), limit)}px`;
     }

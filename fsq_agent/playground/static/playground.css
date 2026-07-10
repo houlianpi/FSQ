@@ -988,6 +988,34 @@ textarea {
   }
 }
 
+.step-artifact-region-screenshots.step-artifact-region-stacked .step-artifact-screenshot-row.step-artifact-compare {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.step-artifact-region-screenshots.step-artifact-region-stacked .step-artifact-compare .step-artifact-connector {
+  width: 18px;
+  height: 42px;
+  justify-self: center;
+}
+
+.step-artifact-region-screenshots.step-artifact-region-stacked .step-artifact-compare .step-artifact-connector::before {
+  top: 2px;
+  bottom: 7px;
+  left: 50%;
+  right: auto;
+  width: 1px;
+  height: auto;
+  transform: translateX(-50%);
+}
+
+.step-artifact-region-screenshots.step-artifact-region-stacked .step-artifact-compare .step-artifact-connector::after {
+  top: auto;
+  right: auto;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(135deg);
+}
+
 .step-artifact-resizer {
   flex: none;
   height: 12px;
