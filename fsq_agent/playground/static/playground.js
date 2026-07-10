@@ -1231,55 +1231,111 @@ function renderStepArtifactPreview(payload, stepCard) {
     if (textArtifacts.length > 0) {
       const textRegion = wrapStepArtifactRegion(renderStepArtifactTextArtifacts(textArtifacts), 'text');
       const diffBody = textRegion.querySelector('.step-artifact-diff-body');
-      if (screenshotRegion) body.appendChild(createSplitResizer(screenshotRegion, diffBody));
+      if (screenshotRegion) screenshotRegion.appendChild(createScreenshotHeightResizer(screenshotRegion));
+      if (diffBody) textRegion.prepend(createDiffTopResizer(textRegion));
+      if (diffBody) textRegion.appendChild(createDiffHeightResizer(textRegion));
       body.appendChild(textRegion);
-      if (diffBody) body.appendChild(createDiffHeightResizer(diffBody));
     }
     if (body.childElementCount > 0) shell.appendChild(body);
   }
   els.stepArtifactPreview.replaceChildren(shell);
+  requestAnimationFrame(() => {
+    for (const region of els.stepArtifactPreview.querySelectorAll('.step-artifact-region-screenshots')) {
+      initializeScreenshotResizeLayout(region);
+    }
+  });
 }
 
 function wrapStepArtifactRegion(section, variant) {
   const region = document.createElement('div');
   region.className = `step-artifact-region step-artifact-region-${variant}`;
-  region.appendChild(section);
+  if (variant === 'screenshots') {
+    const scroll = document.createElement('div');
+    scroll.className = 'step-artifact-screenshot-scroll';
+    scroll.appendChild(section);
+    region.appendChild(scroll);
+  } else {
+    region.appendChild(section);
+  }
   return region;
 }
 
-function screenshotsShouldStack(region, targetHeight) {
-  const img = region.querySelector('.step-artifact-image-card img');
-  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
-  const style = getComputedStyle(region);
-  const padding = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
-  const contentWidth = region.clientWidth - padding;
-  if (contentWidth <= 0) return false;
-  const columnWidth = (contentWidth - 62) / 2;
-  const aspect = img.naturalWidth / img.naturalHeight;
-  return targetHeight * aspect > columnWidth;
+function initializeScreenshotResizeLayout(region) {
+  if (region.classList.contains('step-artifact-region-user-sized')) return;
+  const card = region.querySelector('.step-artifact-image-card');
+  const cardWidth = card?.getBoundingClientRect().width || 0;
+  if (!cardWidth) return;
+  region.style.setProperty('--shot-card-width', `${Math.round(cardWidth)}px`);
+  region.classList.add('step-artifact-region-user-sized');
 }
 
-function createSplitResizer(screenshotRegion, diffBody) {
+function applyScreenshotRegionHeight(region, cardWidth, regionHeight) {
+  region.style.setProperty('--shot-card-width', `${Math.max(140, Math.round(cardWidth))}px`);
+  region.style.height = `${regionHeight}px`;
+}
+
+function createScreenshotHeightResizer(screenshotRegion) {
   const resizer = document.createElement('div');
-  resizer.className = 'step-artifact-resizer';
+  resizer.className = 'step-artifact-screenshot-border-resizer';
   resizer.setAttribute('role', 'separator');
   resizer.setAttribute('aria-orientation', 'horizontal');
   let startY = 0;
-  let startShot = 0;
-  let startDiff = 0;
-  const shotHeight = () => {
-    const img = screenshotRegion.querySelector('.step-artifact-image-card img');
-    return img ? Math.round(img.getBoundingClientRect().height) : 320;
+  let startRegionHeight = 0;
+  let startCardWidth = 0;
+  let imageAspect = 1;
+  const currentCardWidth = () => {
+    const card = screenshotRegion.querySelector('.step-artifact-image-card');
+    return card ? card.getBoundingClientRect().width : 280;
+  };
+  const currentImageAspect = () => {
+    const image = screenshotRegion.querySelector('.step-artifact-image-card img');
+    return image?.naturalWidth && image?.naturalHeight ? image.naturalWidth / image.naturalHeight : 1;
   };
   const onMove = (event) => {
     const delta = event.clientY - startY;
     const limit = Math.max(2400, window.innerHeight * 2);
-    const nextShot = Math.min(Math.max(140, startShot + delta), limit);
-    screenshotRegion.style.setProperty('--shot-max-h', `${nextShot}px`);
-    screenshotRegion.classList.toggle('step-artifact-region-stacked', screenshotsShouldStack(screenshotRegion, nextShot));
-    if (diffBody) {
-      diffBody.style.height = `${Math.min(Math.max(140, startDiff - delta), limit)}px`;
-    }
+    const nextHeight = Math.min(Math.max(160, startRegionHeight + delta), limit);
+    const appliedDelta = nextHeight - startRegionHeight;
+    const nextCardWidth = startCardWidth + appliedDelta * imageAspect;
+    applyScreenshotRegionHeight(screenshotRegion, nextCardWidth, nextHeight);
+  };
+  const onUp = (event) => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    if (resizer.hasPointerCapture?.(event.pointerId)) resizer.releasePointerCapture(event.pointerId);
+    document.body.classList.remove('step-artifact-resizing');
+  };
+  resizer.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    resizer.setPointerCapture?.(event.pointerId);
+    initializeScreenshotResizeLayout(screenshotRegion);
+    startY = event.clientY;
+    startRegionHeight = Math.round(screenshotRegion.getBoundingClientRect().height);
+    startCardWidth = currentCardWidth();
+    imageAspect = currentImageAspect();
+    document.body.classList.add('step-artifact-resizing');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+  return resizer;
+}
+
+function createDiffTopResizer(textRegion) {
+  const resizer = document.createElement('div');
+  resizer.className = 'step-artifact-ui-tree-border-resizer';
+  resizer.setAttribute('role', 'separator');
+  resizer.setAttribute('aria-orientation', 'horizontal');
+  resizer.setAttribute('aria-label', 'Resize UI Tree from top');
+  let startY = 0;
+  let startHeight = 0;
+  let startScrollTop = 0;
+  let preview = null;
+  const onMove = (event) => {
+    const limit = Math.max(2400, window.innerHeight * 2);
+    const nextHeight = Math.min(Math.max(140, startHeight - (event.clientY - startY)), limit);
+    const heightDelta = nextHeight - startHeight;
+    textRegion.style.height = `${nextHeight}px`;
+    if (preview) preview.scrollTop = Math.max(0, startScrollTop + heightDelta);
   };
   const onUp = () => {
     document.removeEventListener('pointermove', onMove);
@@ -1289,8 +1345,9 @@ function createSplitResizer(screenshotRegion, diffBody) {
   resizer.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     startY = event.clientY;
-    startShot = shotHeight();
-    startDiff = diffBody ? Math.round(diffBody.getBoundingClientRect().height) : 0;
+    startHeight = Math.round(textRegion.getBoundingClientRect().height);
+    preview = textRegion.closest('.step-artifact-preview');
+    startScrollTop = preview?.scrollTop || 0;
     document.body.classList.add('step-artifact-resizing');
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
@@ -1386,7 +1443,7 @@ function renderStepArtifactTextArtifacts(artifacts) {
   const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
   if (uiTreeDiff) section.appendChild(uiTreeDiff);
   for (const artifact of artifacts) {
-    if (artifact.kind === 'ui_tree') continue;
+    if (OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)) continue;
     const card = document.createElement('div');
     card.className = 'step-artifact-text-card';
     const label = document.createElement('div');
@@ -1394,56 +1451,31 @@ function renderStepArtifactTextArtifacts(artifacts) {
     label.textContent = `${artifact.kind || 'artifact'} · ${stepArtifactLabel(artifact)}`;
     const pre = document.createElement('pre');
     pre.className = isXmlStepArtifact(artifact) ? 'step-artifact-xml' : '';
-    if (artifact.kind === 'ui_tree' && ['Before', 'After'].includes(stepArtifactLabel(artifact))) {
-      pre.classList.add('step-artifact-sync-scroll');
-      pre.dataset.syncGroup = 'ui-tree-before-after';
-    }
     pre.textContent = artifact.content || '';
     card.appendChild(label);
     card.appendChild(pre);
     section.appendChild(card);
   }
-  bindSynchronizedArtifactScroll(section);
   return section;
 }
 
-function bindSynchronizedArtifactScroll(root) {
-  const scrollers = Array.from(root.querySelectorAll('.step-artifact-sync-scroll[data-sync-group]'));
-  const groups = new Map();
-  for (const scroller of scrollers) {
-    const group = scroller.dataset.syncGroup || '';
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(scroller);
-  }
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    let syncing = false;
-    for (const scroller of group) {
-      scroller.addEventListener('scroll', () => {
-        if (syncing) return;
-        syncing = true;
-        for (const other of group) {
-          if (other !== scroller) other.scrollLeft = scroller.scrollLeft;
-        }
-        syncing = false;
-      });
-    }
-  }
-}
+const OBSERVATION_ARTIFACT_KINDS = ['ui_tree', 'page_snapshot', 'ui_snapshot'];
 
 function renderUiTreeDiffArtifact(artifacts) {
-  const uiTrees = artifacts.filter((artifact) => artifact.kind === 'ui_tree' && typeof artifact.content === 'string');
+  const uiTrees = artifacts.filter((artifact) => OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind) && typeof artifact.content === 'string');
   const before = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'Before');
   const after = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'After');
   if (!before || !after) return null;
   let diff = diffTextLines(before.content || '', after.content || '');
   const unchanged = diff.length === 0;
   if (unchanged) diff = contextDiffLines(after.content || before.content || '');
+  else annotateInlineDiff(diff);
   const card = document.createElement('div');
   card.className = 'step-artifact-diff-card';
   const label = document.createElement('div');
   label.className = 'step-artifact-text-label';
-  label.textContent = unchanged ? 'ui_tree (no changes)' : 'ui_tree diff';
+  const kindLabel = before.kind || 'ui_tree';
+  label.textContent = unchanged ? `${kindLabel} (no changes)` : `${kindLabel} diff`;
   const body = document.createElement('div');
   body.className = 'step-artifact-diff-body';
   if (diff.length === 0) {
@@ -1473,13 +1505,13 @@ function renderUiTreeDiffArtifact(artifacts) {
 
 function createDiffHeightResizer(target) {
   const resizer = document.createElement('div');
-  resizer.className = 'step-artifact-resizer';
+  resizer.className = 'step-artifact-ui-tree-bottom-border-resizer';
   resizer.setAttribute('role', 'separator');
   resizer.setAttribute('aria-orientation', 'horizontal');
   let startY = 0;
   let startHeight = 0;
   const onMove = (event) => {
-    const max = Math.max(200, window.innerHeight * 0.9);
+    const max = Math.max(2400, window.innerHeight * 2);
     const next = Math.min(Math.max(140, startHeight + (event.clientY - startY)), max);
     target.style.height = `${next}px`;
     resizer.scrollIntoView({ block: 'nearest' });
@@ -1566,10 +1598,10 @@ function renderDiffPane(side, title, diff) {
     text.className = 'step-artifact-diff-text';
     if (side === 'before') {
       number.textContent = line.beforeNumber ? String(line.beforeNumber) : '';
-      text.textContent = line.beforeText || '';
+      appendDiffText(text, line.beforeText || '', line.beforeInline);
     } else {
       number.textContent = line.afterNumber ? String(line.afterNumber) : '';
-      text.textContent = line.afterText || '';
+      appendDiffText(text, line.afterText || '', line.afterInline);
     }
     row.appendChild(number);
     row.appendChild(text);
@@ -1577,6 +1609,73 @@ function renderDiffPane(side, title, diff) {
   }
   pane.appendChild(column);
   return pane;
+}
+
+function appendDiffText(target, value, inlineChange) {
+  if (!inlineChange) {
+    target.textContent = value;
+    return;
+  }
+  if (inlineChange.prefix) target.appendChild(document.createTextNode(inlineChange.prefix));
+  const changed = document.createElement('span');
+  changed.className = 'step-artifact-diff-inline-change';
+  changed.textContent = inlineChange.changed;
+  target.appendChild(changed);
+  if (inlineChange.suffix) target.appendChild(document.createTextNode(inlineChange.suffix));
+}
+
+function annotateInlineDiff(diff) {
+  let index = 0;
+  while (index < diff.length) {
+    if (diff[index].kind === 'context') {
+      index += 1;
+      continue;
+    }
+    const start = index;
+    while (index < diff.length && diff[index].kind !== 'context') index += 1;
+    annotateInlineChangeBlock(diff.slice(start, index));
+  }
+}
+
+function annotateInlineChangeBlock(block) {
+  const removed = block.filter((line) => line.kind === 'removed');
+  const added = block.filter((line) => line.kind === 'added');
+  const pairCount = Math.min(removed.length, added.length);
+  for (let index = 0; index < pairCount; index += 1) {
+    const beforeText = removed[index].beforeText || '';
+    const afterText = added[index].afterText || '';
+    const changes = inlineTextChanges(beforeText, afterText);
+    removed[index].beforeInline = changes.before;
+    added[index].afterInline = changes.after;
+  }
+}
+
+function inlineTextChanges(beforeText, afterText) {
+  let prefixLength = 0;
+  const maxPrefix = Math.min(beforeText.length, afterText.length);
+  while (prefixLength < maxPrefix && beforeText[prefixLength] === afterText[prefixLength]) prefixLength += 1;
+
+  let suffixLength = 0;
+  const maxSuffix = Math.min(beforeText.length - prefixLength, afterText.length - prefixLength);
+  while (
+    suffixLength < maxSuffix
+    && beforeText[beforeText.length - suffixLength - 1] === afterText[afterText.length - suffixLength - 1]
+  ) {
+    suffixLength += 1;
+  }
+  return {
+    before: inlineTextChange(beforeText, prefixLength, suffixLength),
+    after: inlineTextChange(afterText, prefixLength, suffixLength),
+  };
+}
+
+function inlineTextChange(text, prefixLength, suffixLength) {
+  const changedEnd = suffixLength ? text.length - suffixLength : text.length;
+  return {
+    prefix: text.slice(0, prefixLength),
+    changed: text.slice(prefixLength, changedEnd),
+    suffix: text.slice(changedEnd),
+  };
 }
 
 function syncDiffPaneScroll(first, second) {
@@ -1608,7 +1707,7 @@ function diffTextLines(beforeText, afterText) {
   const beforeLines = normalizeDiffLines(beforeText);
   const afterLines = normalizeDiffLines(afterText);
   if (beforeLines.join('\n') === afterLines.join('\n')) return [];
-  if (beforeLines.length * afterLines.length > 160000) return countBasedDiff(beforeLines, afterLines);
+  if (beforeLines.length * afterLines.length > 160000) return myersDiffLines(beforeLines, afterLines);
   const table = Array.from({ length: beforeLines.length + 1 }, () => Array(afterLines.length + 1).fill(0));
   for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
     for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex -= 1) {
@@ -1658,31 +1757,197 @@ function normalizeDiffLines(text) {
   return String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
 
-function countBasedDiff(beforeLines, afterLines) {
-  const beforeCounts = lineCounts(beforeLines);
-  const afterCounts = lineCounts(afterLines);
+function myersDiffLines(beforeLines, afterLines) {
+  const beforeLength = beforeLines.length;
+  const afterLength = afterLines.length;
+  const maxDistance = Math.min(beforeLength + afterLength, 1200);
+  const furthest = new Map([[1, 0]]);
+  const trace = [];
+
+  for (let distance = 0; distance <= maxDistance; distance += 1) {
+    trace.push(new Map(furthest));
+    for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
+      const down = furthest.get(diagonal + 1) ?? -1;
+      const right = furthest.get(diagonal - 1) ?? -1;
+      let beforeIndex;
+      if (diagonal === -distance || (diagonal !== distance && right < down)) {
+        beforeIndex = Math.max(0, down);
+      } else {
+        beforeIndex = Math.max(0, right + 1);
+      }
+      let afterIndex = beforeIndex - diagonal;
+      while (
+        beforeIndex < beforeLength
+        && afterIndex < afterLength
+        && beforeLines[beforeIndex] === afterLines[afterIndex]
+      ) {
+        beforeIndex += 1;
+        afterIndex += 1;
+      }
+      furthest.set(diagonal, beforeIndex);
+      if (beforeIndex >= beforeLength && afterIndex >= afterLength) {
+        return backtrackMyersDiff(trace, beforeLines, afterLines);
+      }
+    }
+  }
+  return patienceDiffLines(beforeLines, afterLines);
+}
+
+function backtrackMyersDiff(trace, beforeLines, afterLines) {
+  let beforeIndex = beforeLines.length;
+  let afterIndex = afterLines.length;
+  const reversed = [];
+
+  for (let distance = trace.length - 1; distance >= 0; distance -= 1) {
+    const furthest = trace[distance];
+    const diagonal = beforeIndex - afterIndex;
+    const down = furthest.get(diagonal + 1) ?? -1;
+    const right = furthest.get(diagonal - 1) ?? -1;
+    const previousDiagonal = diagonal === -distance || (diagonal !== distance && right < down)
+      ? diagonal + 1
+      : diagonal - 1;
+    const previousBefore = Math.max(0, furthest.get(previousDiagonal) ?? 0);
+    const previousAfter = previousBefore - previousDiagonal;
+
+    while (beforeIndex > previousBefore && afterIndex > previousAfter) {
+      reversed.push({
+        kind: 'context',
+        beforeNumber: beforeIndex,
+        beforeText: beforeLines[beforeIndex - 1],
+        afterNumber: afterIndex,
+        afterText: afterLines[afterIndex - 1],
+      });
+      beforeIndex -= 1;
+      afterIndex -= 1;
+    }
+    if (distance === 0) break;
+    if (beforeIndex === previousBefore) {
+      reversed.push({ kind: 'added', afterNumber: afterIndex, afterText: afterLines[afterIndex - 1] });
+      afterIndex -= 1;
+    } else {
+      reversed.push({ kind: 'removed', beforeNumber: beforeIndex, beforeText: beforeLines[beforeIndex - 1] });
+      beforeIndex -= 1;
+    }
+  }
+  return reversed.reverse();
+}
+
+function patienceDiffLines(beforeLines, afterLines) {
   const diff = [];
-  for (const [index, line] of beforeLines.entries()) {
-    const afterCount = afterCounts.get(line) || 0;
-    if ((beforeCounts.get(line) || 0) > afterCount) {
-      diff.push({ kind: 'removed', beforeNumber: index + 1, beforeText: line });
-      beforeCounts.set(line, (beforeCounts.get(line) || 0) - 1);
-    }
-  }
-  for (const [index, line] of afterLines.entries()) {
-    const beforeCount = beforeCounts.get(line) || 0;
-    if ((afterCounts.get(line) || 0) > beforeCount) {
-      diff.push({ kind: 'added', afterNumber: index + 1, afterText: line });
-      afterCounts.set(line, (afterCounts.get(line) || 0) - 1);
-    }
-  }
+  appendPatienceRange(diff, beforeLines, afterLines, 0, beforeLines.length, 0, afterLines.length);
   return diff;
 }
 
-function lineCounts(lines) {
-  const counts = new Map();
-  for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1);
-  return counts;
+function appendPatienceRange(diff, beforeLines, afterLines, beforeStart, beforeEnd, afterStart, afterEnd) {
+  while (beforeStart < beforeEnd && afterStart < afterEnd && beforeLines[beforeStart] === afterLines[afterStart]) {
+    diff.push({
+      kind: 'context',
+      beforeNumber: beforeStart + 1,
+      beforeText: beforeLines[beforeStart],
+      afterNumber: afterStart + 1,
+      afterText: afterLines[afterStart],
+    });
+    beforeStart += 1;
+    afterStart += 1;
+  }
+
+  let commonSuffix = 0;
+  while (
+    beforeStart < beforeEnd - commonSuffix
+    && afterStart < afterEnd - commonSuffix
+    && beforeLines[beforeEnd - commonSuffix - 1] === afterLines[afterEnd - commonSuffix - 1]
+  ) {
+    commonSuffix += 1;
+  }
+  const beforeMiddleEnd = beforeEnd - commonSuffix;
+  const afterMiddleEnd = afterEnd - commonSuffix;
+  const anchors = patienceAnchors(beforeLines, afterLines, beforeStart, beforeMiddleEnd, afterStart, afterMiddleEnd);
+
+  if (anchors.length === 0) {
+    for (let index = beforeStart; index < beforeMiddleEnd; index += 1) {
+      diff.push({ kind: 'removed', beforeNumber: index + 1, beforeText: beforeLines[index] });
+    }
+    for (let index = afterStart; index < afterMiddleEnd; index += 1) {
+      diff.push({ kind: 'added', afterNumber: index + 1, afterText: afterLines[index] });
+    }
+  } else {
+    let previousBefore = beforeStart;
+    let previousAfter = afterStart;
+    for (const anchor of anchors) {
+      appendPatienceRange(diff, beforeLines, afterLines, previousBefore, anchor.before, previousAfter, anchor.after);
+      diff.push({
+        kind: 'context',
+        beforeNumber: anchor.before + 1,
+        beforeText: beforeLines[anchor.before],
+        afterNumber: anchor.after + 1,
+        afterText: afterLines[anchor.after],
+      });
+      previousBefore = anchor.before + 1;
+      previousAfter = anchor.after + 1;
+    }
+    appendPatienceRange(diff, beforeLines, afterLines, previousBefore, beforeMiddleEnd, previousAfter, afterMiddleEnd);
+  }
+
+  for (let offset = commonSuffix - 1; offset >= 0; offset -= 1) {
+    const beforeIndex = beforeEnd - offset - 1;
+    const afterIndex = afterEnd - offset - 1;
+    diff.push({
+      kind: 'context',
+      beforeNumber: beforeIndex + 1,
+      beforeText: beforeLines[beforeIndex],
+      afterNumber: afterIndex + 1,
+      afterText: afterLines[afterIndex],
+    });
+  }
+}
+
+function patienceAnchors(beforeLines, afterLines, beforeStart, beforeEnd, afterStart, afterEnd) {
+  const beforeOccurrences = uniqueLineOccurrences(beforeLines, beforeStart, beforeEnd);
+  const afterOccurrences = uniqueLineOccurrences(afterLines, afterStart, afterEnd);
+  const candidates = [];
+  for (const [line, beforeOccurrence] of beforeOccurrences) {
+    const afterOccurrence = afterOccurrences.get(line);
+    if (beforeOccurrence.count === 1 && afterOccurrence?.count === 1) {
+      candidates.push({ before: beforeOccurrence.index, after: afterOccurrence.index });
+    }
+  }
+  candidates.sort((left, right) => left.before - right.before);
+  return longestIncreasingAnchorSequence(candidates);
+}
+
+function uniqueLineOccurrences(lines, start, end) {
+  const occurrences = new Map();
+  for (let index = start; index < end; index += 1) {
+    const line = lines[index];
+    const occurrence = occurrences.get(line);
+    if (occurrence) occurrence.count += 1;
+    else occurrences.set(line, { count: 1, index });
+  }
+  return occurrences;
+}
+
+function longestIncreasingAnchorSequence(candidates) {
+  if (candidates.length === 0) return [];
+  const tails = [];
+  const previous = new Array(candidates.length).fill(-1);
+  for (let index = 0; index < candidates.length; index += 1) {
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (candidates[tails[middle]].after < candidates[index].after) low = middle + 1;
+      else high = middle;
+    }
+    if (low > 0) previous[index] = tails[low - 1];
+    tails[low] = index;
+  }
+  const sequence = [];
+  let cursor = tails[tails.length - 1];
+  while (cursor >= 0) {
+    sequence.push(candidates[cursor]);
+    cursor = previous[cursor];
+  }
+  return sequence.reverse();
 }
 
 function isXmlStepArtifact(artifact) {
