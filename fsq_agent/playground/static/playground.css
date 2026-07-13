@@ -936,7 +936,7 @@ textarea {
 .step-artifact-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 24px;
 }
 
 .step-artifact-region {
@@ -950,42 +950,118 @@ textarea {
 }
 
 .step-artifact-region-screenshots {
-  overflow: visible;
-  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: min(50vh, 520px);
+  min-height: 160px;
+  overflow: hidden;
+}
+
+.step-artifact-screenshot-scroll {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 8px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.step-artifact-screenshot-scroll > .step-artifact-section {
+  flex: 0 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.step-artifact-screenshot-border-resizer {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.step-artifact-screenshot-border-resizer:hover {
+  border-bottom: 2px solid #94a3b8;
+}
+
+.step-artifact-region-screenshots .step-artifact-section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.step-artifact-region-screenshots .step-artifact-screenshot-row {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.step-artifact-region-screenshots .step-artifact-image-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .step-artifact-region-screenshots .step-artifact-image-card img {
-  max-height: var(--shot-max-h, min(42vh, 440px));
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  object-fit: contain;
 }
 
-@container (max-width: 340px) {
-  .step-artifact-region-screenshots .step-artifact-screenshot-row.step-artifact-compare {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.step-artifact-region-screenshots.step-artifact-region-user-sized .step-artifact-section {
+  flex-basis: auto;
+  width: max-content;
+  min-width: 100%;
+}
 
-  .step-artifact-region-screenshots .step-artifact-compare .step-artifact-connector {
-    width: 18px;
-    height: 42px;
-    justify-self: center;
-  }
+.step-artifact-region-screenshots.step-artifact-region-user-sized .step-artifact-screenshot-row {
+  width: max-content;
+  min-width: 100%;
+  justify-content: safe center;
+}
 
-  .step-artifact-region-screenshots .step-artifact-compare .step-artifact-connector::before {
-    top: 2px;
-    bottom: 7px;
-    left: 50%;
-    right: auto;
-    width: 1px;
-    height: auto;
-    transform: translateX(-50%);
-  }
+.step-artifact-region-screenshots.step-artifact-region-user-sized .step-artifact-screenshot-row.step-artifact-compare {
+  grid-template-columns: var(--shot-card-width) 42px var(--shot-card-width);
+}
 
-  .step-artifact-region-screenshots .step-artifact-compare .step-artifact-connector::after {
-    top: auto;
-    right: auto;
-    bottom: 3px;
-    left: 50%;
-    transform: translateX(-50%) rotate(135deg);
-  }
+.step-artifact-region-screenshots.step-artifact-region-user-sized .step-artifact-screenshot-row:not(.step-artifact-compare) {
+  grid-template-columns: var(--shot-card-width);
+}
+
+.step-artifact-region-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: min(68vh, 620px);
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.step-artifact-region-text > .step-artifact-section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.step-artifact-region-text .step-artifact-diff-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.step-artifact-region-text .step-artifact-diff-body {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .step-artifact-resizer {
@@ -1009,6 +1085,34 @@ textarea {
 
 .step-artifact-resizer:hover::before {
   background: #94a3b8;
+}
+
+.step-artifact-ui-tree-border-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.step-artifact-ui-tree-border-resizer:hover {
+  border-top: 2px solid #94a3b8;
+}
+
+.step-artifact-ui-tree-bottom-border-resizer {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.step-artifact-ui-tree-bottom-border-resizer:hover {
+  border-bottom: 2px solid #94a3b8;
 }
 
 body.step-artifact-resizing {
@@ -1058,6 +1162,11 @@ body.step-artifact-resizing {
   overflow: hidden;
 }
 
+.step-artifact-image-card {
+  margin: 0;
+  background: #eef2f7;
+}
+
 .step-artifact-image-label,
 .step-artifact-text-label {
   padding: 7px 9px;
@@ -1073,7 +1182,7 @@ body.step-artifact-resizing {
   width: 100%;
   max-height: min(42vh, 440px);
   object-fit: contain;
-  background: #ffffff;
+  background: #eef2f7;
 }
 
 .step-artifact-connector {
@@ -1251,6 +1360,19 @@ body.step-artifact-resizing {
 .diff-pane-before .step-artifact-diff-line-removed .step-artifact-diff-number,
 .diff-pane-before .step-artifact-diff-line-removed .step-artifact-diff-text {
   background: #fee2e2;
+}
+
+.diff-pane-before .step-artifact-diff-line-removed .step-artifact-diff-inline-change {
+  background: #fca5a5;
+}
+
+.diff-pane-after .step-artifact-diff-line-added .step-artifact-diff-inline-change {
+  background: #86efac;
+}
+
+.step-artifact-diff-inline-change {
+  border-radius: 2px;
+  font: inherit;
 }
 
 .step-artifact-diff-line-added {

@@ -990,18 +990,15 @@ class PlaygroundServer:
 
     def _step_text_artifact_content(self, kind: str, artifact_path: Path) -> tuple[str, str | None]:
         content = artifact_path.read_text(encoding="utf-8")
-        if kind != "ui_tree":
-            return content, None
         try:
             payload = json.loads(content)
         except json.JSONDecodeError:
             return content, None
-        if not isinstance(payload, dict):
-            return content, None
-        xml = payload.get("xml")
-        if isinstance(xml, str) and xml.strip():
-            return xml, "application/xml"
-        return content, None
+        if kind == "ui_tree" and isinstance(payload, dict):
+            xml = payload.get("xml")
+            if isinstance(xml, str) and xml.strip():
+                return xml, "application/xml"
+        return json.dumps(payload, indent=2, ensure_ascii=False), "application/json"
 
     def _safe_run_artifact_path(self, run_dir: Path, path_value: object) -> tuple[Path, str]:
         if not isinstance(path_value, str) or not path_value.strip():

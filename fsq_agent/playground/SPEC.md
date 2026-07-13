@@ -135,26 +135,23 @@ Step artifact endpoints are read-only, must read only under the resolved run dir
 
 ## Design Decisions
 
-- Goal execution follows CLI `run --goal` task construction semantics.
-- YAML execution follows CLI non-strict `run --case-yaml` semantics: raw UTF-8 reference material, no strict YAML parsing for execution.
-- Strict YAML execution follows strict-core semantics: parse authored YAML through the platform-selected registry, execute deterministic steps through the configured active platform harness/backend binding and `StepRunner` post-action delay policy, and generate core evidence reports.
-- Capability declaration is a bootstrap concern outside playground routes. Playground strict and dynamic execution consume validated registry metadata and normalized runner results rather than decorated methods or platform action catalogs.
-- Playground records completed dynamic runs using the post-run recorder with `allow_failure=True`.
-- Browser progress polling is incremental: the server may project only events after the caller's last rendered sequence, and the static UI appends those events to the existing progress list instead of clearing and rebuilding the entire history on every tick.
-- Browser progress prefers a Server-Sent Events long connection (`/task-stream/{request_id}`) that pushes incremental progress payloads and falls back to `/task-progress` interval polling when `EventSource` is unavailable or the stream errors. Cancellation continues to use `POST /cancel/{request_id}`; the cancelled status arrives through the same progress stream.
-- The static UI presents Progress as a left-side tab alongside YAML Input and Recorded views. The right side presents Preview and Report tabs. Starting an execution keeps the right-side view on Preview while progress continues updating in the left-side Progress tab.
-- Strict YAML execution must not synthesize tool-call progress events for core runner `step_start`/`step_finish` events. It may expose the current strict step through non-event progress metadata so the static UI can highlight and center the matching Input YAML step card. Dynamic YAML execution must not change Input YAML step-card state while running. During execution and replay-video finishing, YAML step-card and case-title clicks must be ignored and must not request artifacts or change the existing Preview flow.
-- When Strict YAML execution starts with an input case loaded, the static UI should highlight the Input YAML case summary as the run context before step-level progress appears.
-- The static UI presents YAML as a left-side display section above Session. Run mode selection and YAML path entry remain in the Run section, and YAML/Strict YAML execution uses that path.
-- YAML tab visibility follows run mode for Input and Recorded: Goal shows Recorded plus Progress and defaults to Progress, YAML shows Input and Recorded plus Progress and defaults to Progress, and Strict YAML shows Input plus Progress and defaults to Input. Progress appears leftmost for Goal and YAML modes. Generated recorded YAML loads into Recorded without automatically selecting it. Left-side tabs use the same underline style as the right-side tabs.
-- Goal, YAML, and Strict YAML modes keep separate left-panel state for Progress, Input, and Recorded data where those tabs apply. Switching modes restores that mode's prior left-panel state instead of showing data from another run mode. Run mode switching is disabled while an execution or replay-video finishing step is active.
-- The two-column shell should fill the viewport height, give extra left-panel vertical space to YAML display, and provide a persisted draggable desktop panel resizer.
-- Input and Recorded YAML displays are read-only, structured presentations of YAML metadata and steps. They must not be editors, raw-code-first views, execution paths, or mutation surfaces.
-- YAML load errors belong in the YAML status line and should not be duplicated inside the viewer frame.
-- After execution completes, the browser loads the replay frames used for replay-video generation and displays that screenshot set in the Progress pane. When a replay video is available or generated, the Preview pane displays that video directly.
-- The replay video preview uses the browser's native video controls for playback progress, seeking, and pause/resume controls.
-- After execution completes, clicking a Strict YAML Input step card or a Recorded YAML step card should switch Preview to that step's artifacts. Dynamic YAML Input step cards must not switch Preview content. Screenshots render before structured text artifacts, before/after screenshots should compare clearly, and missing artifact kinds must not create empty regions.
-- When a clicked step has both before and after `ui_tree` structured artifacts, the Preview pane may include a read-only line diff that highlights added and removed XML lines before the raw structured artifacts.
-- After execution completes, clicking the YAML case name/title row should exit step-artifact preview and show the completed run replay video when available, or a concise no-video state. During execution, case-title clicks keep live Preview unchanged.
-- The static UI does not expose a manual replay button; replay frames remain an internal source for browser-side replay video generation.
-- Replay video playback should support browser seeking when possible. Stored video serving must support HTTP range requests; browser-side WebM metadata rewriting is allowed as an implementation detail when needed.
+### Execution and Ownership
+
+- Goal, YAML, and Strict YAML preserve the corresponding CLI execution semantics: dynamic goal task construction, non-strict raw UTF-8 YAML reference material, and registry-backed deterministic strict execution with core evidence reporting.
+- Capability declaration and discovery remain bootstrap concerns. Playground consumes validated registry metadata, public execution APIs, and normalized results rather than decorator internals or platform action catalogs.
+- Completed dynamic runs use post-run recording with `allow_failure=True`; recording failure does not change execution status.
+
+### Progress and Workspace State
+
+- Progress delivery is incremental. Server-Sent Events are preferred, sequence-based polling is the fallback, and the browser appends new events without rebuilding existing history. Cancellation status is delivered through the same progress channel.
+- The desktop UI uses a persisted resizable two-column workspace: mode-specific YAML/Progress views on the left and Preview/Report on the right. Execution starts in Preview while progress continues independently.
+- Left-side tab availability and defaults follow run mode: Goal exposes Progress and Recorded, YAML exposes Progress, Input, and Recorded, and Strict YAML exposes Input and Progress. Each mode preserves its own view state, and generated recording content does not force tab selection.
+- Strict execution exposes current-step metadata for Input YAML highlighting without synthesizing tool-call events from core step lifecycle events. Dynamic YAML does not mutate Input step state. Run-mode and artifact navigation changes are blocked while execution or replay finalization is active.
+- Input and Recorded YAML are read-only structured presentations. Loading errors appear once in the YAML status surface rather than inside the viewer content.
+
+### Preview and Artifacts
+
+- Completed runs use persisted screenshots as replay-video input and show available replay video in Preview with native playback and seeking controls. Replay remains automatic rather than a separate manual action, and stored video supports HTTP range requests.
+- Completed Strict Input and Recorded step cards open their artifacts in Preview; dynamic Input cards do not. Screenshots precede structured artifacts, absent artifact kinds do not create empty regions, and selecting the case title returns to the completed replay-video view.
+- Before/After screenshots default to a centered, complete side-by-side comparison on a neutral backdrop. Screenshot and UI Tree regions resize independently from their boundaries; resizing is continuous, preserves horizontal comparison, and uses scrolling for overflow.
+- Before/after platform observations (`ui_tree`, `page_snapshot`, or `ui_snapshot`) may render as a read-only full-content diff with line-level added/removed highlighting and inline highlighting for paired changed lines.

@@ -1993,23 +1993,56 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "renderStepArtifactScreenshots" in script
     assert "renderStepArtifactTextArtifacts" in script
     assert "renderUiTreeDiffArtifact" in script
-    assert "bindSynchronizedArtifactScroll" in script
-    assert "step-artifact-sync-scroll" in script
-    assert "ui-tree-before-after" in script
-    assert "other.scrollLeft = scroller.scrollLeft" in script
-    assert "renderDiffHeader" in script
+    assert "OBSERVATION_ARTIFACT_KINDS" in script
+    assert "renderDiffPane" in script
+    assert "renderDiffOverview" in script
+    assert "syncDiffPaneScroll" in script
+    assert "createScreenshotHeightResizer" in script
+    assert "step-artifact-screenshot-border-resizer" in styles
+    assert "step-artifact-screenshot-scroll" in script
+    assert "step-artifact-screenshot-scroll" in styles
+    assert ".step-artifact-screenshot-scroll > .step-artifact-section" in styles
+    assert "flex: 0 0 100%" in styles
+    assert "currentCardWidth" in script
+    assert "currentImageAspect" in script
+    assert "appliedDelta" in script
+    assert "initializeScreenshotResizeLayout" in script
+    assert "requestAnimationFrame" in script
+    assert "applyScreenshotRegionHeight" in script
+    assert "keepResizeBorderInPreview" not in script
+    assert "setPointerCapture" in script
+    assert "step-artifact-region-user-sized" in styles
+    assert ".step-artifact-image-card {" in styles
+    assert "margin: 0" in styles
+    assert "background: #eef2f7" in styles
+    assert "justify-content: safe center" in styles
+    assert "overflow-x: scroll" in styles
+    assert "scrollbar-gutter: stable" in styles
+    assert "createDiffTopResizer" in script
+    assert "step-artifact-ui-tree-border-resizer" in styles
+    assert "step-artifact-ui-tree-bottom-border-resizer" in styles
+    assert "gap: 24px" in styles
+    assert "startDiff" not in script
+    assert "createDiffHeightResizer" in script
+    assert "renderDiffHeader" not in script
+    assert "bindSynchronizedArtifactScroll" not in script
     assert "diffTextLines" in script
+    assert "myersDiffLines" in script
+    assert "backtrackMyersDiff" in script
+    assert "patienceDiffLines" in script
+    assert "longestIncreasingAnchorSequence" in script
+    assert "annotateInlineDiff" in script
+    assert "inlineTextChanges" in script
     assert "compactDiffContext" not in script
-    assert "step-artifact-diff-change-marker" in script
     assert "step-artifact-diff-card" in styles
-    assert "step-artifact-diff-header" in styles
-    assert "grid-template-columns: 44px minmax(240px, 1fr) 44px minmax(240px, 1fr) 16px" in styles
-    assert "step-artifact-diff-change-marker" in styles
+    assert "step-artifact-diff-headrow" in styles
+    assert "step-artifact-diff-pane" in styles
+    assert "step-artifact-diff-overview" in styles
     assert "step-artifact-diff-line-added" in styles
     assert "step-artifact-diff-line-removed" in styles
-    assert "step-artifact-diff-before" in styles
-    assert "step-artifact-diff-after" in styles
-    assert "min-width: 760px" in styles
+    assert "step-artifact-diff-inline-change" in styles
+    assert "diff-pane-before" in styles
+    assert "diff-pane-after" in styles
     assert "completedRunId" in script
     assert "startLiveScreenshotPolling" not in script
     assert "refreshScreenshot({ preservePrevious: true })" not in script
