@@ -1164,6 +1164,7 @@ body.step-artifact-resizing {
 
 .step-artifact-image-card {
   margin: 0;
+  background: #eef2f7;
 }
 
 .step-artifact-image-label,
@@ -1181,7 +1182,7 @@ body.step-artifact-resizing {
   width: 100%;
   max-height: min(42vh, 440px);
   object-fit: contain;
-  background: #ffffff;
+  background: #eef2f7;
 }
 
 .step-artifact-connector {

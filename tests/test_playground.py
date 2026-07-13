@@ -2014,6 +2014,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "step-artifact-region-user-sized" in styles
     assert ".step-artifact-image-card {" in styles
     assert "margin: 0" in styles
+    assert "background: #eef2f7" in styles
     assert "justify-content: safe center" in styles
     assert "overflow-x: scroll" in styles
     assert "scrollbar-gutter: stable" in styles
