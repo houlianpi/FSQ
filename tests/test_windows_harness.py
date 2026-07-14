@@ -305,3 +305,59 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == ["exists visible enabled"]
     assert driver._window is fake_app.window_obj
+
+
+def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FakeControl:
+        def __init__(self, exists: bool) -> None:
+            self._exists = exists
+
+        def exists(self) -> bool:
+            return self._exists
+
+    class FakeWindow:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def child_window(self, **kwargs: object) -> FakeControl:
+            self.calls.append(kwargs)
+            return FakeControl(exists="title_re" in kwargs)
+
+    window = FakeWindow()
+    driver = PywinautoWindowsDriver(window=window)
+
+    control = driver._control_from_kwargs(  # type: ignore[attr-defined]
+        {"title": "Document.*Notepad", "control_type": "Edit", "automation_id": "15", "index": 2}
+    )
+
+    assert control is not None
+    assert window.calls == [
+        {"title": "Document.*Notepad", "control_type": "Edit", "auto_id": "15", "found_index": 1},
+        {"control_type": "Edit", "auto_id": "15", "found_index": 1, "title_re": "Document.*Notepad"},
+    ]
+
+
+def test_pywinauto_driver_control_does_not_retry_without_title() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class MissingControl:
+        def exists(self) -> bool:
+            return False
+
+    class FakeWindow:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def child_window(self, **kwargs: object) -> MissingControl:
+            self.calls.append(kwargs)
+            return MissingControl()
+
+    window = FakeWindow()
+    driver = PywinautoWindowsDriver(window=window)
+
+    control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
+
+    assert control is None
+    assert window.calls == [{"auto_id": "15", "found_index": 0}]

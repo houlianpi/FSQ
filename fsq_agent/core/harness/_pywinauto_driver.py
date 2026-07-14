@@ -348,8 +348,9 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _control_from_kwargs(self, locator: dict[str, Any]) -> Any:
         kwargs: dict[str, Any] = {}
-        if isinstance(locator.get("title"), str):
-            kwargs["title"] = locator["title"]
+        title = locator.get("title")
+        if isinstance(title, str):
+            kwargs["title"] = title
         if isinstance(locator.get("control_type"), str):
             kwargs["control_type"] = locator["control_type"]
         if isinstance(locator.get("automation_id"), str):
@@ -361,6 +362,13 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         if not kwargs:
             return None
         control = self._child_window(**kwargs)
+        if control is not None and control.exists():
+            return control
+        if not isinstance(title, str):
+            return None
+        regex_kwargs = {key: value for key, value in kwargs.items() if key != "title"}
+        regex_kwargs["title_re"] = title
+        control = self._child_window(**regex_kwargs)
         return control if control is not None and control.exists() else None
 
     def _child_window(self, **kwargs: Any) -> Any:
