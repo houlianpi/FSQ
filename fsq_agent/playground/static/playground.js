@@ -897,6 +897,7 @@ function renderYamlStep(step) {
   const card = document.createElement('div');
   card.className = 'yaml-step-card';
   card.dataset.yamlStepIndex = String(step.index || '');
+  if (step.artifactStepId) card.dataset.yamlStepId = String(step.artifactStepId);
   card.dataset.yamlAction = step.action || 'command';
   card.dataset.yamlActionKey = normalizeYamlActionName(step.action || 'command');
   const header = document.createElement('div');

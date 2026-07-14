@@ -504,7 +504,7 @@ class PlaygroundServer:
         except OSError as exc:
             return 400, {"available": False, "error": str(exc) or exc.__class__.__name__, "runId": run_id}
         try:
-            display = self._yaml_display_model(content, source_path=str(recorded_case_path)) if content is not None else None
+            display = self._yaml_display_model(content, source_path=str(recorded_case_path), run_dir=run_dir) if content is not None else None
         except ValueError as exc:
             return 400, {"available": False, "error": str(exc) or "Unable to parse recorded YAML for display.", "runId": run_id}
         return 200, {
@@ -524,7 +524,7 @@ class PlaygroundServer:
             "content": content,
         }
 
-    def _yaml_display_model(self, content: str, *, source_path: str | None = None) -> dict[str, object]:
+    def _yaml_display_model(self, content: str, *, source_path: str | None = None, run_dir: Path | None = None) -> dict[str, object]:
         try:
             docs = list(yaml.safe_load_all(content))
         except yaml.YAMLError as exc:
@@ -535,11 +535,61 @@ class PlaygroundServer:
             commands_doc = []
         if not isinstance(commands_doc, list):
             raise ValueError("FSQ command document must be a YAML list.")
+        artifact_step_ids = self._recorded_artifact_step_ids(run_dir, len(commands_doc)) if run_dir is not None else None
         return {
             "metadata": self._yaml_metadata_display(metadata_doc, source_path=source_path),
-            "steps": [self._yaml_step_display(command, index) for index, command in enumerate(commands_doc, start=1)],
+            "steps": [
+                self._yaml_step_display(
+                    command,
+                    index,
+                    artifact_step_id=artifact_step_ids[index - 1] if artifact_step_ids is not None else None,
+                )
+                for index, command in enumerate(commands_doc, start=1)
+            ],
             "documentCount": len(docs),
         }
+
+    def _recorded_artifact_step_ids(self, run_dir: Path, command_count: int) -> list[str | None] | None:
+        events_path = run_dir / "events.jsonl"
+        if not events_path.exists():
+            return None
+        try:
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return None
+        step_ids: list[str | None] = []
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or not self._event_is_recorded_replay_command(event):
+                continue
+            if self._event_step_kind(event) == "observation":
+                continue
+            step_ids.append(self._event_step_id(event))
+        if len(step_ids) != command_count:
+            return None
+        return step_ids
+
+    def _event_step_kind(self, event: dict[str, object]) -> str | None:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        value = payload.get("step_kind")
+        if isinstance(value, str):
+            return value
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        kind = metadata.get("step_kind")
+        return kind if isinstance(kind, str) else None
+
+    def _event_step_id(self, event: dict[str, object]) -> str | None:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        runner_result = payload.get("runner_result") if isinstance(payload.get("runner_result"), dict) else {}
+        for candidate in (payload.get("runner_step_id"), payload.get("step_id"), runner_result.get("step_id")):
+            if isinstance(candidate, str) and candidate:
+                return candidate
+        return None
 
     def _yaml_metadata_display(self, metadata: dict[object, object], *, source_path: str | None = None) -> dict[str, object]:
         fields = []
@@ -562,7 +612,7 @@ class PlaygroundServer:
             "fields": fields,
         }
 
-    def _yaml_step_display(self, command: object, index: int) -> dict[str, object]:
+    def _yaml_step_display(self, command: object, index: int, *, artifact_step_id: str | None = None) -> dict[str, object]:
         badges: list[dict[str, object]] = []
         if isinstance(command, str):
             action = command
@@ -584,6 +634,8 @@ class PlaygroundServer:
         action_text = str(action)
         return {
             "index": index,
+            "displayIndex": index,
+            "artifactStepId": artifact_step_id,
             "action": action_text,
             "kind": self._yaml_action_kind(action_text),
             "badges": badges,
@@ -782,7 +834,6 @@ class PlaygroundServer:
         if not events_path.exists():
             return []
         refs: list[dict[str, object]] = []
-        recorded_step_index = 0
         for line in events_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
@@ -792,10 +843,7 @@ class PlaygroundServer:
                 continue
             if not isinstance(event, dict) or event.get("type") not in {"tool_call_completed", "tool_call_failed"}:
                 continue
-            is_recorded_step = self._event_is_recorded_replay_command(event)
-            if is_recorded_step:
-                recorded_step_index += 1
-            if not self._event_matches_step(event, selector) and not self._event_matches_recorded_step_index(selector, is_recorded_step, recorded_step_index):
+            if not self._event_matches_step(event, selector):
                 continue
             timestamp = self._timestamp_ms(event.get("timestamp"))
             payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -811,10 +859,6 @@ class PlaygroundServer:
             if inline_ref is not None:
                 refs.append(inline_ref)
         return refs
-
-    def _event_matches_recorded_step_index(self, selector: dict[str, object], is_recorded_step: bool, recorded_step_index: int) -> bool:
-        selector_step_index = selector.get("step_index")
-        return bool(is_recorded_step and isinstance(selector_step_index, int) and selector_step_index == recorded_step_index)
 
     def _event_is_recorded_replay_command(self, event: dict[str, object]) -> bool:
         if event.get("type") != "tool_call_completed":

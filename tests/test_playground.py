@@ -217,7 +217,7 @@ def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -
         {"key": "path", "label": "Path", "value": "sample.codex.yaml"},
     ]
     assert payload["display"]["steps"] == [
-        {"index": 1, "action": "launchApp", "kind": "setup", "badges": [], "params": []}
+        {"index": 1, "displayIndex": 1, "artifactStepId": None, "action": "launchApp", "kind": "setup", "badges": [], "params": []}
     ]
 
 
@@ -332,6 +332,97 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
             ],
         },
     ]
+
+
+def _recorded_run_with_events(tmp_path: Path, *, events: list[dict]) -> Settings:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n"
+        "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n",
+        encoding="utf-8",
+    )
+    (run_dir / "recording.json").write_text(
+        json.dumps(
+            {
+                "status": "recorded",
+                "recorded_case_path": str(recorded_path),
+                "command_count": 2,
+                "validation_status": "passed",
+                "draft": False,
+                "required_runtime_secret_names": [],
+                "warnings": [],
+                "skipped_tool_calls": [],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    if events:
+        (run_dir / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+    return settings
+
+
+def _recorded_command_event(*, tool_name: str, alias: str, step_id: str, step_kind: str) -> dict:
+    return {
+        "type": "tool_call_completed",
+        "timestamp": "2026-07-07T00:00:01+00:00",
+        "tool_name": tool_name,
+        "payload": {
+            "tool_origin": "platform",
+            "status": "passed",
+            "step_kind": step_kind,
+            "replay": {"kind": "fsq_command", "alias": alias},
+            "runner_step_id": step_id,
+            "artifact_refs": [],
+        },
+    }
+
+
+def test_playground_server_recorded_yaml_steps_expose_display_and_artifact_step_ids(tmp_path: Path) -> None:
+    events = [
+        _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="action"),
+        _recorded_command_event(tool_name="ui_tree", alias="uiTree", step_id="agent-ui_tree-2", step_kind="observation"),
+        _recorded_command_event(tool_name="click_on", alias="clickOn", step_id="agent-click_on-3", step_kind="action"),
+    ]
+    settings = _recorded_run_with_events(tmp_path, events=events)
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    steps = payload["display"]["steps"]
+    assert [step["displayIndex"] for step in steps] == [1, 2]
+    assert [step["artifactStepId"] for step in steps] == ["agent-launch_app-1", "agent-click_on-3"]
+
+
+def test_playground_server_recorded_yaml_steps_artifact_step_id_null_without_events(tmp_path: Path) -> None:
+    settings = _recorded_run_with_events(tmp_path, events=[])
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    steps = payload["display"]["steps"]
+    assert [step["displayIndex"] for step in steps] == [1, 2]
+    assert [step["artifactStepId"] for step in steps] == [None, None]
+
+
+def test_playground_server_recorded_yaml_steps_artifact_step_id_null_on_count_mismatch(tmp_path: Path) -> None:
+    events = [
+        _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="action"),
+    ]
+    settings = _recorded_run_with_events(tmp_path, events=events)
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    steps = payload["display"]["steps"]
+    assert [step["artifactStepId"] for step in steps] == [None, None]
 
 
 def test_playground_server_recorded_yaml_endpoint_returns_skipped_metadata(tmp_path: Path) -> None:
@@ -579,7 +670,7 @@ def test_playground_server_step_artifacts_endpoint_returns_no_artifacts(tmp_path
     assert "No artifacts" in payload["message"]
 
 
-def test_playground_server_step_artifacts_endpoint_maps_recorded_index_to_dynamic_event_output(tmp_path: Path) -> None:
+def test_playground_server_step_artifacts_endpoint_resolves_by_artifact_step_id(tmp_path: Path) -> None:
     settings = Settings()
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
@@ -625,7 +716,7 @@ def test_playground_server_step_artifacts_endpoint_maps_recorded_index_to_dynami
     (run_dir / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/step-artifacts/run-1/2", {})
+    status, payload = server.handle_get("/step-artifacts/run-1/agent-ui_tree-2", {})
 
     assert status == 200
     assert payload["available"] is True
