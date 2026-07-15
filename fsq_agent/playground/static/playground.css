@@ -397,11 +397,15 @@ h2 {
 }
 
 .yaml-case-title {
+  display: -webkit-box;
   min-width: 0;
+  overflow: hidden;
   color: #0f4c81;
   font-size: 15px;
   font-weight: 750;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .yaml-chip {

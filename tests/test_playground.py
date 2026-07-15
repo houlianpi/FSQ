@@ -2396,6 +2396,8 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "border-bottom: 1px solid #d8e8fb" in styles
     assert "background: #eef6ff" in styles
     assert "color: #0f4c81" in styles
+    assert "-webkit-line-clamp: 3" in styles
+    assert "title.title = title.textContent" in script
     assert "yaml-metadata-grid" in styles
     assert ".yaml-metadata-item:hover" in styles
     assert ".yaml-metadata-item.yaml-region-selected" in styles

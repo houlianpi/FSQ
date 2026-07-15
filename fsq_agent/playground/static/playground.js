@@ -835,6 +835,7 @@ function renderYamlCaseTitle(metadata) {
   const title = document.createElement('div');
   title.className = 'yaml-case-title';
   title.textContent = metadata.title || 'Untitled case';
+  title.title = title.textContent;
   titleRow.appendChild(title);
   return titleRow;
 }
