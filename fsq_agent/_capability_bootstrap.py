@@ -6,13 +6,13 @@ from typing import Any
 from fsq_agent.core import (
     CapabilityRegistry,
     CommonPlatformTools,
-    android_capability_definitions,
-    macos_capability_definitions,
-    web_capability_definitions,
-    windows_capability_definitions,
+    DefaultCapabilityDefinitionFactory,
 )
-from fsq_agent.models import CapabilityDefinition, ConfigurationError, HarnessPlatform
+from fsq_agent.models import CapabilityDefinition, HarnessPlatform
 from fsq_agent.tools import DefaultAgentToolProvider, FileOps
+
+
+_DEFAULT_CAPABILITY_DEFINITION_FACTORY = DefaultCapabilityDefinitionFactory()
 
 
 def common_capability_definitions() -> list[CapabilityDefinition]:
@@ -29,15 +29,10 @@ def build_capability_registry(*, platform: HarnessPlatform = "android", include_
 
 
 def _platform_capability_definitions(platform: HarnessPlatform, *, include_ai_assertion: bool) -> list[CapabilityDefinition]:
-    if platform == "android":
-        return android_capability_definitions(include_ai_assertion=include_ai_assertion)
-    if platform == "web":
-        return web_capability_definitions(include_ai_assertion=include_ai_assertion)
-    if platform == "windows":
-        return windows_capability_definitions(include_ai_assertion=include_ai_assertion)
-    if platform == "macos":
-        return macos_capability_definitions(include_ai_assertion=include_ai_assertion)
-    raise ConfigurationError("Unsupported harness platform.", context={"platform": platform, "supported": ["android", "web", "windows", "macos"]})
+    return _DEFAULT_CAPABILITY_DEFINITION_FACTORY.platform_definitions(
+        platform=platform,
+        include_ai_assertion=include_ai_assertion,
+    )
 
 
 def build_agent_tool_provider(

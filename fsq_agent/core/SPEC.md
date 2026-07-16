@@ -20,6 +20,7 @@ Core may consume shared declaration decorators, platform action catalog helpers,
 Target `__init__.py` exports via `__all__`:
 
 - `CapabilityRegistry`: Validated runtime registry for decorated capabilities. It resolves canonical names and `ReplayPolicy(kind="fsq_command").alias` values, rejects duplicate names and ambiguous replay aliases, exposes serializable snapshots, and validates that every capability has a parameter model/schema and executor binding.
+- `DefaultCapabilityDefinitionFactory`: Concrete factory class for default platform capability definitions. It returns Android, Web, Windows, or macOS PlatformTool definitions for registry bootstrap without exposing function-style helper exports or requiring entry layers to import private core modules.
 - `HarnessInterface`: Protocol describing platform capabilities required by StepRunner. Concrete Android, Web, iOS, and fake harnesses may satisfy the protocol structurally.
 - `StepRunner`: Executes one canonical `ExecutableStep` or capability invocation by looking up metadata in `CapabilityRegistry`, validating params with the declared model, applying evidence, post-action delay, and sensitivity policy, invoking the active `HarnessInterface`, normalizing backend/provider output, emitting structured safe events, and returning `RunnerStepResult`.
 - `StepSequenceRunner`: Executes ordered `ExecutableStep` records with `StepRunner`, records events and step results, stops normal execution on blocking failures, and always executes supplied teardown steps. It does not own configured sleep or pacing behavior; post-action stabilization is handled inside `StepRunner`.
@@ -39,13 +40,14 @@ Target `__init__.py` exports via `__all__`:
 - `MacOSDriverInterface`: Protocol describing typed macOS desktop backend driver methods that macOS driver capabilities may call.
 - `MacOSHarness`: Built-in macOS runner-facing harness that satisfies `HarnessInterface`, exposes inherited CommonTools plus decorated macOS backend driver capabilities, injects AI assertion runtime services into compatible drivers, and owns macOS runtime services such as context, artifact capture, driver access, lifecycle hooks, and Appium error classification.
 - `AppiumMac2Driver`: Optional macOS backend driver that satisfies `MacOSDriverInterface` using Appium Mac2 when the `macos` extra is installed and configured environment-backed Appium/target values are available.
-- `driver_tool` compatibility helper and catalog-backed platform driver declaration helpers: Decorate concrete backend methods with capability metadata using the shared `capabilities` declaration layer; they do not execute or register capabilities by themselves. Android-specific behavior is represented by Android action catalog entries rather than a unique decorator implementation.
+
+Core root and subpackage public exports must expose only interfaces/protocols, abstract classes, concrete implementation classes, and approved factory classes. Function-style helpers, decorators, and discovery utilities are internal unless this SPEC records a named exception. There are no public helper exceptions in this SPEC cycle.
 
 Planned subpackage exports:
 
 - `fsq_agent.core.registry`: `CapabilityRegistry`, registry validation, alias resolution, and registry snapshots.
 - `fsq_agent.core.runner`: `StepRunner`, executor binding protocols, and sequence runner orchestration.
-- `fsq_agent.core.harness`: `HarnessInterface`, `AIAssertionEvaluatorProtocol`, CommonTool mixin/provider contracts, active platform tool providers, active platform harness and driver contracts, shared AI assertion backend support, concrete backend implementations, and thin platform declaration helpers backed by `capabilities`.
+- `fsq_agent.core.harness`: `HarnessInterface`, `AIAssertionEvaluatorProtocol`, active platform harness and driver contracts, and concrete backend implementations.
 - `fsq_agent.core.evidence`: `EvidenceRecorder`, `ArtifactStore`, and evidence coordination logic.
 
 `StepRunner` exposes a narrow API:
@@ -133,7 +135,7 @@ Capability metadata, not a static Android action table, is the runtime source of
 
 - `__init__.py`: Public exports only.
 - `_capabilities.py`: Capability registry, alias resolution, duplicate validation, and snapshot creation.
-- `_default_capabilities.py`: Android, Web, Windows, and macOS CommonTool/PlatformTool capability definitions used by entry-layer registry bootstrap without constructing a real backend connection.
+- `_default_capabilities.py`: `DefaultCapabilityDefinitionFactory` plus internal Android, Web, Windows, and macOS CommonTool/PlatformTool capability definition helpers used by entry-layer registry bootstrap without constructing a real backend connection.
 - `runner/__init__.py`: Runner subpackage exports only.
 - `runner/_runner.py`: `StepRunner` implementation for single-step capability execution.
 - `runner/_sequence.py`: `StepSequenceRunner` implementation for ordered execution and evidence recording.
@@ -149,7 +151,7 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `harness/_windows_driver.py`: `WindowsDriverInterface` protocol and driver-owned contracts.
 - `harness/_macos.py`: Built-in `MacOSHarness` implementation and macOS runtime-service delegation.
 - `harness/_macos_driver.py`: `MacOSDriverInterface` protocol and driver-owned contracts.
-- `harness/_driver_tools.py`: Thin platform declaration compatibility helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
+- `harness/_driver_tools.py`: Internal platform declaration helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
 - `harness/_uiautomator2_driver.py`: Optional uiautomator2 backend implementation with lazy dependency import and fake-device injection for tests.
 - `harness/_playwright_driver.py`: Optional Playwright backend implementation with lazy dependency import, browser/page lifecycle management, and fake-page injection for tests.
 - `harness/_pywinauto_driver.py`: Optional pywinauto backend implementation with lazy dependency import, application/window lifecycle management, and fake-window injection for tests.
@@ -164,7 +166,7 @@ Core must not define Pydantic models shared across modules. Shared models belong
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
-- Public API: capability registry, CommonTool/PlatformTool provider contracts, Android/Web/Windows/macOS capability definitions, runner, sequence runner, harness protocols, Android/Web/Windows/macOS harness/driver contracts, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files.
+- Public API: capability registry, default capability definition factory class, CommonTool/PlatformTool provider contracts, runner, sequence runner, harness protocols, Android/Web/Windows/macOS harness/driver contracts, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files. Public exports are limited to interfaces/protocols, abstract classes, concrete implementation classes, and approved factory classes; this SPEC cycle has no helper-function or decorator exceptions.
 - Internal modules: all `_*.py` files and implementation subpackages remain private outside documented exports.
 - Domain boundaries: core owns execution orchestration and provider-neutral platform coordination. Provider construction, SDK tool creation, CLI parsing, FSQ parsing, and report generation live outside core.
 - Boundary models: all serializable contracts come from `models`; core protocols and concrete runners operate on those contracts.
@@ -187,14 +189,15 @@ Sensitive capabilities must return values in the standard normalized shape `outp
 
 ## Testing Contract
 
-- Unit tests: registry validation, alias resolution, duplicate/ambiguous failures, StepRunner routing through `HarnessInterface.invoke_action`, capability-derived evidence policy application, explicit evidence policy preservation, post-action delay resolution and ordering, sensitivity redaction, structured event payloads, sequence teardown behavior, CommonPlatformTools behavior, Android driver dispatch, Web driver dispatch, Windows driver dispatch, macOS driver dispatch, and harness delegation.
-- Integration-style tests with fakes: strict `waitMs` alias resolves to canonical `wait_ms`; dynamic and strict `wait_ms` reach the same inherited CommonTool implementation; dynamic and strict `get_runtime_secret` preserve sensitivity/dependency metadata; Android aliases resolve to canonical Android PlatformTools; Web aliases resolve to canonical Web PlatformTools; Windows aliases resolve to canonical Windows PlatformTools; macOS aliases resolve to canonical macOS PlatformTools; Web `startBrowser`/`closeBrowser` lifecycle aliases resolve and execute through the same driver-backed PlatformTool path as dynamic tools; registry bootstrap does not connect to real Android devices, launch Playwright browsers, start Windows apps, or connect to Appium Mac2.
-- Regression tests: no `waitMs` action-name special branch in StepRunner, no static Android action registry dependency in FSQ parsing, no name-based CommonTool replay/sensitivity/delay branches, no synthetic `waitMs` or evidence steps from post-action delay, no StepSequenceRunner configured inter-step sleep, no Web browser launch during `PlaywrightWebDriver` construction, no implicit Web startup from `navigate_to`, no Appium connection during macOS registry/bootstrap or driver construction, no AgentTools in strict registries, no concrete `_assert_with_ai` tool body on `AndroidHarness`/`WebHarness`/`WindowsHarness`/`MacOSHarness`, and no dynamic/strict drift for `capture_evidence=True` PlatformTools.
+- Unit tests: registry validation, alias resolution, duplicate/ambiguous failures, `DefaultCapabilityDefinitionFactory` platform selection and AI assertion filtering, StepRunner routing through `HarnessInterface.invoke_action`, capability-derived evidence policy application, explicit evidence policy preservation, post-action delay resolution and ordering, sensitivity redaction, structured event payloads, sequence teardown behavior, CommonPlatformTools behavior, Android driver dispatch, Web driver dispatch, Windows driver dispatch, macOS driver dispatch, and harness delegation.
+- Integration-style tests with fakes: strict `waitMs` alias resolves to canonical `wait_ms`; dynamic and strict `wait_ms` reach the same inherited CommonTool implementation; dynamic and strict `get_runtime_secret` preserve sensitivity/dependency metadata; Android aliases resolve to canonical Android PlatformTools; Web aliases resolve to canonical Web PlatformTools; Windows aliases resolve to canonical Windows PlatformTools; macOS aliases resolve to canonical macOS PlatformTools; Web `startBrowser`/`closeBrowser` lifecycle aliases resolve and execute through the same driver-backed PlatformTool path as dynamic tools; registry bootstrap through `DefaultCapabilityDefinitionFactory` does not connect to real Android devices, launch Playwright browsers, start Windows apps, or connect to Appium Mac2.
+- Regression tests: no `waitMs` action-name special branch in StepRunner, no static Android action registry dependency in FSQ parsing, no name-based CommonTool replay/sensitivity/delay branches, no synthetic `waitMs` or evidence steps from post-action delay, no StepSequenceRunner configured inter-step sleep, no Web browser launch during `PlaywrightWebDriver` construction, no implicit Web startup from `navigate_to`, no Appium connection during macOS registry/bootstrap or driver construction, no AgentTools in strict registries, no concrete `_assert_with_ai` tool body on `AndroidHarness`/`WebHarness`/`WindowsHarness`/`MacOSHarness`, no dynamic/strict drift for `capture_evidence=True` PlatformTools, no public `driver_tool` export from `fsq_agent.core.harness`, no public `android_capability_definitions`/`web_capability_definitions`/`windows_capability_definitions`/`macos_capability_definitions` exports from `fsq_agent.core`, and no non-core imports from `fsq_agent.core._*` or `fsq_agent.core.harness._*`.
 - Verification commands: `./.venv/Scripts/python.exe -m pytest tests/test_core_contracts.py tests/test_step_runner.py tests/test_android_harness.py tests/test_web_harness.py tests/test_windows_harness.py tests/test_macos_harness.py` plus broader tests when implementation touches CLI/agent/report paths.
 
 ## Design Decisions
 
 - Decorator metadata produced through the shared `capabilities` declaration layer is the source of truth for executable capabilities. Android action catalog entries validate declarations and prevent platform drift, but static Android action tables, separate harness schemas, and separate CommonTool definitions are not runtime authorities in the target architecture.
+- `DefaultCapabilityDefinitionFactory` is the public class-based boundary for default PlatformTool capability definition discovery. Function-style capability definition helpers and driver declaration helpers may remain internal implementation details, but they are not exported public API in this SPEC cycle.
 - `StepRunner` owns execution control, metadata-driven routing, evidence policy application, result normalization, sensitivity handling, and structured event emission.
 - `StepRunner` owns post-action stabilization delay. It applies `time.sleep` only through a runner-local private helper after invoke and before finalize when the effective delay is positive. Entry layers pass loaded delay settings into `StepRunner`; `core` must not import `config`.
 - Post-action delay is metadata/config-driven timing only. Capability metadata can override the configured executor-kind default, including explicit zero to disable delay. The delay must not become a `waitMs` command, replay entry, evidence step, or action result.
