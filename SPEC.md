@@ -170,6 +170,7 @@ flowchart TD
 ## Development Rules
 
 - Each module exposes public symbols only from `__init__.py` using explicit `__all__`.
+- Public API boundary optimization is incremental. When a module SPEC adopts the stricter boundary, public exports should be limited to interfaces/protocols, abstract classes, concrete implementation classes, and approved factory classes. Function-style helpers, decorators, and discovery utilities require SPEC-visible exceptions that name the symbol, allowed importers, rationale, and revisit condition.
 - Internal implementation files are prefixed with `_`.
 - Shared data structures and exceptions live only in the `models` module. Capability declaration decorators, catalog-backed platform validation, and decorated-method discovery live only in the `capabilities` module.
 - Module imports must follow the DAG in the architecture diagram.
@@ -186,5 +187,5 @@ flowchart TD
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
 - `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
 - `core`, `agent`, `cli`, and `playground` use Level 3 Layered Application because they coordinate execution flows, external SDKs, harnesses, providers, persistence, HTTP entry points, and user entry points.
-- Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries.
+- Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

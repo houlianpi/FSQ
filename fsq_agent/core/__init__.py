@@ -1,10 +1,5 @@
 from fsq_agent.core._capabilities import CapabilityRegistry
-from fsq_agent.core._default_capabilities import (
-    android_capability_definitions,
-    macos_capability_definitions,
-    web_capability_definitions,
-    windows_capability_definitions,
-)
+from fsq_agent.core._default_capabilities import DefaultCapabilityDefinitionFactory
 from fsq_agent.core._platform_tools import CommonPlatformTools
 from fsq_agent.core.evidence import ArtifactStore, EvidenceRecorder
 from fsq_agent.core.harness import (
@@ -33,6 +28,7 @@ __all__ = [
     "ArtifactStore",
     "CapabilityRegistry",
     "CommonPlatformTools",
+    "DefaultCapabilityDefinitionFactory",
     "EvidenceRecorder",
     "HarnessInterface",
     "MacOSDriverInterface",
@@ -46,8 +42,4 @@ __all__ = [
     "WebHarness",
     "WindowsDriverInterface",
     "WindowsHarness",
-    "android_capability_definitions",
-    "macos_capability_definitions",
-    "web_capability_definitions",
-    "windows_capability_definitions",
 ]
