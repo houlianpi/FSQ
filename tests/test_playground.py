@@ -2096,6 +2096,9 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "flex: 0 0 100%" in styles
     assert "currentCardWidth" in script
     assert "currentImageAspect" in script
+    assert "currentRenderedImageWidth" in script
+    assert "shotBaseCardWidth" in script
+    assert "Math.max(baseCardWidth, nextImageWidth)" in script
     assert "appliedDelta" in script
     assert "initializeScreenshotResizeLayout" in script
     assert "requestAnimationFrame" in script
@@ -2109,6 +2112,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "justify-content: safe center" in styles
     assert "overflow-x: scroll" in styles
     assert "scrollbar-gutter: stable" in styles
+    assert "height: min(80vh, 820px)" in styles
     assert "createDiffTopResizer" in script
     assert "step-artifact-ui-tree-border-resizer" in styles
     assert "step-artifact-ui-tree-bottom-border-resizer" in styles

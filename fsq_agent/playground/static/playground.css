@@ -957,8 +957,8 @@ textarea {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: min(50vh, 520px);
-  min-height: 160px;
+  height: min(80vh, 820px);
+  min-height: 340px;
   overflow: hidden;
 }
 

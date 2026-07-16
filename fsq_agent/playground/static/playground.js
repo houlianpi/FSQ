@@ -1268,6 +1268,7 @@ function initializeScreenshotResizeLayout(region) {
   const cardWidth = card?.getBoundingClientRect().width || 0;
   if (!cardWidth) return;
   region.style.setProperty('--shot-card-width', `${Math.round(cardWidth)}px`);
+  region.dataset.shotBaseCardWidth = String(Math.round(cardWidth));
   region.classList.add('step-artifact-region-user-sized');
 }
 
@@ -1284,6 +1285,8 @@ function createScreenshotHeightResizer(screenshotRegion) {
   let startY = 0;
   let startRegionHeight = 0;
   let startCardWidth = 0;
+  let baseCardWidth = 0;
+  let startRenderedImageWidth = 0;
   let imageAspect = 1;
   const currentCardWidth = () => {
     const card = screenshotRegion.querySelector('.step-artifact-image-card');
@@ -1293,12 +1296,19 @@ function createScreenshotHeightResizer(screenshotRegion) {
     const image = screenshotRegion.querySelector('.step-artifact-image-card img');
     return image?.naturalWidth && image?.naturalHeight ? image.naturalWidth / image.naturalHeight : 1;
   };
+  const currentRenderedImageWidth = () => {
+    const image = screenshotRegion.querySelector('.step-artifact-image-card img');
+    if (!image) return startCardWidth;
+    const bounds = image.getBoundingClientRect();
+    return Math.min(bounds.width, bounds.height * imageAspect);
+  };
   const onMove = (event) => {
     const delta = event.clientY - startY;
     const limit = Math.max(2400, window.innerHeight * 2);
     const nextHeight = Math.min(Math.max(160, startRegionHeight + delta), limit);
     const appliedDelta = nextHeight - startRegionHeight;
-    const nextCardWidth = startCardWidth + appliedDelta * imageAspect;
+    const nextImageWidth = startRenderedImageWidth + appliedDelta * imageAspect;
+    const nextCardWidth = Math.max(baseCardWidth, nextImageWidth);
     applyScreenshotRegionHeight(screenshotRegion, nextCardWidth, nextHeight);
   };
   const onUp = (event) => {
@@ -1314,7 +1324,9 @@ function createScreenshotHeightResizer(screenshotRegion) {
     startY = event.clientY;
     startRegionHeight = Math.round(screenshotRegion.getBoundingClientRect().height);
     startCardWidth = currentCardWidth();
+    baseCardWidth = Number(screenshotRegion.dataset.shotBaseCardWidth) || startCardWidth;
     imageAspect = currentImageAspect();
+    startRenderedImageWidth = currentRenderedImageWidth();
     document.body.classList.add('step-artifact-resizing');
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
