@@ -28,33 +28,26 @@ MANAGED_PROVIDER_KEYS = (
 )
 
 
-def setup_llm_provider(*, provider: str, check_only: bool) -> None:
+def setup_llm_provider(*, provider: str) -> None:
     setup_root = Path.cwd()
     env_path = setup_root / ".env"
     workspace_path = setup_root / ".fsq-agent-workspace"
 
     env_values = read_env_values(env_path)
-    if check_only:
-        _require_existing_workspace(workspace_path)
-        write_values: dict[str, str] = {}
-    else:
-        write_values = _setup_values(provider, env_values)
-        upsert_env_values(env_path, write_values)
+    write_values = _setup_values(provider, env_values)
+    upsert_env_values(env_path, write_values)
 
-    _log_process_env_conflicts(write_values or {LLM_PROVIDER_ENV: provider}, env_values)
+    _log_process_env_conflicts(write_values, env_values)
     settings = load_settings(workspace=workspace_path)
     validate_provider_settings(settings)
-    session = prepare_model_provider_session(settings, interactive_auth=not check_only)
+    session = prepare_model_provider_session(settings, interactive_auth=True)
     try:
         logger.info("LLM provider readiness: ready")
         logger.info("Provider: %s", settings.openai_agents.provider)
         logger.info("Setup root: %s", setup_root)
         logger.info("Environment file: %s", env_path)
         logger.info("Workspace: %s", settings.workspace.root_dir)
-        if check_only:
-            logger.info("Mode: check-only")
-        else:
-            logger.info("Mode: setup/update")
+        logger.info("Mode: init provider setup")
     finally:
         session.close_sync()
 
@@ -117,12 +110,3 @@ def _log_process_env_conflicts(written_values: dict[str, str], env_values: dict[
                 "%s is set in the process environment; that value takes precedence over .env.",
                 key,
             )
-
-
-def _require_existing_workspace(workspace_path: Path) -> None:
-    marker_path = workspace_path / ".fsq-agent-workspace"
-    if not marker_path.is_file():
-        raise ConfigurationError(
-            "LLM provider setup workspace is not initialized. Run setup without --check-only first.",
-            context={"workspace": str(workspace_path), "marker_file": marker_path.name},
-        )
