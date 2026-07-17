@@ -419,7 +419,7 @@ def test_pywinauto_driver_control_returns_wrapper_for_exact_match() -> None:
     assert control is wrapper
 
 
-def test_pywinauto_driver_control_does_not_retry_without_title() -> None:
+def test_pywinauto_driver_control_raises_without_title_match() -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class MissingControl:
@@ -437,7 +437,10 @@ def test_pywinauto_driver_control_does_not_retry_without_title() -> None:
     window = FakeWindow()
     driver = PywinautoWindowsDriver(window=window)
 
-    control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
+    with pytest.raises(
+        LookupError,
+        match=r'Windows control was not found\. query_dict=\{"auto_id": "15", "found_index": 0\}',
+    ):
+        driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
 
-    assert control is None
     assert window.calls == [{"auto_id": "15", "found_index": 0}]

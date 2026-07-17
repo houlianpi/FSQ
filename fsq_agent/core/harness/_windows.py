@@ -142,6 +142,8 @@ class WindowsHarness:
         raise RuntimeError(f"Unsupported Windows artifact kind: {kind}")
 
     def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory:
+        if isinstance(error, LookupError):
+            return "target_resolution_error"
         return "harness_error"
 
     def _to_harness_artifact_ref(self, ref: object) -> HarnessArtifactRef:

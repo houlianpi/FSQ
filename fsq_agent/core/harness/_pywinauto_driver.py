@@ -131,8 +131,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _click_on(self, params: WindowsClickOnParams) -> dict[str, object]:
         control = self._control(params)
-        if control is None:
-            return self._target_missing(params)
         button = params.button or "left"
         if params.double:
             control.double_click_input(button=button)
@@ -146,8 +144,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _double_click_on(self, params: WindowsDoubleClickOnParams) -> dict[str, object]:
         control = self._control(params)
-        if control is None:
-            return self._target_missing(params)
         control.double_click_input(button=params.button or "left")
         return self._passed()
 
@@ -157,8 +153,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _right_click_on(self, params: WindowsRightClickOnParams) -> dict[str, object]:
         control = self._control(params)
-        if control is None:
-            return self._target_missing(params)
         control.click_input(button="right")
         return self._passed()
 
@@ -168,8 +162,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _type_text(self, params: WindowsTypeTextParams) -> dict[str, object]:
         control = self._control(params)
-        if control is None:
-            return self._target_missing(params)
         control.click_input()
         if params.clear:
             control.type_keys("^a{BACKSPACE}", with_spaces=True)
@@ -191,7 +183,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _assert_visible(self, params: WindowsAssertVisibleParams) -> dict[str, object]:
         control = self._control(params)
-        if control is not None and control.is_visible():
+        if control.is_visible():
             return self._passed()
         return self._target_missing(params)
 
@@ -354,16 +346,22 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         index = locator.get("index")
         kwargs["found_index"] = (index - 1) if isinstance(index, int) and index >= 1 else 0
         if not kwargs:
-            return None
+            raise LookupError("Windows control query is empty. query_dict={}")
         control = self._child_window(**kwargs)
         if control is not None and control.exists():
             return control.wrapper_object()
         if not isinstance(title, str):
-            return None
+            raise self._control_not_found(kwargs)
         regex_kwargs = {key: value for key, value in kwargs.items() if key != "title"}
         regex_kwargs["title_re"] = title
         control = self._child_window(**regex_kwargs)
-        return control.wrapper_object() if control is not None and control.exists() else None
+        if control is not None and control.exists():
+            return control.wrapper_object()
+        raise self._control_not_found(regex_kwargs)
+
+    def _control_not_found(self, query: dict[str, Any]) -> LookupError:
+        query_dict = json.dumps(query, ensure_ascii=False, sort_keys=True)
+        return LookupError(f"Windows control was not found. query_dict={query_dict}")
 
     def _child_window(self, **kwargs: Any) -> Any:
         window = self._require_window()
