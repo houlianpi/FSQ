@@ -610,19 +610,19 @@ class WindowsLocator(BaseModel):
 class _WindowsTargetParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target: str | None = None
-    locator: WindowsLocator | None = None
+    target: str
+    locator: WindowsLocator
 
     @model_validator(mode="after")
     def _require_target(self) -> "_WindowsTargetParams":
-        if self._has_target_value():
-            return self
-        raise ValueError("requires target or non-empty locator")
+        if not self._has_target_value():
+            raise ValueError("requires non-empty target")
+        if not self.locator.has_value():
+            raise ValueError("requires non-empty locator")
+        return self
 
     def _has_target_value(self) -> bool:
-        if isinstance(self.target, str) and self.target.strip():
-            return True
-        return self.locator is not None and self.locator.has_value()
+        return bool(self.target.strip())
 
 
 class WindowsLaunchAppParams(BaseModel):

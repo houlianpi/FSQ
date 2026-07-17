@@ -52,7 +52,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         self.launch_args = list(launch_args) if launch_args else []
         self._app: object | None = None
         self._window: object | None = window
-        self._last_query: dict[str, Any] | None = None
         self._executor: ThreadPoolExecutor | None = None if window is not None else ThreadPoolExecutor(max_workers=1, thread_name_prefix="fsq-pywinauto")
 
     def context(self) -> dict[str, object]:
@@ -173,8 +172,8 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             return self._target_missing(params)
         control.click_input()
         if params.clear:
-            control.type_keys("^a{BACKSPACE}", set_foreground=True)
-        control.type_keys(params.text, with_spaces=True, set_foreground=True)
+            control.type_keys("^a{BACKSPACE}", with_spaces=True)
+        control.type_keys(params.text, with_spaces=True)
         return self._passed()
 
     @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.", capture_evidence=True)
@@ -338,18 +337,8 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         return self._window
 
     def _control(self, params: BaseModel) -> Any:
-        self._last_query = None
         data = params.model_dump(mode="python", exclude_none=True)
-        locator = data.get("locator")
-        if isinstance(locator, dict):
-            return self._control_from_kwargs(locator)
-        target = data.get("target")
-        if isinstance(target, str) and target.strip():
-            query = {"title_re": f".*{target}.*", "found_index": 0}
-            self._last_query = query
-            control = self._child_window(**query)
-            return control if control is not None and control.exists() else None
-        return None
+        return self._control_from_kwargs(data["locator"])
 
     def _control_from_kwargs(self, locator: dict[str, Any]) -> Any:
         kwargs: dict[str, Any] = {}
@@ -365,19 +354,16 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         index = locator.get("index")
         kwargs["found_index"] = (index - 1) if isinstance(index, int) and index >= 1 else 0
         if not kwargs:
-            self._last_query = None
             return None
-        self._last_query = dict(kwargs)
         control = self._child_window(**kwargs)
         if control is not None and control.exists():
-            return control
+            return control.wrapper_object()
         if not isinstance(title, str):
             return None
         regex_kwargs = {key: value for key, value in kwargs.items() if key != "title"}
         regex_kwargs["title_re"] = title
-        self._last_query = dict(regex_kwargs)
         control = self._child_window(**regex_kwargs)
-        return control if control is not None and control.exists() else None
+        return control.wrapper_object() if control is not None and control.exists() else None
 
     def _child_window(self, **kwargs: Any) -> Any:
         window = self._require_window()
@@ -397,16 +383,10 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         return None
 
     def _target_missing(self, params: BaseModel) -> dict[str, object]:
-        query = self._last_query
-        metadata: dict[str, Any] = {"params": params.model_dump(mode="json", exclude_none=True)}
-        message = "Target was not found."
-        if query is not None:
-            metadata["query_dict"] = query
-            message = f"Target was not found. query_dict={json.dumps(query, ensure_ascii=False, sort_keys=True)}"
         return self._failed(
             "target_resolution_error",
-            message,
-            metadata=metadata,
+            "Target was not found.",
+            metadata={"params": params.model_dump(mode="json", exclude_none=True)},
         )
 
     def _passed(self, output: object | None = None) -> dict[str, object]:

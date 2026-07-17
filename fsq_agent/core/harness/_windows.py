@@ -208,13 +208,25 @@ class WindowsHarness:
         try:
             return params_model.model_validate(step.params)
         except ValidationError as exc:
+            validation_errors = self._validation_errors(exc)
             return HarnessActionResult(
                 status="failed",
                 action_name=step.action_name,
                 failure_category="configuration_error",
-                error_message=f"Invalid Windows parameters for {step.action_name}.",
-                metadata={"validation_errors": self._validation_errors(exc)},
+                error_message=self._validation_error_message(step.action_name, validation_errors),
+                metadata={"validation_errors": validation_errors},
             )
+
+    def _validation_error_message(self, action_name: str, errors: list[dict[str, object]]) -> str:
+        details: list[str] = []
+        for error in errors:
+            location = error.get("loc")
+            message = error.get("msg")
+            if isinstance(location, (list, tuple)) and isinstance(message, str):
+                path = ".".join(str(part) for part in location)
+                details.append(f"{path}: {message}")
+        suffix = f" {'; '.join(details)}" if details else ""
+        return f"Invalid Windows parameters for {action_name}.{suffix}"
 
     def _validation_errors(self, error: ValidationError) -> list[dict[str, object]]:
         try:
