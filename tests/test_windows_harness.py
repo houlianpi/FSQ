@@ -361,3 +361,29 @@ def test_pywinauto_driver_control_does_not_retry_without_title() -> None:
 
     assert control is None
     assert window.calls == [{"auto_id": "15", "found_index": 0}]
+
+
+def test_pywinauto_driver_type_text_missing_target_reports_query_dict() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+    from fsq_agent.models import WindowsTypeTextParams
+
+    class MissingControl:
+        def exists(self) -> bool:
+            return False
+
+    class FakeWindow:
+        def child_window(self, **kwargs: object) -> MissingControl:
+            return MissingControl()
+
+    driver = PywinautoWindowsDriver(window=FakeWindow())
+
+    result = driver._type_text(  # type: ignore[attr-defined]
+        WindowsTypeTextParams(target="Search", text="hello")
+    )
+
+    assert result["status"] == "failed"
+    assert result["failure_category"] == "target_resolution_error"
+    query_dict = result["metadata"]["query_dict"]
+    assert query_dict == {"title_re": ".*Search.*", "found_index": 0}
+    assert "query_dict" in result["error_message"]
+    assert ".*Search.*" in result["error_message"]
