@@ -113,12 +113,12 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
 
     cases = [
         ("launchApp", {"app_path": "notepad.exe"}, "launch_app"),
-        ("clickOn", {"target": "File"}, "click_on"),
-        ("doubleClickOn", {"locator": {"title": "Document", "control_type": "Edit"}}, "double_click_on"),
-        ("rightClickOn", {"target": "File"}, "right_click_on"),
-        ("typeText", {"target": "Document", "text": "hello"}, "type_text"),
+        ("clickOn", {"target": "Open the File menu", "locator": {"title": "File"}}, "click_on"),
+        ("doubleClickOn", {"target": "Open the document", "locator": {"title": "Document", "control_type": "Edit"}}, "double_click_on"),
+        ("rightClickOn", {"target": "Open the File context menu", "locator": {"title": "File"}}, "right_click_on"),
+        ("typeText", {"target": "Enter document text", "locator": {"title": "Document"}, "text": "hello"}, "type_text"),
         ("pressKey", {"key": "^s"}, "press_key"),
-        ("assertVisible", {"target": "Save"}, "assert_visible"),
+        ("assertVisible", {"target": "Verify Save is visible", "locator": {"title": "Save"}}, "assert_visible"),
         ("uiSnapshot", {}, "ui_snapshot"),
         ("killApp", {}, "kill_app"),
     ]
@@ -154,7 +154,10 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert schemas["click_on"].metadata["driver_class"] == "FakeWindowsDriver"
     assert schemas["click_on"].metadata["backend"] == "fake-pywinauto"
     assert schemas["click_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "clickOn"}
+    assert "locator" in schemas["click_on"].params_json_schema["properties"]
+    assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
+    assert "target" in schemas["click_on"].params_json_schema["required"]
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
     assert schemas["ui_snapshot"].capture_evidence is False
@@ -164,12 +167,59 @@ def test_windows_harness_validation_failure_does_not_call_driver_method() -> Non
     driver = FakeWindowsDriver()
     harness = WindowsHarness(driver=driver)
 
-    result = harness.invoke_action(_step("clickOn", {"locator": {"unknown": "Login"}}), harness.get_context())
+    result = harness.invoke_action(
+        _step("clickOn", {"target": "Click Login", "locator": {"unknown": "Login"}}),
+        harness.get_context(),
+    )
 
     assert result.status == "failed"
     assert result.failure_category == "configuration_error"
-    assert result.error_message == "Invalid Windows parameters for clickOn."
+    assert result.error_message == "Invalid Windows parameters for clickOn. locator.unknown: Extra inputs are not permitted"
     assert result.metadata["validation_errors"]
+    assert driver.calls == [("context", None)]
+
+
+def test_windows_harness_reports_invalid_locator_type() -> None:
+    driver = FakeWindowsDriver()
+    harness = WindowsHarness(driver=driver)
+
+    result = harness.invoke_action(_step("clickOn", {"target": "Click Login", "locator": "Login"}), harness.get_context())
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert result.error_message is not None
+    assert "locator:" in result.error_message
+    assert "valid dictionary or instance of WindowsLocator" in result.error_message
+    assert result.metadata["validation_errors"][0]["loc"] == ("locator",)
+    assert driver.calls == [("context", None)]
+
+
+def test_windows_harness_reports_none_locator() -> None:
+    driver = FakeWindowsDriver()
+    harness = WindowsHarness(driver=driver)
+
+    result = harness.invoke_action(_step("clickOn", {"target": "Click Login", "locator": None}), harness.get_context())
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert result.error_message is not None
+    assert "locator:" in result.error_message
+    assert "valid dictionary or instance of WindowsLocator" in result.error_message
+    assert result.metadata["validation_errors"][0]["loc"] == ("locator",)
+    assert driver.calls == [("context", None)]
+
+
+def test_windows_harness_reports_missing_target() -> None:
+    driver = FakeWindowsDriver()
+    harness = WindowsHarness(driver=driver)
+
+    result = harness.invoke_action(_step("clickOn", {"locator": {"title": "Login"}}), harness.get_context())
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert result.error_message is not None
+    assert "target: Field required" in result.error_message
+    assert result.metadata["validation_errors"][0]["loc"] == ("target",)
     assert driver.calls == [("context", None)]
 
 
@@ -305,3 +355,89 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == ["exists visible enabled"]
     assert driver._window is fake_app.window_obj
+
+
+def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FakeWrapper:
+        pass
+
+    class FakeControl:
+        def __init__(self, exists: bool) -> None:
+            self._exists = exists
+            self.wrapper = FakeWrapper()
+
+        def exists(self) -> bool:
+            return self._exists
+
+        def wrapper_object(self) -> FakeWrapper:
+            return self.wrapper
+
+    class FakeWindow:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def child_window(self, **kwargs: object) -> FakeControl:
+            self.calls.append(kwargs)
+            return FakeControl(exists="title_re" in kwargs)
+
+    window = FakeWindow()
+    driver = PywinautoWindowsDriver(window=window)
+
+    control = driver._control_from_kwargs(  # type: ignore[attr-defined]
+        {"title": "Document.*Notepad", "control_type": "Edit", "automation_id": "15", "index": 2}
+    )
+
+    assert isinstance(control, FakeWrapper)
+    assert window.calls == [
+        {"title": "Document.*Notepad", "control_type": "Edit", "auto_id": "15", "found_index": 1},
+        {"control_type": "Edit", "auto_id": "15", "found_index": 1, "title_re": "Document.*Notepad"},
+    ]
+
+
+def test_pywinauto_driver_control_returns_wrapper_for_exact_match() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    wrapper = object()
+
+    class ExactControl:
+        def exists(self) -> bool:
+            return True
+
+        def wrapper_object(self) -> object:
+            return wrapper
+
+    class FakeWindow:
+        def child_window(self, **kwargs: object) -> ExactControl:
+            return ExactControl()
+
+    driver = PywinautoWindowsDriver(window=FakeWindow())
+
+    control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
+
+    assert control is wrapper
+
+
+def test_pywinauto_driver_control_does_not_retry_without_title() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class MissingControl:
+        def exists(self) -> bool:
+            return False
+
+    class FakeWindow:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def child_window(self, **kwargs: object) -> MissingControl:
+            self.calls.append(kwargs)
+            return MissingControl()
+
+    window = FakeWindow()
+    driver = PywinautoWindowsDriver(window=window)
+
+    control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
+
+    assert control is None
+    assert window.calls == [{"auto_id": "15", "found_index": 0}]

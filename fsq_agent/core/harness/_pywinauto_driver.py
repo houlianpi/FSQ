@@ -172,8 +172,8 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             return self._target_missing(params)
         control.click_input()
         if params.clear:
-            control.type_keys("^a{BACKSPACE}", set_foreground=True)
-        control.type_keys(params.text, with_spaces=True, set_foreground=True)
+            control.type_keys("^a{BACKSPACE}", with_spaces=True)
+        control.type_keys(params.text, with_spaces=True)
         return self._passed()
 
     @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.", capture_evidence=True)
@@ -338,18 +338,13 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
 
     def _control(self, params: BaseModel) -> Any:
         data = params.model_dump(mode="python", exclude_none=True)
-        locator = data.get("locator")
-        if isinstance(locator, dict):
-            return self._control_from_kwargs(locator)
-        target = data.get("target")
-        if isinstance(target, str) and target.strip():
-            return self._child_window(title_re=f".*{target}.*", found_index=0)
-        return None
+        return self._control_from_kwargs(data["locator"])
 
     def _control_from_kwargs(self, locator: dict[str, Any]) -> Any:
         kwargs: dict[str, Any] = {}
-        if isinstance(locator.get("title"), str):
-            kwargs["title"] = locator["title"]
+        title = locator.get("title")
+        if isinstance(title, str):
+            kwargs["title"] = title
         if isinstance(locator.get("control_type"), str):
             kwargs["control_type"] = locator["control_type"]
         if isinstance(locator.get("automation_id"), str):
@@ -361,7 +356,14 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         if not kwargs:
             return None
         control = self._child_window(**kwargs)
-        return control if control is not None and control.exists() else None
+        if control is not None and control.exists():
+            return control.wrapper_object()
+        if not isinstance(title, str):
+            return None
+        regex_kwargs = {key: value for key, value in kwargs.items() if key != "title"}
+        regex_kwargs["title_re"] = title
+        control = self._child_window(**regex_kwargs)
+        return control.wrapper_object() if control is not None and control.exists() else None
 
     def _child_window(self, **kwargs: Any) -> Any:
         window = self._require_window()
