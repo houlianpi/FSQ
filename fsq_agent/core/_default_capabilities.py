@@ -3,7 +3,28 @@ from fsq_agent.core.harness._appium_mac2_driver import AppiumMac2Driver
 from fsq_agent.core.harness._playwright_driver import PlaywrightWebDriver
 from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
-from fsq_agent.models import CapabilityDefinition
+from fsq_agent.models import CapabilityDefinition, ConfigurationError, HarnessPlatform
+
+
+class DefaultCapabilityDefinitionFactory:
+    def platform_definitions(
+        self,
+        *,
+        platform: HarnessPlatform,
+        include_ai_assertion: bool = True,
+    ) -> list[CapabilityDefinition]:
+        if platform == "android":
+            return android_capability_definitions(include_ai_assertion=include_ai_assertion)
+        if platform == "web":
+            return web_capability_definitions(include_ai_assertion=include_ai_assertion)
+        if platform == "windows":
+            return windows_capability_definitions(include_ai_assertion=include_ai_assertion)
+        if platform == "macos":
+            return macos_capability_definitions(include_ai_assertion=include_ai_assertion)
+        raise ConfigurationError(
+            "Unsupported harness platform.",
+            context={"platform": platform, "supported": ["android", "web", "windows", "macos"]},
+        )
 
 
 def android_capability_definitions(*, include_ai_assertion: bool = True) -> list[CapabilityDefinition]:

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import ast
 from pathlib import Path
 
 import pytest
@@ -42,12 +43,51 @@ def test_core_exports_harness_interface() -> None:
     assert HarnessInterface.__name__ == "HarnessInterface"
 
 
-def test_driver_tool_is_harness_subpackage_extension_point() -> None:
+def test_core_public_exports_follow_strict_boundary() -> None:
     import fsq_agent.core as core
-    from fsq_agent.core.harness import driver_tool
+    import fsq_agent.core.harness as harness
 
-    assert callable(driver_tool)
     assert not hasattr(core, "driver_tool")
+    assert not hasattr(core, "android_capability_definitions")
+    assert not hasattr(core, "web_capability_definitions")
+    assert not hasattr(core, "windows_capability_definitions")
+    assert not hasattr(core, "macos_capability_definitions")
+    assert not hasattr(harness, "driver_tool")
+
+
+def test_default_capability_definition_factory_selects_platform_and_filters_ai_assertion() -> None:
+    from fsq_agent.core import DefaultCapabilityDefinitionFactory
+
+    factory = DefaultCapabilityDefinitionFactory()
+
+    web_definitions = factory.platform_definitions(platform="web")
+    web_without_ai = factory.platform_definitions(platform="web", include_ai_assertion=False)
+
+    assert {definition.name for definition in web_definitions} >= {"start_browser", "close_browser", "assert_with_ai"}
+    assert "assert_with_ai" not in {definition.name for definition in web_without_ai}
+    assert all(definition.platform == "web" for definition in web_definitions)
+
+
+def test_non_core_package_code_does_not_import_core_private_modules() -> None:
+    package_root = Path("fsq_agent")
+    violations: list[str] = []
+
+    for path in package_root.rglob("*.py"):
+        if path.parts[:2] == ("fsq_agent", "core"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module_name = node.module or ""
+                if module_name.startswith("fsq_agent.core._") or module_name.startswith("fsq_agent.core.harness._"):
+                    violations.append(f"{path}:{node.lineno}: from {module_name} import ...")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    module_name = alias.name
+                    if module_name.startswith("fsq_agent.core._") or module_name.startswith("fsq_agent.core.harness._"):
+                        violations.append(f"{path}:{node.lineno}: import {module_name}")
+
+    assert violations == []
 
 
 def test_fake_harness_satisfies_runtime_protocol() -> None:

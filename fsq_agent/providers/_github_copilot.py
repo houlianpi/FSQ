@@ -71,7 +71,7 @@ def _resolve_github_token(token_cache_path: Path, *, interactive_auth: bool = Tr
         return cached
     if not interactive_auth:
         raise ConfigurationError(
-            "GitHub Copilot authentication is not configured. Run fsq-agent setup llm --provider github_copilot.",
+            "GitHub Copilot authentication is not configured. Run fsq-agent init --platform <platform> --provider github_copilot.",
             context={"token_cache_path": str(token_cache_path)},
         )
     return _authenticate(token_cache_path)

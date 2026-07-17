@@ -26,7 +26,7 @@ Run CLI commands through `uv run` so they use the synced virtual environment. Wh
 
 ## Platform Setup
 
-Platform defaults are maintained by the repository for now. For normal local use, copy the example environment file, edit `.env`, choose the target platform in the CLI command, and run.
+Platform defaults are maintained by the repository for now. For normal local use, copy the example environment file, edit `.env`, choose the target platform in the CLI command, initialize the current directory workspace, and run.
 
 On Windows PowerShell:
 
@@ -60,7 +60,7 @@ Leave `FSQ_ANDROID_SERIAL` blank when only one Android target is connected.
 Start Android runs:
 
 ```powershell
-uv run fsq-agent init --platform android
+uv run fsq-agent init --platform android --provider github_copilot
 uv run fsq-agent run --platform android --goal "Access Downloads through the browser overflow menu from the New Tab Page, then return to the New Tab Page."
 ```
 
@@ -81,7 +81,7 @@ FSQ_WEB_BROWSER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrom
 Start Web runs:
 
 ```powershell
-uv run fsq-agent init --platform web
+uv run fsq-agent init --platform web --provider github_copilot
 uv run fsq-agent run --platform web --goal "Open https://www.bing.com, search for Playwright, and verify the results page is visible."
 ```
 
@@ -107,7 +107,7 @@ FSQ_WINDOWS_LAUNCH_ARGS=--no-first-run --disable-features=msImplicitSignin
 Start Windows desktop runs:
 
 ```powershell
-uv run fsq-agent init --platform windows
+uv run fsq-agent init --platform windows --provider github_copilot
 uv run fsq-agent run --platform windows --goal "Launch Edge, search for Windows automation, and verify the results page is visible."
 ```
 
@@ -133,11 +133,25 @@ FSQ_MACOS_APP_PATH=/Applications/Microsoft Edge.app
 Start macOS runs:
 
 ```bash
-uv run fsq-agent init --platform macos
+uv run fsq-agent init --platform macos --provider github_copilot
 uv run fsq-agent run --platform macos --goal "Open Microsoft Edge, inspect the visible window, and verify the expected controls are visible."
 ```
 
 Existing process environment variables take precedence over `.env` values. Secret values such as API keys and test-account passwords should stay in `.env` or the process environment.
+
+Initialize the current directory workspace with the platform and, when running dynamic LLM tasks or strict cases that use `assertWithAI`, the model provider:
+
+```powershell
+uv run fsq-agent init --platform <platform> --provider github_copilot
+```
+
+`--provider` is optional. When omitted, `init` checks platform readiness without changing provider settings or starting provider authentication. `--provider github_copilot` writes `FSQ_LLM_PROVIDER=github_copilot` to `.env` and may start GitHub device-code authorization; the token cache is stored under `.fsq-agent-workspace/auth/github-copilot-token.json`. Use Azure OpenAI instead with:
+
+```powershell
+uv run fsq-agent init --platform <platform> --provider azure_openai
+```
+
+Azure setup prompts for `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_MODEL`, and `AZURE_OPENAI_API_KEY`; API key input is hidden.
 
 ## CLI Examples
 
@@ -147,6 +161,7 @@ Initialize and check readiness:
 
 ```powershell
 uv run fsq-agent init --platform <platform>
+uv run fsq-agent init --platform <platform> --provider github_copilot
 ```
 
 Run from a natural-language goal:

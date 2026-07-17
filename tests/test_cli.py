@@ -89,13 +89,14 @@ def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_only_public_commands_are_registered() -> None:
-    assert set(main.commands) == {"init", "setup", "run", "report", "playground"}
+    assert set(main.commands) == {"init", "run", "report", "playground"}
 
 
-def test_setup_llm_copilot_writes_env_and_prepares_interactive_session(
+def test_init_provider_copilot_writes_env_and_prepares_interactive_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _config(tmp_path)
     monkeypatch.delenv("FSQ_LLM_PROVIDER", raising=False)
     captured: dict[str, object] = {}
 
@@ -114,7 +115,7 @@ def test_setup_llm_copilot_writes_env_and_prepares_interactive_session(
         fake_prepare_model_provider_session,
     )
 
-    result = CliRunner().invoke(main, ["setup", "llm", "--provider", "github_copilot"])
+    result = CliRunner().invoke(main, ["init", "--platform", "android", "--provider", "github_copilot"])
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / ".env").read_text(encoding="utf-8") == "FSQ_LLM_PROVIDER=github_copilot\n"
@@ -127,43 +128,37 @@ def test_setup_llm_copilot_writes_env_and_prepares_interactive_session(
     }
 
 
-def test_setup_llm_check_only_does_not_update_env_or_use_interactive_auth(
+def test_init_without_provider_does_not_update_env_or_use_interactive_auth(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _config(tmp_path)
     monkeypatch.delenv("FSQ_LLM_PROVIDER", raising=False)
-    env_path = tmp_path / ".env"
-    env_path.write_text("# keep\nFSQ_LLM_PROVIDER=github_copilot\n", encoding="utf-8")
-    workspace = tmp_path / ".fsq-agent-workspace"
-    (workspace / "output" / "runs").mkdir(parents=True)
-    (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
     captured: dict[str, object] = {}
-
-    class FakeSession:
-        def close_sync(self) -> None:
-            captured["closed"] = True
 
     def fake_prepare_model_provider_session(settings, *, interactive_auth: bool = True):
         captured["provider"] = settings.openai_agents.provider
         captured["interactive_auth"] = interactive_auth
-        return FakeSession()
+        raise AssertionError("init without --provider must not prepare a provider session")
 
     monkeypatch.setattr(
         "fsq_agent.cli._llm_setup.prepare_model_provider_session",
         fake_prepare_model_provider_session,
     )
 
-    result = CliRunner().invoke(main, ["setup", "llm", "--provider", "github_copilot", "--check-only"])
+    result = CliRunner().invoke(main, ["init", "--platform", "android"])
 
     assert result.exit_code == 0, result.output
-    assert env_path.read_text(encoding="utf-8") == "# keep\nFSQ_LLM_PROVIDER=github_copilot\n"
-    assert captured == {"provider": "github_copilot", "interactive_auth": False, "closed": True}
+    assert not (tmp_path / ".env").exists()
+    assert (tmp_path / ".fsq-agent-workspace" / ".fsq-agent-workspace").exists()
+    assert captured == {}
 
 
-def test_setup_llm_azure_prompts_writes_env_and_does_not_echo_secret(
+def test_init_provider_azure_prompts_writes_env_and_does_not_echo_secret(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _config(tmp_path)
     for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     captured: dict[str, object] = {}
@@ -186,7 +181,7 @@ def test_setup_llm_azure_prompts_writes_env_and_does_not_echo_secret(
 
     result = CliRunner().invoke(
         main,
-        ["setup", "llm", "--provider", "azure_openai"],
+        ["init", "--platform", "android", "--provider", "azure_openai"],
         input="https://edgeqa-resource.cognitiveservices.azure.com\ngpt-5.4\nsecret-key\n",
     )
 
@@ -205,6 +200,27 @@ def test_setup_llm_azure_prompts_writes_env_and_does_not_echo_secret(
         "interactive_auth": True,
         "closed": True,
     }
+
+
+def test_init_provider_reports_env_io_errors_concisely(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(tmp_path)
+
+    def fake_setup_llm_provider(*, provider: str) -> None:
+        raise OSError("Unable to write .env file: .env")
+
+    monkeypatch.setattr("fsq_agent.cli._main.setup_llm_provider", fake_setup_llm_provider)
+
+    result = CliRunner().invoke(main, ["init", "--platform", "android", "--provider", "github_copilot"])
+
+    assert result.exit_code != 0
+    assert "Error: Unable to write .env file: .env" in result.output
+
+
+def test_removed_setup_command_fails() -> None:
+    result = CliRunner().invoke(main, ["setup", "llm", "--provider", "github_copilot"])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 def test_run_rejects_missing_or_conflicting_sources(tmp_path: Path) -> None:
@@ -230,6 +246,13 @@ def test_run_rejects_removed_config_option() -> None:
 
     assert result.exit_code != 0
     assert "No such option: --config" in result.output
+
+
+def test_run_rejects_removed_workspace_option() -> None:
+    result = CliRunner().invoke(main, ["run", "--workspace", "workspace", "--platform", "android", "--goal", "Do it"])
+
+    assert result.exit_code != 0
+    assert "No such option: --workspace" in result.output
 
 
 def test_run_help_stream_format_defaults_to_concise_without_rich_alias() -> None:
@@ -308,7 +331,7 @@ def test_run_goal_record_invokes_strict_case_recorder(tmp_path: Path, monkeypatc
     result = CliRunner().invoke(main, ["run", "--platform", "android", "--goal", "Do it", "--record", "--no-stream"])
 
     assert result.exit_code == 0, result.output
-    assert captured["run_dir"] == tmp_path / "workspace" / "output" / "runs" / "recorded-run"
+    assert captured["run_dir"] == tmp_path / ".fsq-agent-workspace" / "output" / "runs" / "recorded-run"
     assert captured["allow_failure"] is False
     assert "Recorded strict case" in result.output
 
@@ -357,7 +380,7 @@ execution:
     assert calls["driver"] == {"app_id": "com.example.config", "serial": "device-1"}
     assert calls["strict"]["case_path"] == case_path.resolve()
     assert calls["strict"]["run_id"] == "strict_cli"
-    assert calls["strict"]["output_dir"] == tmp_path / "workspace" / "output" / "runs" / "strict_cli"
+    assert calls["strict"]["output_dir"] == tmp_path / ".fsq-agent-workspace" / "output" / "runs" / "strict_cli"
     assert calls["strict"]["post_action_delay_seconds"].platform == 0.25
     assert calls["strict"]["post_action_delay_seconds"].common == 0
     assert "core-report.md" in result.output
@@ -657,7 +680,7 @@ harness:
 
     assert result.exit_code == 1, result.output
     assert [call["case_path"].name for call in calls] == ["first.codex.yaml", "second.codex.yaml"]
-    summary_paths = list((tmp_path / "workspace" / "output" / "runs").glob("strict-core-batch-*/strict-core-batch-summary.json"))
+    summary_paths = list((tmp_path / ".fsq-agent-workspace" / "output" / "runs").glob("strict-core-batch-*/strict-core-batch-summary.json"))
     assert len(summary_paths) == 1
     summary_path = summary_paths[0]
     markdown_path = summary_path.with_suffix(".md")
@@ -672,10 +695,10 @@ harness:
 
 def test_report_command_resolves_llm_and_strict_reports(tmp_path: Path) -> None:
     _config(tmp_path)
-    workspace = tmp_path / "workspace"
+    workspace = tmp_path / ".fsq-agent-workspace"
     workspace.mkdir(parents=True)
     (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
-    runs_dir = tmp_path / "workspace" / "output" / "runs"
+    runs_dir = tmp_path / ".fsq-agent-workspace" / "output" / "runs"
     llm_dir = runs_dir / "llm-run"
     strict_dir = runs_dir / "strict-run"
     llm_dir.mkdir(parents=True)

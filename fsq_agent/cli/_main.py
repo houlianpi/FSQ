@@ -47,10 +47,12 @@ def main() -> None:
 
 @main.command()
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
-@click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
-def init(platform: str, workspace_path: str | None) -> None:
+@click.option("--provider", type=LLM_PROVIDER_CHOICE, default=None)
+def init(platform: str, provider: str | None) -> None:
     try:
-        settings = load_platform_settings(platform, workspace_path)
+        if provider is not None:
+            setup_llm_provider(provider=provider)
+        settings = load_platform_settings(platform, _current_workspace_path())
         logger.info("Initialized fsq-agent workspace: %s", settings.workspace.root_dir)
         logger.info("Output root: %s", settings.output.root_dir)
         _log_readiness("LLM run", lambda: validate_runtime_settings(settings))
@@ -59,24 +61,6 @@ def init(platform: str, workspace_path: str | None) -> None:
     except FsqAgentError as exc:
         logger.error("Error: %s", exc)
         raise click.Abort() from exc
-
-
-@main.group()
-def setup() -> None:
-    """Set up local fsq-agent resources."""
-
-
-@setup.command("llm")
-@click.option("--provider", type=LLM_PROVIDER_CHOICE, required=True)
-@click.option("--check-only", is_flag=True, default=False, show_default=True)
-def setup_llm(provider: str, check_only: bool) -> None:
-    try:
-        setup_llm_provider(provider=provider, check_only=check_only)
-    except FsqAgentError as exc:
-        logger.error("Error: %s", exc)
-        if exc.context:
-            logger.error("Details: %s", exc.context)
-        raise click.Abort() from exc
     except OSError as exc:
         logger.error("Error: %s", exc)
         raise click.Abort() from exc
@@ -84,7 +68,6 @@ def setup_llm(provider: str, check_only: bool) -> None:
 
 @main.command()
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
-@click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--strict", is_flag=True, default=False, show_default=True)
 @click.option("--goal", default=None)
 @click.option("--case-yaml", "case_yaml_path", type=click.Path(exists=False, dir_okay=False), default=None)
@@ -96,7 +79,6 @@ def setup_llm(provider: str, check_only: bool) -> None:
 @click.option("--tracing/--no-tracing", "tracing", default=None)
 def run(
     platform: str,
-    workspace_path: str | None,
     strict: bool,
     goal: str | None,
     case_yaml_path: str | None,
@@ -116,7 +98,7 @@ def run(
             record=record,
             record_on_failure=record_on_failure,
         )
-        settings = load_platform_settings(platform, workspace_path)
+        settings = load_platform_settings(platform, _current_workspace_path())
         if tracing is not None:
             settings.openai_agents.tracing_enabled = tracing
         if strict:
@@ -141,12 +123,11 @@ def run(
 
 @main.command()
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
-@click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--run-id", required=True)
 @click.option("--format", "report_format", type=click.Choice(["markdown", "json"]), default="markdown")
-def report(platform: str, workspace_path: str | None, run_id: str, report_format: str) -> None:
+def report(platform: str, run_id: str, report_format: str) -> None:
     try:
-        settings = load_platform_settings(platform, workspace_path)
+        settings = load_platform_settings(platform, _current_workspace_path())
         path = resolve_report_path(Path(settings.output.runs_dir), run_id, report_format)  # type: ignore[arg-type]
         click.echo(path.read_text(encoding="utf-8"), nl=False)
     except FsqAgentError as exc:
@@ -156,19 +137,17 @@ def report(platform: str, workspace_path: str | None, run_id: str, report_format
 
 @main.command()
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
-@click.option("--workspace", "workspace_path", type=click.Path(file_okay=False), default=None)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8765, show_default=True, type=click.IntRange(1, 65535))
 @click.option("--open-browser/--no-open-browser", "open_browser", default=True, show_default=True)
 def playground(
     platform: str,
-    workspace_path: str | None,
     host: str,
     port: int,
     open_browser: bool,
 ) -> None:
     try:
-        settings = load_platform_settings(platform, workspace_path)
+        settings = load_platform_settings(platform, _current_workspace_path())
         run_playground(
             settings,
             PlaygroundServerOptions(host=host, port=port, open_browser=open_browser),
@@ -179,7 +158,11 @@ def playground(
     except OSError as exc:
         logger.error("Playground startup failed: %s", exc)
         raise click.Abort() from exc
-    
+
+
+def _current_workspace_path() -> Path:
+    return Path.cwd() / ".fsq-agent-workspace"
+
 
 def _validate_run_inputs(
     *,
