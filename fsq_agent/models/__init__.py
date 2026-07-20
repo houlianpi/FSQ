@@ -15,7 +15,7 @@ from fsq_agent.models._exceptions import (
     VerificationError,
 )
 from fsq_agent.models._events import RunEvent, RunEventSink
-from fsq_agent.models._fsq import FsqCase, FsqCaseConfig, FsqCaseHook, FsqCaseHookAction, FsqPlatform
+from fsq_agent.models._fsq import CaseLifecycleSettings, FsqCase, FsqCaseConfig, FsqCaseHook, FsqCaseHookAction, FsqPlatform
 from fsq_agent.models._core import (
     ANDROID_ACTION_DEFINITIONS,
     ANDROID_ACTION_DEFINITIONS_BY_NAME,
@@ -309,6 +309,7 @@ __all__ = [
     "FsqPlatform",
     "FsqCaseHookAction",
     "FsqCaseHook",
+    "CaseLifecycleSettings",
     "FsqCaseConfig",
     "FsqCase",
     "ReportArtifact",

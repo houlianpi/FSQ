@@ -15,6 +15,7 @@ from fsq_agent.models import (
     EvidenceBundle,
     ExecutableStep,
     FailureCategory,
+    ConfigurationError,
     HarnessActionResult,
     HarnessArtifactRef,
     HarnessContext,
@@ -356,6 +357,236 @@ onCaseComplete:
         assert any("Strict main case action launchApp" in message and "passed" in message for message in messages)
         assert any("Strict phase after case: start" in message for message in messages)
         assert any("Strict after case action runShell" in message and "passed" in message for message in messages)
+
+
+def test_run_strict_fsq_lifecycle_case_runs_config_hooks_around_case_hooks(tmp_path: Path) -> None:
+    case_before = tmp_path / "case_before.codex.yaml"
+    case_before.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Case Before
+platform: android
+---
+- tapOn:
+    target: Case before
+""",
+        encoding="utf-8",
+    )
+    case_after = tmp_path / "case_after.codex.yaml"
+    case_after.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Case After
+platform: android
+---
+- tapOn:
+    target: Case after
+""",
+        encoding="utf-8",
+    )
+    config_before = tmp_path / "config_before.codex.yaml"
+    config_before.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Config Before
+platform: android
+---
+- tapOn:
+    target: Config before
+""",
+        encoding="utf-8",
+    )
+    config_after = tmp_path / "config_after.codex.yaml"
+    config_after.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Config After
+platform: android
+---
+- tapOn:
+    target: Config after
+""",
+        encoding="utf-8",
+    )
+    case_path = tmp_path / "root_config_hooks.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Root Config Hooks
+platform: android
+appId: com.microsoft.emmx
+onCaseStart:
+  runCase: case_before.codex.yaml
+onCaseComplete:
+  runCase: case_after.codex.yaml
+---
+- launchApp
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+    settings = Settings(
+        cases={"dir": tmp_path},
+        case_lifecycle={
+            "on_case_start": [{"runCase": "config_before.codex.yaml"}],
+            "on_case_complete": [{"runCase": "config_after.codex.yaml"}],
+        },
+    )
+    harness = CliCoreHarness()
+
+    run_strict_fsq_lifecycle_case(
+        case_path=case_path,
+        case=case,
+        settings=settings,
+        harness=harness,
+        output_dir=tmp_path / "runs" / "root-config-hooks",
+        run_id="root-config-hooks",
+        registry=build_capability_registry(),
+        post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
+    )
+
+    assert harness.actions == ["tap_on", "tap_on", "launch_app", "tap_on", "tap_on"]
+    report = json.loads((tmp_path / "runs" / "root-config-hooks" / "core-report.json").read_text(encoding="utf-8"))
+    sources = [step["source_ref"]["metadata"].get("hook_origin") for step in report["steps"] if step["step_id"].endswith("step-001")]
+    assert sources[:2] == ["config", "case"]
+    assert sources[-2:] == ["case", "config"]
+
+
+def test_run_strict_fsq_lifecycle_case_config_before_failure_skips_case_before_and_main(tmp_path: Path) -> None:
+    case_before = tmp_path / "case_before.codex.yaml"
+    case_before.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Case Before
+platform: android
+---
+- tapOn:
+    target: Case before
+""",
+        encoding="utf-8",
+    )
+    case_after = tmp_path / "case_after.codex.yaml"
+    case_after.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Case After
+platform: android
+---
+- killApp
+""",
+        encoding="utf-8",
+    )
+    case_path = tmp_path / "root_config_before_failure.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Root Config Before Failure
+platform: android
+appId: com.microsoft.emmx
+onCaseStart:
+  runCase: case_before.codex.yaml
+onCaseComplete:
+  runCase: case_after.codex.yaml
+---
+- launchApp
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+    settings = Settings(
+        cases={"dir": tmp_path},
+        case_lifecycle={
+            "on_case_start": [{"runShell": _python_exit_command(9)}],
+            "on_case_complete": [{"runShell": _python_exit_command(0)}],
+        },
+    )
+    harness = CliCoreHarness()
+
+    run_strict_fsq_lifecycle_case(
+        case_path=case_path,
+        case=case,
+        settings=settings,
+        harness=harness,
+        output_dir=tmp_path / "runs" / "root-config-before-failure",
+        run_id="root-config-before-failure",
+        registry=build_capability_registry(),
+        post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
+    )
+
+    assert harness.actions == ["kill_app"]
+    report = json.loads((tmp_path / "runs" / "root-config-before-failure" / "core-report.json").read_text(encoding="utf-8"))
+    assert report["summary"]["status"] == "failed"
+    assert [step["status"] for step in report["steps"]] == ["failed", "passed", "passed", "passed"]
+
+
+def test_run_strict_fsq_lifecycle_case_config_after_failure_fails_overall(tmp_path: Path) -> None:
+    case_path = tmp_path / "root_config_after_failure.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Root Config After Failure
+platform: android
+appId: com.microsoft.emmx
+---
+- launchApp
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+    settings = Settings(
+        cases={"dir": tmp_path},
+        case_lifecycle={"on_case_complete": [{"runShell": _python_exit_command(3)}]},
+    )
+    harness = CliCoreHarness()
+
+    run_strict_fsq_lifecycle_case(
+        case_path=case_path,
+        case=case,
+        settings=settings,
+        harness=harness,
+        output_dir=tmp_path / "runs" / "root-config-after-failure",
+        run_id="root-config-after-failure",
+        registry=build_capability_registry(),
+        post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
+    )
+
+    assert harness.actions == ["launch_app"]
+    report = json.loads((tmp_path / "runs" / "root-config-after-failure" / "core-report.json").read_text(encoding="utf-8"))
+    assert report["summary"]["status"] == "failed"
+    assert [step["status"] for step in report["steps"]] == ["passed", "failed"]
+    assert report["steps"][1]["metadata"]["hook_origin"] == "config"
+
+
+def test_run_strict_fsq_lifecycle_case_rejects_config_hook_recursion(tmp_path: Path) -> None:
+    case_path = tmp_path / "root_config_recursion.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Root Config Recursion
+platform: android
+appId: com.microsoft.emmx
+---
+- launchApp
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+    settings = Settings(
+        cases={"dir": tmp_path},
+        case_lifecycle={"on_case_start": [{"runCase": "root_config_recursion.codex.yaml"}]},
+    )
+
+    with pytest.raises(ConfigurationError, match="Recursive lifecycle hook runCase"):
+        run_strict_fsq_lifecycle_case(
+            case_path=case_path,
+            case=case,
+            settings=settings,
+            harness=CliCoreHarness(),
+            output_dir=tmp_path / "runs" / "root-config-recursion",
+            run_id="root-config-recursion",
+            registry=build_capability_registry(),
+            post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
+        )
 
 
 def test_run_strict_fsq_lifecycle_case_runs_complete_hook_after_start_failure(tmp_path: Path) -> None:

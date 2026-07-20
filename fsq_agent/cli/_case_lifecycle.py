@@ -14,6 +14,7 @@ from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterfac
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     CapabilityRegistrySnapshot,
+    CaseLifecycleSettings,
     ConfigurationError,
     ExecutableStep,
     FsqCase,
@@ -42,15 +43,20 @@ def case_has_lifecycle_hooks(case: FsqCase) -> bool:
     return bool(case.config.on_case_start or case.config.on_case_complete)
 
 
+def lifecycle_settings_have_hooks(case_lifecycle: CaseLifecycleSettings) -> bool:
+    return bool(case_lifecycle.on_case_start or case_lifecycle.on_case_complete)
+
+
 def collect_lifecycle_cases(
     *,
     case_path: Path,
     case: FsqCase,
     cases_dir: Path | None,
+    case_lifecycle: CaseLifecycleSettings | None = None,
     loader: FsqCaseLoader | None = None,
 ) -> list[tuple[Path, FsqCase]]:
     collector = _LifecycleCaseCollector(cases_dir=cases_dir, loader=loader or FsqCaseLoader())
-    return collector.collect(case_path.resolve(), case)
+    return collector.collect(case_path.resolve(), case, case_lifecycle=case_lifecycle)
 
 
 def run_strict_fsq_lifecycle_case(
@@ -85,11 +91,24 @@ class _LifecycleCaseCollector:
         self.loader = loader
         self.cases: list[tuple[Path, FsqCase]] = []
 
-    def collect(self, case_path: Path, case: FsqCase) -> list[tuple[Path, FsqCase]]:
-        self._collect(case_path, case, stack=())
+    def collect(
+        self,
+        case_path: Path,
+        case: FsqCase,
+        *,
+        case_lifecycle: CaseLifecycleSettings | None = None,
+    ) -> list[tuple[Path, FsqCase]]:
+        self._collect(case_path, case, stack=(), case_lifecycle=case_lifecycle)
         return list(self.cases)
 
-    def _collect(self, case_path: Path, case: FsqCase, stack: tuple[Path, ...]) -> None:
+    def _collect(
+        self,
+        case_path: Path,
+        case: FsqCase,
+        stack: tuple[Path, ...],
+        *,
+        case_lifecycle: CaseLifecycleSettings | None = None,
+    ) -> None:
         if case_path in stack:
             raise ConfigurationError(
                 "Recursive lifecycle hook runCase detected.",
@@ -97,7 +116,7 @@ class _LifecycleCaseCollector:
             )
         stack = (*stack, case_path)
         self.cases.append((case_path, case))
-        for action in _iter_case_run_actions(case):
+        for action in _iter_lifecycle_run_actions(case, case_lifecycle=case_lifecycle):
             child_path = resolve_case_yaml_path(action.value, self.cases_dir)
             child_case = self.loader.load_case(child_path)
             self._collect(child_path, child_case, stack)
@@ -160,7 +179,29 @@ class _StrictLifecycleExecutor:
                 context={"case_path": str(case_path), "chain": [str(path) for path in (*stack, case_path)]},
             )
         stack = (*stack, case_path)
-        start_ok = self._execute_hooks(case_path, case, "onCaseStart", case.config.on_case_start, stack, continue_after_failure=False)
+        is_root_case = parent_hook_action is None and case_path == self.case_path
+        config_start_ok = True
+        if is_root_case:
+            config_start_ok = self._execute_hooks(
+                case_path,
+                case,
+                "onCaseStart",
+                self.settings.case_lifecycle.on_case_start,
+                stack,
+                hook_origin="config",
+                continue_after_failure=False,
+            )
+        start_ok = False
+        if config_start_ok:
+            start_ok = self._execute_hooks(
+                case_path,
+                case,
+                "onCaseStart",
+                case.config.on_case_start,
+                stack,
+                hook_origin="case",
+                continue_after_failure=False,
+            )
         main_ok = False
         if start_ok:
             main_ok = self._execute_case_commands(case_path, case, "case", stack, parent_hook_action)
@@ -170,9 +211,21 @@ class _StrictLifecycleExecutor:
             "onCaseComplete",
             case.config.on_case_complete,
             stack,
+            hook_origin="case",
             continue_after_failure=True,
         )
-        return start_ok and main_ok and complete_ok
+        config_complete_ok = True
+        if is_root_case:
+            config_complete_ok = self._execute_hooks(
+                case_path,
+                case,
+                "onCaseComplete",
+                self.settings.case_lifecycle.on_case_complete,
+                stack,
+                hook_origin="config",
+                continue_after_failure=True,
+            )
+        return config_start_ok and start_ok and main_ok and complete_ok and config_complete_ok
 
     def _execute_hooks(
         self,
@@ -182,6 +235,7 @@ class _StrictLifecycleExecutor:
         hooks: list[FsqCaseHook],
         stack: tuple[Path, ...],
         *,
+        hook_origin: str,
         continue_after_failure: bool,
     ) -> bool:
         if hooks:
@@ -189,7 +243,7 @@ class _StrictLifecycleExecutor:
         all_passed = True
         for hook_index, hook in enumerate(hooks, start=1):
             for action_index, action in enumerate(hook.actions, start=1):
-                passed = self._execute_hook_action(case_path, case, phase, hook_index, action_index, action, stack)
+                passed = self._execute_hook_action(case_path, case, phase, hook_index, action_index, action, stack, hook_origin)
                 all_passed = all_passed and passed
                 if not passed and not continue_after_failure:
                     return False
@@ -204,12 +258,14 @@ class _StrictLifecycleExecutor:
         action_index: int,
         action: FsqCaseHookAction,
         stack: tuple[Path, ...],
+        hook_origin: str,
     ) -> bool:
         metadata = {
             "lifecycle_phase": phase,
             "hook_index": hook_index,
             "hook_action_index": action_index,
             "hook_action_name": action.action_name,
+            "hook_origin": hook_origin,
             "root_case_path": str(self.case_path),
             "case_path": str(case_path),
             "case_id": case.id,
@@ -260,6 +316,8 @@ class _StrictLifecycleExecutor:
         parent_hook_action: dict[str, object] | None,
     ) -> ExecutableStep:
         parent_metadata = {"parent_hook_action": parent_hook_action} if parent_hook_action is not None else {}
+        if parent_hook_action is not None and "hook_origin" in parent_hook_action:
+            parent_metadata["hook_origin"] = parent_hook_action["hook_origin"]
         metadata = {
             **step.metadata,
             "lifecycle_phase": phase,
@@ -435,8 +493,15 @@ class _StrictLifecycleEvidenceRecorder:
         return self.recorder.write_manifest()
 
 
-def _iter_case_run_actions(case: FsqCase) -> list[FsqCaseHookAction]:
+def _iter_lifecycle_run_actions(
+    case: FsqCase,
+    *,
+    case_lifecycle: CaseLifecycleSettings | None = None,
+) -> list[FsqCaseHookAction]:
     actions: list[FsqCaseHookAction] = []
+    if case_lifecycle is not None:
+        for hook in [*case_lifecycle.on_case_start, *case_lifecycle.on_case_complete]:
+            actions.extend(action for action in hook.actions if action.action_name == "runCase")
     for hook in [*case.config.on_case_start, *case.config.on_case_complete]:
         actions.extend(action for action in hook.actions if action.action_name == "runCase")
     return actions
