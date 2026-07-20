@@ -27,6 +27,8 @@ Use when `harness.platform` is Windows. This skill contains Windows-specific sta
 ## Argument Rules
 
 - Use the Windows key syntax accepted by the active schema for shortcuts, such as `^s` for Ctrl+S or `{ENTER}`, only when that shortcut is the requested semantic action.
+- Mouse action `target` describes the step; use `locator`, `point`, or `offset` fields from the active schema for execution coordinates.
+- `scrollOn.wheel_dist` is positive for up and negative for down.
 
 ## Correct Key Examples
 
@@ -36,6 +38,7 @@ Use one payload from the matching semantic action. Do not combine unrelated fiel
 
 ```json
 {
+  "target": "Click Save",
   "locator": {
     "title": "Save",
     "control_type": "Button"
@@ -55,6 +58,7 @@ Use one payload from the matching semantic action. Do not combine unrelated fiel
 
 ```json
 {
+  "target": "Enter password",
   "locator": {
     "control_type": "Edit",
     "automation_id": "PasswordBox"
@@ -62,6 +66,25 @@ Use one payload from the matching semantic action. Do not combine unrelated fiel
   "text": {
     "runtimeSecret": "TEST_ACCOUNT_PASSWORD"
   }
+}
+```
+
+### Mouse actions
+
+```json
+{"target": "Hover Save", "locator": {"title": "Save", "control_type": "Button"}}
+```
+
+```json
+{"target": "Scroll results", "locator": {"automation_id": "Results"}, "wheel_dist": -5}
+```
+
+```json
+{
+  "target": "Move item",
+  "source": {"locator": {"automation_id": "Item"}},
+  "destination": {"offset": {"x": 120, "y": 0}},
+  "mouse_button": "left"
 }
 ```
 

@@ -106,6 +106,13 @@ Web platform exports:
 - `WebPageSnapshotParams`: Pydantic model for the read-only `page_snapshot` Web observation capability. It accepts optional exact snapshot `target` or non-empty `locator`, optional `depth`, and optional `boxes` so dynamic agents and strict Web cases can request a current accessibility/DOM-oriented page snapshot through the normal harness action schema path.
 - `WebAssertWithAIParams`: Pydantic model for authored Web visual/page assertion parameters with a required prompt and optional assertion metadata. This parameter model is consumed by decorated Web backend driver tools such as `PlaywrightWebDriver.assert_with_ai`.
 
+Windows platform exports:
+
+- `WindowsLocator`: Pydantic model for Windows control locators. Windows element actions require non-empty `target` and `locator`; `target` is not used for lookup.
+- `WindowsPoint` and `WindowsOffset`: Pydantic coordinate models for non-negative absolute points and non-zero signed offsets.
+- `WindowsMouseSource` and `WindowsMouseDestination`: Pydantic models selecting one supported locator, point, or destination-offset mode.
+- `WindowsHoverOnParams`, `WindowsScrollOnParams`, and `WindowsDragToParams`: Pydantic models for Windows mouse actions, including non-zero `wheel_dist` and default-left mouse button behavior where applicable.
+
 macOS platform exports:
 
 - `MacOSLocator`: Pydantic model for macOS target locators with optional serialized fields `accessibilityId`, `name`, `label`, `value`, `role`, `controlType`, `className`, `xpath`, `predicate`, and `point`. macOS action parameter models that accept a locator require at least one populated locator signal when no semantic `target` or explicit `point` is supplied.
@@ -253,6 +260,7 @@ All custom exceptions inherit from `FsqAgentError`. Exceptions carry concise hum
 - Android driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside driver parameter models.
 - Web driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside Web driver parameter models.
 - Windows driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, redaction state, and step identifiers stays on `ExecutableStep` rather than inside Windows driver parameter models.
+- Windows mouse parameter models enforce endpoint and coordinate invariants at validation time.
 - macOS driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, redaction state, and step identifiers stays on `ExecutableStep` rather than inside macOS driver parameter models.
 - `RuntimeSecretRef` is a pre-resolution FSQ replay reference, not a driver parameter value. Strict entry-layer code must resolve it to a string in memory and then validate the resolved payload against the appropriate Android driver parameter model before `core` invokes a harness.
 - `WaitMsParams` belongs to the inherited `wait_ms` CommonTool capability and its strict replay alias `waitMs`. It lets recorded strict cases replay pure waits without routing through Android gesture or driver APIs.

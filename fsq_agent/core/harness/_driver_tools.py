@@ -8,11 +8,24 @@ from fsq_agent.models import (
     ANDROID_ACTION_DEFINITIONS,
     MACOS_ACTION_DEFINITIONS,
     WEB_ACTION_DEFINITIONS,
-    WINDOWS_ACTION_DEFINITIONS,
     CapabilityDefinition,
+    ExecutableStepKind,
     HarnessFunctionSchema,
     HarnessPlatform,
     ReplayPolicy,
+    WindowsAssertVisibleParams,
+    WindowsAssertWithAIParams,
+    WindowsClickOnParams,
+    WindowsDoubleClickOnParams,
+    WindowsDragToParams,
+    WindowsHoverOnParams,
+    WindowsKillAppParams,
+    WindowsLaunchAppParams,
+    WindowsPressKeyParams,
+    WindowsRightClickOnParams,
+    WindowsScrollOnParams,
+    WindowsTypeTextParams,
+    WindowsUiSnapshotParams,
 )
 
 
@@ -61,20 +74,44 @@ _web_driver_capability = platform_driver_capability(
 )
 
 
-WINDOWS_DRIVER_ACTION_CATALOG = {
-    definition.fsq_action_name: CapabilityActionDefinition(
-        action_name=definition.fsq_action_name,
-        canonical_name=definition.driver_method,
+def _windows_action(
+    action_name: str,
+    canonical_name: str,
+    params_model: type[BaseModel],
+    *,
+    step_kind: ExecutableStepKind = "action",
+    capture_evidence: bool = False,
+) -> CapabilityActionDefinition:
+    return CapabilityActionDefinition(
+        action_name=action_name,
+        canonical_name=canonical_name,
         executor_kind="driver",
-        owner=definition.owner,
-        params_model=definition.params_model,
-        step_kind=definition.step_kind,
-        method_name=definition.driver_method,
-        replay=ReplayPolicy(kind="fsq_command", alias=definition.fsq_action_name),
-        capture_evidence=definition.capture_evidence,
+        owner="driver",
+        params_model=params_model,
+        step_kind=step_kind,
+        method_name=canonical_name,
+        replay=ReplayPolicy(kind="fsq_command", alias=action_name),
+        capture_evidence=capture_evidence,
     )
-    for definition in WINDOWS_ACTION_DEFINITIONS
-    if definition.owner == "driver"
+
+
+WINDOWS_DRIVER_ACTION_CATALOG = {
+    definition.action_name: definition
+    for definition in (
+        _windows_action("launchApp", "launch_app", WindowsLaunchAppParams, step_kind="setup", capture_evidence=True),
+        _windows_action("killApp", "kill_app", WindowsKillAppParams, step_kind="teardown"),
+        _windows_action("clickOn", "click_on", WindowsClickOnParams, capture_evidence=True),
+        _windows_action("doubleClickOn", "double_click_on", WindowsDoubleClickOnParams, capture_evidence=True),
+        _windows_action("rightClickOn", "right_click_on", WindowsRightClickOnParams, capture_evidence=True),
+        _windows_action("typeText", "type_text", WindowsTypeTextParams, capture_evidence=True),
+        _windows_action("pressKey", "press_key", WindowsPressKeyParams, capture_evidence=True),
+        _windows_action("hoverOn", "hover_on", WindowsHoverOnParams),
+        _windows_action("scrollOn", "scroll_on", WindowsScrollOnParams, capture_evidence=True),
+        _windows_action("dragTo", "drag_to", WindowsDragToParams, capture_evidence=True),
+        _windows_action("assertVisible", "assert_visible", WindowsAssertVisibleParams, step_kind="assertion"),
+        _windows_action("uiSnapshot", "ui_snapshot", WindowsUiSnapshotParams, step_kind="observation"),
+        _windows_action("assertWithAI", "assert_with_ai", WindowsAssertWithAIParams, step_kind="assertion"),
+    )
 }
 _windows_driver_capability = platform_driver_capability(
     platform="windows",

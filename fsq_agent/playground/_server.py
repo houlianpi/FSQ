@@ -25,7 +25,7 @@ from fsq_agent.report import resolve_report_path
 
 
 YAML_DISPLAY_SIZE_LIMIT_BYTES = 512 * 1024
-STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 512 * 1024
+STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 1024 * 1024
 _YAML_COMMAND_CONTROL_KEYS = {"optional", "timeout", "timeout_ms", "evidence", "evidencePolicy"}
 _YAML_SETUP_ACTIONS = {"launchApp", "startBrowser"}
 _YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
