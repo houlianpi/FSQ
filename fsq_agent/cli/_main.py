@@ -9,7 +9,12 @@ import click
 
 from fsq_agent.agent import FsqAgent
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
-from fsq_agent.cli._case_lifecycle import case_has_lifecycle_hooks, collect_lifecycle_cases, run_strict_fsq_lifecycle_case
+from fsq_agent.cli._case_lifecycle import (
+    case_has_lifecycle_hooks,
+    collect_lifecycle_cases,
+    lifecycle_settings_have_hooks,
+    run_strict_fsq_lifecycle_case,
+)
 from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._llm_setup import setup_llm_provider
@@ -290,11 +295,19 @@ def _filter_top_level_strict_cases(
     cases: list[tuple[Path, FsqCase]],
     loader: FsqCaseLoader,
 ) -> list[tuple[Path, FsqCase]]:
-    dependency_paths: set[Path] = set()
+    dependency_paths = _config_lifecycle_dependency_paths(settings)
     for case_path, case in cases:
-        if not case_has_lifecycle_hooks(case):
+        if case_path.resolve() in dependency_paths:
             continue
-        lifecycle_cases = collect_lifecycle_cases(case_path=case_path, case=case, cases_dir=settings.cases.dir, loader=loader)
+        if not (case_has_lifecycle_hooks(case) or lifecycle_settings_have_hooks(settings.case_lifecycle)):
+            continue
+        lifecycle_cases = collect_lifecycle_cases(
+            case_path=case_path,
+            case=case,
+            cases_dir=settings.cases.dir,
+            case_lifecycle=settings.case_lifecycle,
+            loader=loader,
+        )
         dependency_paths.update(path.resolve() for path, _ in lifecycle_cases[1:])
     top_level_cases = [(case_path, case) for case_path, case in cases if case_path.resolve() not in dependency_paths]
     if top_level_cases:
@@ -302,12 +315,26 @@ def _filter_top_level_strict_cases(
     raise ConfigurationError("No top-level strict case files found.", context={"case_count": len(cases)})
 
 
+def _config_lifecycle_dependency_paths(settings: Settings) -> set[Path]:
+    dependency_paths: set[Path] = set()
+    for hook in [*settings.case_lifecycle.on_case_start, *settings.case_lifecycle.on_case_complete]:
+        for action in hook.actions:
+            if action.action_name == "runCase":
+                dependency_paths.add(resolve_case_yaml_path(action.value, settings.cases.dir).resolve())
+    return dependency_paths
+
+
 def _run_strict_case(settings: Settings, case_path: Path, case: FsqCase, run_id: str):
     run_dir = Path(settings.output.runs_dir) / run_id
     registry = build_capability_registry(platform=settings.harness.platform)
     registry_snapshot = registry.snapshot()
-    if case_has_lifecycle_hooks(case):
-        lifecycle_cases = collect_lifecycle_cases(case_path=case_path, case=case, cases_dir=settings.cases.dir)
+    if case_has_lifecycle_hooks(case) or lifecycle_settings_have_hooks(settings.case_lifecycle):
+        lifecycle_cases = collect_lifecycle_cases(
+            case_path=case_path,
+            case=case,
+            cases_dir=settings.cases.dir,
+            case_lifecycle=settings.case_lifecycle,
+        )
         for _, lifecycle_case in lifecycle_cases:
             _validate_strict_case_platform(settings, lifecycle_case)
             _validate_strict_lifecycle_case_app_id(settings, root_case=case, case=lifecycle_case)

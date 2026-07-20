@@ -80,9 +80,100 @@ openai_agents:
     assert not hasattr(settings, "pre_plan")
     assert settings.execution.post_action_delay_seconds.platform == 1.0
     assert settings.execution.post_action_delay_seconds.common == 0.0
+    assert settings.case_lifecycle.on_case_start == []
+    assert settings.case_lifecycle.on_case_complete == []
     assert settings.agent_context.knowledge.root_dir == tmp_path / "knowledge"
     assert settings.agent_context.knowledge.skills.dir == tmp_path / "knowledge" / "skills"
     assert settings.agent_context.knowledge.pre_plan.dir is None
+
+
+def test_load_settings_accepts_case_lifecycle_hooks(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            """
+caseLifecycle:
+  onCaseStart:
+    runShell: ./scripts/config-before.sh
+    runCase: hooks/config-before.codex.yaml
+  onCaseComplete:
+    - runCase: hooks/config-after.codex.yaml
+    - runShell: ./scripts/config-after.sh
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_start[0].actions] == [
+        ["runShell", "./scripts/config-before.sh"],
+        ["runCase", "hooks/config-before.codex.yaml"],
+    ]
+    assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[0].actions] == [
+        ["runCase", "hooks/config-after.codex.yaml"],
+    ]
+    assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[1].actions] == [
+        ["runShell", "./scripts/config-after.sh"],
+    ]
+
+
+@pytest.mark.parametrize(
+    "hook_yaml",
+    [
+        "onCaseStart: not-a-mapping",
+        "onCaseStart:\n  unknown: value",
+        "onCaseStart:\n  runCase: ''",
+        "onCaseStart:\n  runShell: ''",
+        "onCaseStart:\n  - []",
+        "onCaseStart:\n  actions: []",
+    ],
+)
+def test_load_settings_rejects_invalid_case_lifecycle_hooks(tmp_path: Path, hook_yaml: str) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        _base_config(
+            tmp_path,
+            f"""
+caseLifecycle:
+  {hook_yaml.replace(chr(10), chr(10) + '  ')}
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="Invalid configuration"):
+        load_settings(config_path)
+
+
+def test_config_example_is_reference_only_and_shows_case_lifecycle() -> None:
+    example_path = Path(__file__).parents[1] / "config.example.yaml"
+
+    assert example_path.exists()
+    content = example_path.read_text(encoding="utf-8")
+    assert "caseLifecycle:" in content
+    assert "onCaseStart:" in content
+    assert "onCaseComplete:" in content
+    assert "reference" in content.casefold()
+
+
+def test_load_settings_ignores_config_example_by_default(tmp_path: Path) -> None:
+        (tmp_path / "config.example.yaml").write_text(
+                """
+harness:
+    platform: web
+caseLifecycle:
+    onCaseStart:
+        runShell: echo should-not-load
+""",
+                encoding="utf-8",
+        )
+
+        settings = load_settings()
+
+        assert settings.harness.platform == "android"
+        assert settings.case_lifecycle.on_case_start == []
 
 
 def test_load_platform_settings_loads_committed_platform_preset(tmp_path: Path) -> None:

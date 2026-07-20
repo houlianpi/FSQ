@@ -72,18 +72,19 @@ class FsqCaseConfig(BaseModel):
     @field_validator("on_case_start", "on_case_complete", mode="before")
     @classmethod
     def _normalize_hook_field(cls, value: Any) -> Any:
-        if value is None:
-            return []
-        if isinstance(value, list):
-            hooks = value
-        elif isinstance(value, dict):
-            hooks = [value]
-        else:
-            raise ValueError("hook field must be a mapping or list of mappings")
-        for hook in hooks:
-            if isinstance(hook, dict) and "actions" in hook:
-                raise ValueError("unsupported hook action: actions")
-        return hooks
+        return _normalize_lifecycle_hook_field(value)
+
+
+class CaseLifecycleSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    on_case_start: list[FsqCaseHook] = Field(default_factory=list, alias="onCaseStart")
+    on_case_complete: list[FsqCaseHook] = Field(default_factory=list, alias="onCaseComplete")
+
+    @field_validator("on_case_start", "on_case_complete", mode="before")
+    @classmethod
+    def _normalize_hook_field(cls, value: Any) -> Any:
+        return _normalize_lifecycle_hook_field(value)
 
 
 class FsqCase(BaseModel):
@@ -96,3 +97,18 @@ class FsqCase(BaseModel):
     @property
     def id(self) -> str:
         return self.path.stem.replace(".codex", "")
+
+
+def _normalize_lifecycle_hook_field(value: Any) -> Any:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        hooks = value
+    elif isinstance(value, dict):
+        hooks = [value]
+    else:
+        raise ValueError("hook field must be a mapping or list of mappings")
+    for hook in hooks:
+        if isinstance(hook, dict) and "actions" in hook:
+            raise ValueError("unsupported hook action: actions")
+    return hooks
