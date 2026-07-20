@@ -9,6 +9,7 @@ import click
 
 from fsq_agent.agent import FsqAgent
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
+from fsq_agent.cli._case_lifecycle import case_has_lifecycle_hooks, collect_lifecycle_cases, run_strict_fsq_lifecycle_case
 from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._llm_setup import setup_llm_provider
@@ -264,11 +265,16 @@ def _run_strict(settings: Settings, *, case_yaml_path: str | None, case_dir_path
         logger.info("Evidence manifest: %s", artifact.evidence_manifest_path)
         click.echo(f"Core report: {artifact.path}")
         click.echo(f"Evidence manifest: {artifact.evidence_manifest_path}")
+        case_status, case_error = _strict_core_case_report_status(artifact.path)
+        if case_status != "passed":
+            logger.error("Strict core case failed: %s: %s", case_path, case_error)
+            raise click.exceptions.Exit(1)
         return
     if case_dir_path is None:
         raise ConfigurationError("--case-dir is required for strict directory runs.")
     case_paths = discover_case_yaml_paths(case_dir_path, settings.cases.dir)
     cases = [(case_path, loader.load_case(case_path)) for case_path in case_paths]
+    cases = _filter_top_level_strict_cases(settings, cases, loader)
     for _, case in cases:
         _validate_strict_case_platform(settings, case)
     validate_strict_core_settings(settings, requires_ai_assertion=any(_case_requires_ai_assertion(settings, case) for _, case in cases))
@@ -279,10 +285,46 @@ def _run_strict(settings: Settings, *, case_yaml_path: str | None, case_dir_path
         raise click.exceptions.Exit(1)
 
 
+def _filter_top_level_strict_cases(
+    settings: Settings,
+    cases: list[tuple[Path, FsqCase]],
+    loader: FsqCaseLoader,
+) -> list[tuple[Path, FsqCase]]:
+    dependency_paths: set[Path] = set()
+    for case_path, case in cases:
+        if not case_has_lifecycle_hooks(case):
+            continue
+        lifecycle_cases = collect_lifecycle_cases(case_path=case_path, case=case, cases_dir=settings.cases.dir, loader=loader)
+        dependency_paths.update(path.resolve() for path, _ in lifecycle_cases[1:])
+    top_level_cases = [(case_path, case) for case_path, case in cases if case_path.resolve() not in dependency_paths]
+    if top_level_cases:
+        return top_level_cases
+    raise ConfigurationError("No top-level strict case files found.", context={"case_count": len(cases)})
+
+
 def _run_strict_case(settings: Settings, case_path: Path, case: FsqCase, run_id: str):
     run_dir = Path(settings.output.runs_dir) / run_id
     registry = build_capability_registry(platform=settings.harness.platform)
     registry_snapshot = registry.snapshot()
+    if case_has_lifecycle_hooks(case):
+        lifecycle_cases = collect_lifecycle_cases(case_path=case_path, case=case, cases_dir=settings.cases.dir)
+        for _, lifecycle_case in lifecycle_cases:
+            _validate_strict_case_platform(settings, lifecycle_case)
+            _validate_strict_lifecycle_case_app_id(settings, root_case=case, case=lifecycle_case)
+        requires_ai_assertion = any(_case_requires_ai_assertion(settings, lifecycle_case, registry_snapshot) for _, lifecycle_case in lifecycle_cases)
+        validate_strict_core_settings(settings, requires_ai_assertion=requires_ai_assertion)
+        harness = _build_strict_harness(settings, case, run_dir, requires_ai_assertion)
+        return run_strict_fsq_lifecycle_case(
+            case_path=case_path,
+            case=case,
+            settings=settings,
+            harness=harness,
+            output_dir=run_dir,
+            run_id=run_id,
+            registry=registry,
+            registry_snapshot=registry_snapshot,
+            post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+        )
     steps = resolve_strict_replay_steps(
         FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case),
         settings,
@@ -425,6 +467,22 @@ def _validate_strict_case_app_id(settings: Settings, case: FsqCase) -> None:
             "Android app id is required for strict-core runs.",
             context={"case_path": str(case.path), "config_key": "harness.android.app_id", "case_key": "appId"},
         )
+
+
+def _validate_strict_lifecycle_case_app_id(settings: Settings, *, root_case: FsqCase, case: FsqCase) -> None:
+    if settings.harness.platform != "android":
+        return
+    if settings.harness.android.app_id or root_case.config.app_id or case.config.app_id:
+        return
+    raise ConfigurationError(
+        "Android app id is required for strict-core lifecycle runs.",
+        context={
+            "root_case_path": str(root_case.path),
+            "case_path": str(case.path),
+            "config_key": "harness.android.app_id",
+            "case_key": "appId",
+        },
+    )
 
 
 def _validate_strict_case_platform(settings: Settings, case: FsqCase) -> None:

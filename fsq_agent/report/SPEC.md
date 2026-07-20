@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Generate human-readable and machine-readable reports under the fsq-agent output directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide one lookup path so CLI can print a stored LLM or strict-core report by run id.
+Generate human-readable and machine-readable reports under the fsq-agent output directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, strict lifecycle phase summaries, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide one lookup path so CLI can print a stored LLM or strict-core report by run id.
 
 ## Dependencies
 
@@ -28,6 +28,14 @@ artifact = CoreEvidenceReportGenerator().generate_from_manifest(Path("runs/run-1
 
 It writes `core-report.md` and `core-report.json` next to the manifest and returns `ReportArtifact(run_id=..., path=core-report.md, evidence_manifest_path=manifest_path)`.
 
+For strict-core evidence generated from case lifecycle hooks, `CoreEvidenceReportGenerator` must surface persisted lifecycle metadata instead of requiring users to inspect raw manifest JSON. Markdown and JSON reports should distinguish:
+
+- `onCaseStart`: before-case hook work, including nested `runCase` command steps triggered from start hooks and `runShell` start-hook steps.
+- `case`: the root case's main command body.
+- `onCaseComplete`: after-case hook work, including nested `runCase` command steps triggered from complete hooks and `runShell` complete-hook steps.
+
+The strict-core JSON summary should include lifecycle counts by phase: total, passed, failed, and status. The Markdown summary should include the same lifecycle breakdown in a concise table. The Markdown steps table should include lifecycle phase, source case name or path, action label, step id, status, failure category, and error. Action labels should prefer persisted replay aliases such as `tapOn`/`launchApp` when available, fall back to capability names, and show hook actions such as `runCase` or `runShell` with safe target/command context. Nested hook case steps should be labeled under the hook phase that triggered them, not only under their child case body phase.
+
 Planned strict-regression and recovery report support:
 
 - Regression reporting must distinguish strict testcase truth from recovery attempts. A strict run executes the YAML exactly as authored, without locator fallback, testcase mutation, or AI recovery. Explicit authored `assertWithAI` verdicts are assertion evidence within the strict run, not recovery. A recovery run is optional and may consume strict-run failure evidence to try deterministic locator fallback or later AI-assisted repair.
@@ -41,7 +49,7 @@ Planned strict-regression and recovery report support:
 - `__init__.py`: Public exports only.
 - `_generator.py`: Markdown and JSON report generation with minimal JSON fallback, typed agent output rendering, execution/verification report shaping, and `ToolCallRecord` reconstruction from structured capability events in `events.jsonl`.
 - `_evidence.py`: Evidence manifest and bundle creation.
-- `_core_evidence_report.py`: Markdown and JSON report generation from `EvidenceBundle` or a core `evidence-manifest.json` path.
+- `_core_evidence_report.py`: Markdown and JSON report generation from `EvidenceBundle` or a core `evidence-manifest.json` path, including strict lifecycle phase summarization when lifecycle metadata is present.
 - `_resolver.py`: Stored report lookup for LLM `report.*` and strict-core `core-report.*` files.
 - Future `_regression_report.py`: Strict-vs-recovery comparison report generation from one strict manifest and an optional recovery manifest.
 - `_failure_analysis.py`: Failure classification helpers.

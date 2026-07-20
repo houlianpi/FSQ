@@ -269,6 +269,30 @@ platform: android
     assert _adapter().to_executable_steps(case) == []
 
 
+def test_fsq_executable_step_adapter_ignores_lifecycle_hooks(tmp_path: Path) -> None:
+        case_path = tmp_path / "hooked.codex.yaml"
+        case_path.write_text(
+                """
+schemaVersion: fsq.ai-test/v1
+name: Hooked Case
+platform: android
+onCaseStart:
+    runCase: hooks/login.codex.yaml
+onCaseComplete:
+    runShell: ./scripts/cleanup.sh
+---
+- launchApp
+""",
+                encoding="utf-8",
+        )
+        case = FsqCaseLoader().load_case(case_path)
+
+        steps = _adapter().to_executable_steps(case)
+
+        assert [step.action_name for step in steps] == ["launch_app"]
+        assert steps[0].metadata["raw_command"] == "launchApp"
+
+
 def test_fsq_executable_step_adapter_resolves_web_aliases_from_web_registry(tmp_path: Path) -> None:
     case_path = tmp_path / "web_case.codex.yaml"
     case_path.write_text(

@@ -15,7 +15,7 @@ from fsq_agent.models._exceptions import (
     VerificationError,
 )
 from fsq_agent.models._events import RunEvent, RunEventSink
-from fsq_agent.models._fsq import FsqCase, FsqCaseConfig, FsqPlatform
+from fsq_agent.models._fsq import FsqCase, FsqCaseConfig, FsqCaseHook, FsqCaseHookAction, FsqPlatform
 from fsq_agent.models._core import (
     ANDROID_ACTION_DEFINITIONS,
     ANDROID_ACTION_DEFINITIONS_BY_NAME,
@@ -307,6 +307,8 @@ __all__ = [
     "EvidenceBundle",
     "EvidenceManifest",
     "FsqPlatform",
+    "FsqCaseHookAction",
+    "FsqCaseHook",
     "FsqCaseConfig",
     "FsqCase",
     "ReportArtifact",
