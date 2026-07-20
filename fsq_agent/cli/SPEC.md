@@ -103,6 +103,7 @@ Shared CLI rules:
 - Public CLI commands use the current directory `.fsq-agent-workspace` and do not expose workspace selection. `init --provider` uses current-directory setup paths and validates provider-local readiness in addition to platform initialization.
 - Strict replay parses cases and hook case dependencies against the active platform registry snapshot containing inherited CommonTools plus active PlatformTools.
 - Dynamic recording remains capability metadata-driven and must not infer platform semantics or replayability from command names, `fsq_action_name`, or schema strictness metadata.
+- Dynamic recording records by-design observation skips such as `ui_tree`, `page_snapshot`, `ui_snapshot`, and screenshot/snapshot tools in `recording.json` audit data without adding generated case warnings.
 
 Android CLI behavior:
 

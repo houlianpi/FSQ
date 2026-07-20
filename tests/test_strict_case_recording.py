@@ -299,8 +299,12 @@ def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> No
 
     assert recording.status == "recorded"
     docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    assert docs[0]["properties"]["recording"]["warnings"] == []
     assert docs[1] == [{"tapOn": {"target": "Login"}}]
     assert recording.skipped_tool_calls == [{"tool_name": "ui_tree", "reason": "observation tool is not recorded"}]
+    manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
+    assert manifest["warnings"] == []
+    assert manifest["skipped_tool_calls"] == [{"tool_name": "ui_tree", "reason": "observation tool is not recorded"}]
 
 
 def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: Path) -> None:

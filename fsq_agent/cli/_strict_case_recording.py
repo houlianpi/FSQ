@@ -187,7 +187,7 @@ class _RecordingCollector:
             self._skip(start.tool_name, "platform tool did not include fsq_command replay metadata")
             return
         if self._step_kind(start, event) == "observation":
-            self._skip(start.tool_name, "observation tool is not recorded")
+            self._skip(start.tool_name, "observation tool is not recorded", warn=False)
             return
         fsq_action_name = replay.get("alias")
         if not isinstance(fsq_action_name, str) or not fsq_action_name:
@@ -278,9 +278,10 @@ class _RecordingCollector:
                     return starts.pop(index)
         return starts.pop(0) if starts else None
 
-    def _skip(self, tool_name: str | None, reason: str) -> None:
+    def _skip(self, tool_name: str | None, reason: str, *, warn: bool = True) -> None:
         self.skipped_tool_calls.append({"tool_name": tool_name or "unknown", "reason": reason})
-        self.warnings.append(f"Skipped {tool_name or 'unknown'}: {reason}")
+        if warn:
+            self.warnings.append(f"Skipped {tool_name or 'unknown'}: {reason}")
 
 
 def _load_events(path: Path) -> list[RunEvent]:
