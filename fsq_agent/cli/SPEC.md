@@ -105,12 +105,12 @@ Shared CLI rules:
 Android CLI behavior:
 
 - Android strict runs require Android app id from environment or case metadata according to strict validation rules.
-- Android strict runs build `AndroidHarness` with `UiAutomator2AndroidDriver` and capture `screenshot`/`ui_tree` evidence.
+- Android strict runs build the active harness through `HarnessFactory`; `DriverFactory` selects the configured Android backend driver, and strict execution captures `screenshot`/`ui_tree` evidence.
 
 Web CLI behavior:
 
 - Web strict runs do not require Android app id or serial.
-- Web strict runs build `WebHarness` with `PlaywrightWebDriver` without launching a browser. Authored `startBrowser` starts or reuses the browser/page; authored `closeBrowser` closes it. CLI must not inject either command, and `navigateTo` must not be treated as startup.
+- Web strict runs build the active harness through `HarnessFactory` and the config-selected Web backend driver without launching a browser. Authored `startBrowser` starts or reuses the browser/page; authored `closeBrowser` closes it. CLI must not inject either command, and `navigateTo` must not be treated as startup.
 - Web strict runs capture `screenshot`/`page_snapshot` evidence only when the active Web driver has a started page.
 - Web strict navigation must use fully qualified URLs or the configured Web base URL policy.
 
@@ -118,15 +118,15 @@ Windows CLI behavior:
 
 - Windows strict runs do not require Android app id or serial, Web browser executable settings, or macOS Appium settings.
 - Windows strict runs validate `harness.windows.backend == "pywinauto"` plus environment-backed Windows app path and pywinauto adapter settings before external UI actions begin.
-- Windows strict runs build `WindowsHarness` with `PywinautoWindowsDriver` without launching the app during registry bootstrap or YAML parsing. Authored `launchApp` starts the configured application and authored `killApp` terminates it; CLI must not inject either command.
-- Windows strict runs pass normalized settings values for app path, pywinauto backend kind, optional window title regex, and configured launch arguments into `PywinautoWindowsDriver`.
+- Windows strict runs build the active harness through `HarnessFactory` and the config-selected Windows backend driver without launching the app during registry bootstrap or YAML parsing. Authored `launchApp` starts the configured application and authored `killApp` terminates it; CLI must not inject either command.
+- Windows strict runs pass normalized settings values for app path, pywinauto backend kind, optional window title regex, and configured launch arguments into the config-selected Windows backend driver.
 - Windows strict runs capture `screenshot`/`ui_snapshot` evidence for capture-enabled PlatformTools and use `uiSnapshot` for explicit observation commands.
 
 macOS CLI behavior:
 
 - macOS strict runs do not require Android app id or serial and do not require Web browser executable settings.
 - macOS strict runs validate `harness.macos.backend == "appium_mac2"` plus environment-backed Appium server and target app settings before external UI actions begin.
-- macOS strict runs build `MacOSHarness` with `AppiumMac2Driver` without connecting to Appium or launching the app during registry bootstrap or YAML parsing. Authored `launchApp` creates or reuses the Mac2 session and target app, and authored `killApp` terminates or closes it according to the driver contract. CLI must not inject either command.
+- macOS strict runs build the active harness through `HarnessFactory` and the config-selected macOS backend driver without connecting to Appium or launching the app during registry bootstrap or YAML parsing. Authored `launchApp` creates or reuses the Mac2 session and target app, and authored `killApp` terminates or closes it according to the driver contract. CLI must not inject either command.
 - macOS strict runs capture `screenshot`/`ui_snapshot` evidence for capture-enabled PlatformTools and use `uiSnapshot` for explicit observation commands.
 - macOS strict runs support deterministic desktop assertions including `assertVisible` and `assertElementsOrder`; wrong element order is an assertion failure, while missing required elements are target-resolution failures.
 
@@ -207,7 +207,7 @@ Recording failures happen after a dynamic run and must not change that dynamic r
 - Dynamic run recording is post-run evidence transformation, not task execution. It reads persisted normalized capability events after `FsqAgent.run` returns and writes only under that run directory.
 - Recorded cases reflect actual successfully completed non-observation capabilities with `ReplayPolicy(kind="fsq_command")` plus supported dependency capabilities with `ReplayPolicy(kind="dependency")`. The recorder must skip observation step kinds, and must not invent setup, teardown, Web `startBrowser`/`closeBrowser`, assertions, locator fallback, recovery actions, or source YAML mutations. Missing assertions, observations, or lifecycle actions produce warnings when relevant.
 - Runtime secrets in recorded cases are represented by environment variable names through `runtimeSecret` refs. Secret values are resolved only in memory during strict replay and are never written to generated YAML, event previews, manifests, reports, recording manifests, or logs.
-- `run --strict` is strict-core execution. It parses FSQ YAML, uses config-owned active platform settings, and does not construct or invoke LLM components for planning, recovery, locator fallback, action repair, or final verification. Android strict runs use Android aliases, `AndroidHarness`, `CommonPlatformTools`, and the selected Android backend driver; Web strict runs use Web aliases, `WebHarness`, `CommonPlatformTools`, and the selected Web backend driver; macOS strict runs use macOS aliases, `MacOSHarness`, `CommonPlatformTools`, and `AppiumMac2Driver`. The sole provider-backed exception is an explicitly authored `assertWithAI` step, for which CLI may build and inject an AI assertion evaluator into the active harness/backend support before execution.
+- `run --strict` is strict-core execution. It parses FSQ YAML, uses config-owned active platform settings, and does not construct or invoke LLM components for planning, recovery, locator fallback, action repair, or final verification. Strict runs resolve platform aliases through the active registry and build the active harness through `HarnessFactory`, with `CommonPlatformTools` inherited by every platform and the concrete backend driver selected by config. The sole provider-backed exception is an explicitly authored `assertWithAI` step, for which CLI may build and inject an AI assertion evaluator into the active harness/backend support before execution.
 - Directory execution is intentionally serial because UI automation cases share external device and application state. Each case still creates independent run state so SDK sessions, harness context, AgentTool state, and platform CommonTool state do not leak across cases.
 - `report` is a lookup/print command only; report generation happens during execution. It resolves either LLM reports or strict-core reports without exposing separate report commands.
 - `playground` is a local developer convenience entry point. CLI owns only argument parsing, settings loading, and server startup; the `playground` module owns HTTP routes, browser assets, session state, execution adapters, screenshot preview, replay video handling, and report lookup.

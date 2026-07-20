@@ -6,7 +6,7 @@ import subprocess
 import time
 
 from fsq_agent.config import Settings
-from fsq_agent.core import UiAutomator2AndroidDriver
+from fsq_agent.core import DriverFactory
 from fsq_agent.playground._state import PlaygroundSession
 
 
@@ -186,7 +186,11 @@ def capture_android_screenshot(settings: Settings, device_id: str | None) -> dic
     app_id = settings.harness.android.app_id
     if not app_id:
         return {"available": False, "error": "FSQ_ANDROID_APP_ID is required for screenshots."}
-    driver = UiAutomator2AndroidDriver(app_id=app_id, serial=device_id or settings.harness.android.serial)
+    driver = DriverFactory().create_android_driver(
+        settings.harness.android,
+        app_id=app_id,
+        serial=device_id or settings.harness.android.serial,
+    )
     screenshot = driver.screenshot()
     return {
         "available": True,

@@ -376,7 +376,7 @@ def test_runtime_builds_configured_web_harness(monkeypatch: pytest.MonkeyPatch, 
 
     import fsq_agent.agent._openai_runtime as runtime_module
 
-    monkeypatch.setattr(runtime_module, "PlaywrightWebDriver", _FakeWebDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", _FakeWebDriver)
     monkeypatch.setattr(runtime_module, "build_ai_assertion_evaluator", lambda _settings: "ai-evaluator")
     chrome_path = tmp_path / "chrome.exe"
     chrome_path.write_text("", encoding="utf-8")
@@ -433,7 +433,7 @@ def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch
 
     import fsq_agent.agent._openai_runtime as runtime_module
 
-    monkeypatch.setattr(runtime_module, "AppiumMac2Driver", _FakeMacOSDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.AppiumMac2Driver", _FakeMacOSDriver)
     monkeypatch.setattr(runtime_module, "build_ai_assertion_evaluator", lambda _settings: "ai-evaluator")
     settings = Settings(
         harness={

@@ -987,7 +987,7 @@ appId: com.microsoft.emmx
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.playground._execution.UiAutomator2AndroidDriver", FakeDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
 
     _run_dynamic_task(
@@ -1068,7 +1068,7 @@ platform: web
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.playground._execution.PlaywrightWebDriver", FakeWebDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", FakeWebDriver)
     monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
 
     _run_dynamic_task(
@@ -1153,7 +1153,7 @@ platform: windows
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.playground._execution.PywinautoWindowsDriver", FakeWindowsDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PywinautoWindowsDriver", FakeWindowsDriver)
     monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
 
     _run_dynamic_task(

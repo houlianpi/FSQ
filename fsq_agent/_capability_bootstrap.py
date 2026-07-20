@@ -5,14 +5,14 @@ from typing import Any
 
 from fsq_agent.core import (
     CapabilityRegistry,
+    CapabilityDefinitionFactory,
     CommonPlatformTools,
-    DefaultCapabilityDefinitionFactory,
 )
 from fsq_agent.models import CapabilityDefinition, HarnessPlatform
 from fsq_agent.tools import DefaultAgentToolProvider, FileOps
 
 
-_DEFAULT_CAPABILITY_DEFINITION_FACTORY = DefaultCapabilityDefinitionFactory()
+_CAPABILITY_DEFINITION_FACTORY = CapabilityDefinitionFactory()
 
 
 def common_capability_definitions() -> list[CapabilityDefinition]:
@@ -29,7 +29,7 @@ def build_capability_registry(*, platform: HarnessPlatform = "android", include_
 
 
 def _platform_capability_definitions(platform: HarnessPlatform, *, include_ai_assertion: bool) -> list[CapabilityDefinition]:
-    return _DEFAULT_CAPABILITY_DEFINITION_FACTORY.platform_definitions(
+    return _CAPABILITY_DEFINITION_FACTORY.platform_definitions(
         platform=platform,
         include_ai_assertion=include_ai_assertion,
     )
