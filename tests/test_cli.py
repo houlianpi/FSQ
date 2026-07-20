@@ -371,7 +371,7 @@ execution:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.UiAutomator2AndroidDriver", FakeDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "android", "--strict", "--case-yaml", "strict_cli.codex.yaml"])
@@ -414,7 +414,7 @@ harness:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.UiAutomator2AndroidDriver", FakeDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "android", "--strict", "--case-yaml", str(case_path)])
@@ -431,7 +431,7 @@ def test_run_strict_case_requires_config_or_case_app_id_before_driver_constructi
     def fail_driver(**_kwargs):
         raise AssertionError("driver should not be constructed")
 
-    monkeypatch.setattr("fsq_agent.cli._main.UiAutomator2AndroidDriver", fail_driver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", fail_driver)
 
     result = CliRunner().invoke(main, ["run", "--platform", "android", "--strict", "--case-yaml", str(case_path)])
 
@@ -475,7 +475,7 @@ harness:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.PlaywrightWebDriver", FakeWebDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", FakeWebDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "web", "--strict", "--case-yaml", "strict_web.codex.yaml"])
@@ -530,7 +530,7 @@ harness:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.AppiumMac2Driver", FakeMacOSDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.AppiumMac2Driver", FakeMacOSDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "macos", "--strict", "--case-yaml", "strict_macos.codex.yaml"])
@@ -591,7 +591,7 @@ harness:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.PywinautoWindowsDriver", FakeWindowsDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PywinautoWindowsDriver", FakeWindowsDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "windows", "--strict", "--case-yaml", "strict_windows.codex.yaml"])
@@ -628,7 +628,7 @@ harness:
         constructed = True
         raise AssertionError("driver should not be constructed")
 
-    monkeypatch.setattr("fsq_agent.cli._main.PlaywrightWebDriver", fail_driver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", fail_driver)
 
     result = CliRunner().invoke(main, ["run", "--platform", "web", "--strict", "--case-yaml", "android_case.codex.yaml"])
 
@@ -673,7 +673,7 @@ harness:
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.cli._main.UiAutomator2AndroidDriver", FakeDriver)
+    monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
     result = CliRunner().invoke(main, ["run", "--platform", "android", "--strict", "--case-dir", str(cases_dir)])

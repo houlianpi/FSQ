@@ -71,14 +71,14 @@ Web playground behavior:
 
 - Android session/setup endpoints return structured unavailable responses when Web is active.
 - Web runtime info reports backend, channel, browser executable configured state, headless mode, and base URL presence.
-- Web dynamic and strict execution construct `WebHarness`/`PlaywrightWebDriver` without launching a browser; `startBrowser` and `closeBrowser` remain explicit task/FSQ capabilities and are not injected by playground routes.
+- Web dynamic and strict execution construct the active harness through `HarnessFactory` and the config-selected Web backend driver without launching a browser; `startBrowser` and `closeBrowser` remain explicit task/FSQ capabilities and are not injected by playground routes.
 - Web screenshot preview uses the active Web harness/driver screenshot path when a page is started and returns a structured unavailable/error response before `startBrowser` or after `closeBrowser`.
 
 Windows playground behavior:
 
 - Android session/setup endpoints return structured unavailable responses when Windows is active.
 - Windows runtime info reports backend, pywinauto backend kind, app path configured state, window title regex presence, launch-args count, busy state, and last-run summary.
-- Windows dynamic and strict execution construct `WindowsHarness`/`PywinautoWindowsDriver` without launching the app during route setup, registry bootstrap, or YAML parsing; `launchApp` and `killApp` remain explicit task/FSQ capabilities and are not injected by playground routes.
+- Windows dynamic and strict execution construct the active harness through `HarnessFactory` and the config-selected Windows backend driver without launching the app during route setup, registry bootstrap, or YAML parsing; `launchApp` and `killApp` remain explicit task/FSQ capabilities and are not injected by playground routes.
 - Windows strict execution parses replay aliases such as `launchApp`, `clickOn`, `typeText`, `pressKey`, `uiSnapshot`, `assertVisible`, and `assertWithAI` through the Windows registry snapshot.
 - Windows screenshot preview uses the active Windows harness/driver screenshot path when a pywinauto window is available and returns a structured unavailable/error response before `launchApp` or after app cleanup.
 
@@ -86,7 +86,7 @@ macOS playground behavior:
 
 - Android session/setup endpoints return structured unavailable responses when macOS is active.
 - macOS runtime info reports backend, Appium server configured state, bundle id presence, app path presence, busy state, and last-run summary.
-- macOS dynamic and strict execution construct `MacOSHarness`/`AppiumMac2Driver` without connecting to Appium or launching the app during route setup; `launchApp` and `killApp` remain explicit task/FSQ capabilities and are not injected by playground routes.
+- macOS dynamic and strict execution construct the active harness through `HarnessFactory` and the config-selected macOS backend driver without connecting to Appium or launching the app during route setup; `launchApp` and `killApp` remain explicit task/FSQ capabilities and are not injected by playground routes.
 - macOS screenshot preview uses the active macOS harness/driver screenshot path when a Mac2 session exists and returns a structured unavailable/error response before `launchApp` or after session cleanup.
 - macOS strict execution parses replay aliases such as `clickOn`, `typeText`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI` through the macOS registry snapshot.
 

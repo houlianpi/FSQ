@@ -4,7 +4,8 @@ from typing import Any
 
 import pytest
 
-from fsq_agent.core import AndroidDriverInterface, UiAutomator2AndroidDriver
+from fsq_agent.core import AndroidDriverInterface
+from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
 from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
 from fsq_agent.models import AndroidAssertWithAIParams, ConfigurationError, ReplayPolicy
 

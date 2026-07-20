@@ -15,18 +15,12 @@ from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
-	AndroidHarness,
-	AppiumMac2Driver,
 	ArtifactStore,
+	HarnessFactory,
 	EvidenceRecorder,
-	MacOSHarness,
-	PlaywrightWebDriver,
-	PywinautoWindowsDriver,
+	HarnessInterface,
 	StepRunner,
 	StepSequenceRunner,
-	UiAutomator2AndroidDriver,
-	WebHarness,
-	WindowsHarness,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, RuntimeSecretRef, Task, TaskResult, VerificationResult
@@ -569,23 +563,19 @@ def _validate_strict_case_platform(settings: Settings, case) -> None:
 
 
 def _build_strict_harness(settings: Settings, case, run_dir: Path, requires_ai_assertion: bool) -> Any:
+	app_id = None
 	if settings.harness.platform == "android":
 		app_id = settings.harness.android.app_id or case.config.app_id or ""
 		if not app_id:
 			raise ValueError("Android app id is required for strict YAML runs.")
-		return AndroidHarness(
-			driver=UiAutomator2AndroidDriver(app_id=app_id, serial=settings.harness.android.serial),
-			artifact_store=ArtifactStore(run_dir=run_dir),
-			ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
-			runtime_secret_settings=settings.runtime_secrets,
-		)
-	if settings.harness.platform == "web":
-		return _build_web_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
-	if settings.harness.platform == "windows":
-		return _build_windows_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
-	if settings.harness.platform == "macos":
-		return _build_macos_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
-	raise ValueError(f"Unsupported harness platform: {settings.harness.platform}")
+	return HarnessFactory().create_harness(
+		platform=settings.harness.platform,
+		harness_settings=settings.harness,
+		artifact_store=ArtifactStore(run_dir=run_dir),
+		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
+		runtime_secret_settings=settings.runtime_secrets,
+		app_id=app_id,
+	)
 
 
 def _preview_harness_factory(settings: Settings, handle: PlaygroundExecutionHandle):
@@ -614,51 +604,26 @@ def _preview_harness_factory(settings: Settings, handle: PlaygroundExecutionHand
 	return factory
 
 
-def _build_web_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> WebHarness:
-	web = settings.harness.web
-	viewport = (web.viewport_width, web.viewport_height) if web.viewport_width is not None and web.viewport_height is not None else None
-	return WebHarness(
-		driver=PlaywrightWebDriver(
-			channel=web.channel,
-			executable_path=web.browser_executable_path,
-			headless=web.headless,
-			base_url=web.base_url,
-			viewport=viewport,
-		),
+def _build_web_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> HarnessInterface:
+	return _build_factory_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
+
+
+def _build_windows_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> HarnessInterface:
+	return _build_factory_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
+
+
+def _build_macos_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> HarnessInterface:
+	return _build_factory_harness(settings, run_dir, requires_ai_assertion=requires_ai_assertion)
+
+
+def _build_factory_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> HarnessInterface:
+	return HarnessFactory().create_harness(
+		platform=settings.harness.platform,
+		harness_settings=settings.harness,
 		artifact_store=ArtifactStore(run_dir=run_dir),
 		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
 		runtime_secret_settings=settings.runtime_secrets,
-	)
-
-
-def _build_windows_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> WindowsHarness:
-	windows = settings.harness.windows
-	return WindowsHarness(
-		driver=PywinautoWindowsDriver(
-			app_path=windows.app_path,
-			backend_kind=windows.backend_kind,
-			window_title_re=windows.window_title_re,
-			launch_args=windows.launch_args,
-		),
-		artifact_store=ArtifactStore(run_dir=run_dir),
-		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
-		runtime_secret_settings=settings.runtime_secrets,
-	)
-
-
-def _build_macos_harness(settings: Settings, run_dir: Path, *, requires_ai_assertion: bool) -> MacOSHarness:
-	macos = settings.harness.macos
-	return MacOSHarness(
-		driver=AppiumMac2Driver(
-			server_url=macos.appium_server_url or "",
-			bundle_id=macos.bundle_id,
-			app_path=macos.app_path,
-			page_source_max_depth=macos.page_source_max_depth,
-			action_timeout_seconds=macos.action_timeout_seconds,
-		),
-		artifact_store=ArtifactStore(run_dir=run_dir),
-		ai_assertion_evaluator=build_ai_assertion_evaluator(settings) if requires_ai_assertion else None,
-		runtime_secret_settings=settings.runtime_secrets,
+		app_id=settings.harness.android.app_id,
 	)
 
 

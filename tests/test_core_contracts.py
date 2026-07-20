@@ -47,6 +47,41 @@ def test_core_public_exports_follow_strict_boundary() -> None:
     import fsq_agent.core as core
     import fsq_agent.core.harness as harness
 
+    expected_core_public_names = {
+        "CapabilityDefinitionFactory",
+        "CommonPlatformTools",
+        "DriverFactory",
+        "HarnessFactory",
+        "AndroidDriverInterface",
+        "WebDriverInterface",
+        "WindowsDriverInterface",
+        "MacOSDriverInterface",
+    }
+    expected_harness_public_names = expected_core_public_names - {"CapabilityDefinitionFactory", "CommonPlatformTools"}
+    for name in expected_core_public_names:
+        assert hasattr(core, name)
+    for name in expected_harness_public_names:
+        assert hasattr(harness, name)
+
+    private_implementation_names = {
+        "AndroidHarness",
+        "WebHarness",
+        "WindowsHarness",
+        "MacOSHarness",
+        "UiAutomator2AndroidDriver",
+        "PlaywrightWebDriver",
+        "PywinautoWindowsDriver",
+        "AppiumMac2Driver",
+        "DefaultCapabilityDefinitionFactory",
+        "DefaultDriverFactory",
+        "DefaultHarnessFactory",
+        "DriverFactoryInterface",
+        "HarnessFactoryInterface",
+    }
+    for name in private_implementation_names:
+        assert not hasattr(core, name)
+        assert not hasattr(harness, name)
+
     assert not hasattr(core, "driver_tool")
     assert not hasattr(core, "android_capability_definitions")
     assert not hasattr(core, "web_capability_definitions")
@@ -55,17 +90,56 @@ def test_core_public_exports_follow_strict_boundary() -> None:
     assert not hasattr(harness, "driver_tool")
 
 
-def test_default_capability_definition_factory_selects_platform_and_filters_ai_assertion() -> None:
-    from fsq_agent.core import DefaultCapabilityDefinitionFactory
+def test_capability_definition_factory_selects_platform_and_filters_ai_assertion() -> None:
+    from fsq_agent.core import CapabilityDefinitionFactory, CommonPlatformTools
 
-    factory = DefaultCapabilityDefinitionFactory()
+    factory = CapabilityDefinitionFactory()
 
-    web_definitions = factory.platform_definitions(platform="web")
-    web_without_ai = factory.platform_definitions(platform="web", include_ai_assertion=False)
+    web_definitions = factory.platform_definitions(platform="web", backend="playwright")
+    web_without_ai = factory.platform_definitions(platform="web", backend="playwright", include_ai_assertion=False)
 
+    assert {definition.name for definition in CommonPlatformTools.capability_definitions()} == {"wait_ms", "get_runtime_secret"}
     assert {definition.name for definition in web_definitions} >= {"start_browser", "close_browser", "assert_with_ai"}
     assert "assert_with_ai" not in {definition.name for definition in web_without_ai}
     assert all(definition.platform == "web" for definition in web_definitions)
+
+
+def test_driver_factory_returns_platform_driver_protocols(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fsq_agent.core import (
+        AndroidDriverInterface,
+        DriverFactory,
+        MacOSDriverInterface,
+        WebDriverInterface,
+        WindowsDriverInterface,
+    )
+    from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
+    from fsq_agent.models import AndroidHarnessSettings, MacOSHarnessSettings, WebHarnessSettings, WindowsHarnessSettings
+
+    monkeypatch.setattr(UiAutomator2AndroidDriver, "_connect", lambda self, serial: object())
+    factory = DriverFactory()
+
+    assert isinstance(factory.create_android_driver(AndroidHarnessSettings(), app_id="app"), AndroidDriverInterface)
+    assert isinstance(factory.create_web_driver(WebHarnessSettings()), WebDriverInterface)
+    assert isinstance(factory.create_windows_driver(WindowsHarnessSettings()), WindowsDriverInterface)
+    assert isinstance(factory.create_macos_driver(MacOSHarnessSettings()), MacOSDriverInterface)
+
+
+def test_harness_factory_returns_harness_interface(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from fsq_agent.core import ArtifactStore, HarnessFactory, HarnessInterface
+    from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
+    from fsq_agent.models import HarnessSettings
+
+    monkeypatch.setattr(UiAutomator2AndroidDriver, "_connect", lambda self, serial: object())
+    factory = HarnessFactory()
+
+    harness = factory.create_harness(
+        platform="android",
+        harness_settings=HarnessSettings(platform="android"),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+        app_id="app",
+    )
+
+    assert isinstance(harness, HarnessInterface)
 
 
 def test_non_core_package_code_does_not_import_core_private_modules() -> None:

@@ -52,26 +52,26 @@ Planned signatures:
 
 Shared runtime rules:
 
-- `OpenAIAgentsRuntime` builds the active harness, platform CommonTool provider, and backend driver from `settings.harness.platform`.
+- `OpenAIAgentsRuntime` builds the active harness through `core.HarnessFactory`, which composes the platform CommonTool provider and config-selected backend driver from `settings.harness.platform` and backend settings.
 - SDK tools are generated from dynamic-only AgentTools plus the active platform CommonTool/PlatformTool `action_space()`.
 - The runtime remains decoupled from platform decorator internals and backend SDK APIs.
 
 Android runtime:
 
-- Uses `AndroidHarness`, `CommonPlatformTools`, and `UiAutomator2AndroidDriver`.
+- Uses `HarnessFactory` to compose the private Android harness, `CommonPlatformTools`, and the config-selected Android driver.
 - Startup metadata includes safe Android app id and serial presence.
 - Expected platform skill is `android-harness.md` when configured.
 
 Web runtime:
 
-- Uses `WebHarness`, `CommonPlatformTools`, and `PlaywrightWebDriver`.
+- Uses `HarnessFactory` to compose the private Web harness, `CommonPlatformTools`, and the config-selected Web driver.
 - Startup metadata includes safe Web backend, channel, browser executable configured state, headless, and base URL presence.
 - Harness construction must not launch a browser. Dynamic Web runs receive `start_browser` and `close_browser` as normal harness tools, and the runtime must not auto-call or auto-inject them.
 - Expected platform skill is `web-harness.md` when configured.
 
 macOS runtime:
 
-- Uses `MacOSHarness`, `CommonPlatformTools`, and `AppiumMac2Driver`.
+- Uses `HarnessFactory` to compose the private macOS harness, `CommonPlatformTools`, and the config-selected macOS driver.
 - Startup metadata includes only safe macOS fields: platform, backend, Appium server configured state, bundle id presence, app path presence, action timeout seconds, driver class, and configured skill names. It must not log local paths when they are considered sensitive by configuration policy or any secret environment values.
 - Harness construction must not connect to Appium or launch a macOS application. Dynamic macOS runs receive `launch_app` and `kill_app` as normal harness tools, and the runtime must not auto-call or auto-inject them.
 - Expected platform skill is `macos-harness.md` when configured.
@@ -107,7 +107,7 @@ During `FsqAgent.run`, a dynamic task is internally planned before external UI a
 - The SDK runner owns tool dispatch and turn continuation. The project should not reimplement the Responses function-call loop.
 - SDK tools are generated from validated AgentTool definitions plus active platform CommonTool/PlatformTool `action_space()` schemas. `OpenAIAgentsRuntime` converts dynamic helper tools and recordable platform capabilities into SDK `FunctionTool` objects using canonical names, schemas, and descriptions. Active capability SDK tools use strict JSON schema by default; per-capability schema strictness is not part of capability metadata. Unimplemented backend methods must not appear in `action_space()` because they must not be decorated as capabilities. It creates SDK agents with no external platform tool servers. `assert_with_ai` is a driver-backed PlatformTool exposed by the active backend when an evaluator is configured, not an AgentTool and not a concrete harness method.
 - `OpenAIAgentsRuntime` must pass explicit OpenAI Agents SDK `ModelSettings` with `reasoning.effort="medium"` and `verbosity="medium"` to the main execution agent, pre-planner, and verification agent unless a future SPEC adds first-class model-setting configuration. This prevents SDK package upgrades from silently injecting model-family defaults such as disabled reasoning or low verbosity into dynamic UI automation runs.
-- `OpenAIAgentsRuntime` constructs the active harness, platform CommonTool provider, and backend driver from `settings.harness.platform`. Android construction remains `AndroidHarness` plus `CommonPlatformTools` plus `UiAutomator2AndroidDriver`; Web construction is `WebHarness` plus `CommonPlatformTools` plus `PlaywrightWebDriver` using `settings.harness.web`; macOS construction is `MacOSHarness` plus `CommonPlatformTools` plus `AppiumMac2Driver` using `settings.harness.macos`. The runtime must not inspect Playwright APIs, Appium APIs, MCP reference code, or decorator internals when exposing tools; it uses `harness.action_space()` and `StepRunner` like every other platform.
+- `OpenAIAgentsRuntime` constructs the active harness through `HarnessFactory` from `settings.harness.platform`. Driver selection is delegated to `DriverFactory`, which chooses the private concrete backend from config-owned platform backend settings. The runtime must not inspect Playwright APIs, Appium APIs, MCP reference code, or decorator internals when exposing tools; it uses `harness.action_space()` and `StepRunner` like every other platform.
 - Web browser lifecycle is task-visible capability behavior. The runtime may construct a Web driver object for tool exposure, but it must not launch a browser until the agent executes `start_browser`, and it must not treat final resource cleanup as evidence that `close_browser` was executed.
 - The runtime treats decorators as compile/bootstrap-time declaration mechanics only. It consumes `CapabilityDefinition` values, `CapabilityRegistry` snapshots, and `StepRunner` results, and it must not inspect decorator marker attributes or platform action catalog entries directly.
 - Main execution startup is observable before the first SDK planning turn. `OpenAIAgentsRuntime.run_task` emits runtime progress events for startup, harness setup, tool setup, and SDK agent readiness before the existing main `Planning started` event. Harness setup events include only safe metadata such as platform, backend, app id presence, serial presence, Web channel, Web browser executable configured state, headless mode, base URL presence, macOS Appium server configured state, macOS bundle id/app path presence, timeout seconds, configured skill names, and driver class when available.

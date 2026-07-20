@@ -2,9 +2,10 @@ from typing import Any
 
 import pytest
 
-from fsq_agent.core import ArtifactStore, HarnessInterface, WindowsHarness
+from fsq_agent.core import ArtifactStore, HarnessInterface
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._driver_tools import _windows_driver_tool
+from fsq_agent.core.harness._windows import WindowsHarness
 from fsq_agent.models import (
     AIAssertionRequest,
     AIAssertionResult,
