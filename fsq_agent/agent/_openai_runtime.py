@@ -11,16 +11,9 @@ from typing import Any
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.config import Settings, validate_runtime_settings
 from fsq_agent.core import (
-    AndroidHarness,
-    AppiumMac2Driver,
     ArtifactStore,
+    HarnessFactory,
     HarnessInterface,
-    MacOSHarness,
-    PlaywrightWebDriver,
-    PywinautoWindowsDriver,
-    UiAutomator2AndroidDriver,
-    WebHarness,
-    WindowsHarness,
 )
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
 from fsq_agent.models import AgentFinalOutput, ConfigurationError, GoalPrePlan, KnowledgeBundle, PlanningError, RunEvent, RunEventSink, SkillBundle, StepResult, Task
@@ -818,69 +811,14 @@ class OpenAIAgentsRuntime:
     def _build_harness(self, run_id: str) -> HarnessInterface:
         if self.harness_factory is not None:
             return self.harness_factory(run_id)
-        if self.settings.harness.platform == "android":
-            android = self.settings.harness.android
-            if android.backend != "uiautomator2":
-                raise ConfigurationError("Unsupported Android harness backend.", context={"backend": android.backend})
-            driver = UiAutomator2AndroidDriver(app_id=android.app_id or "", serial=android.serial)
-            return AndroidHarness(
-                driver=driver,
-                artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
-                ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
-                runtime_secret_settings=self.settings.runtime_secrets,
-            )
-        if self.settings.harness.platform == "web":
-            web = self.settings.harness.web
-            if web.backend != "playwright":
-                raise ConfigurationError("Unsupported Web harness backend.", context={"backend": web.backend})
-            viewport = (web.viewport_width, web.viewport_height) if web.viewport_width is not None and web.viewport_height is not None else None
-            driver = PlaywrightWebDriver(
-                channel=web.channel,
-                executable_path=web.browser_executable_path,
-                headless=web.headless,
-                base_url=web.base_url,
-                viewport=viewport,
-            )
-            return WebHarness(
-                driver=driver,
-                artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
-                ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
-                runtime_secret_settings=self.settings.runtime_secrets,
-            )
-        if self.settings.harness.platform == "windows":
-            windows = self.settings.harness.windows
-            if windows.backend != "pywinauto":
-                raise ConfigurationError("Unsupported Windows harness backend.", context={"backend": windows.backend})
-            driver = PywinautoWindowsDriver(
-                app_path=str(windows.app_path) if windows.app_path else None,
-                backend_kind=windows.backend_kind,
-                window_title_re=windows.window_title_re,
-                launch_args=windows.launch_args,
-            )
-            return WindowsHarness(
-                driver=driver,
-                artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
-                ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
-                runtime_secret_settings=self.settings.runtime_secrets,
-            )
-        if self.settings.harness.platform == "macos":
-            macos = self.settings.harness.macos
-            if macos.backend != "appium_mac2":
-                raise ConfigurationError("Unsupported macOS harness backend.", context={"backend": macos.backend})
-            driver = AppiumMac2Driver(
-                server_url=macos.appium_server_url or "",
-                bundle_id=macos.bundle_id,
-                app_path=macos.app_path,
-                page_source_max_depth=macos.page_source_max_depth,
-                action_timeout_seconds=macos.action_timeout_seconds,
-            )
-            return MacOSHarness(
-                driver=driver,
-                artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
-                ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
-                runtime_secret_settings=self.settings.runtime_secrets,
-            )
-        raise ConfigurationError("Unsupported harness platform.", context={"platform": self.settings.harness.platform})
+        return HarnessFactory().create_harness(
+            platform=self.settings.harness.platform,
+            harness_settings=self.settings.harness,
+            artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
+            ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
+            runtime_secret_settings=self.settings.runtime_secrets,
+            app_id=self.settings.harness.android.app_id,
+        )
 
     def _map_stream_event(self, event: Any, run_id: str, task_id: str) -> RunEvent | None:
         event_type = getattr(event, "type", "")

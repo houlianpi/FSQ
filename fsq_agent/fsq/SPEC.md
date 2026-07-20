@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Load FSQ AI Test DSL YAML cases from the merged FSQ testcase repository, including generated strict replay refs and pure waits, resolve authored action names through the platform-selected capability registry, and convert parsed cases into deterministic canonical execution-core steps for strict-core execution. Dynamic LLM execution that uses a YAML file reads that file as raw text in the CLI layer and deliberately bypasses this module.
+Load FSQ AI Test DSL YAML cases from the merged FSQ testcase repository, including generated strict replay refs, pure waits, and case lifecycle hook metadata; resolve authored action names through the platform-selected capability registry; and convert parsed case command documents into deterministic canonical execution-core steps for strict-core execution. Dynamic LLM execution that uses a YAML file reads that file as raw text in the CLI layer and deliberately bypasses this module.
 
 Goal-only FSQ cases may omit the command document or provide an empty command list; parsed goal-only cases produce no executable steps.
 
 ## Dependencies
 
-- `models`: Uses `FsqCase`, `FsqCaseConfig`, shared configuration errors, execution-core contracts such as `ExecutableStep`, `SourceRef`, and `EvidencePolicy`, strict replay refs such as `RuntimeSecretRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
+- `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep`, `SourceRef`, and `EvidencePolicy`, strict replay refs such as `RuntimeSecretRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
 
 The fsq module must not import `capabilities`, `core`, or `tools`. It receives a `CapabilityRegistrySnapshot` from entry code and resolves authored command names through that serializable snapshot.
 
@@ -16,7 +16,7 @@ The fsq module must not import `capabilities`, `core`, or `tools`. It receives a
 
 Current `__init__.py` exports via `__all__`:
 
-- `FsqCaseLoader`: Loads `.codex.yaml` FSQ cases from explicit paths or the configured read-only case directory for strict-core execution. It accepts traditional metadata-plus-command cases and goal-only metadata cases.
+- `FsqCaseLoader`: Loads `.codex.yaml` FSQ cases from explicit paths or the configured read-only case directory for strict-core execution. It accepts traditional metadata-plus-command cases, goal-only metadata cases, and optional lifecycle hook metadata in the first YAML document.
 - `FsqExecutableStepAdapter`: Converts an `FsqCase` command document into ordered canonical `ExecutableStep` records for deterministic core execution using a registry snapshot.
 - `is_fsq_case_file`: Detects FSQ case file names.
 
@@ -26,6 +26,20 @@ The first deterministic step adapter exposes a narrow API:
 adapter = FsqExecutableStepAdapter(registry_snapshot=registry.snapshot())
 steps = adapter.to_executable_steps(case)
 ```
+
+Lifecycle hooks are metadata on `FsqCase.config`, not command-list pseudo-commands. `FsqCaseLoader` validates and normalizes `onCaseStart` and `onCaseComplete`, while `FsqExecutableStepAdapter.to_executable_steps(case)` converts only `case.commands`. Hook execution, hook path resolution, recursion detection, shell execution, and lifecycle failure policy are owned by the strict CLI entry layer.
+
+The first YAML document may contain optional lifecycle fields:
+
+```yaml
+onCaseStart:
+  - runShell: ./scripts/prepare.sh
+    runCase: hooks/login.codex.yaml
+onCaseComplete:
+  runCase: hooks/logout.codex.yaml
+```
+
+Each lifecycle field may be omitted, may be one hook entry mapping, or may be an ordered list of hook entry mappings. A hook entry may contain `runCase`, `runShell`, or both; it must contain at least one supported action; unknown hook action keys are invalid; and non-empty string values are required. When both actions are present in one entry, the authored YAML key order must be preserved in the normalized hook model.
 
 `FsqExecutableStepAdapter` resolves authored FSQ action names through canonical capability names and `ReplayPolicy(kind="fsq_command").alias` values in the registry, then stores the canonical capability name in `ExecutableStep.action_name`. Authored names such as `tapOn`, `inputText`, `pressKey`, `assertVisible`, `assert`, `assertWithAI`, `startBrowser`, `closeBrowser`, `clickOn`, `typeText`, `uiSnapshot`, `assertElementsOrder`, and generated replay alias `waitMs` are preserved in `ExecutableStep.metadata["authored_action_name"]`.
 
@@ -121,7 +135,7 @@ Malformed command entries that cannot be reduced to one FSQ action must raise `C
 ## Internal Structure
 
 - `__init__.py`: Public exports only.
-- `_loader.py`: YAML parsing, validation of FSQ document shape, goal-only case normalization, and batch discovery.
+- `_loader.py`: YAML parsing, validation of FSQ document shape, lifecycle hook metadata validation/normalization, goal-only case normalization, and batch discovery.
 - `_step_adapter.py`: Converts loaded FSQ commands into ordered canonical `ExecutableStep` records using a capability registry snapshot.
 - `SPEC.md`: Module design.
 
@@ -130,14 +144,20 @@ Malformed command entries that cannot be reduced to one FSQ action must raise `C
 - Architecture level: 2 Simple Package.
 - Public API: `FsqCaseLoader`, `FsqExecutableStepAdapter`, and `is_fsq_case_file` exported from `__init__.py`.
 - Internal modules: `_loader.py` and `_step_adapter.py` are private implementation modules.
-- Domain boundaries: this module owns deterministic YAML loading and conversion to shared executable-step contracts. It does not execute steps, resolve real secrets, construct registries, create harnesses, or generate reports.
-- Boundary models: parsed cases, executable steps, runtime secret refs, and capability metadata models come from `models`.
+- Domain boundaries: this module owns deterministic YAML loading, lifecycle hook metadata validation, and conversion to shared executable-step contracts. It does not execute steps or hooks, resolve real secrets, resolve hook file paths, run shell commands, construct registries, create harnesses, or generate reports.
+- Boundary models: parsed cases, lifecycle hooks, executable steps, runtime secret refs, and capability metadata models come from `models`.
 - Dependency direction: imports public `models` only; registry snapshots are passed in by entry modules.
 - Rationale: focused parsing/normalization behavior fits Level 2 and does not require orchestration layers.
 
 ## Error Handling
 
-Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported schema versions, missing platform values, and malformed command documents are rejected before strict-core execution starts. A missing command document or empty command list is valid only as a goal-only case and is normalized to `commands=[]`.
+Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported schema versions, missing platform values, malformed hook metadata, and malformed command documents are rejected before strict-core execution starts. Hook entries with unknown action keys, no supported action, empty `runCase` paths, or empty `runShell` commands are invalid. A missing command document or empty command list is valid only as a goal-only case and is normalized to `commands=[]`.
+
+## Testing Contract
+
+- Unit tests should cover loading lifecycle hook metadata in single-entry and list-entry forms; omitted `onCaseStart`/`onCaseComplete` defaults; hook entries containing only `runCase`, only `runShell`, or both fields; preservation of authored action order inside combined hook entries; and rejection of malformed hooks, unknown actions, empty paths, empty shell commands, and entries with neither supported action.
+- Regression tests should verify that `FsqExecutableStepAdapter` still converts only the command document and does not emit lifecycle hook pseudo-steps.
+- Focused verification for FSQ hook parsing should include `./.venv/Scripts/python.exe -m pytest tests/test_fsq.py tests/test_fsq_executable_step_adapter.py` on Windows, or the equivalent POSIX virtualenv command.
 
 ## Design Decisions
 
@@ -146,6 +166,7 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported 
 - Configured `cases.dir` is treated as read-only input. Strict-core execution may parse FSQ case files from it, while dynamic LLM execution may read case files from it as raw text. Generated files and evidence must be written under the output root.
 - Markdown conversion reports are intentionally ignored and are not loaded as task inputs.
 - FSQ commands are deterministic ordered input for the strict-core execution path when converted by `FsqExecutableStepAdapter`. Generated recorded cases may include strict replay refs and pure wait commands, but those are still deterministic authored input by the time strict execution begins.
+- FSQ lifecycle hooks are deterministic metadata around strict command execution, not commands in `case.commands`. The fsq module validates hook syntax and preserves hook order, but the CLI owns strict lifecycle orchestration so `fsq` stays independent of path resolution, shell execution, harnesses, evidence, and reports.
 - Deterministic command payload normalization uses the platform-selected capability registry snapshot. Authored command payloads use the same object field names as the resolved capability parameter models, which keeps case parsing, future case generation, harness dispatch, and SDK schemas aligned to one payload contract while preserving authored names in metadata. Strict replay refs are the sole exception: the adapter may preserve `RuntimeSecretRef` values in pre-resolution params so the CLI strict entry can resolve them before final validation.
 - Capability decorators and platform action catalogs are declaration-time inputs only. FSQ parsing consumes resolved `CapabilityDefinition` data from the registry snapshot and must not inspect decorated functions or platform catalog objects directly.
 - `waitMs` is a generated strict replay alias for the inherited `wait_ms` CommonTool capability. It is validated by `WaitMsParams`, converted into an `ExecutableStep(action_name="wait_ms")`, and later handled by `StepRunner` through the normal registry path without invoking Android gesture or Web page actions.
@@ -154,5 +175,6 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported 
 - macOS replay aliases such as `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI` are accepted only when the supplied registry snapshot contains the corresponding macOS capabilities. Shared replay aliases resolve to the active platform's capability definition from the registry snapshot; replay aliases unique to another platform remain invalid.
 - `launchApp`/`killApp` and `startBrowser`/`closeBrowser` are treated as setup and teardown step kinds for strict-core execution. A trailing `closeBrowser` command should be passed to `StepSequenceRunner` as teardown so it still executes after an earlier normal-step failure.
 - Commands marked `optional: true` are still converted into executable steps; optional/non-blocking execution semantics do not belong to this adapter.
-- Parsed FSQ cases are not converted into LLM `Task` descriptions. For normal LLM `run --case-yaml` and `run --case-dir`, the CLI reads raw file text and builds goal/reference tasks without calling this module.
+- Parsed FSQ cases are not converted into LLM `Task` descriptions. For normal LLM `run --case-yaml` and `run --case-dir`, the CLI reads raw file text and builds goal/reference tasks without calling this module or executing lifecycle hooks.
+- Config-level lifecycle hooks are outside this module's ownership. The fsq module loads only case-level lifecycle metadata from `.codex.yaml` files; config-level `caseLifecycle` is loaded by `config` and executed by the strict CLI lifecycle layer.
 - `FsqExecutableStepAdapter` must not import or call `core`; it produces shared model contracts only. Higher-level entry code is responsible for passing those steps into core runners.

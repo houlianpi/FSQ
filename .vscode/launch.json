@@ -156,6 +156,27 @@
       "envFile": "${workspaceFolder}/.env"
     },
     {
+      "name": "fsq-agent: playground android",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "fsq_agent.cli",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "playground",
+        "--platform",
+        "android",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8765",
+        "--no-open-browser"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
       "name": "fsq-agent: report",
       "type": "debugpy",
       "request": "launch",

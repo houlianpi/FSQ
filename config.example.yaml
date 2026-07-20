@@ -1,0 +1,48 @@
+# Reference-only configuration example.
+#
+# Public CLI platform runs use config.android.yaml, config.web.yaml,
+# config.windows.yaml, or config.macos.yaml. This file is not a runtime preset
+# and is ignored by default config discovery. Copy pieces from here into a
+# platform preset or local config.yaml when experimenting manually.
+
+openai_agents:
+  tracing_enabled: true
+
+harness:
+  platform: android
+  android:
+    backend: uiautomator2
+
+execution:
+  post_action_delay_seconds:
+    platform: 1.0
+    common: 0.0
+
+# Optional strict case lifecycle hooks.
+# Execution order is:
+# config onCaseStart -> case onCaseStart -> case commands -> case onCaseComplete -> config onCaseComplete
+caseLifecycle:
+  onCaseStart:
+    - runCase: hooks/common-before.codex.yaml
+    - runShell: echo config before
+  onCaseComplete:
+    - runShell: echo config after
+
+runtime_secrets:
+  allowed_env_names:
+    - TEST_ACCOUNT_EMAIL
+    - TEST_ACCOUNT_PASSWORD
+
+agent_context:
+  knowledge:
+    root_dir: ./knowledge
+    skills:
+      dir: skills
+      items:
+        - name: automation-basics
+          description: Semantic action and evidence guidance for local runs.
+          kind: markdown
+          path: automation-basics.md
+          required: true
+    pre_plan:
+      dir: project_android_v1

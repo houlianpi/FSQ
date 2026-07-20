@@ -2,7 +2,9 @@ from typing import Any
 
 import pytest
 
-from fsq_agent.core import AndroidHarness, ArtifactStore, HarnessInterface, UiAutomator2AndroidDriver
+from fsq_agent.core import ArtifactStore, HarnessInterface
+from fsq_agent.core.harness._android import AndroidHarness
+from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.models import AIAssertionRequest, AIAssertionResult, ExecutableStep, HarnessContext
 
