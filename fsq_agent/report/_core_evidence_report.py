@@ -5,6 +5,14 @@ from typing import Any
 from fsq_agent.models import EvidenceBundle, ReportArtifact
 
 
+_LIFECYCLE_PHASES = ("onCaseStart", "case", "onCaseComplete")
+_LIFECYCLE_LABELS = {
+    "onCaseStart": "Before case",
+    "case": "Main case",
+    "onCaseComplete": "After case",
+}
+
+
 class CoreEvidenceReportGenerator:
     def generate_from_manifest(self, manifest_path: Path) -> ReportArtifact:
         bundle = self._load_bundle(manifest_path)
@@ -25,23 +33,31 @@ class CoreEvidenceReportGenerator:
         return EvidenceBundle.model_validate(payload).model_copy(update={"manifest_path": manifest_path})
 
     def _build_report(self, bundle: EvidenceBundle, manifest_path: Path) -> dict[str, Any]:
+        steps = [step.model_dump(mode="json") for step in bundle.steps]
         failed_steps = [step for step in bundle.steps if step.status != "passed"]
-        return {
+        lifecycle_steps = self._lifecycle_steps(steps)
+        summary: dict[str, Any] = {
+            "status": "failed" if failed_steps else "passed",
+            "step_count": len(bundle.steps),
+            "passed_steps": len([step for step in bundle.steps if step.status == "passed"]),
+            "failed_steps": len(failed_steps),
+            "artifact_count": len(bundle.artifacts),
+        }
+        report: dict[str, Any] = {
             "run_id": bundle.run_id,
             "bundle_id": bundle.bundle_id,
             "manifest_path": str(manifest_path),
             "metadata": bundle.metadata,
-            "summary": {
-                "status": "failed" if failed_steps else "passed",
-                "step_count": len(bundle.steps),
-                "passed_steps": len([step for step in bundle.steps if step.status == "passed"]),
-                "failed_steps": len(failed_steps),
-                "artifact_count": len(bundle.artifacts),
-            },
-            "steps": [step.model_dump(mode="json") for step in bundle.steps],
+            "summary": summary,
+            "steps": steps,
             "events": [event.model_dump(mode="json") for event in bundle.events],
             "artifacts": [artifact.model_dump(mode="json") for artifact in bundle.artifacts],
         }
+        if lifecycle_steps:
+            lifecycle_summary = self._lifecycle_summary(lifecycle_steps)
+            summary["lifecycle"] = lifecycle_summary
+            report["lifecycle"] = {"summary": lifecycle_summary, "steps": lifecycle_steps}
+        return report
 
     def _render_markdown(self, report: dict[str, Any]) -> str:
         summary = report["summary"]
@@ -58,16 +74,26 @@ class CoreEvidenceReportGenerator:
             f"- Failed steps: `{summary['failed_steps']}`",
             f"- Artifacts: `{summary['artifact_count']}`",
             "",
-            "## Steps",
-            "",
-            "| Step | Status | Failure Category | Error |",
-            "|---|---:|---|---|",
         ]
-        for step in report["steps"]:
-            lines.append(
-                f"| `{step['step_id']}` | `{step['status']}` | "
-                f"`{step.get('failure_category') or ''}` | {step.get('error_message') or ''} |"
+
+        lifecycle = report.get("lifecycle") if isinstance(report.get("lifecycle"), dict) else None
+        if lifecycle:
+            lines.extend(self._render_lifecycle_summary(lifecycle["summary"]))
+            lines.extend(self._render_lifecycle_steps(lifecycle["steps"]))
+        else:
+            lines.extend(
+                [
+                    "## Steps",
+                    "",
+                    "| Step | Status | Failure Category | Error |",
+                    "|---|---:|---|---|",
+                ]
             )
+            for step in report["steps"]:
+                lines.append(
+                    f"| `{step['step_id']}` | `{step['status']}` | "
+                    f"`{step.get('failure_category') or ''}` | {step.get('error_message') or ''} |"
+                )
 
         failed_steps = [step for step in report["steps"] if step["status"] != "passed"]
         if failed_steps:
@@ -109,6 +135,144 @@ class CoreEvidenceReportGenerator:
             lines.append("No artifacts recorded.")
         lines.append("")
         return "\n".join(lines)
+
+    def _render_lifecycle_summary(self, summary: dict[str, Any]) -> list[str]:
+        lines = [
+            "## Lifecycle Summary",
+            "",
+            "| Phase | Status | Steps | Passed | Failed |",
+            "|---|---:|---:|---:|---:|",
+        ]
+        for phase in _LIFECYCLE_PHASES:
+            phase_summary = summary[phase]
+            lines.append(
+                "| {label} | `{status}` | `{total}` | `{passed}` | `{failed}` |".format(
+                    label=phase_summary["label"],
+                    status=phase_summary["status"],
+                    total=phase_summary["total_steps"],
+                    passed=phase_summary["passed_steps"],
+                    failed=phase_summary["failed_steps"],
+                )
+            )
+        lines.append("")
+        return lines
+
+    def _render_lifecycle_steps(self, steps: list[dict[str, Any]]) -> list[str]:
+        lines = [
+            "## Steps",
+            "",
+            "| Phase | Source | Action | Step | Status | Failure Category | Error |",
+            "|---|---|---|---|---:|---|---|",
+        ]
+        for step in steps:
+            lines.append(
+                "| {phase} | {source} | `{action}` | `{step_id}` | `{status}` | `{failure}` | {error} |".format(
+                    phase=step["phase_label"],
+                    source=self._escape_markdown_table(str(step["source"])),
+                    action=self._escape_backticks(str(step["action"])),
+                    step_id=step["step_id"],
+                    status=step["status"],
+                    failure=step.get("failure_category") or "",
+                    error=self._escape_markdown_table(str(step.get("error_message") or "")),
+                )
+            )
+        lines.append("")
+        return lines
+
+    def _lifecycle_summary(self, steps: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        summary: dict[str, dict[str, Any]] = {}
+        for phase in _LIFECYCLE_PHASES:
+            phase_steps = [step for step in steps if step["phase"] == phase]
+            failed_steps = [step for step in phase_steps if step["status"] != "passed"]
+            summary[phase] = {
+                "label": _LIFECYCLE_LABELS[phase],
+                "status": "failed" if failed_steps else "passed",
+                "total_steps": len(phase_steps),
+                "passed_steps": len([step for step in phase_steps if step["status"] == "passed"]),
+                "failed_steps": len(failed_steps),
+            }
+        return summary
+
+    def _lifecycle_steps(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        lifecycle_steps: list[dict[str, Any]] = []
+        for step in steps:
+            lifecycle = self._step_lifecycle(step)
+            if lifecycle is None:
+                continue
+            lifecycle_steps.append(
+                {
+                    "phase": lifecycle,
+                    "phase_label": _LIFECYCLE_LABELS[lifecycle],
+                    "source": self._step_source_label(step),
+                    "action": self._step_action_label(step),
+                    "step_id": step["step_id"],
+                    "status": step["status"],
+                    "failure_category": step.get("failure_category"),
+                    "error_message": step.get("error_message"),
+                }
+            )
+        return lifecycle_steps
+
+    def _step_lifecycle(self, step: dict[str, Any]) -> str | None:
+        source_metadata = self._source_metadata(step)
+        step_metadata = step.get("metadata") or {}
+        parent = source_metadata.get("parent_hook_action") or step_metadata.get("parent_hook_action")
+        if isinstance(parent, dict) and parent.get("lifecycle_phase") in {"onCaseStart", "onCaseComplete"}:
+            return parent["lifecycle_phase"]
+        lifecycle = source_metadata.get("lifecycle_phase") or step_metadata.get("lifecycle_phase")
+        return lifecycle if lifecycle in _LIFECYCLE_PHASES else None
+
+    def _step_source_label(self, step: dict[str, Any]) -> str:
+        source_ref = step.get("source_ref") or {}
+        source_metadata = self._source_metadata(step)
+        case_name = source_metadata.get("case_name")
+        if isinstance(case_name, str) and case_name.strip():
+            return case_name
+        source_id = source_ref.get("source_id")
+        if isinstance(source_id, str) and source_id.strip():
+            return Path(source_id).name
+        return "unknown"
+
+    def _step_action_label(self, step: dict[str, Any]) -> str:
+        source_metadata = self._source_metadata(step)
+        step_metadata = step.get("metadata") or {}
+        hook_action = source_metadata.get("hook_action_name") or step_metadata.get("hook_action_name")
+        command = step_metadata.get("command") or self._phase_metadata_value(step, "command")
+        if hook_action == "runShell":
+            return f"runShell: {command}" if command else "runShell"
+        if hook_action == "runCase":
+            target = step_metadata.get("value") or step_metadata.get("target") or source_metadata.get("value") or source_metadata.get("target")
+            return f"runCase: {target}" if target else "runCase"
+        replay_alias = self._phase_metadata_value(step, "replay", nested_key="alias")
+        if isinstance(replay_alias, str) and replay_alias.strip():
+            return replay_alias
+        capability_name = self._phase_metadata_value(step, "capability_name")
+        if isinstance(capability_name, str) and capability_name.strip():
+            return capability_name
+        return "unknown"
+
+    def _source_metadata(self, step: dict[str, Any]) -> dict[str, Any]:
+        source_ref = step.get("source_ref") or {}
+        metadata = source_ref.get("metadata") if isinstance(source_ref, dict) else None
+        return metadata if isinstance(metadata, dict) else {}
+
+    def _phase_metadata_value(self, step: dict[str, Any], key: str, *, nested_key: str | None = None) -> Any:
+        for phase_report in step.get("phase_reports", []):
+            metadata = phase_report.get("metadata") if isinstance(phase_report, dict) else None
+            if not isinstance(metadata, dict) or key not in metadata:
+                continue
+            value = metadata[key]
+            if nested_key is None:
+                return value
+            if isinstance(value, dict):
+                return value.get(nested_key)
+        return None
+
+    def _escape_markdown_table(self, value: str) -> str:
+        return value.replace("|", "\\|").replace("\n", " ")
+
+    def _escape_backticks(self, value: str) -> str:
+        return value.replace("`", "'")
 
     def _ai_assertions(self, report: dict[str, Any]) -> list[dict[str, Any]]:
         assertions: list[dict[str, Any]] = []

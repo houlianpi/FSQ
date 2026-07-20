@@ -87,6 +87,137 @@ def test_core_evidence_report_generator_writes_markdown_and_json(tmp_path: Path)
     assert payload["artifacts"][0]["path"] == "artifacts/screenshots/step-2-finalize-failure.png"
 
 
+def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "evidence-manifest.json"
+    bundle = EvidenceBundle(
+        bundle_id="run-lifecycle-evidence",
+        run_id="run-lifecycle",
+        manifest_path=manifest_path,
+        steps=[
+            RunnerStepResult(
+                step_id="setup-step-001",
+                source_ref={
+                    "source_type": "fsq",
+                    "source_id": "hooks/setup.codex.yaml",
+                    "metadata": {
+                        "case_name": "Setup Hook",
+                        "lifecycle_phase": "case",
+                        "parent_hook_action": {
+                            "lifecycle_phase": "onCaseStart",
+                            "hook_action_name": "runCase",
+                            "case_path": "root.codex.yaml",
+                        },
+                    },
+                },
+                status="passed",
+                phase_reports=[
+                    StepPhaseReport(
+                        step_id="setup-step-001",
+                        phase="invoke",
+                        status="passed",
+                        metadata={"replay": {"alias": "launchApp"}, "capability_name": "launch_app"},
+                    )
+                ],
+            ),
+            RunnerStepResult(
+                step_id="root-step-001",
+                source_ref={
+                    "source_type": "fsq",
+                    "source_id": "root.codex.yaml",
+                    "metadata": {"case_name": "Root Case", "lifecycle_phase": "case"},
+                },
+                status="passed",
+                phase_reports=[
+                    StepPhaseReport(
+                        step_id="root-step-001",
+                        phase="invoke",
+                        status="passed",
+                        metadata={"replay": {"alias": "tapOn"}, "capability_name": "tap_on"},
+                    )
+                ],
+            ),
+            RunnerStepResult(
+                step_id="root-hook-run-case-001",
+                source_ref={
+                    "source_type": "fsq_hook",
+                    "source_id": "root.codex.yaml",
+                    "metadata": {
+                        "lifecycle_phase": "onCaseStart",
+                        "hook_action_name": "runCase",
+                        "value": "hooks/setup.codex.yaml",
+                    },
+                },
+                status="passed",
+                phase_reports=[
+                    StepPhaseReport(
+                        step_id="root-hook-run-case-001",
+                        phase="invoke",
+                        status="passed",
+                        metadata={
+                            "lifecycle_phase": "onCaseStart",
+                            "hook_action_name": "runCase",
+                            "target": "hooks/setup.codex.yaml",
+                        },
+                    )
+                ],
+            ),
+            RunnerStepResult(
+                step_id="root-hook-shell-001",
+                source_ref={
+                    "source_type": "fsq_hook",
+                    "source_id": "root.codex.yaml",
+                    "metadata": {"lifecycle_phase": "onCaseComplete", "hook_action_name": "runShell"},
+                },
+                status="failed",
+                failure_category="action_error",
+                error_message="Shell hook failed with exit code 1.",
+                phase_reports=[
+                    StepPhaseReport(
+                        step_id="root-hook-shell-001",
+                        phase="invoke",
+                        status="failed",
+                        failure_category="action_error",
+                        error_message="Shell hook failed with exit code 1.",
+                        metadata={
+                            "lifecycle_phase": "onCaseComplete",
+                            "hook_action_name": "runShell",
+                            "command": "echo done",
+                            "exit_code": 1,
+                        },
+                    )
+                ],
+            ),
+        ],
+    )
+    manifest_path.write_text(json.dumps(bundle.model_dump(mode="json"), indent=2), encoding="utf-8")
+
+    artifact = CoreEvidenceReportGenerator().generate_from_manifest(manifest_path)
+
+    markdown = artifact.path.read_text(encoding="utf-8")
+    assert "## Lifecycle Summary" in markdown
+    assert "| Before case | `passed` | `2` | `2` | `0` |" in markdown
+    assert "| Main case | `passed` | `1` | `1` | `0` |" in markdown
+    assert "| After case | `failed` | `1` | `0` | `1` |" in markdown
+    assert "| Phase | Source | Action | Step | Status | Failure Category | Error |" in markdown
+    assert "| Before case | Setup Hook | `launchApp` | `setup-step-001` | `passed`" in markdown
+    assert "| Before case | root.codex.yaml | `runCase: hooks/setup.codex.yaml` | `root-hook-run-case-001` | `passed`" in markdown
+    assert "| Main case | Root Case | `tapOn` | `root-step-001` | `passed`" in markdown
+    assert "| After case | root.codex.yaml | `runShell: echo done` | `root-hook-shell-001` | `failed`" in markdown
+
+    payload = json.loads((tmp_path / "core-report.json").read_text(encoding="utf-8"))
+    assert payload["summary"]["lifecycle"]["onCaseStart"] == {
+        "label": "Before case",
+        "status": "passed",
+        "total_steps": 2,
+        "passed_steps": 2,
+        "failed_steps": 0,
+    }
+    assert payload["summary"]["lifecycle"]["onCaseComplete"]["status"] == "failed"
+    assert payload["lifecycle"]["steps"][0]["phase"] == "onCaseStart"
+    assert payload["lifecycle"]["steps"][2]["action"] == "runCase: hooks/setup.codex.yaml"
+    assert payload["lifecycle"]["steps"][3]["action"] == "runShell: echo done"
+
+
 def test_core_evidence_report_preserves_ai_assertion_verdict_metadata(tmp_path: Path) -> None:
     manifest_path = tmp_path / "evidence-manifest.json"
     bundle = EvidenceBundle(

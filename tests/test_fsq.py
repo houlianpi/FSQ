@@ -52,6 +52,93 @@ def test_fsq_case_loader_loads_two_document_case(tmp_path: Path) -> None:
     assert case.config.platform == "android"
     assert case.config.app_id == "com.microsoft.emmx"
     assert len(case.commands) == 7
+    assert case.config.on_case_start == []
+    assert case.config.on_case_complete == []
+
+
+def test_fsq_case_loader_loads_lifecycle_hooks_preserving_action_order(tmp_path: Path) -> None:
+    case_path = tmp_path / "hooks.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Hooked Case
+platform: web
+onCaseStart:
+  runShell: ./scripts/prepare.sh
+  runCase: hooks/login.codex.yaml
+onCaseComplete:
+  - runCase: hooks/logout.codex.yaml
+    runShell: ./scripts/cleanup.sh
+  - runShell: ./scripts/remove-temp-files.sh
+---
+[]
+""",
+        encoding="utf-8",
+    )
+
+    case = FsqCaseLoader().load_case(case_path)
+
+    assert [[action.action_name, action.value] for action in case.config.on_case_start[0].actions] == [
+        ["runShell", "./scripts/prepare.sh"],
+        ["runCase", "hooks/login.codex.yaml"],
+    ]
+    assert [[action.action_name, action.value] for action in case.config.on_case_complete[0].actions] == [
+        ["runCase", "hooks/logout.codex.yaml"],
+        ["runShell", "./scripts/cleanup.sh"],
+    ]
+    assert [[action.action_name, action.value] for action in case.config.on_case_complete[1].actions] == [
+        ["runShell", "./scripts/remove-temp-files.sh"],
+    ]
+
+
+def test_fsq_case_loader_accepts_explicit_empty_lifecycle_hook_list(tmp_path: Path) -> None:
+    case_path = tmp_path / "empty_hooks.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Empty Hooks
+platform: web
+onCaseStart: []
+onCaseComplete: []
+---
+[]
+""",
+        encoding="utf-8",
+    )
+
+    case = FsqCaseLoader().load_case(case_path)
+
+    assert case.config.on_case_start == []
+    assert case.config.on_case_complete == []
+
+
+@pytest.mark.parametrize(
+    "hook_yaml",
+    [
+        "onCaseStart: not-a-mapping",
+        "onCaseStart:\n  unknown: value",
+        "onCaseStart:\n  runCase: ''",
+        "onCaseStart:\n  runShell: ''",
+        "onCaseStart:\n  - []",
+        "onCaseStart:\n  actions: []",
+    ],
+)
+def test_fsq_case_loader_rejects_invalid_lifecycle_hooks(tmp_path: Path, hook_yaml: str) -> None:
+    case_path = tmp_path / "bad_hooks.codex.yaml"
+    case_path.write_text(
+        f"""
+schemaVersion: fsq.ai-test/v1
+name: Bad Hooks
+platform: web
+{hook_yaml}
+---
+[]
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="Invalid FSQ case config"):
+        FsqCaseLoader().load_case(case_path)
 
 
 def test_fsq_case_loader_accepts_single_document_goal_only_case(tmp_path: Path) -> None:

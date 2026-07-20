@@ -39,6 +39,8 @@ Recorded strict cases may contain replay-only syntax such as `runtimeSecret` par
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
+Strict FSQ case metadata may declare optional case lifecycle hooks in the first YAML document through `onCaseStart` and `onCaseComplete`. Each lifecycle field is independently optional and may contain either one hook entry mapping or an ordered list of hook entry mappings. Within one hook entry, `runCase` and `runShell` are independently optional supported actions; an entry must contain at least one supported action, may contain both, and when both are present strict execution must preserve the authored YAML key order. `runCase` executes another `.codex.yaml` case using the same strict relative path resolution policy as `--case-yaml` inputs, and recursive hook chains fail before infinite execution. `runShell` executes an operator-authored local shell command string without platform-specific command validation. Strict execution runs `onCaseStart` hooks, then the main case commands only when start hooks pass, then always runs `onCaseComplete` hooks after start hooks have been attempted. Any start hook, main command, complete hook, or shell hook failure fails the overall strict case; start hook failure skips the main command body but does not skip complete hooks. Dynamic LLM raw-case execution continues to treat YAML as planning input text and does not execute lifecycle hooks.
+
 ## Dynamic LLM Pre-Plan and Goal Verification
 
 Dynamic LLM `--goal`, `--case-yaml`, and `--case-dir` runs use pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives a concise active CommonTool/PlatformTool capability summary generated from the active platform registry so planning can align with the actual executable action surface without duplicating tool tables in skills. The pre-planner must produce structured ordered `key_actions` for the main execution loop and one `verification_goal` string for final evidence-based verification. Dynamic final verification is goal-only and has no user-configurable `verification.mode`.
@@ -117,20 +119,20 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 
 | Module | SPEC | Purpose |
 |---|---|---|
-| models | fsq_agent/models/SPEC.md | Owns shared domain models, capability metadata/registry contracts, invocation/result contracts, replay reference models, and exceptions. |
+| models | fsq_agent/models/SPEC.md | Owns shared domain models, FSQ case and lifecycle hook metadata models, capability metadata/registry contracts, invocation/result contracts, replay reference models, and exceptions. |
 | capabilities | fsq_agent/capabilities/SPEC.md | Owns neutral capability declaration decorators, catalog-backed platform action validation, and metadata discovery helpers used by `core` recordable capabilities. |
 | config | fsq_agent/config/SPEC.md | Loads and validates env/YAML runtime, provider, harness/driver/platform-tool, tracing, execution post-action delay, strict replay secret, agent context, AgentTool output, CommonTool secret, and workspace configuration. |
 | providers | fsq_agent/providers/SPEC.md | Builds shared Azure OpenAI and GitHub Copilot provider sessions for agent runs, verifier/pre-planner calls, and provider-backed AI assertion evaluators. |
 | tools | fsq_agent/tools/SPEC.md | Provides dynamic-only AgentTool providers, scoped file helpers, bounded artifact lookup helpers, and the OpenAI Agents SDK AgentTool adapter. |
 | observation | fsq_agent/observation/SPEC.md | Persists run event timelines; screenshots, UI trees, and other observations are represented by platform evidence artifacts or AgentTool artifact refs. |
 | knowledge | fsq_agent/knowledge/SPEC.md | Loads project-specific application knowledge and task-referenced knowledge assets. |
-| fsq | fsq_agent/fsq/SPEC.md | Loads FSQ AI Test DSL YAML cases, resolves authored action aliases through the capability registry, validates replay references, and converts parsed cases into canonical deterministic executable steps. |
+| fsq | fsq_agent/fsq/SPEC.md | Loads FSQ AI Test DSL YAML cases, validates case lifecycle hook metadata, resolves authored action aliases through the capability registry, validates replay references, and converts parsed command documents into canonical deterministic executable steps. |
 | skills | fsq_agent/skills/SPEC.md | Loads complete configured automation skill instruction bundles and skips or fails broken bundles according to requiredness. |
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Defines the shared `StepRunner` execution manager, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factory boundaries for capability definitions, drivers, and harnesses, private concrete platform backends, and evidence coordination. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, screenshots, replay video preview, and report lookup. |
-| cli | fsq_agent/cli/SPEC.md | Exposes the public `init`, `run`, `report`, `playground`, optional provider setup during initialization, capability registry bootstrap, strict replay, dynamic-run recording, and local playground workflows. |
+| cli | fsq_agent/cli/SPEC.md | Exposes the public `init`, `run`, `report`, `playground`, optional provider setup during initialization, capability registry bootstrap, strict replay including case lifecycle hook orchestration, dynamic-run recording, and local playground workflows. |
 
 ## Architecture Diagram
 
