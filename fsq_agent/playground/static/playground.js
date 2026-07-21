@@ -15,6 +15,9 @@ const state = {
   activeProgressItemClearTimer: null,
   selectedProgressRunId: false,
   finishingRun: false,
+  loadedRunId: null,
+  loadedRunAvailability: null,
+  loadRunInFlight: false,
   activeRunMode: 'goal',
   modeStates: {
     goal: createRunModeState(),
@@ -93,6 +96,12 @@ const els = {
   caseYaml: document.getElementById('case-yaml'),
   yamlPathRow: document.getElementById('yaml-path-row'),
   yamlSection: document.getElementById('yaml-section'),
+  loadRunToggle: document.getElementById('load-run-toggle'),
+  loadRunForm: document.getElementById('load-run-form'),
+  loadRunPath: document.getElementById('load-run-path'),
+  loadRunSubmit: document.getElementById('load-run-submit'),
+  loadRunCancel: document.getElementById('load-run-cancel'),
+  loadRunStatus: document.getElementById('load-run-status'),
   yamlTabs: document.querySelector('.yaml-tabs'),
   yamlInputTab: document.getElementById('yaml-input-tab'),
   yamlRecordedTab: document.getElementById('yaml-recorded-tab'),
@@ -156,7 +165,10 @@ function clearPage() {
   state.progressDetailOpenState.clear();
   state.currentExecutionMode = null;
   state.finishingRun = false;
+  state.loadedRunId = null;
+  state.loadedRunAvailability = null;
   clearStepArtifactPreview();
+  resetLoadRunForm({ collapse: true });
 
   els.goal.value = '';
   els.caseYaml.value = '';
@@ -189,6 +201,7 @@ async function refreshStatus() {
     } else {
       setRunButtonIdle({ disabled: Boolean(status.busy) });
     }
+    setLoadRunControlsDisabled(Boolean(status.busy));
     if (!platformRequiresSession()) {
       setNoSessionPlatformMessage();
     } else if (status.session?.connected) {
@@ -421,6 +434,11 @@ function defaultYamlViewForMode(mode) {
 
 function switchRunMode() {
   if (state.currentRequestId || state.finishingRun) return;
+  if (state.loadedRunId) {
+    state.activeRunMode = currentRunMode();
+    updateRunMode({ preserveView: true });
+    return;
+  }
   saveRunModeState(state.activeRunMode);
   state.activeRunMode = currentRunMode();
   restoreRunModeState(state.activeRunMode);
@@ -439,7 +457,11 @@ function updateRunMode({ preserveView = false } = {}) {
   els.yamlProgressTab.hidden = false;
   syncYamlTabOrder(mode);
   const targetView = preserveView ? state.yamlActiveView : defaultYamlViewForMode(mode);
-  if (mode === 'goal') {
+  if (state.loadedRunId) {
+    els.yamlInputTab.hidden = true;
+    els.yamlRecordedTab.hidden = !state.loadedRunAvailability?.recordedYaml;
+    showYamlView(targetView);
+  } else if (mode === 'goal') {
     els.yamlInputTab.hidden = true;
     els.yamlRecordedTab.hidden = false;
     showYamlView(targetView);
@@ -453,6 +475,7 @@ function updateRunMode({ preserveView = false } = {}) {
     showYamlView(targetView);
   }
   if (!state.currentRequestId && !state.finishingRun) setRunButtonIdle();
+  setLoadRunControlsDisabled();
 }
 
 function syncYamlTabOrder(mode) {
@@ -464,6 +487,9 @@ function syncYamlTabOrder(mode) {
 
 async function startExecution(payload) {
   if (!(await ensureSession())) return;
+  state.loadedRunId = null;
+  state.loadedRunAvailability = null;
+  resetLoadRunForm({ collapse: true });
   state.activeRunMode = currentRunMode();
   state.currentExecutionMode = payload.strictCaseYamlPath ? 'strict-yaml' : (payload.caseYamlPath ? 'yaml' : 'goal');
   state.progressSequence = 0;
@@ -724,8 +750,8 @@ async function loadInputYaml() {
   }
 }
 
-async function loadRecordedYaml(runId, recording) {
-  if (state.currentExecutionMode === 'strict-yaml') {
+async function loadRecordedYaml(runId, recording, { existingRun = false } = {}) {
+  if (!existingRun && state.currentExecutionMode === 'strict-yaml') {
     clearRecordedYaml();
     updateRunMode();
     return;
@@ -769,6 +795,121 @@ function clearRecordedYaml() {
   state.yamlRecordedDisplay = null;
   setYamlRecordedStatus('', 'neutral');
   renderYamlEmpty(els.yamlRecordedViewer, 'No recorded YAML yet.');
+}
+
+function toggleLoadRunForm() {
+  if (state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
+  const opening = els.loadRunForm.hidden;
+  els.loadRunForm.hidden = !opening;
+  els.loadRunToggle.setAttribute('aria-expanded', String(opening));
+  if (opening) {
+    setLoadRunStatus('', 'neutral');
+    els.loadRunPath.focus();
+  }
+}
+
+function resetLoadRunForm({ collapse = false } = {}) {
+  state.loadRunInFlight = false;
+  els.loadRunPath.value = '';
+  setLoadRunStatus('', 'neutral');
+  if (collapse) {
+    els.loadRunForm.hidden = true;
+    els.loadRunToggle.setAttribute('aria-expanded', 'false');
+  }
+  setLoadRunControlsDisabled();
+}
+
+function setLoadRunStatus(message, status = 'neutral') {
+  setYamlStatus(els.loadRunStatus, message, status);
+}
+
+function setLoadRunControlsDisabled(serverBusy = false) {
+  const disabled = Boolean(serverBusy || state.currentRequestId || state.finishingRun || state.loadRunInFlight);
+  els.loadRunToggle.disabled = disabled;
+  els.loadRunPath.disabled = disabled;
+  els.loadRunSubmit.disabled = disabled;
+  els.loadRunCancel.disabled = disabled;
+}
+
+async function loadExistingRun() {
+  if (state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
+  const path = els.loadRunPath.value.trim();
+  if (!path) {
+    setLoadRunStatus('Run directory path is required.', 'error');
+    return;
+  }
+  state.loadRunInFlight = true;
+  setLoadRunStatus('Loading run...', 'neutral');
+  setLoadRunControlsDisabled();
+  try {
+    const result = await api('/runs/load', { method: 'POST', body: JSON.stringify({ path }) });
+    await activateLoadedRun(result.runId, result.availability || {});
+    resetLoadRunForm({ collapse: true });
+  } catch (error) {
+    state.loadRunInFlight = false;
+    setLoadRunStatus(error.message, 'error');
+    setLoadRunControlsDisabled();
+  }
+}
+
+async function activateLoadedRun(runId, availability) {
+  stopProgressUpdates();
+  state.loadedRunId = runId;
+  state.loadedRunAvailability = availability;
+  state.replayRequestId = runId;
+  state.previewToken = null;
+  state.currentExecutionMode = null;
+  state.progressSequence = 0;
+  state.lastProgressSequence = 0;
+  state.progressDetailOpenState.clear();
+  clearStepArtifactPreview();
+  clearYamlInput();
+  clearRecordedYaml();
+  clearRunId();
+  clearActiveProgressItem();
+  clearSelectedProgressItem();
+  clearSelectedYamlRegion();
+  els.progress.innerHTML = '';
+  setRunId(runId);
+  await loadExistingRunProgress(runId);
+  updateRunMode({ preserveView: true });
+  showYamlView('progress');
+  if (availability.report) {
+    await loadReport(runId);
+  } else {
+    els.reportContent.textContent = 'No report is available for this run.';
+  }
+  if (availability.recordedYaml) {
+    await loadRecordedYaml(runId, availability.recordedYaml, { existingRun: true });
+  } else {
+    setRecordedYamlNoContent('No recorded YAML is available for this run.', 'neutral');
+  }
+  if (availability.replay) {
+    await showCompletedRunReplayPreview(runId);
+  } else {
+    clearPreview('No replay video is available for this run.');
+  }
+  showRightTab('preview');
+}
+
+async function loadExistingRunProgress(runId) {
+  els.progress.innerHTML = '';
+  state.progressSequence = 0;
+  state.lastProgressSequence = 0;
+  state.progressDetailOpenState.clear();
+  try {
+    const progress = await api(`/runs/${encodeURIComponent(runId)}/progress`);
+    const events = Array.isArray(progress.events) ? progress.events : [];
+    for (const event of events) {
+      appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event));
+      updateLastProgressSequence(event.sequence);
+    }
+    if (events.length === 0) {
+      els.progress.textContent = 'No persisted progress events are available for this run.';
+    }
+  } catch (error) {
+    els.progress.textContent = `Unable to load progress: ${error.message}`;
+  }
 }
 
 function setRecordedYamlNoContent(message, status = 'neutral') {
@@ -1463,7 +1604,7 @@ function renderStepArtifactTextArtifacts(artifacts) {
   const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
   if (uiTreeDiff) section.appendChild(uiTreeDiff);
   for (const artifact of artifacts) {
-    if (OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind) || typeof artifact.error === 'string') continue;
+    if ((uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)) || typeof artifact.error === 'string') continue;
     const card = document.createElement('div');
     card.className = 'step-artifact-text-card';
     const label = document.createElement('div');
@@ -2755,6 +2896,14 @@ function persistControlPanelWidth() {
 
 els.refresh.addEventListener('click', clearPage);
 els.runSelected.addEventListener('click', runSelected);
+els.loadRunToggle.addEventListener('click', toggleLoadRunForm);
+els.loadRunSubmit.addEventListener('click', loadExistingRun);
+els.loadRunCancel.addEventListener('click', () => resetLoadRunForm({ collapse: true }));
+els.loadRunPath.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  loadExistingRun();
+});
 els.progressRunId.addEventListener('click', handleProgressRunIdClick);
 els.yamlInputTab.addEventListener('click', () => showYamlView('input'));
 els.yamlRecordedTab.addEventListener('click', () => showYamlView('recorded'));

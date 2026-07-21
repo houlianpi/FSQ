@@ -32,6 +32,16 @@ _YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
 _YAML_ASSERTION_ACTIONS = {"assert", "assertVisible", "assertNotVisible", "assertText", "assertElementsOrder", "assertWithAI"}
 _YAML_OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording", "pageSnapshot", "uiSnapshot"}
 _STEP_TEXT_ARTIFACT_KINDS = {"ui_tree", "page_snapshot", "ui_snapshot"}
+_RUN_RESULT_MARKERS = {
+    "report.md",
+    "report.json",
+    "core-report.md",
+    "core-report.json",
+    "evidence-manifest.json",
+    "events.jsonl",
+    "recording.json",
+    "recorded.codex.yaml",
+}
 
 
 class _StepArtifactTextTooLarge(Exception):
@@ -118,6 +128,9 @@ class PlaygroundServer:
         if path.startswith("/yaml/recorded/"):
             yaml_id = unquote(path.removeprefix("/yaml/recorded/")).strip()
             return self._yaml_recorded_response(yaml_id)
+        if path.startswith("/runs/") and path.endswith("/progress"):
+            run_id = unquote(path.removeprefix("/runs/").removesuffix("/progress")).strip("/").strip()
+            return self._loaded_run_progress_response(run_id)
         if path == "/screenshot":
             if self.settings.harness.platform != "android":
                 return self._web_screenshot_response()
@@ -201,6 +214,8 @@ class PlaygroundServer:
         return 206, body, "video/webm", headers
 
     def handle_post(self, path: str, body: dict[str, object]) -> tuple[int, object]:
+        if path == "/runs/load":
+            return self._load_run_response(body)
         if path == "/session":
             if self.settings.harness.platform != "android":
                 return 409, self._android_unavailable(f"Android session selection is unavailable for the active {self.settings.harness.platform} platform.")
@@ -276,6 +291,123 @@ class PlaygroundServer:
                 handle.cancel()
             return 200, cancelled
         return 404, {"error": "Not found."}
+
+    def _load_run_response(self, body: dict[str, object]) -> tuple[int, object]:
+        path_value = body.get("path")
+        if not isinstance(path_value, str) or not path_value.strip():
+            return 400, {"available": False, "error": "Run directory path is required."}
+        runs_root = Path(self.settings.output.runs_dir).resolve()
+        requested = Path(path_value.strip())
+        run_dir = requested.resolve() if requested.is_absolute() else (runs_root / requested).resolve()
+        try:
+            relative = run_dir.relative_to(runs_root)
+        except ValueError:
+            return 400, {"available": False, "error": "Run directory must be inside the configured runs directory."}
+        if len(relative.parts) != 1:
+            return 400, {"available": False, "error": "Run directory must be a direct child of the configured runs directory."}
+        if not run_dir.exists():
+            return 404, {"available": False, "error": f"Run directory not found: {path_value.strip()}"}
+        if not run_dir.is_dir():
+            return 400, {"available": False, "error": "Run path must identify a directory."}
+        if not self._is_recognized_run_dir(run_dir):
+            return 400, {"available": False, "error": "Directory does not contain a recognized run result."}
+        return 200, {
+            "available": True,
+            "runId": relative.name,
+            "availability": self._run_result_availability(run_dir),
+        }
+
+    def _loaded_run_progress_response(self, run_id: str) -> tuple[int, object]:
+        if not run_id:
+            return 400, {"available": False, "error": "Run id is required."}
+        runs_root = Path(self.settings.output.runs_dir).resolve()
+        run_dir = (runs_root / run_id).resolve()
+        try:
+            relative = run_dir.relative_to(runs_root)
+        except ValueError:
+            return 400, {"available": False, "error": "Run id resolves outside the configured runs directory."}
+        if len(relative.parts) != 1:
+            return 400, {"available": False, "error": "Run id must identify a direct child of the configured runs directory."}
+        if not run_dir.exists() or not run_dir.is_dir():
+            return 404, {"available": False, "error": f"Run directory not found: {run_id}"}
+        events_path = run_dir / "events.jsonl"
+        if not events_path.is_file():
+            return 200, {"runId": relative.name, "events": []}
+        try:
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            return 400, {"available": False, "error": str(exc) or "Unable to read run progress."}
+        events: list[dict[str, object]] = []
+        next_sequence = 0
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            sequence = event.get("sequence")
+            if isinstance(sequence, int) and not isinstance(sequence, bool) and sequence > 0:
+                next_sequence = max(next_sequence, sequence)
+            else:
+                next_sequence += 1
+                event["sequence"] = next_sequence
+            events.append(event)
+        return 200, {"runId": relative.name, "events": events}
+
+    def _is_recognized_run_dir(self, run_dir: Path) -> bool:
+        if any((run_dir / marker).is_file() for marker in _RUN_RESULT_MARKERS):
+            return True
+        replay_dir = run_dir / "playground-replay"
+        return (replay_dir / "replay-manifest.json").is_file() or (replay_dir / "replay.webm").is_file()
+
+    def _run_result_availability(self, run_dir: Path) -> dict[str, bool]:
+        replay_dir = run_dir / "playground-replay"
+        return {
+            "report": any((run_dir / name).is_file() for name in ("report.md", "report.json", "core-report.md", "core-report.json")),
+            "recordedYaml": (run_dir / "recording.json").is_file() or (run_dir / "recorded.codex.yaml").is_file(),
+            "replay": (replay_dir / "replay-manifest.json").is_file()
+            or (replay_dir / "replay.webm").is_file()
+            or self._run_has_screenshot_replay_sources(run_dir),
+            "stepArtifacts": (run_dir / "evidence-manifest.json").is_file() or (run_dir / "events.jsonl").is_file(),
+        }
+
+    def _run_has_screenshot_replay_sources(self, run_dir: Path) -> bool:
+        manifest_path = run_dir / "evidence-manifest.json"
+        if manifest_path.is_file():
+            try:
+                manifest = self._read_evidence_manifest(run_dir)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                manifest = None
+            artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
+            if isinstance(artifacts, list) and any(
+                isinstance(ref, dict) and self._is_screenshot_artifact_ref(ref) for ref in artifacts
+            ):
+                return True
+        events_path = run_dir / "events.jsonl"
+        if not events_path.is_file():
+            return False
+        try:
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return False
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            refs = payload.get("artifact_refs") if isinstance(payload.get("artifact_refs"), list) else []
+            if any(isinstance(ref, dict) and self._is_screenshot_artifact_ref(ref) for ref in refs):
+                return True
+            artifact_path = payload.get("artifact_path")
+            if isinstance(artifact_path, str) and self._is_screenshot_artifact_ref({"path": artifact_path}):
+                return True
+        return False
 
     def handle_delete(self, path: str) -> tuple[int, object]:
         if path == "/session":
@@ -535,7 +667,7 @@ class PlaygroundServer:
             commands_doc = []
         if not isinstance(commands_doc, list):
             raise ValueError("FSQ command document must be a YAML list.")
-        artifact_step_ids = self._recorded_artifact_step_ids(run_dir, len(commands_doc)) if run_dir is not None else None
+        artifact_step_ids = self._recorded_artifact_step_ids(run_dir, commands_doc) if run_dir is not None else None
         return {
             "metadata": self._yaml_metadata_display(metadata_doc, source_path=source_path),
             "steps": [
@@ -549,7 +681,7 @@ class PlaygroundServer:
             "documentCount": len(docs),
         }
 
-    def _recorded_artifact_step_ids(self, run_dir: Path, command_count: int) -> list[str | None] | None:
+    def _recorded_artifact_step_ids(self, run_dir: Path, commands: list[object]) -> list[str | None] | None:
         events_path = run_dir / "events.jsonl"
         if not events_path.exists():
             return None
@@ -557,7 +689,7 @@ class PlaygroundServer:
             lines = events_path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeDecodeError):
             return None
-        step_ids: list[str | None] = []
+        replay_events: list[tuple[str, str | None]] = []
         for line in lines:
             if not line.strip():
                 continue
@@ -567,12 +699,57 @@ class PlaygroundServer:
                 continue
             if not isinstance(event, dict) or not self._event_is_recorded_replay_command(event):
                 continue
-            if self._event_step_kind(event) == "observation":
-                continue
-            step_ids.append(self._event_step_id(event))
-        if len(step_ids) != command_count:
-            return None
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            alias = self._event_replay_policy(payload).get("alias")
+            if isinstance(alias, str):
+                replay_events.append((self._normalized_yaml_action(alias), self._event_step_id(event)))
+        command_actions = [self._normalized_yaml_action(self._yaml_command_action(command)) for command in commands]
+        return self._align_recorded_step_ids(command_actions, replay_events)
+
+    def _align_recorded_step_ids(
+        self,
+        command_actions: list[str],
+        replay_events: list[tuple[str, str | None]],
+    ) -> list[str | None]:
+        event_actions = [action for action, _step_id in replay_events]
+        match_counts = [[0] * (len(event_actions) + 1) for _ in range(len(command_actions) + 1)]
+        for command_index in range(len(command_actions) - 1, -1, -1):
+            for event_index in range(len(event_actions) - 1, -1, -1):
+                if command_actions[command_index] == event_actions[event_index]:
+                    match_counts[command_index][event_index] = 1 + match_counts[command_index + 1][event_index + 1]
+                else:
+                    match_counts[command_index][event_index] = max(
+                        match_counts[command_index + 1][event_index],
+                        match_counts[command_index][event_index + 1],
+                    )
+        step_ids: list[str | None] = [None] * len(command_actions)
+        command_index = 0
+        event_index = 0
+        while command_index < len(command_actions) and event_index < len(event_actions):
+            if (
+                command_actions[command_index] == event_actions[event_index]
+                and match_counts[command_index][event_index] == 1 + match_counts[command_index + 1][event_index + 1]
+            ):
+                step_ids[command_index] = replay_events[event_index][1]
+                command_index += 1
+                event_index += 1
+            elif match_counts[command_index + 1][event_index] > match_counts[command_index][event_index + 1]:
+                command_index += 1
+            else:
+                event_index += 1
         return step_ids
+
+    def _yaml_command_action(self, command: object) -> str:
+        if isinstance(command, str):
+            return command
+        if isinstance(command, dict):
+            for key in command:
+                if str(key) not in _YAML_COMMAND_CONTROL_KEYS:
+                    return str(key)
+        return "command"
+
+    def _normalized_yaml_action(self, action: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", action.lower())
 
     def _event_step_kind(self, event: dict[str, object]) -> str | None:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -840,12 +1017,16 @@ class PlaygroundServer:
             timestamp = self._timestamp_ms(event.get("timestamp"))
             payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
             artifact_refs = payload.get("artifact_refs")
+            artifact_ref_paths: set[str] = set()
             if isinstance(artifact_refs, list):
                 for ref in artifact_refs:
                     if isinstance(ref, dict):
                         refs.append({**ref, "timestamp": ref.get("timestamp") or timestamp})
+                        ref_path = ref.get("path")
+                        if isinstance(ref_path, str) and ref_path:
+                            artifact_ref_paths.add(ref_path)
             artifact_path = payload.get("artifact_path")
-            if isinstance(artifact_path, str) and artifact_path:
+            if isinstance(artifact_path, str) and artifact_path and artifact_path not in artifact_ref_paths:
                 refs.append({"kind": "screenshot", "path": artifact_path, "timestamp": timestamp})
             inline_ref = self._event_inline_observation_ref(event, timestamp)
             if inline_ref is not None:
@@ -1462,7 +1643,7 @@ def run_playground(settings: Settings, options: PlaygroundServerOptions) -> None
 
 def _is_api_path(path: str) -> bool:
     return path in {"/status", "/session", "/session/setup", "/session/auto", "/runtime-info", "/screenshot", "/yaml/input"} or path.startswith(
-        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/", "/step-artifacts/", "/yaml/recorded/")
+        ("/task-progress/", "/preview/", "/reports/", "/replay/", "/replay-video/", "/runs/", "/step-artifacts/", "/yaml/recorded/")
     )
 
 

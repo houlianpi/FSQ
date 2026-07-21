@@ -190,6 +190,158 @@ def test_playground_server_report_endpoint_returns_content(tmp_path: Path) -> No
     assert payload["runId"] == "run-1"
     assert payload["content"] == "# report"
 
+def test_playground_server_load_run_accepts_id_relative_and_absolute_paths(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "report.md").write_text("# Report", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    for path_value in ("run-1", ".\\run-1", str(run_dir.resolve())):
+        status, payload = server.handle_post("/runs/load", {"path": path_value})
+
+        assert status == 200
+        assert payload == {
+            "available": True,
+            "runId": "run-1",
+            "availability": {
+                "report": True,
+                "recordedYaml": False,
+                "replay": False,
+                "stepArtifacts": False,
+            },
+        }
+
+
+def test_playground_server_load_run_reports_complete_availability(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    replay_dir = run_dir / "playground-replay"
+    replay_dir.mkdir(parents=True)
+    (run_dir / "core-report.md").write_text("# Report", encoding="utf-8")
+    (run_dir / "recording.json").write_text("{}", encoding="utf-8")
+    (run_dir / "evidence-manifest.json").write_text("{}", encoding="utf-8")
+    (replay_dir / "replay.webm").write_bytes(b"video")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_post("/runs/load", {"path": "run-1"})
+
+    assert status == 200
+    assert payload["availability"] == {
+        "report": True,
+        "recordedYaml": True,
+        "replay": True,
+        "stepArtifacts": True,
+    }
+
+
+def test_playground_server_load_run_discovers_replay_from_screenshot_evidence(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps({"artifacts": [{"kind": "screenshot", "path": "artifacts/screenshots/step-1.png"}]}),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_post("/runs/load", {"path": "run-1"})
+
+    assert status == 200
+    assert payload["availability"]["replay"] is True
+    assert payload["availability"]["stepArtifacts"] is True
+
+
+def test_playground_server_load_run_rejects_invalid_directories(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.output.runs_dir.mkdir()
+    unrecognized = settings.output.runs_dir / "empty-run"
+    unrecognized.mkdir()
+    nested = settings.output.runs_dir / "group" / "run-1"
+    nested.mkdir(parents=True)
+    (nested / "report.md").write_text("# Report", encoding="utf-8")
+    file_path = settings.output.runs_dir / "report.md"
+    file_path.write_text("# Report", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "report.md").write_text("# Report", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    cases = [
+        ({}, 400),
+        ({"path": ""}, 400),
+        ({"path": str(settings.output.runs_dir)}, 400),
+        ({"path": "empty-run"}, 400),
+        ({"path": "group/run-1"}, 400),
+        ({"path": str(file_path)}, 400),
+        ({"path": "../outside"}, 400),
+        ({"path": str(outside)}, 400),
+        ({"path": "missing-run"}, 404),
+    ]
+    for body, expected_status in cases:
+        status, payload = server.handle_post("/runs/load", body)
+
+        assert status == expected_status
+        assert payload["available"] is False
+        assert payload["error"]
+
+
+def test_playground_server_loaded_run_progress_restores_persisted_events(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    events = [
+        {"type": "run_started", "title": "Run started", "sequence": 7, "payload": {}},
+        {"type": "tool_call_completed", "title": "Clicked", "payload": {"status": "passed"}},
+        {"type": "run_completed", "title": "Run completed", "sequence": 0, "payload": {"status": "success"}},
+    ]
+    (run_dir / "events.jsonl").write_text(
+        "\n".join([json.dumps(events[0]), "not-json", "[]", json.dumps(events[1]), json.dumps(events[2])]),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/runs/run-1/progress", {})
+
+    assert status == 200
+    assert payload["runId"] == "run-1"
+    assert [event["title"] for event in payload["events"]] == ["Run started", "Clicked", "Run completed"]
+    assert [event["sequence"] for event in payload["events"]] == [7, 8, 9]
+
+
+def test_playground_server_loaded_run_progress_returns_empty_without_event_log(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "report.md").write_text("# Report", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/runs/run-1/progress", {})
+
+    assert status == 200
+    assert payload == {"runId": "run-1", "events": []}
+
+
+def test_playground_server_loaded_run_progress_rejects_unsafe_or_missing_run_ids(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.output.runs_dir.mkdir()
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    unsafe_status, unsafe_payload = server.handle_get("/runs/../outside/progress", {})
+    missing_status, missing_payload = server.handle_get("/runs/missing/progress", {})
+
+    assert unsafe_status == 400
+    assert unsafe_payload["error"]
+    assert missing_status == 404
+    assert missing_payload["error"]
+
 
 def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -> None:
     settings = Settings()
@@ -334,7 +486,7 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
     ]
 
 
-def _recorded_run_with_events(tmp_path: Path, *, events: list[dict]) -> Settings:
+def _recorded_run_with_events(tmp_path: Path, *, events: list[dict], commands: str | None = None) -> Settings:
     settings = Settings()
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
@@ -342,7 +494,7 @@ def _recorded_run_with_events(tmp_path: Path, *, events: list[dict]) -> Settings
     recorded_path = run_dir / "recorded.codex.yaml"
     recorded_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n"
-        "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n",
+        + (commands or "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n"),
         encoding="utf-8",
     )
     (run_dir / "recording.json").write_text(
@@ -411,7 +563,7 @@ def test_playground_server_recorded_yaml_steps_artifact_step_id_null_without_eve
     assert [step["artifactStepId"] for step in steps] == [None, None]
 
 
-def test_playground_server_recorded_yaml_steps_artifact_step_id_null_on_count_mismatch(tmp_path: Path) -> None:
+def test_playground_server_recorded_yaml_steps_keep_partial_alias_matches(tmp_path: Path) -> None:
     events = [
         _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="action"),
     ]
@@ -422,7 +574,54 @@ def test_playground_server_recorded_yaml_steps_artifact_step_id_null_on_count_mi
 
     assert status == 200
     steps = payload["display"]["steps"]
-    assert [step["artifactStepId"] for step in steps] == [None, None]
+    assert [step["artifactStepId"] for step in steps] == ["agent-launch_app-1", None]
+
+
+def test_playground_server_recorded_yaml_steps_keep_matches_after_unmatched_middle_step(tmp_path: Path) -> None:
+    events = [
+        _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="setup"),
+        _recorded_command_event(tool_name="assert_visible", alias="assertVisible", step_id="agent-assert_visible-3", step_kind="assertion"),
+    ]
+    settings = _recorded_run_with_events(
+        tmp_path,
+        events=events,
+        commands="- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n- assertVisible:\n    target: Login\n",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    steps = payload["display"]["steps"]
+    assert [step["artifactStepId"] for step in steps] == [
+        "agent-launch_app-1",
+        None,
+        "agent-assert_visible-3",
+    ]
+
+
+def test_playground_server_recorded_yaml_steps_align_historical_observation_commands(tmp_path: Path) -> None:
+    events = [
+        _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="setup"),
+        _recorded_command_event(tool_name="ui_tree", alias="uiTree", step_id="agent-ui_tree-2", step_kind="observation"),
+        _recorded_command_event(tool_name="assert_visible", alias="assertVisible", step_id="agent-assert_visible-3", step_kind="assertion"),
+    ]
+    settings = _recorded_run_with_events(
+        tmp_path,
+        events=events,
+        commands="- launchApp:\n    appId: com.example\n- uiTree\n- assertVisible:\n    target: Login\n",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 200
+    steps = payload["display"]["steps"]
+    assert [step["artifactStepId"] for step in steps] == [
+        "agent-launch_app-1",
+        "agent-ui_tree-2",
+        "agent-assert_visible-3",
+    ]
 
 
 def test_playground_server_recorded_yaml_endpoint_returns_skipped_metadata(tmp_path: Path) -> None:
@@ -668,6 +867,42 @@ def test_playground_server_step_artifacts_endpoint_returns_no_artifacts(tmp_path
     assert payload["available"] is False
     assert payload["artifacts"] == []
     assert "No artifacts" in payload["message"]
+
+
+def test_playground_server_step_artifacts_endpoint_ignores_duplicate_legacy_artifact_path(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    screenshot_path = "artifacts/screenshots/agent-click-1-prepare-before-action.png"
+    screenshot_file = run_dir / screenshot_path
+    screenshot_file.parent.mkdir(parents=True)
+    screenshot_file.write_bytes(b"before")
+    event = {
+        "type": "tool_call_completed",
+        "timestamp": "2026-07-21T00:00:01+00:00",
+        "tool_name": "click_on",
+        "payload": {
+            "runner_step_id": "agent-click-1",
+            "artifact_path": screenshot_path,
+            "artifact_refs": [
+                {
+                    "kind": "screenshot",
+                    "path": screenshot_path,
+                    "step_id": "agent-click-1",
+                    "phase": "prepare",
+                }
+            ],
+        },
+    }
+    (run_dir / "events.jsonl").write_text(json.dumps(event), encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/step-artifacts/run-1/agent-click-1", {})
+
+    assert status == 200
+    assert len(payload["artifacts"]) == 1
+    assert payload["artifacts"][0]["path"] == screenshot_path
+    assert payload["artifacts"][0]["phase"] == "prepare"
 
 
 def test_playground_server_step_artifacts_endpoint_resolves_by_artifact_step_id(tmp_path: Path) -> None:
@@ -2112,6 +2347,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "error.textContent = artifact.error" in script
     assert "renderUiTreeDiffArtifact" in script
     assert "OBSERVATION_ARTIFACT_KINDS" in script
+    assert "uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)" in script
     assert "renderDiffPane" in script
     assert "renderDiffOverview" in script
     assert "syncDiffPaneScroll" in script
@@ -2289,6 +2525,12 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert 'id="yaml-path-row"' in run_section
     assert 'class="run-input-row"' in run_section
     assert 'id="case-yaml"' not in yaml_section
+    assert 'id="load-run-toggle"' in yaml_section
+    assert 'id="load-run-form"' in yaml_section
+    assert 'id="load-run-path"' in yaml_section
+    assert 'id="load-run-submit"' in yaml_section
+    assert 'id="load-run-cancel"' in yaml_section
+    assert 'id="load-run-status"' in yaml_section
     assert "yaml-input-tab" in html
     assert "yaml-recorded-tab" in html
     assert "yaml-input-pane" in html
@@ -2300,6 +2542,21 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yaml-placeholder" not in html
     assert "loadInputYaml" in script
     assert "loadRecordedYaml" in script
+    assert "async function loadExistingRun()" in script
+    assert "api('/runs/load', { method: 'POST'" in script
+    assert "function setLoadRunControlsDisabled" in script
+    assert "function resetLoadRunForm" in script
+    assert "state.loadedRunId" in script
+    assert "existingRun = false" in script
+    assert "await loadRecordedYaml(runId, availability.recordedYaml, { existingRun: true })" in script
+    assert "async function loadExistingRunProgress(runId)" in script
+    assert "api(`/runs/${encodeURIComponent(runId)}/progress`)" in script
+    assert "appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event))" in script
+    assert "No persisted progress events are available for this run." in script
+    assert "Loaded existing run:" not in script
+    assert "els.loadRunPath.addEventListener('keydown'" in script
+    assert "els.loadRunCancel.addEventListener('click'" in script
+    assert "state.loadedRunId = null" in script
     assert "showYamlView" in script
     assert "copyActiveYaml" not in script
     assert "renderYamlDisplay" in script
@@ -2344,6 +2601,8 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "activeYamlStepClearTimer" in script
     assert "YAML_SELECTABLE_REGION_SELECTOR" in script
     assert "yamlPathRow" in script
+    assert "loadRunToggle" in script
+    assert "loadRunForm" in script
     assert "yamlSection" in script
     assert "yamlTabs" in script
     assert "els.yamlSection.hidden = false" in script
@@ -2364,6 +2623,8 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "showYamlView('progress')" in script
     assert "function syncYamlTabOrder(mode)" in script
     assert "mode === 'goal' || mode === 'yaml'" in script
+    assert ".load-run-form" in styles
+    assert ".load-run-actions" in styles
     assert "? [els.yamlProgressTab, els.yamlInputTab, els.yamlRecordedTab]" in script
     assert ": [els.yamlInputTab, els.yamlRecordedTab, els.yamlProgressTab]" in script
     assert "showYamlView('recorded')" in script
