@@ -1222,7 +1222,7 @@ function renderStepArtifactPreview(payload, stepCard) {
   if (artifacts.length > 0) {
     shell.querySelector('.step-artifact-empty')?.remove();
     const screenshots = artifacts.filter((artifact) => artifact.kind === 'screenshot' && artifact.contentBase64);
-    const textArtifacts = artifacts.filter((artifact) => artifact.kind !== 'screenshot' && typeof artifact.content === 'string');
+    const textArtifacts = artifacts.filter((artifact) => artifact.kind !== 'screenshot' && (typeof artifact.content === 'string' || typeof artifact.error === 'string'));
     const body = document.createElement('div');
     body.className = 'step-artifact-body';
     let screenshotRegion = null;
@@ -1454,10 +1454,16 @@ function renderStepArtifactTextArtifacts(artifacts) {
   heading.className = 'step-artifact-section-title';
   heading.textContent = 'UI Tree';
   section.appendChild(heading);
+  for (const artifact of artifacts.filter((candidate) => typeof candidate.error === 'string')) {
+    const error = document.createElement('div');
+    error.className = 'step-artifact-error';
+    error.textContent = artifact.error;
+    section.appendChild(error);
+  }
   const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
   if (uiTreeDiff) section.appendChild(uiTreeDiff);
   for (const artifact of artifacts) {
-    if (OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)) continue;
+    if (OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind) || typeof artifact.error === 'string') continue;
     const card = document.createElement('div');
     card.className = 'step-artifact-text-card';
     const label = document.createElement('div');

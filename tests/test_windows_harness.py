@@ -15,10 +15,13 @@ from fsq_agent.models import (
     WindowsAssertVisibleParams,
     WindowsClickOnParams,
     WindowsDoubleClickOnParams,
+    WindowsDragToParams,
+    WindowsHoverOnParams,
     WindowsKillAppParams,
     WindowsLaunchAppParams,
     WindowsPressKeyParams,
     WindowsRightClickOnParams,
+    WindowsScrollOnParams,
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
@@ -80,6 +83,18 @@ class FakeWindowsDriver(AIAssertionBackendToolMixin):
     def press_key(self, params: WindowsPressKeyParams) -> dict[str, object]:
         return self._record("press_key", params)
 
+    @_windows_driver_tool("hoverOn", description="Move the mouse over a Windows control.")
+    def hover_on(self, params: WindowsHoverOnParams) -> dict[str, object]:
+        return self._record("hover_on", params)
+
+    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.", capture_evidence=True)
+    def scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
+        return self._record("scroll_on", params)
+
+    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.", capture_evidence=True)
+    def drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
+        return self._record("drag_to", params)
+
     @_windows_driver_tool("assertVisible", description="Assert that a Windows control is visible.")
     def assert_visible(self, params: WindowsAssertVisibleParams) -> dict[str, object]:
         return self._record("assert_visible", params)
@@ -119,6 +134,18 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("rightClickOn", {"target": "Open the File context menu", "locator": {"title": "File"}}, "right_click_on"),
         ("typeText", {"target": "Enter document text", "locator": {"title": "Document"}, "text": "hello"}, "type_text"),
         ("pressKey", {"key": "^s"}, "press_key"),
+        ("hoverOn", {"target": "Hover Save", "locator": {"title": "Save"}}, "hover_on"),
+        ("scrollOn", {"target": "Scroll results", "locator": {"automation_id": "Results"}, "wheel_dist": -5}, "scroll_on"),
+        (
+            "dragTo",
+            {
+                "target": "Move item",
+                "source": {"locator": {"title": "Item"}},
+                "destination": {"offset": {"x": 20, "y": 0}},
+                "mouse_button": "left",
+            },
+            "drag_to",
+        ),
         ("assertVisible", {"target": "Verify Save is visible", "locator": {"title": "Save"}}, "assert_visible"),
         ("uiSnapshot", {}, "ui_snapshot"),
         ("killApp", {}, "kill_app"),
@@ -159,6 +186,10 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
     assert "target" in schemas["click_on"].params_json_schema["required"]
+    assert schemas["hover_on"].capture_evidence is True
+    assert schemas["scroll_on"].capture_evidence is True
+    assert schemas["drag_to"].capture_evidence is True
+    assert schemas["drag_to"].fsq_action_name == "dragTo"
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
     assert schemas["ui_snapshot"].capture_evidence is False
@@ -222,6 +253,49 @@ def test_windows_harness_reports_missing_target() -> None:
     assert "target: Field required" in result.error_message
     assert result.metadata["validation_errors"][0]["loc"] == ("target",)
     assert driver.calls == [("context", None)]
+
+
+def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
+    params = WindowsDragToParams.model_validate(
+        {
+            "target": "Move item",
+            "source": {"point": {"x": 10, "y": 20}},
+            "destination": {"locator": {"automation_id": "DropTarget"}},
+        }
+    )
+
+    assert params.mouse_button == "left"
+    assert params.source.point is not None
+    assert params.destination.locator is not None
+
+    with pytest.raises(ValueError, match="exactly one"):
+        WindowsDragToParams.model_validate(
+            {
+                "target": "Move item",
+                "source": {"point": {"x": 1, "y": 2}, "locator": {"title": "Item"}},
+                "destination": {"point": {"x": 3, "y": 4}},
+            }
+        )
+    with pytest.raises(ValueError):
+        WindowsDragToParams.model_validate(
+            {
+                "target": "Move item",
+                "source": {"point": {"x": -1, "y": 2}},
+                "destination": {"point": {"x": 3, "y": 4}},
+            }
+        )
+    with pytest.raises(ValueError, match="non-zero offset"):
+        WindowsDragToParams.model_validate(
+            {
+                "target": "Move item",
+                "source": {"point": {"x": 1, "y": 2}},
+                "destination": {"offset": {"x": 0, "y": 0}},
+            }
+        )
+    with pytest.raises(ValueError, match="non-zero wheel_dist"):
+        WindowsScrollOnParams.model_validate(
+            {"target": "Scroll results", "locator": {"title": "Results"}, "wheel_dist": 0}
+        )
 
 
 def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
@@ -445,3 +519,203 @@ def test_pywinauto_driver_control_raises_without_title_match() -> None:
         driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
 
     assert window.calls == [{"auto_id": "15", "found_index": 0}]
+
+
+def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class Rectangle:
+        def mid_point(self) -> tuple[int, int]:
+            return (120, 80)
+
+    class Wrapper:
+        def rectangle(self) -> Rectangle:
+            return Rectangle()
+
+    class FakeMouse:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, object]] = []
+
+        def move(self, *, coords: tuple[int, int]) -> None:
+            self.calls.append(("move", coords))
+
+        def scroll(self, *, coords: tuple[int, int], wheel_dist: int) -> None:
+            self.calls.append(("scroll", {"coords": coords, "wheel_dist": wheel_dist}))
+
+    mouse = FakeMouse()
+    driver = PywinautoWindowsDriver(window=object())
+    driver._control = lambda params: Wrapper()  # type: ignore[attr-defined]
+    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+
+    hover_result = driver.hover_on(WindowsHoverOnParams(target="Hover Save", locator={"title": "Save"}))
+    scroll_result = driver.scroll_on(
+        WindowsScrollOnParams(target="Scroll results", locator={"title": "Results"}, wheel_dist=-5)
+    )
+
+    assert hover_result["status"] == "passed"
+    assert scroll_result["status"] == "passed"
+    assert mouse.calls == [
+        ("move", (120, 80)),
+        ("scroll", {"coords": (120, 80), "wheel_dist": -5}),
+    ]
+
+
+def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class Rectangle:
+        def mid_point(self) -> tuple[int, int]:
+            return (10, 20)
+
+    class Wrapper:
+        def rectangle(self) -> Rectangle:
+            return Rectangle()
+
+    class FakeMouse:
+        def move(self, *, coords: tuple[int, int]) -> None:
+            pass
+
+        def scroll(self, *, coords: tuple[int, int], wheel_dist: int) -> None:
+            pass
+
+    queries: list[dict[str, object]] = []
+    driver = PywinautoWindowsDriver(window=object())
+
+    def resolve(locator: dict[str, object]) -> Wrapper:
+        queries.append(locator)
+        return Wrapper()
+
+    driver._control_from_kwargs = resolve  # type: ignore[attr-defined]
+    driver._mouse_module = lambda: FakeMouse()  # type: ignore[attr-defined]
+
+    driver.hover_on(WindowsHoverOnParams(target="Do not search this text", locator={"automation_id": "Save"}))
+    driver.scroll_on(
+        WindowsScrollOnParams(target="Also not a query", locator={"control_type": "List"}, wheel_dist=-1)
+    )
+
+    assert queries == [{"automation_id": "Save"}, {"control_type": "List"}]
+
+
+def test_pywinauto_driver_drag_to_offset_moves_and_releases() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FakeMouse:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, object]] = []
+
+        def press(self, *, coords: tuple[int, int], button: str) -> None:
+            self.calls.append(("press", {"coords": coords, "button": button}))
+
+        def move(self, *, coords: tuple[int, int]) -> None:
+            self.calls.append(("move", coords))
+
+        def release(self, *, coords: tuple[int, int], button: str) -> None:
+            self.calls.append(("release", {"coords": coords, "button": button}))
+
+    mouse = FakeMouse()
+    driver = PywinautoWindowsDriver(window=object())
+    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+
+    result = driver.drag_to(
+        WindowsDragToParams(
+            target="Move item",
+            source={"point": {"x": 10, "y": 20}},
+            destination={"offset": {"x": 30, "y": 0}},
+            mouse_button="right",
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert mouse.calls[0] == ("press", {"coords": (10, 20), "button": "right"})
+    assert mouse.calls[-1] == ("release", {"coords": (40, 20), "button": "right"})
+    assert ("move", (40, 20)) in mouse.calls
+
+
+@pytest.mark.parametrize(
+    ("source", "destination", "expected_start", "expected_end"),
+    [
+        ({"locator": {"automation_id": "Source"}}, {"locator": {"automation_id": "Target"}}, (10, 20), (70, 80)),
+        ({"locator": {"automation_id": "Source"}}, {"point": {"x": 50, "y": 60}}, (10, 20), (50, 60)),
+        ({"point": {"x": 30, "y": 40}}, {"locator": {"automation_id": "Target"}}, (30, 40), (70, 80)),
+        ({"point": {"x": 30, "y": 40}}, {"point": {"x": 50, "y": 60}}, (30, 40), (50, 60)),
+    ],
+)
+def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
+    source: dict[str, object],
+    destination: dict[str, object],
+    expected_start: tuple[int, int],
+    expected_end: tuple[int, int],
+) -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class Rectangle:
+        def __init__(self, point: tuple[int, int]) -> None:
+            self.point = point
+
+        def mid_point(self) -> tuple[int, int]:
+            return self.point
+
+    class Wrapper:
+        def __init__(self, point: tuple[int, int]) -> None:
+            self.point = point
+
+        def rectangle(self) -> Rectangle:
+            return Rectangle(self.point)
+
+    class FakeMouse:
+        def __init__(self) -> None:
+            self.press_point: tuple[int, int] | None = None
+            self.release_point: tuple[int, int] | None = None
+
+        def press(self, *, coords: tuple[int, int], button: str) -> None:
+            self.press_point = coords
+
+        def move(self, *, coords: tuple[int, int]) -> None:
+            pass
+
+        def release(self, *, coords: tuple[int, int], button: str) -> None:
+            self.release_point = coords
+
+    wrappers = {"Source": Wrapper((10, 20)), "Target": Wrapper((70, 80))}
+    mouse = FakeMouse()
+    driver = PywinautoWindowsDriver(window=object())
+    driver._control_from_kwargs = lambda locator: wrappers[locator["automation_id"]]  # type: ignore[attr-defined]
+    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+
+    result = driver.drag_to(WindowsDragToParams(target="Move item", source=source, destination=destination))
+
+    assert result["status"] == "passed"
+    assert mouse.press_point == expected_start
+    assert mouse.release_point == expected_end
+
+
+def test_pywinauto_driver_drag_releases_mouse_after_move_failure() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FailingMouse:
+        def __init__(self) -> None:
+            self.releases: list[tuple[tuple[int, int], str]] = []
+
+        def press(self, *, coords: tuple[int, int], button: str) -> None:
+            pass
+
+        def move(self, *, coords: tuple[int, int]) -> None:
+            raise RuntimeError("move failed")
+
+        def release(self, *, coords: tuple[int, int], button: str) -> None:
+            self.releases.append((coords, button))
+
+    mouse = FailingMouse()
+    driver = PywinautoWindowsDriver(window=object())
+    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+
+    with pytest.raises(RuntimeError, match="move failed"):
+        driver.drag_to(
+            WindowsDragToParams(
+                target="Move item",
+                source={"point": {"x": 10, "y": 20}},
+                destination={"point": {"x": 40, "y": 20}},
+            )
+        )
+
+    assert mouse.releases == [((40, 20), "left")]

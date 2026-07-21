@@ -121,14 +121,14 @@ The playground returns JSON errors for API failures and does not expose tracebac
 
 YAML display endpoints are read-only and must return concise structured errors for missing paths, missing files, directory paths, non-UTF-8 reads, display size-limit failures, request ids that cannot resolve to runs, missing run directories, missing `recording.json`, invalid recording metadata, and recorded-case paths that escape the run directory. A skipped or failed recording must be displayed as recording metadata with warnings/errors when available rather than treated as a dynamic run failure.
 
-Step artifact endpoints are read-only, must read only under the resolved run directory, and must return concise structured errors for unsafe paths, invalid step identifiers, unsupported artifact content, and text display size-limit failures. Missing files or no matching artifacts must not imply run failure.
+Step artifact endpoints are read-only and must read only under the resolved run directory. They must return concise structured errors for unsafe paths, invalid step identifiers, and unsupported artifact content. A text artifact exceeding the display size limit must return an error on that artifact without suppressing other step artifacts such as screenshots. Missing files or no matching artifacts must not imply run failure.
 
 ## Testing Contract
 
 - Unit tests cover playground state/session behavior, report lookup, replay/replay-video endpoints, task progress streaming and filtering, cancellation, runtime info, platform-specific setup availability, and strict/dynamic execution adapters.
 - YAML display tests must cover `GET /yaml/input` success with structured metadata/steps display data, missing file, directory path, display size-limit behavior, UTF-8 read failures when practical, malformed YAML presentation errors, and path resolution order.
 - Recorded YAML tests must cover `GET /yaml/recorded/{request_or_run_id}` with generated content, skipped recording metadata, failed recording metadata, missing run id, path safety for recorded-case paths, and recorded steps exposing `displayIndex` and `artifactStepId`.
-- Step artifact tests must cover `GET /step-artifacts/{request_or_run_id}/{step_id_or_index}` success, no-artifacts response, missing run id, path safety, missing files, text display size-limit behavior, and resolving a step by its artifact step id.
+- Step artifact tests must cover `GET /step-artifacts/{request_or_run_id}/{step_id_or_index}` success, no-artifacts response, missing run id, path safety, missing files, per-artifact text display size-limit behavior that preserves screenshots, and resolving a step by its artifact step id.
 - Static UI tests must cover YAML section placement, run-mode path input behavior, Input/Recorded tab behavior, structured YAML rendering, recorded YAML loading, and strict-run no-recorded-YAML behavior.
 - Static step-artifact UI tests must cover completed-run step-card artifact preview, running Preview remaining unchanged, screenshot and structured-artifact rendering, missing artifact kinds not rendering empty regions, Clear/new execution reset, and case title clicks showing completed-run replay video only after execution.
 - Verification command: `python -m pytest tests/test_playground.py`.

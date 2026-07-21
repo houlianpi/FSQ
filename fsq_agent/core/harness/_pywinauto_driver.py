@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 import json
+from math import ceil, hypot
 from pathlib import Path
 import subprocess
 import time
@@ -16,10 +17,13 @@ from fsq_agent.models import (
     WindowsAssertVisibleParams,
     WindowsClickOnParams,
     WindowsDoubleClickOnParams,
+    WindowsDragToParams,
+    WindowsHoverOnParams,
     WindowsKillAppParams,
     WindowsLaunchAppParams,
     WindowsPressKeyParams,
     WindowsRightClickOnParams,
+    WindowsScrollOnParams,
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
@@ -31,6 +35,7 @@ UI_SNAPSHOT_MAX_DEPTH = 20
 UI_SNAPSHOT_MAX_NODES = 1200
 UI_SNAPSHOT_MAX_CHILDREN = 60
 UI_SNAPSHOT_MAX_BYTES = 800000
+MOUSE_DRAG_STEP_PIXELS = 15
 _T = TypeVar("_T")
 
 
@@ -177,6 +182,48 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         window.type_keys(params.key, with_spaces=True, set_foreground=True)
         return self._passed({"key": params.key})
 
+    @_windows_driver_tool("hoverOn", description="Move the mouse over a Windows control.")
+    def hover_on(self, params: WindowsHoverOnParams) -> dict[str, object]:
+        return self._run_sync(lambda: self._hover_on(params))
+
+    def _hover_on(self, params: WindowsHoverOnParams) -> dict[str, object]:
+        point = self._control_center(self._control(params))
+        self._mouse_module().move(coords=point)
+        return self._passed()
+
+    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.", capture_evidence=True)
+    def scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
+        return self._run_sync(lambda: self._scroll_on(params))
+
+    def _scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
+        point = self._control_center(self._control(params))
+        self._mouse_module().scroll(coords=point, wheel_dist=params.wheel_dist)
+        return self._passed()
+
+    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.", capture_evidence=True)
+    def drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
+        return self._run_sync(lambda: self._drag_to(params))
+
+    def _drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
+        start = self._mouse_source_point(params)
+        end = self._mouse_destination_point(params, start)
+        mouse = self._mouse_module()
+        pressed = False
+        try:
+            mouse.press(coords=start, button=params.mouse_button)
+            pressed = True
+            for point in self._drag_path(start, end):
+                mouse.move(coords=point)
+            mouse.release(coords=end, button=params.mouse_button)
+            pressed = False
+        finally:
+            if pressed:
+                try:
+                    mouse.release(coords=end, button=params.mouse_button)
+                except Exception:
+                    pass
+        return self._passed()
+
     @_windows_driver_tool("assertVisible", description="Assert that a Windows control is visible.")
     def assert_visible(self, params: WindowsAssertVisibleParams) -> dict[str, object]:
         return self._run_sync(lambda: self._assert_visible(params))
@@ -322,6 +369,55 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                 context={"install": "pip install fsq-agent[windows]"},
             ) from exc
         return Application
+
+    def _mouse_module(self) -> Any:
+        try:
+            from pywinauto import mouse
+        except ImportError as exc:
+            raise ConfigurationError(
+                "pywinauto is required for Windows mouse actions.",
+                context={"install": "pip install fsq-agent[windows]"},
+            ) from exc
+        return mouse
+
+    def _control_center(self, control: Any) -> tuple[int, int]:
+        midpoint = control.rectangle().mid_point()
+        if hasattr(midpoint, "x") and hasattr(midpoint, "y"):
+            return int(midpoint.x), int(midpoint.y)
+        x, y = midpoint
+        return int(x), int(y)
+
+    def _mouse_source_point(self, params: WindowsDragToParams) -> tuple[int, int]:
+        if params.source.locator is not None:
+            locator = params.source.locator.model_dump(mode="python", exclude_none=True)
+            return self._control_center(self._control_from_kwargs(locator))
+        point = params.source.point
+        if point is None:
+            raise ValueError("Windows drag source is missing.")
+        return point.x, point.y
+
+    def _mouse_destination_point(self, params: WindowsDragToParams, start: tuple[int, int]) -> tuple[int, int]:
+        destination = params.destination
+        if destination.locator is not None:
+            locator = destination.locator.model_dump(mode="python", exclude_none=True)
+            return self._control_center(self._control_from_kwargs(locator))
+        if destination.point is not None:
+            return destination.point.x, destination.point.y
+        offset = destination.offset
+        if offset is None:
+            raise ValueError("Windows drag destination is missing.")
+        return start[0] + offset.x, start[1] + offset.y
+
+    def _drag_path(self, start: tuple[int, int], end: tuple[int, int]) -> list[tuple[int, int]]:
+        distance = hypot(end[0] - start[0], end[1] - start[1])
+        steps = max(1, ceil(distance / MOUSE_DRAG_STEP_PIXELS))
+        return [
+            (
+                round(start[0] + (end[0] - start[0]) * index / steps),
+                round(start[1] + (end[1] - start[1]) * index / steps),
+            )
+            for index in range(1, steps + 1)
+        ]
 
     def _require_window(self) -> Any:
         if self._window is None:
