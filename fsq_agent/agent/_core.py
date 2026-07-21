@@ -10,6 +10,7 @@ from fsq_agent.config import Settings, load_settings
 from fsq_agent.knowledge import PrivateKnowledgeLoader
 from fsq_agent.models import KnowledgeBundle, PlanningError, RunEvent, RunEventSink, Task, TaskResult
 from fsq_agent.observation import ExecutionLogger
+from fsq_agent.providers import refresh_model_provider_session
 from fsq_agent.report import ReportGenerator
 from fsq_agent.skills import SkillLoader
 from fsq_agent.tools import AgentToolAdapter, AgentToolRegistry, DefaultAgentToolProvider, FileOps
@@ -102,6 +103,8 @@ class FsqAgent:
                     payload={"skill_count": len(skills), "knowledge_item_count": len(knowledge.items)},
                 )
             )
+            provider_refresh_session = refresh_model_provider_session(self.settings)
+            provider_refresh_session.close_sync()
             task = await self._augment_goal_only_task_with_pre_plan(task, skills, run_id, emitter)
             results = await self.runtime.run_task(task, knowledge, skills, run_id, emitter.emit)
             events_path = self.event_logger.log_root / run_id / "events.jsonl" if self.event_logger else None

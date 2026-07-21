@@ -4,6 +4,7 @@ from fsq_agent.providers._factory import (
     build_ai_assertion_evaluator,
     build_model_provider_session,
     prepare_model_provider_session,
+    refresh_model_provider_session,
 )
 from fsq_agent.providers._session import ModelProviderSession
 
@@ -14,4 +15,5 @@ __all__ = [
     "build_ai_assertion_evaluator",
     "build_model_provider_session",
     "prepare_model_provider_session",
+    "refresh_model_provider_session",
 ]

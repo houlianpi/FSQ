@@ -168,8 +168,18 @@ class _Reporter:
         return ReportArtifact(run_id=run_id, path=Path("report.md"))
 
 
+class _RefreshSession:
+    def close_sync(self) -> None:
+        pass
+
+
+def _stub_provider_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fsq_agent.agent._core.refresh_model_provider_session", lambda settings: _RefreshSession())
+
+
 @pytest.mark.asyncio
-async def test_agent_run_id_uses_friendly_timestamp_suffix() -> None:
+async def test_agent_run_id_uses_friendly_timestamp_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
     reporter = _Reporter()
     agent = FsqAgent(
         Settings(),
@@ -294,7 +304,8 @@ def test_recent_tool_output_filter_omits_small_wrapped_sensitive_history() -> No
 
 
 @pytest.mark.asyncio
-async def test_agent_run_emits_and_persists_live_events(tmp_path: Path) -> None:
+async def test_agent_run_emits_and_persists_live_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
     reporter = _Reporter()
     events: list[RunEvent] = []
     agent = FsqAgent(
@@ -325,7 +336,8 @@ async def test_agent_run_emits_and_persists_live_events(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_run_persists_run_failed_for_cancellation(tmp_path: Path) -> None:
+async def test_agent_run_persists_run_failed_for_cancellation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
     events: list[RunEvent] = []
     agent = FsqAgent(
         Settings(),
@@ -358,7 +370,8 @@ async def test_agent_run_persists_run_failed_for_cancellation(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path) -> None:
+async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(parents=True)
     (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")
@@ -395,7 +408,53 @@ async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_agent_pre_plan_uses_explicit_raw_case_planning_reference(tmp_path: Path) -> None:
+async def test_agent_run_refreshes_provider_before_pre_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")
+    runtime = _GoalRunRuntime()
+    calls: list[str] = []
+
+    def fake_refresh_model_provider_session(settings: Settings) -> _RefreshSession:
+        calls.append("refresh")
+        session = _RefreshSession()
+        session.close_sync = lambda: calls.append("refresh_closed")  # type: ignore[method-assign]
+        return session
+
+    original_run_pre_plan = runtime.run_pre_plan
+
+    async def recording_run_pre_plan(*args, **kwargs):
+        calls.append("pre_plan")
+        return await original_run_pre_plan(*args, **kwargs)
+
+    runtime.run_pre_plan = recording_run_pre_plan  # type: ignore[method-assign]
+    monkeypatch.setattr("fsq_agent.agent._core.refresh_model_provider_session", fake_refresh_model_provider_session)
+    agent = FsqAgent(
+        _settings_with_knowledge(knowledge_dir),
+        verifier=Verifier(),
+        reporter=_Reporter(),  # type: ignore[arg-type]
+        knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
+        skill_loader=_SkillLoader(),  # type: ignore[arg-type]
+        runtime=runtime,  # type: ignore[arg-type]
+    )
+    task = Task(
+        id="downloads",
+        name="Access Downloads",
+        description="Access Downloads through the overflow menu.",
+        verification_goal="Goal completed: Access Downloads",
+        acceptance_criteria=["Goal completed: Access Downloads"],
+    )
+
+    result = await agent.run(task)
+
+    assert result.status == "success"
+    assert calls[:3] == ["refresh", "refresh_closed", "pre_plan"]
+    assert calls.count("refresh") == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_pre_plan_uses_explicit_raw_case_planning_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(parents=True)
     (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")

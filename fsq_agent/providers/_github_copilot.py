@@ -20,6 +20,7 @@ GITHUB_API_VERSION = "2022-11-28"
 COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 COPILOT_USER_URL = "https://api.github.com/copilot_internal/user"
 TOKEN_CACHE_RELATIVE_PATH = Path("auth") / "github-copilot-token.json"
+PROVIDER_TOKEN_CACHE_RELATIVE_PATH = Path("auth") / "github-copilot-provider-token.json"
 COPILOT_AUTH_TIMEOUT_SECONDS = 20.0
 
 COPILOT_BASE_URLS: dict[str, str] = {
@@ -50,21 +51,57 @@ class CopilotToken:
     expires_at: float
 
 
+@dataclass(frozen=True)
+class CachedCopilotProviderToken:
+    token: str
+    expires_at: float
+    plan: str
+
+
 def build_github_copilot_client_config(settings: Settings, *, interactive_auth: bool = True) -> ProviderClientConfig:
     workspace_root = settings.workspace.root_dir
     if workspace_root is None:
         raise ConfigurationError("GitHub Copilot provider requires a resolved fsq-agent workspace.")
-    token_cache_path = workspace_root / TOKEN_CACHE_RELATIVE_PATH
-    github_token = _resolve_github_token(token_cache_path, interactive_auth=interactive_auth)
+    provider_token_cache_path = workspace_root / PROVIDER_TOKEN_CACHE_RELATIVE_PATH
+    cached_provider_token = _load_cached_copilot_provider_token(provider_token_cache_path)
+    if cached_provider_token:
+        return _client_config_from_cached_provider_token(settings, cached_provider_token)
+    github_token = _resolve_github_token(
+        workspace_root / TOKEN_CACHE_RELATIVE_PATH,
+        interactive_auth=interactive_auth,
+    )
     plan = _get_copilot_plan(github_token)
     copilot_token = _get_copilot_token(github_token)
+    cached_provider_token = _save_copilot_provider_token(provider_token_cache_path, copilot_token, plan)
+    return _client_config_from_cached_provider_token(settings, cached_provider_token)
+
+
+def refresh_github_copilot_client_config(settings: Settings) -> ProviderClientConfig:
+    workspace_root = settings.workspace.root_dir
+    if workspace_root is None:
+        raise ConfigurationError("GitHub Copilot provider requires a resolved fsq-agent workspace.")
+    github_token = _resolve_github_token(workspace_root / TOKEN_CACHE_RELATIVE_PATH, interactive_auth=False)
+    plan = _get_copilot_plan(github_token)
+    copilot_token = _get_copilot_token(github_token)
+    cached_provider_token = _save_copilot_provider_token(
+        workspace_root / PROVIDER_TOKEN_CACHE_RELATIVE_PATH,
+        copilot_token,
+        plan,
+    )
+    return _client_config_from_cached_provider_token(settings, cached_provider_token)
+
+
+def _client_config_from_cached_provider_token(
+    settings: Settings,
+    provider_token: CachedCopilotProviderToken,
+) -> ProviderClientConfig:
     return ProviderClientConfig(
         provider="github_copilot",
         model=settings.openai_agents.model or "gpt-5.5",
-        api_key=copilot_token.token,
-        base_url=COPILOT_BASE_URLS[plan],
+        api_key=provider_token.token,
+        base_url=COPILOT_BASE_URLS[provider_token.plan],
         default_headers=COPILOT_MODEL_HEADERS,
-        metadata={"endpoint_family": "github_copilot", "copilot_plan": plan},
+        metadata={"endpoint_family": "github_copilot", "copilot_plan": provider_token.plan},
     )
 
 
@@ -99,6 +136,32 @@ def _save_token(token_cache_path: Path, token_data: dict) -> None:
     if isinstance(expires_in, int | float):
         payload["expires_at"] = time.time() + expires_in
     token_cache_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _load_cached_copilot_provider_token(token_cache_path: Path) -> CachedCopilotProviderToken | None:
+    try:
+        data = json.loads(token_cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    expires_at = data.get("expires_at")
+    if not isinstance(expires_at, int | float) or time.time() >= expires_at - 60:
+        return None
+    token = data.get("token")
+    plan = data.get("plan")
+    if not isinstance(token, str) or not token or plan not in COPILOT_BASE_URLS:
+        return None
+    return CachedCopilotProviderToken(token=token, expires_at=expires_at, plan=plan)
+
+
+def _save_copilot_provider_token(
+    token_cache_path: Path,
+    token: CopilotToken,
+    plan: str,
+) -> CachedCopilotProviderToken:
+    token_cache_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"token": token.token, "expires_at": token.expires_at, "plan": plan}
+    token_cache_path.write_text(json.dumps(payload), encoding="utf-8")
+    return CachedCopilotProviderToken(token=token.token, expires_at=token.expires_at, plan=plan)
 
 
 def _authenticate(token_cache_path: Path) -> str:
