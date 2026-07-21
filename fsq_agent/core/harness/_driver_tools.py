@@ -105,7 +105,7 @@ WINDOWS_DRIVER_ACTION_CATALOG = {
         _windows_action("rightClickOn", "right_click_on", WindowsRightClickOnParams, capture_evidence=True),
         _windows_action("typeText", "type_text", WindowsTypeTextParams, capture_evidence=True),
         _windows_action("pressKey", "press_key", WindowsPressKeyParams, capture_evidence=True),
-        _windows_action("hoverOn", "hover_on", WindowsHoverOnParams),
+        _windows_action("hoverOn", "hover_on", WindowsHoverOnParams, capture_evidence=True),
         _windows_action("scrollOn", "scroll_on", WindowsScrollOnParams, capture_evidence=True),
         _windows_action("dragTo", "drag_to", WindowsDragToParams, capture_evidence=True),
         _windows_action("assertVisible", "assert_visible", WindowsAssertVisibleParams, step_kind="assertion"),

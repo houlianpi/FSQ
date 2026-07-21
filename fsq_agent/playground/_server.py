@@ -25,7 +25,7 @@ from fsq_agent.report import resolve_report_path
 
 
 YAML_DISPLAY_SIZE_LIMIT_BYTES = 512 * 1024
-STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 1024 * 1024
+STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 512 * 1024
 _YAML_COMMAND_CONTROL_KEYS = {"optional", "timeout", "timeout_ms", "evidence", "evidencePolicy"}
 _YAML_SETUP_ACTIONS = {"launchApp", "startBrowser"}
 _YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
@@ -739,14 +739,6 @@ class PlaygroundServer:
         try:
             refs = self._step_artifact_refs(run_dir, selector)
             artifacts = self._step_artifact_payloads(run_dir, refs)
-        except _StepArtifactTextTooLarge as exc:
-            return 413, {
-                "available": False,
-                "error": str(exc),
-                "runId": run_id,
-                "sizeBytes": exc.size_bytes,
-                "limitBytes": exc.limit_bytes,
-            }
         except UnicodeDecodeError:
             return 400, {"available": False, "error": "Step artifact text must be UTF-8.", "runId": run_id}
         except ValueError as exc:
@@ -989,7 +981,20 @@ class PlaygroundServer:
     def _step_artifact_payloads(self, run_dir: Path, refs: list[dict[str, object]]) -> list[dict[str, object]]:
         artifacts: list[dict[str, object]] = []
         for ref in refs:
-            payload = self._step_artifact_payload(run_dir, ref)
+            try:
+                payload = self._step_artifact_payload(run_dir, ref)
+            except _StepArtifactTextTooLarge as exc:
+                payload = {
+                    "kind": str(ref.get("kind") or ""),
+                    "path": str(ref.get("path") or ""),
+                    "phase": ref.get("phase"),
+                    "reason": ref.get("reason"),
+                    "timestamp": ref.get("timestamp") or self._artifact_timestamp(ref),
+                    "mimeType": ref.get("mime_type") or ref.get("mimeType"),
+                    "error": str(exc),
+                    "sizeBytes": exc.size_bytes,
+                    "limitBytes": exc.limit_bytes,
+                }
             if payload is not None:
                 artifacts.append(payload)
         return artifacts
@@ -1000,6 +1005,9 @@ class PlaygroundServer:
             return None
         inline_content = ref.get("content")
         if isinstance(inline_content, str):
+            size_bytes = len(inline_content.encode("utf-8"))
+            if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
+                raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
             return {
                 "kind": kind,
                 "path": str(ref.get("path") or ""),

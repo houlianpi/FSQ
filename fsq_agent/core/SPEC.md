@@ -111,7 +111,7 @@ Windows LLM-exposed pywinauto capabilities in this SPEC cycle include inherited 
 
 Windows owns public `WindowsDriverInterface`, private `WindowsHarness`, private `PywinautoWindowsDriver`, Windows catalog-backed platform declarations, and Windows default capability definitions selected through public factories. `PywinautoWindowsDriver.assert_with_ai` is a decorated backend tool that calls shared AI assertion support. Windows artifact capture supports `screenshot` and `ui_snapshot`. pywinauto application and mouse imports are lazy runtime/backend concerns, not registry-bootstrap concerns. Normalized Windows runtime settings supply the local app path, pywinauto backend kind, optional window title regex, and configured launch arguments; `backend_kind` selects pywinauto's UI automation mode (`uia` or `win32`) and is not a second FSQ Windows backend. An optional configured window title regex resolves the launched application main window by title instead of the process top window, and configured launch arguments are prepended before per-step `launchApp.extra_args`.
 
-`hover_on` moves to a located control, `scroll_on` scrolls at a located control using non-zero `wheel_dist`, and `drag_to` supports locator or point sources and locator, point, or relative-offset destinations. `hover_on` does not request default evidence capture; `scroll_on` and `drag_to` do.
+`hover_on` moves to a located control, `scroll_on` scrolls at a located control using non-zero `wheel_dist`, and `drag_to` supports locator or point sources and locator, point, or relative-offset destinations. `hover_on`, `scroll_on`, and `drag_to` request default evidence capture.
 
 ### macOS Platform Block
 

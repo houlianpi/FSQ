@@ -783,20 +783,44 @@ def test_playground_server_step_artifacts_endpoint_limits_text_size(tmp_path: Pa
     settings = Settings()
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
+    screenshot_dir = run_dir / "artifacts" / "screenshots"
     tree_dir = run_dir / "artifacts" / "ui-trees"
+    screenshot_dir.mkdir(parents=True)
     tree_dir.mkdir(parents=True)
+    (screenshot_dir / "before.png").write_bytes(b"before")
     (tree_dir / "too-large.json").write_text("x" * (STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES + 1), encoding="utf-8")
     (run_dir / "evidence-manifest.json").write_text(
-        json.dumps({"artifacts": [{"kind": "ui_tree", "step_id": "run-1-step-001", "path": "artifacts/ui-trees/too-large.json"}]}),
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "kind": "screenshot",
+                        "step_id": "run-1-step-001",
+                        "path": "artifacts/screenshots/before.png",
+                        "reason": "before-action",
+                    },
+                    {
+                        "kind": "ui_tree",
+                        "step_id": "run-1-step-001",
+                        "path": "artifacts/ui-trees/too-large.json",
+                        "reason": "before-action",
+                    },
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
     status, payload = server.handle_get("/step-artifacts/run-1/1", {})
 
-    assert status == 413
-    assert payload["available"] is False
-    assert payload["limitBytes"] == STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES
+    assert status == 200
+    assert payload["available"] is True
+    assert [artifact["kind"] for artifact in payload["artifacts"]] == ["screenshot", "ui_tree"]
+    assert payload["artifacts"][0]["contentBase64"] == base64.b64encode(b"before").decode("ascii")
+    assert "content" not in payload["artifacts"][1]
+    assert "too large" in payload["artifacts"][1]["error"]
+    assert payload["artifacts"][1]["limitBytes"] == STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES
 
 
 def test_playground_server_task_progress_filters_events_after_sequence(tmp_path: Path) -> None:
@@ -2083,6 +2107,9 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "renderStepArtifactPreview" in script
     assert "renderStepArtifactScreenshots" in script
     assert "renderStepArtifactTextArtifacts" in script
+    assert "typeof artifact.content === 'string' || typeof artifact.error === 'string'" in script
+    assert "artifacts.filter((candidate) => typeof candidate.error === 'string')" in script
+    assert "error.textContent = artifact.error" in script
     assert "renderUiTreeDiffArtifact" in script
     assert "OBSERVATION_ARTIFACT_KINDS" in script
     assert "renderDiffPane" in script
