@@ -625,6 +625,57 @@ class _WindowsTargetParams(BaseModel):
         return bool(self.target.strip())
 
 
+class WindowsPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+
+
+class WindowsOffset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: int = 0
+    y: int = 0
+
+    @model_validator(mode="after")
+    def _require_non_zero_offset(self) -> "WindowsOffset":
+        if self.x != 0 or self.y != 0:
+            return self
+        raise ValueError("requires non-zero offset")
+
+
+class WindowsMouseSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    locator: WindowsLocator | None = None
+    point: WindowsPoint | None = None
+
+    @model_validator(mode="after")
+    def _require_exactly_one_mode(self) -> "WindowsMouseSource":
+        if sum(value is not None for value in (self.locator, self.point)) != 1:
+            raise ValueError("requires exactly one of locator or point")
+        if self.locator is not None and not self.locator.has_value():
+            raise ValueError("requires non-empty locator")
+        return self
+
+
+class WindowsMouseDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    locator: WindowsLocator | None = None
+    point: WindowsPoint | None = None
+    offset: WindowsOffset | None = None
+
+    @model_validator(mode="after")
+    def _require_exactly_one_mode(self) -> "WindowsMouseDestination":
+        if sum(value is not None for value in (self.locator, self.point, self.offset)) != 1:
+            raise ValueError("requires exactly one of locator, point, or offset")
+        if self.locator is not None and not self.locator.has_value():
+            raise ValueError("requires non-empty locator")
+        return self
+
+
 class WindowsLaunchAppParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -672,6 +723,35 @@ class WindowsPressKeyParams(BaseModel):
         raise ValueError("requires non-empty key")
 
 
+class WindowsHoverOnParams(_WindowsTargetParams):
+    pass
+
+
+class WindowsScrollOnParams(_WindowsTargetParams):
+    wheel_dist: int
+
+    @model_validator(mode="after")
+    def _require_wheel_distance(self) -> "WindowsScrollOnParams":
+        if self.wheel_dist != 0:
+            return self
+        raise ValueError("requires non-zero wheel_dist")
+
+
+class WindowsDragToParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: str
+    source: WindowsMouseSource
+    destination: WindowsMouseDestination
+    mouse_button: WindowsMouseButton = "left"
+
+    @model_validator(mode="after")
+    def _require_target(self) -> "WindowsDragToParams":
+        if self.target.strip():
+            return self
+        raise ValueError("requires non-empty target")
+
+
 class WindowsAssertVisibleParams(_WindowsTargetParams):
     optional: bool | None = None
 
@@ -691,33 +771,6 @@ class WindowsAssertWithAIParams(BaseModel):
         if self.prompt.strip():
             return self
         raise ValueError("requires non-empty prompt")
-
-
-@dataclass(frozen=True)
-class WindowsActionDefinition:
-    fsq_action_name: str
-    driver_method: str
-    params_model: type[BaseModel]
-    step_kind: ExecutableStepKind
-    owner: Literal["driver", "platform", "harness"] = "driver"
-    capture_evidence: bool = False
-
-
-WINDOWS_ACTION_DEFINITIONS: tuple[WindowsActionDefinition, ...] = (
-    WindowsActionDefinition("launchApp", "launch_app", WindowsLaunchAppParams, "setup", capture_evidence=True),
-    WindowsActionDefinition("killApp", "kill_app", WindowsKillAppParams, "teardown"),
-    WindowsActionDefinition("clickOn", "click_on", WindowsClickOnParams, "action", capture_evidence=True),
-    WindowsActionDefinition("doubleClickOn", "double_click_on", WindowsDoubleClickOnParams, "action", capture_evidence=True),
-    WindowsActionDefinition("rightClickOn", "right_click_on", WindowsRightClickOnParams, "action", capture_evidence=True),
-    WindowsActionDefinition("typeText", "type_text", WindowsTypeTextParams, "action", capture_evidence=True),
-    WindowsActionDefinition("pressKey", "press_key", WindowsPressKeyParams, "action", capture_evidence=True),
-    WindowsActionDefinition("assertVisible", "assert_visible", WindowsAssertVisibleParams, "assertion"),
-    WindowsActionDefinition("uiSnapshot", "ui_snapshot", WindowsUiSnapshotParams, "observation"),
-    WindowsActionDefinition("assertWithAI", "assert_with_ai", WindowsAssertWithAIParams, "assertion"),
-)
-WINDOWS_ACTION_DEFINITIONS_BY_NAME: dict[str, WindowsActionDefinition] = {
-    definition.fsq_action_name: definition for definition in WINDOWS_ACTION_DEFINITIONS
-}
 
 
 class MacOSPoint(BaseModel):

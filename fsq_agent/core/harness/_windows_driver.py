@@ -5,10 +5,13 @@ from fsq_agent.models import (
     WindowsAssertVisibleParams,
     WindowsClickOnParams,
     WindowsDoubleClickOnParams,
+    WindowsDragToParams,
+    WindowsHoverOnParams,
     WindowsKillAppParams,
     WindowsLaunchAppParams,
     WindowsPressKeyParams,
     WindowsRightClickOnParams,
+    WindowsScrollOnParams,
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
@@ -38,6 +41,15 @@ class WindowsDriverInterface(Protocol):
         ...
 
     def press_key(self, params: WindowsPressKeyParams) -> dict[str, object]:
+        ...
+
+    def hover_on(self, params: WindowsHoverOnParams) -> dict[str, object]:
+        ...
+
+    def scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
+        ...
+
+    def drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
         ...
 
     def assert_visible(self, params: WindowsAssertVisibleParams) -> dict[str, object]:
