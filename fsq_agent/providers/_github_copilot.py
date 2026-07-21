@@ -15,9 +15,12 @@ from fsq_agent.providers._azure_openai import ProviderClientConfig
 DEVICE_CODE_URL = "https://github.com/login/device/code"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 CLIENT_ID = "Iv1.b507a08c87ecfe98"
+GITHUB_OAUTH_SCOPE = "read:user"
+GITHUB_API_VERSION = "2022-11-28"
 COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 COPILOT_USER_URL = "https://api.github.com/copilot_internal/user"
 TOKEN_CACHE_RELATIVE_PATH = Path("auth") / "github-copilot-token.json"
+COPILOT_AUTH_TIMEOUT_SECONDS = 20.0
 
 COPILOT_BASE_URLS: dict[str, str] = {
     "individual": "https://api.githubcopilot.com",
@@ -29,7 +32,7 @@ COPILOT_EDITOR_HEADERS: dict[str, str] = {
     "editor-version": "vscode/1.99.0",
     "editor-plugin-version": "copilot-chat/0.38.2",
     "user-agent": "GitHubCopilotChat/0.38.2",
-    "x-github-api-version": "2025-10-01",
+    "x-github-api-version": GITHUB_API_VERSION,
 }
 
 COPILOT_MODEL_HEADERS: dict[str, str] = {
@@ -117,7 +120,7 @@ def _request_device_code() -> dict:
     try:
         response = httpx.post(
             DEVICE_CODE_URL,
-            data={"client_id": CLIENT_ID, "scope": ""},
+            data={"client_id": CLIENT_ID, "scope": GITHUB_OAUTH_SCOPE},
             headers={"Accept": "application/json"},
         )
         response.raise_for_status()
@@ -168,6 +171,7 @@ def _get_copilot_token(github_token: str) -> CopilotToken:
                 "accept": "application/json",
                 **COPILOT_EDITOR_HEADERS,
             },
+            timeout=COPILOT_AUTH_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -193,6 +197,7 @@ def _get_copilot_plan(github_token: str) -> str:
                 "accept": "application/json",
                 **COPILOT_EDITOR_HEADERS,
             },
+            timeout=COPILOT_AUTH_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:

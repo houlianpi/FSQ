@@ -57,6 +57,35 @@ def test_resolve_github_token_authenticates_when_cache_expired(tmp_path) -> None
     authenticate.assert_called_once_with(token_cache_path)
 
 
+def test_request_device_code_uses_explicit_copilot_scope() -> None:
+    response = MagicMock()
+    response.json.return_value = {"device_code": "device", "user_code": "user"}
+    response.raise_for_status = MagicMock()
+
+    with patch.object(copilot.httpx, "post", return_value=response) as post:
+        copilot._request_device_code()
+
+    assert post.call_args.kwargs["data"]["scope"] == copilot.GITHUB_OAUTH_SCOPE
+
+
+def test_get_copilot_token_uses_copilot_exchange_headers() -> None:
+    response = MagicMock()
+    response.json.return_value = {
+        "token": "copilot-token",
+        "expires_at": 9999999999,
+    }
+    response.raise_for_status = MagicMock()
+
+    with patch.object(copilot.httpx, "get", return_value=response) as get:
+        token = copilot._get_copilot_token("ghu_test")
+
+    headers = get.call_args.kwargs["headers"]
+    assert headers["authorization"] == "token ghu_test"
+    assert headers["x-github-api-version"] == copilot.GITHUB_API_VERSION
+    assert get.call_args.kwargs["timeout"] == copilot.COPILOT_AUTH_TIMEOUT_SECONDS
+    assert token.token == "copilot-token"
+
+
 def test_prepare_model_provider_session_noninteractive_rejects_missing_copilot_auth(tmp_path) -> None:
     settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
     settings.workspace.root_dir = tmp_path
