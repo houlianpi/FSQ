@@ -529,7 +529,6 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
         app_path="msedge.exe",
         window_title_re=".*Microsoft.*Edge Beta",
         launch_args=["--no-first-run", "--window-size=1280,920"],
-        window=object(),
     )
     driver._application_cls = lambda: (lambda backend: fake_app)  # type: ignore[attr-defined]
 
@@ -541,7 +540,35 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == ["exists visible enabled"]
-    assert driver._window is fake_app.window_obj
+
+
+def test_pywinauto_driver_resolves_window_on_every_use() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    windows = iter([object(), object()])
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: next(windows)  # type: ignore[method-assign]
+
+    first = driver._require_window()  # type: ignore[attr-defined]
+    second = driver._require_window()  # type: ignore[attr-defined]
+
+    assert first is not second
+    assert not hasattr(driver, "_window")
+
+
+def test_pywinauto_driver_context_tolerates_window_closed_after_resolution() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class ClosedWindow:
+        def rectangle(self) -> object:
+            raise RuntimeError("window is closed")
+
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: ClosedWindow()  # type: ignore[method-assign]
+
+    context = driver.context()
+
+    assert context["screen_size"] is None
 
 
 def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -> None:
@@ -570,7 +597,8 @@ def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -
             return FakeControl(exists="title_re" in kwargs)
 
     window = FakeWindow()
-    driver = PywinautoWindowsDriver(window=window)
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: window  # type: ignore[method-assign]
 
     control = driver._control_from_kwargs(  # type: ignore[attr-defined]
         {"title": "Document.*Notepad", "control_type": "Edit", "automation_id": "15", "index": 2}
@@ -599,7 +627,8 @@ def test_pywinauto_driver_control_returns_wrapper_for_exact_match() -> None:
         def child_window(self, **kwargs: object) -> ExactControl:
             return ExactControl()
 
-    driver = PywinautoWindowsDriver(window=FakeWindow())
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: FakeWindow()  # type: ignore[method-assign]
 
     control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
 
@@ -622,7 +651,8 @@ def test_pywinauto_driver_control_raises_without_title_match() -> None:
             return MissingControl()
 
     window = FakeWindow()
-    driver = PywinautoWindowsDriver(window=window)
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: window  # type: ignore[method-assign]
 
     with pytest.raises(
         LookupError,
@@ -655,7 +685,7 @@ def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
             self.calls.append(("scroll", {"coords": coords, "wheel_dist": wheel_dist}))
 
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._control = lambda params: Wrapper()  # type: ignore[attr-defined]
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
@@ -691,7 +721,7 @@ def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup() -> None:
             pass
 
     queries: list[dict[str, object]] = []
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
 
     def resolve(locator: dict[str, object]) -> Wrapper:
         queries.append(locator)
@@ -725,7 +755,7 @@ def test_pywinauto_driver_drag_to_offset_moves_and_releases() -> None:
             self.calls.append(("release", {"coords": coords, "button": button}))
 
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
     result = driver.drag_to(
@@ -790,7 +820,7 @@ def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
 
     wrappers = {"Source": Wrapper((10, 20)), "Target": Wrapper((70, 80))}
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._control_from_kwargs = lambda locator: wrappers[locator["automation_id"]]  # type: ignore[attr-defined]
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
@@ -818,7 +848,7 @@ def test_pywinauto_driver_drag_releases_mouse_after_move_failure() -> None:
             self.releases.append((coords, button))
 
     mouse = FailingMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
     with pytest.raises(RuntimeError, match="move failed"):
