@@ -537,7 +537,7 @@ def _recorded_command_event(*, tool_name: str, alias: str, step_id: str, step_ki
 def test_playground_server_recorded_yaml_steps_expose_display_and_artifact_step_ids(tmp_path: Path) -> None:
     events = [
         _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="action"),
-        _recorded_command_event(tool_name="ui_tree", alias="uiTree", step_id="agent-ui_tree-2", step_kind="observation"),
+        _recorded_command_event(tool_name="ui_snapshot", alias="uiTree", step_id="agent-ui_snapshot-2", step_kind="observation"),
         _recorded_command_event(tool_name="click_on", alias="clickOn", step_id="agent-click_on-3", step_kind="action"),
     ]
     settings = _recorded_run_with_events(tmp_path, events=events)
@@ -603,7 +603,7 @@ def test_playground_server_recorded_yaml_steps_keep_matches_after_unmatched_midd
 def test_playground_server_recorded_yaml_steps_align_historical_observation_commands(tmp_path: Path) -> None:
     events = [
         _recorded_command_event(tool_name="launch_app", alias="launchApp", step_id="agent-launch_app-1", step_kind="setup"),
-        _recorded_command_event(tool_name="ui_tree", alias="uiTree", step_id="agent-ui_tree-2", step_kind="observation"),
+        _recorded_command_event(tool_name="ui_snapshot", alias="uiTree", step_id="agent-ui_snapshot-2", step_kind="observation"),
         _recorded_command_event(tool_name="assert_visible", alias="assertVisible", step_id="agent-assert_visible-3", step_kind="assertion"),
     ]
     settings = _recorded_run_with_events(
@@ -619,7 +619,7 @@ def test_playground_server_recorded_yaml_steps_align_historical_observation_comm
     steps = payload["display"]["steps"]
     assert [step["artifactStepId"] for step in steps] == [
         "agent-launch_app-1",
-        "agent-ui_tree-2",
+        "agent-ui_snapshot-2",
         "agent-assert_visible-3",
     ]
 

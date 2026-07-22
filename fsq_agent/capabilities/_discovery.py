@@ -31,7 +31,7 @@ def _definition_from_declaration(
     params_model = declaration.params_model or _infer_params_model(method_name, method)
     capability_metadata: dict[str, Any] = dict(metadata)
     capability_metadata.update(declaration.metadata)
-    if declaration.executor_kind in {"driver", "harness"}:
+    if declaration.executor_kind == "driver":
         capability_metadata.setdefault("driver_method", method_name)
     if declaration.action_name is not None:
         capability_metadata.setdefault("fsq_action_name", declaration.action_name)
@@ -44,7 +44,6 @@ def _definition_from_declaration(
         platform=declaration.platform,
         backend=declaration.backend or _metadata_str(capability_metadata, "backend"),
         owner=declaration.owner,
-        capture_evidence=declaration.capture_evidence,
         post_action_delay_seconds=declaration.post_action_delay_seconds,
         sensitivity=declaration.sensitivity,
         replay=declaration.replay,

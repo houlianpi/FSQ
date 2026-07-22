@@ -68,16 +68,20 @@ class FakeAndroidDriver(AIAssertionBackendToolMixin):
     def assert_with_ai(self, params: dict[str, object]) -> dict[str, object]:
         return self._run_ai_assertion_tool(params)
 
-    def screenshot(self) -> bytes:
+    def screenshot(self, params: object | None = None) -> bytes:
         self.calls.append(("screenshot", None))
         return b"fake-png"
 
-    def ui_tree(self, params: dict[str, object]) -> dict[str, object]:
+    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
+        self.calls.append(("ui_snapshot", None))
+        return {"nodes": [{"text": "Login"}]}
+
+    def ui_snapshot(self, params: dict[str, object]) -> dict[str, object]:
         if hasattr(params, "model_dump"):
             recorded = params.model_dump(mode="json", exclude_none=True)
         else:
             recorded = params
-        self.calls.append(("ui_tree", recorded))
+        self.calls.append(("ui_snapshot", recorded))
         return {"nodes": [{"text": "Login"}]}
 
 
@@ -105,7 +109,7 @@ def test_android_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("inputText", {"text": "bing.com", "target": "Search box"}, "input_text"),
         ("longPressOn", {"target": "Address bar"}, "long_press_on"),
         ("swipe", {"direction": "up", "duration": 1000}, "swipe"),
-        ("uiTree", {}, "ui_tree"),
+        ("uiTree", {}, "ui_snapshot"),
         ("assertNotVisible", {"target": "Dialog"}, "assert_not_visible"),
         ("assert", {"text": {"contains": "bing.com"}}, "assert_state"),
     ]
@@ -171,13 +175,12 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
 
     assert "tap_on" in schemas
     assert "tap_at" in schemas
-    assert "ui_tree" in schemas
+    assert "ui_snapshot" in schemas
     assert "perform_actions" not in schemas
     assert "assert_with_ai" not in schemas
     assert schemas["tap_on"].driver_method == "tap_on"
     assert schemas["tap_on"].fsq_action_name == "tapOn"
     assert schemas["tap_on"].platform == "android"
-    assert schemas["tap_on"].capture_evidence is True
     assert schemas["tap_on"].metadata["driver_class"] == "UiAutomator2AndroidDriver"
     assert schemas["tap_on"].metadata["backend"] == "uiautomator2"
     assert schemas["tap_on"].metadata["capability_name"] == "tap_on"
@@ -186,15 +189,10 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
     assert "target" in schemas["tap_on"].params_json_schema["properties"]
     assert schemas["tap_at"].driver_method == "tap_at"
     assert schemas["tap_at"].fsq_action_name == "tapAt"
-    assert schemas["tap_at"].capture_evidence is True
     assert "point" in schemas["tap_at"].params_json_schema["properties"]
-    assert schemas["ui_tree"].driver_method == "ui_tree"
-    assert schemas["ui_tree"].fsq_action_name == "uiTree"
-    assert schemas["ui_tree"].capture_evidence is False
-    assert schemas["ui_tree"].params_json_schema.get("properties") == {}
-
-    mutating_tools = {"launch_app", "kill_app", "tap_on", "tap_at", "long_press_on", "input_text", "press_key", "swipe"}
-    assert {name for name, schema in schemas.items() if schema.capture_evidence} == mutating_tools
+    assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
+    assert schemas["ui_snapshot"].fsq_action_name == "uiTree"
+    assert schemas["ui_snapshot"].params_json_schema.get("properties") == {}
 
 
 def test_android_harness_validation_failure_does_not_call_driver_method() -> None:
@@ -247,7 +245,7 @@ def test_android_harness_returns_failed_result_for_unsupported_action() -> None:
     assert driver.calls == [("context", None)]
 
 
-def test_android_harness_captures_screenshot_and_ui_tree_with_artifact_store(tmp_path) -> None:
+def test_android_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
     driver = FakeAndroidDriver()
     harness = AndroidHarness(driver=driver, artifact_store=ArtifactStore(run_dir=tmp_path))
     context = harness.get_context()
@@ -259,8 +257,8 @@ def test_android_harness_captures_screenshot_and_ui_tree_with_artifact_store(tmp
         step_id="step-1",
         phase="invoke",
     )
-    ui_tree_ref = harness.capture_artifact(
-        kind="ui_tree",
+    ui_snapshot_ref = harness.capture_artifact(
+        kind="ui_snapshot",
         reason="after tap",
         context=context,
         step_id="step-1",
@@ -269,12 +267,12 @@ def test_android_harness_captures_screenshot_and_ui_tree_with_artifact_store(tmp
 
     assert screenshot_ref.path.as_posix() == "artifacts/screenshots/step-1-invoke-after-tap.png"
     assert (tmp_path / screenshot_ref.path).read_bytes() == b"fake-png"
-    assert ui_tree_ref.path.as_posix() == "artifacts/ui-trees/step-1-finalize-after-tap.json"
-    assert "Login" in (tmp_path / ui_tree_ref.path).read_text(encoding="utf-8")
+    assert ui_snapshot_ref.path.as_posix() == "artifacts/ui-snapshots/step-1-finalize-after-tap.json"
+    assert "Login" in (tmp_path / ui_snapshot_ref.path).read_text(encoding="utf-8")
     assert driver.calls == [
         ("context", None),
         ("screenshot", None),
-        ("ui_tree", {}),
+        ("ui_snapshot", {}),
     ]
 
 

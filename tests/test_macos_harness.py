@@ -54,8 +54,6 @@ class FakeMacOSDriver(AIAssertionBackendToolMixin):
     @_macos_driver_tool(
         "launchApp",
         description="Launch a configured macOS application.",
-        capture_evidence=True,
-        metadata={"evidence_capture_before": False, "evidence_capture_on_failure": False},
     )
     def launch_app(self, params: MacOSLaunchAppParams) -> dict[str, object]:
         return self._record("launch_app", params)
@@ -64,23 +62,23 @@ class FakeMacOSDriver(AIAssertionBackendToolMixin):
     def kill_app(self, params: MacOSKillAppParams) -> dict[str, object]:
         return self._record("kill_app", params)
 
-    @_macos_driver_tool("clickOn", description="Click a macOS element or point.", capture_evidence=True)
+    @_macos_driver_tool("clickOn", description="Click a macOS element or point.")
     def click_on(self, params: MacOSClickOnParams) -> dict[str, object]:
         return self._record("click_on", params)
 
-    @_macos_driver_tool("doubleClickOn", description="Double-click a macOS element or point.", capture_evidence=True)
+    @_macos_driver_tool("doubleClickOn", description="Double-click a macOS element or point.")
     def double_click_on(self, params: MacOSDoubleClickOnParams) -> dict[str, object]:
         return self._record("double_click_on", params)
 
-    @_macos_driver_tool("rightClickOn", description="Right-click a macOS element or point.", capture_evidence=True)
+    @_macos_driver_tool("rightClickOn", description="Right-click a macOS element or point.")
     def right_click_on(self, params: MacOSRightClickOnParams) -> dict[str, object]:
         return self._record("right_click_on", params)
 
-    @_macos_driver_tool("typeText", description="Type text into macOS.", capture_evidence=True)
+    @_macos_driver_tool("typeText", description="Type text into macOS.")
     def type_text(self, params: MacOSTypeTextParams) -> dict[str, object]:
         return self._record("type_text", params)
 
-    @_macos_driver_tool("pressKey", description="Press a macOS key or shortcut.", capture_evidence=True)
+    @_macos_driver_tool("pressKey", description="Press a macOS key or shortcut.")
     def press_key(self, params: MacOSPressKeyParams) -> dict[str, object]:
         return self._record("press_key", params)
 
@@ -88,7 +86,7 @@ class FakeMacOSDriver(AIAssertionBackendToolMixin):
     def hover_on(self, params: MacOSHoverOnParams) -> dict[str, object]:
         return self._record("hover_on", params)
 
-    @_macos_driver_tool("dragTo", description="Drag between macOS elements or points.", capture_evidence=True)
+    @_macos_driver_tool("dragTo", description="Drag between macOS elements or points.")
     def drag_to(self, params: MacOSDragToParams) -> dict[str, object]:
         return self._record("drag_to", params)
 
@@ -177,14 +175,12 @@ def test_macos_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert schemas["click_on"].driver_method == "click_on"
     assert schemas["click_on"].fsq_action_name == "clickOn"
     assert schemas["click_on"].platform == "macos"
-    assert schemas["click_on"].capture_evidence is True
     assert schemas["click_on"].metadata["driver_class"] == "FakeMacOSDriver"
     assert schemas["click_on"].metadata["backend"] == "fake-appium-mac2"
     assert schemas["click_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "clickOn"}
     assert "target" in schemas["click_on"].params_json_schema["properties"]
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
-    assert schemas["ui_snapshot"].capture_evidence is False
     assert schemas["assert_elements_order"].fsq_action_name == "assertElementsOrder"
 
 

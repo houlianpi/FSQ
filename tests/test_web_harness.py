@@ -106,6 +106,10 @@ class FakeWebDriver(AIAssertionBackendToolMixin):
         self.calls.append(("page_snapshot", recorded))
         return {"url": "https://www.bing.com", "snapshot": {"role": "WebArea", "name": "Bing"}}
 
+    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
+        self.calls.append(("ui_snapshot", None))
+        return {"url": "https://www.bing.com", "snapshot": {"role": "WebArea", "name": "Bing"}}
+
     @_web_driver_tool("assertVisible", description="Assert that a Web page target is visible.")
     def assert_visible(self, params: WebAssertVisibleParams) -> dict[str, object]:
         return self._record("assert_visible", params)
@@ -184,15 +188,12 @@ def test_web_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "assert_with_ai" not in schemas
     assert schemas["start_browser"].driver_method == "start_browser"
     assert schemas["start_browser"].fsq_action_name == "startBrowser"
-    assert schemas["start_browser"].capture_evidence is False
     assert schemas["start_browser"].metadata["replay"] == {"kind": "fsq_command", "alias": "startBrowser"}
     assert schemas["close_browser"].driver_method == "close_browser"
     assert schemas["close_browser"].fsq_action_name == "closeBrowser"
-    assert schemas["close_browser"].capture_evidence is False
     assert schemas["click_on"].driver_method == "click_on"
     assert schemas["click_on"].fsq_action_name == "clickOn"
     assert schemas["click_on"].platform == "web"
-    assert schemas["click_on"].capture_evidence is True
     assert schemas["click_on"].metadata["driver_class"] == "FakeWebDriver"
     assert schemas["click_on"].metadata["backend"] == "fake-playwright"
     assert schemas["click_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "clickOn"}
@@ -200,7 +201,6 @@ def test_web_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "ref" not in click_locator_schema["properties"]
     assert schemas["page_snapshot"].driver_method == "page_snapshot"
     assert schemas["page_snapshot"].fsq_action_name == "pageSnapshot"
-    assert schemas["page_snapshot"].capture_evidence is False
     assert schemas["page_snapshot"].params_json_schema.get("properties") == {}
 
 
@@ -217,7 +217,7 @@ def test_web_harness_validation_failure_does_not_call_driver_method() -> None:
     assert driver.calls == [("context", None)]
 
 
-def test_web_harness_captures_screenshot_and_page_snapshot_with_artifact_store(tmp_path) -> None:
+def test_web_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
     driver = FakeWebDriver()
     harness = WebHarness(driver=driver, artifact_store=ArtifactStore(run_dir=tmp_path))
     context = harness.get_context()
@@ -229,8 +229,8 @@ def test_web_harness_captures_screenshot_and_page_snapshot_with_artifact_store(t
         step_id="step-1",
         phase="invoke",
     )
-    snapshot_ref = harness.capture_artifact(
-        kind="page_snapshot",
+    ui_snapshot_ref = harness.capture_artifact(
+        kind="ui_snapshot",
         reason="after click",
         context=context,
         step_id="step-1",
@@ -239,9 +239,9 @@ def test_web_harness_captures_screenshot_and_page_snapshot_with_artifact_store(t
 
     assert screenshot_ref.path.as_posix() == "artifacts/screenshots/step-1-invoke-after-click.png"
     assert (tmp_path / screenshot_ref.path).read_bytes() == b"fake-png"
-    assert snapshot_ref.path.as_posix() == "artifacts/page-snapshots/step-1-finalize-after-click.json"
-    assert "WebArea" in (tmp_path / snapshot_ref.path).read_text(encoding="utf-8")
-    assert driver.calls == [("context", None), ("screenshot", {}), ("page_snapshot", {})]
+    assert ui_snapshot_ref.path.as_posix() == "artifacts/ui-snapshots/step-1-finalize-after-click.json"
+    assert "WebArea" in (tmp_path / ui_snapshot_ref.path).read_text(encoding="utf-8")
+    assert driver.calls == [("context", None), ("screenshot", {}), ("ui_snapshot", None)]
 
 
 def test_web_harness_assert_with_ai_uses_injected_evaluator(tmp_path) -> None:

@@ -74,27 +74,34 @@ class StepRunner:
         step: ExecutableStep,
         capability: CapabilityDefinition | None,
     ) -> ExecutableStep:
-        if capability is None or capability.executor_kind not in {"harness", "driver"}:
-            return step
-        if not capability.capture_evidence or not self._is_default_evidence_policy(step.evidence_policy):
-            return step
-        return step.model_copy(update={"evidence_policy": self._standard_capture_evidence_policy(capability)})
+        return step.model_copy(update={"evidence_policy": self._step_kind_evidence_policy(step, capability)})
 
-    def _is_default_evidence_policy(self, policy: EvidencePolicy) -> bool:
-        return policy.model_dump(mode="python") == EvidencePolicy().model_dump(mode="python")
-
-    def _standard_capture_evidence_policy(self, capability: CapabilityDefinition) -> EvidencePolicy:
-        observation_kind = {"web": "page_snapshot", "windows": "ui_snapshot", "macos": "ui_snapshot"}.get(
-            capability.platform or "", "ui_tree"
-        )
-        metadata = capability.metadata or {}
-        capture_before = bool(metadata.get("evidence_capture_before", True))
-        capture_on_failure = bool(metadata.get("evidence_capture_on_failure", True))
+    def _step_kind_evidence_policy(
+        self,
+        step: ExecutableStep,
+        capability: CapabilityDefinition | None,
+    ) -> EvidencePolicy:
+        if capability is None or capability.executor_kind != "driver":
+            return EvidencePolicy(capture_after=False)
+        if step.kind == "action":
+            capture_before = True
+            capture_after = True
+        elif step.kind == "assertion":
+            capture_before = True
+            capture_after = False
+        elif step.kind == "setup":
+            capture_before = False
+            capture_after = True
+        elif step.kind == "teardown":
+            capture_before = True
+            capture_after = False
+        else:
+            return EvidencePolicy(capture_after=False)
         return EvidencePolicy(
             capture_before=capture_before,
-            capture_after=True,
-            capture_on_failure=capture_on_failure,
-            artifact_kinds=["screenshot", observation_kind],
+            capture_after=capture_after,
+            capture_on_failure=False,
+            artifact_kinds=["screenshot", "ui_snapshot"],
         )
 
     def _start_step(self, run_id: str, step: ExecutableStep) -> _StepExecutionState:
@@ -473,7 +480,6 @@ class StepRunner:
             "platform": capability.platform,
             "backend": capability.backend,
             "owner": capability.owner,
-            "capture_evidence": capability.capture_evidence,
             "replay": capability.replay.model_dump(mode="json") if capability.replay else None,
             "sensitivity": capability.sensitivity,
         }

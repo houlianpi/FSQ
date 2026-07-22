@@ -5,6 +5,7 @@ from fsq_agent.core.evidence import ArtifactStore, EvidenceRecorder
 from fsq_agent.core.harness import (
     AndroidDriverInterface,
     AIAssertionEvaluatorProtocol,
+    DriverObservationInterface,
     DriverFactory,
     HarnessFactory,
     HarnessInterface,
@@ -21,6 +22,7 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityDefinitionFactory",
     "CommonPlatformTools",
+    "DriverObservationInterface",
     "DriverFactory",
     "EvidenceRecorder",
     "HarnessFactory",

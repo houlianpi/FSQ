@@ -1,5 +1,7 @@
 from typing import Protocol, runtime_checkable
 
+from fsq_agent.core.harness._interface import DriverObservationInterface
+
 from fsq_agent.models import (
     AndroidAssertNotVisibleParams,
     AndroidAssertStateParams,
@@ -19,7 +21,7 @@ from fsq_agent.models import (
 
 
 @runtime_checkable
-class AndroidDriverInterface(Protocol):
+class AndroidDriverInterface(DriverObservationInterface, Protocol):
     def context(self) -> dict[str, object]:
         ...
 
@@ -62,8 +64,8 @@ class AndroidDriverInterface(Protocol):
     def assert_with_ai(self, params: AndroidAssertWithAIParams) -> dict[str, object]:
         ...
 
-    def screenshot(self) -> bytes:
+    def screenshot(self, params: object | None = None) -> bytes:
         ...
 
-    def ui_tree(self, params: AndroidUiTreeParams) -> dict[str, object]:
+    def ui_snapshot(self, params: AndroidUiTreeParams) -> dict[str, object]:
         ...

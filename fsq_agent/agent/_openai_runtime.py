@@ -621,7 +621,6 @@ class OpenAIAgentsRuntime:
                     "executor_kind": capability.executor_kind,
                     "step_kind": capability.step_kind,
                     "platform": capability.platform,
-                    "capture_evidence": capability.capture_evidence,
                 }
             )
         return tools

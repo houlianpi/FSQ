@@ -22,30 +22,30 @@ Target `__init__.py` exports via `__all__`:
 - `platform_driver_capability`: Factory that binds a platform/backend/catalog and returns a decorator for catalog-backed driver-backed PlatformTool declarations.
 - `discover_capability_definitions(target: object, *, metadata: dict[str, object] | None = None) -> list[CapabilityDefinition]`: Inspect a decorated class or instance without invoking methods and return serializable capability definitions.
 
-The neutral decorator API accepts canonical name, tool family or compatibility executor kind, owner, parameter model, description, platform, backend, step kind, evidence flag, optional post-action delay override, sensitivity flag, replay policy, safe metadata, and optional catalog/action name inputs. It does not accept a duplicate alias list for primary authored replay command names and does not accept a per-capability SDK schema strictness flag. `post_action_delay_seconds=None` means inherit the configured family default; `0` explicitly disables runner-owned post-action delay for that capability; positive values override the configured default. Simple CommonTool or non-driver PlatformTool declarations use `capability(...)` directly. Android, Web, Windows, and macOS platform driver actions must be declared through catalog-backed `platform_driver_capability` helpers rather than standalone compatibility helper decorators.
+The neutral decorator API accepts canonical name, executor kind (`common` or `driver`), owner, parameter model, description, platform, backend, step kind, optional post-action delay override, sensitivity flag, replay policy, safe metadata, and optional catalog/action name inputs. It does not accept a duplicate alias list for primary authored replay command names and does not accept a per-capability SDK schema strictness flag. Default screenshot and UI snapshot capture is not declared through decorators or catalogs; it is a core runner policy derived from live `driver` executor metadata and step kind. `post_action_delay_seconds=None` means inherit the configured family default; `0` explicitly disables runner-owned post-action delay for that capability; positive values override the configured default. CommonTool declarations use `capability(...)` directly. Android, Web, Windows, and macOS platform driver actions must be declared through catalog-backed `platform_driver_capability` helpers rather than standalone compatibility helper decorators.
 
 ## Platform Declaration Blocks
 
 Shared declaration rules:
 
 - `capability`, `platform_driver_capability`, discovery, and `CapabilityDefinition` output stay platform-neutral.
-- Platform-specific authored command names, parameter models, replay policy, evidence defaults, backend metadata, and required driver method names belong in platform action catalogs. Replayable authored command names are represented by `ReplayPolicy(kind="fsq_command").alias` in discovered capability metadata.
+- Platform-specific authored command names, parameter models, replay policy, backend metadata, step kind, and required driver method names belong in platform action catalogs. Default evidence capture timing and artifact kinds do not belong in platform action catalogs. Replayable authored command names are represented by `ReplayPolicy(kind="fsq_command").alias` in discovered capability metadata.
 - Registry/bootstrap code, not this module, chooses which platform catalog definitions are active.
 
 Android declaration block:
 
 - Android uiautomator2 driver methods use catalog-backed `platform_driver_capability` entries with Android replay aliases and parameter models.
-- Android platform-level non-driver behavior, if introduced, uses `capability(...)` with explicit harness/platform ownership.
+- Android platform-level non-driver behavior must not introduce a live `harness` executor kind; new recordable platform behavior should be represented as a driver-backed PlatformTool or a CommonTool after SPEC review.
 
 Web declaration block:
 
 - Web Playwright driver methods use catalog-backed `platform_driver_capability` entries with Web replay aliases and parameter models, including explicit browser lifecycle actions `startBrowser`/`closeBrowser` alongside page actions such as `navigateTo` and `pageSnapshot`.
-- Web platform-level non-driver behavior, if introduced, uses `capability(...)` with explicit harness/platform ownership.
+- Web platform-level non-driver behavior must not introduce a live `harness` executor kind; new recordable platform behavior should be represented as a driver-backed PlatformTool or a CommonTool after SPEC review.
 
 macOS declaration block:
 
 - macOS Appium Mac2 driver methods use catalog-backed `platform_driver_capability` entries with macOS desktop replay aliases and parameter models, including lifecycle actions `launchApp`/`killApp`, desktop interactions such as `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, and `dragTo`, observations such as `takeScreenshot` and `uiSnapshot`, and assertions such as `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
-- macOS reuses the existing neutral decorators, catalog validation, discovery, replay metadata, evidence metadata, and backend metadata contracts. It must not introduce a macOS-only decorator, direct MCP schema importer, or runtime Appium discovery path in `capabilities`.
+- macOS reuses the existing neutral decorators, catalog validation, discovery, replay metadata, step-kind metadata, and backend metadata contracts. It must not introduce a macOS-only decorator, direct MCP schema importer, runtime Appium discovery path, default evidence metadata, or live `harness` executor kind in `capabilities`.
 - macOS catalog entries are declaration-time validation inputs only. Registry/bootstrap code chooses whether macOS entries are active based on `harness.platform == "macos"`.
 
 Future platform declaration block:
@@ -80,7 +80,7 @@ Declaration and discovery fail fast with `ConfigurationError` when a decorated c
 - Catalog entry owner or executor kind incompatible with the selected helper.
 - Decorated method name does not match a catalog-required method name.
 - Method annotation conflicts with the catalog or explicit parameter model.
-- Invalid executor kind, owner, platform, backend, sensitivity, or evidence combination.
+- Invalid executor kind, owner, platform, backend, or sensitivity combination.
 - Negative post-action delay values in decorator arguments or catalog entries.
 - Capability metadata attempts to store non-serializable runtime objects.
 
@@ -89,7 +89,7 @@ Duplicate capability names, replay alias conflicts, ambiguous replay aliases, an
 ## Testing Contract
 
 - Unit tests: neutral decorator metadata, post-action delay override validation, catalog lookup/validation, method-name and parameter-model validation, discovery from class and instance targets, safe metadata merging, and no method invocation during discovery.
-- Regression tests: neutral `capability(...)` declarations produce the `CapabilityDefinition` shape expected by platform provider registry/bootstrap; catalog-backed Android, Web, Windows, and macOS PlatformTool declarations produce the expected canonical names, replay aliases through `ReplayPolicy`, parameter models, replay metadata, owner, platform/backend, evidence flags, and post-action delay overrides, without duplicate capability alias lists or schema strictness fields.
+- Regression tests: neutral `capability(...)` declarations produce the `CapabilityDefinition` shape expected by platform provider registry/bootstrap; catalog-backed Android, Web, Windows, and macOS PlatformTool declarations produce the expected canonical names, replay aliases through `ReplayPolicy`, parameter models, replay metadata, owner, platform/backend, step kind, and post-action delay overrides, without duplicate capability alias lists, default evidence flags, live `harness` executor kinds, or schema strictness fields.
 - Boundary tests: `capabilities` imports only `models` among project modules and has no dependency on `core`, `tools`, SDK objects, or concrete backend libraries.
 - Verification commands: `./.venv/Scripts/python.exe -m pytest tests/test_capabilities.py tests/test_tools.py tests/test_android_harness.py` plus broader capability/runner tests when implementations change.
 
@@ -100,5 +100,5 @@ Duplicate capability names, replay alias conflicts, ambiguous replay aliases, an
 - Platform differences belong in action catalogs, not in per-platform decorator implementations. Android, Web, Windows, and macOS catalogs reuse `platform_driver_capability`; future platforms should follow the same pattern.
 - `CapabilityDefinition` remains the runtime contract and registry input. Decorators attach declaration metadata to functions, including optional post-action delay overrides; discovery converts that metadata into serializable definitions.
 - Discovery must be side-effect free. It may inspect method signatures and type hints, but it must not call methods, connect to devices, instantiate SDK tools, or build providers.
-- Runtime routing is out of scope. Tool family or compatibility `executor_kind` metadata is consumed by `core.StepRunner`; `capabilities` never invokes the selected provider or executor.
+- Runtime routing is out of scope. `executor_kind` metadata is consumed by `core.StepRunner`; `capabilities` never invokes the selected provider or executor. Live declarations may use only `common` and `driver` executor kinds.
 - `models` stays contract-only. Keeping decorator behavior out of `models` avoids turning the shared schema module into a reflection/behavior layer.

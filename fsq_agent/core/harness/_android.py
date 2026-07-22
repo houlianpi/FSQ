@@ -127,13 +127,13 @@ class AndroidHarness:
                 name=reason,
                 data=self.driver.screenshot(),
             ))
-        if kind == "ui_tree":
+        if kind == "ui_snapshot":
             return self._to_harness_artifact_ref(self.artifact_store.write_json(
-                kind="ui_tree",
+                kind="ui_snapshot",
                 step_id=step_id,
                 phase=phase,
                 name=reason,
-                payload=self.driver.ui_tree(AndroidUiTreeParams()),
+                payload=self.driver.ui_snapshot(AndroidUiTreeParams()),
             ))
         raise RuntimeError(f"Unsupported Android artifact kind: {kind}")
 
