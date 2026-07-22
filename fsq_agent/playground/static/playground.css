@@ -253,6 +253,48 @@ h2 {
   margin-bottom: 0;
 }
 
+.load-run-toggle {
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+.load-run-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.load-run-form input {
+  min-width: 0;
+  margin: 0;
+}
+
+.load-run-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.load-run-actions button {
+  min-height: 36px;
+  padding: 7px 11px;
+}
+
+.load-run-form .yaml-status {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (max-width: 680px) {
+  .load-run-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .load-run-actions {
+    justify-content: flex-end;
+  }
+}
+
 .yaml-section {
   display: flex;
   flex-direction: column;

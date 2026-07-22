@@ -20,6 +20,15 @@
         <section id="yaml-section" class="section yaml-section">
           <div class="section-heading-row">
             <h2>YAML</h2>
+            <button id="load-run-toggle" class="secondary-button load-run-toggle" type="button" aria-expanded="false" aria-controls="load-run-form">Load Run</button>
+          </div>
+          <div id="load-run-form" class="load-run-form" hidden>
+            <input id="load-run-path" type="text" placeholder="Run ID or run directory path..." aria-label="Existing run directory" />
+            <div class="load-run-actions">
+              <button id="load-run-submit" class="primary" type="button">Load</button>
+              <button id="load-run-cancel" class="secondary-button" type="button">Cancel</button>
+            </div>
+            <p id="load-run-status" class="yaml-status" aria-live="polite" hidden></p>
           </div>
           <div class="yaml-tabs" role="tablist" aria-label="YAML views">
             <button id="yaml-input-tab" class="yaml-tab-button active" type="button" role="tab" aria-selected="true" aria-controls="yaml-input-pane">Input</button>
