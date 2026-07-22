@@ -49,15 +49,13 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         backend_kind: str = "uia",
         window_title_re: str | None = None,
         launch_args: list[str] | None = None,
-        window: object | None = None,
     ) -> None:
         self.app_path = str(Path(app_path)) if app_path else None
         self.backend_kind = backend_kind
         self.window_title_re = window_title_re.strip() if isinstance(window_title_re, str) and window_title_re.strip() else None
         self.launch_args = list(launch_args) if launch_args else []
         self._app: object | None = None
-        self._window: object | None = window
-        self._executor: ThreadPoolExecutor | None = None if window is not None else ThreadPoolExecutor(max_workers=1, thread_name_prefix="fsq-pywinauto")
+        self._executor: ThreadPoolExecutor | None = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fsq-pywinauto")
 
     def context(self) -> dict[str, object]:
         return self._run_sync(self._context_payload)
@@ -91,29 +89,26 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         application_cls = self._application_cls()
         launch_args = [*self.launch_args, *(params.extra_args or [])]
         cmd = subprocess.list2cmdline([app_path, *launch_args])
-        application_cls(backend=self.backend_kind).start(cmd)
-        self._window = self._resolve_main_window()
+        self._app = application_cls(backend=self.backend_kind).start(cmd)
+        self._resolve_main_window(wait=True)
         return self._passed({"app_path": app_path, "launch_args": launch_args, "window_title_re": self.window_title_re})
 
-    def _resolve_main_window(self) -> object:
-        if not self.window_title_re:
-            connected = self._application_cls()(backend=self.backend_kind).connect(active_only=True)
-            self._app = connected
-            return connected.top_window()
-        # Find the application window by title across the desktop. Multi-process apps such
-        # as Microsoft Edge own their visible window in a different process than the one
-        # launched, so connect by title instead of scoping to the launched process id.
+    def _resolve_main_window(self, *, wait: bool = False) -> object:
         application_cls = self._application_cls()
-        deadline = time.monotonic() + WINDOW_READY_TIMEOUT_SECONDS
+        deadline = time.monotonic() + WINDOW_READY_TIMEOUT_SECONDS if wait else None
         while True:
             try:
-                connected = application_cls(backend=self.backend_kind).connect(title_re=self.window_title_re)
-                window = connected.window(title_re=self.window_title_re, control_type="Window")
-                window.wait("exists visible enabled", timeout=2)
+                if self.window_title_re:
+                    connected = application_cls(backend=self.backend_kind).connect(title_re=self.window_title_re)
+                    window = connected.window(title_re=self.window_title_re, control_type="Window")
+                else:
+                    connected = application_cls(backend=self.backend_kind).connect(active_only=True)
+                    window = connected.top_window()
+                window.wait("exists visible enabled", timeout=2 if wait else 0)
                 self._app = connected
                 return window
             except Exception:  # noqa: BLE001 - retry until the window appears or timeout.
-                if time.monotonic() >= deadline:
+                if deadline is None or time.monotonic() >= deadline:
                     raise
                 time.sleep(1.0)
 
@@ -127,7 +122,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             if callable(kill):
                 kill()
         self._app = None
-        self._window = None
         return self._passed()
 
     @_windows_driver_tool("clickOn", description="Click a Windows control resolved from the UI snapshot.", capture_evidence=True)
@@ -420,9 +414,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         ]
 
     def _require_window(self) -> Any:
-        if self._window is None:
-            raise ConfigurationError("Windows window is not available; launch the app first.")
-        return self._window
+        return self._resolve_main_window()
 
     def _control(self, params: BaseModel) -> Any:
         data = params.model_dump(mode="python", exclude_none=True)
@@ -464,16 +456,18 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         return window.child_window(**kwargs)
 
     def _window_size(self) -> tuple[int, int] | None:
-        if self._window is None:
+        try:
+            window = self._require_window()
+            rectangle = getattr(window, "rectangle", None)
+            if not callable(rectangle):
+                return None
+            rect = rectangle()
+            width = getattr(rect, "width", None)
+            height = getattr(rect, "height", None)
+            if callable(width) and callable(height):
+                return int(width()), int(height())
+        except Exception:  # noqa: BLE001 - context must tolerate a missing or closed window.
             return None
-        rectangle = getattr(self._window, "rectangle", None)
-        if not callable(rectangle):
-            return None
-        rect = rectangle()
-        width = getattr(rect, "width", None)
-        height = getattr(rect, "height", None)
-        if callable(width) and callable(height):
-            return int(width()), int(height())
         return None
 
     def _target_missing(self, params: BaseModel) -> dict[str, object]:
