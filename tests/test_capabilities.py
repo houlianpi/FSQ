@@ -6,9 +6,8 @@ from pydantic import BaseModel
 
 from fsq_agent.capabilities import (
     CapabilityActionDefinition,
-    common_capability,
+    capability,
     discover_capability_definitions,
-    platform_capability,
     platform_driver_capability,
 )
 from fsq_agent._capability_bootstrap import build_capability_registry
@@ -28,10 +27,12 @@ class OtherParams(BaseModel):
     value: str
 
 
-def test_common_capability_discovery_returns_serializable_definition() -> None:
+def test_capability_discovery_returns_serializable_definition() -> None:
     class Provider:
-        @common_capability(
+        @capability(
             name="example_tool",
+            executor_kind="common",
+            owner="common",
             description="Example tool.",
             params_model=ExampleParams,
             replay=ReplayPolicy(kind="fsq_command", alias="exampleTool"),
@@ -108,28 +109,6 @@ def test_capability_registry_rejects_cross_capability_replay_alias_conflict() ->
         )
 
 
-def test_platform_capability_declares_platform_owned_harness_routed_capability() -> None:
-    class Provider:
-        @platform_capability(
-            name="assert_with_ai",
-            description="Assert with AI.",
-            params_model=ExampleParams,
-            platform="android",
-            step_kind="assertion",
-            replay=ReplayPolicy(kind="fsq_command", alias="assertWithAI"),
-        )
-        def assert_with_ai(self, params: ExampleParams) -> dict[str, object]:
-            return {}
-
-    definition = discover_capability_definitions(Provider)[0]
-
-    assert definition.name == "assert_with_ai"
-    assert definition.executor_kind == "harness"
-    assert definition.owner == "platform"
-    assert definition.platform == "android"
-    assert definition.step_kind == "assertion"
-
-
 def test_platform_driver_capability_validates_catalog_method_name() -> None:
     driver_action = platform_driver_capability(
         platform="android",
@@ -201,8 +180,10 @@ def test_platform_driver_capability_inherits_and_overrides_catalog_delay() -> No
 def test_capability_rejects_negative_post_action_delay() -> None:
     with pytest.raises(ConfigurationError, match="post_action_delay_seconds"):
         class BadProvider:
-            @common_capability(
+            @capability(
                 name="bad_delay",
+                executor_kind="common",
+                owner="common",
                 description="Bad.",
                 params_model=ExampleParams,
                 post_action_delay_seconds=-0.1,

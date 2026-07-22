@@ -3,7 +3,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from fsq_agent.capabilities import CapabilityActionDefinition, driver_capability, discover_capability_definitions, platform_driver_capability
+from fsq_agent.capabilities import CapabilityActionDefinition, discover_capability_definitions, platform_driver_capability
 from fsq_agent.models import (
     ANDROID_ACTION_DEFINITIONS,
     MACOS_ACTION_DEFINITIONS,
@@ -139,31 +139,6 @@ _macos_driver_capability = platform_driver_capability(
     backend=None,
     catalog=MACOS_DRIVER_ACTION_CATALOG,
 )
-
-
-def driver_tool(
-    *,
-    description: str,
-    params_model: type[BaseModel] | None = None,
-    fsq_action_name: str | None = None,
-    capture_evidence: bool = False,
-    metadata: dict[str, object] | None = None,
-) -> Callable[[F], F]:
-    def decorate(method: F) -> F:
-        method_name = getattr(method, "__name__", None)
-        declaration_metadata = dict(metadata or {})
-        if fsq_action_name is not None:
-            declaration_metadata["fsq_action_name"] = fsq_action_name
-        return driver_capability(
-            name=method_name,
-            description=description,
-            params_model=params_model,
-            replay=ReplayPolicy(kind="fsq_command", alias=fsq_action_name) if fsq_action_name else None,
-            capture_evidence=capture_evidence,
-            metadata=declaration_metadata,
-        )(method)
-
-    return decorate
 
 
 def _android_driver_tool(
