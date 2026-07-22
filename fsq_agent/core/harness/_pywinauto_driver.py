@@ -79,7 +79,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         "launchApp",
         description="Launch the configured Windows desktop application.",
         capture_evidence=True,
-        metadata={"evidence_capture_before": False, "evidence_capture_on_failure": False},
+        metadata={"evidence_capture_on_failure": False},
     )
     def launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
         return self._run_sync(lambda: self._launch_app(params))
@@ -117,7 +117,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                     raise
                 time.sleep(1.0)
 
-    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
+    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.", capture_evidence=True)
     def kill_app(self, params: WindowsKillAppParams) -> dict[str, object]:
         return self._run_sync(self._kill_app)
 

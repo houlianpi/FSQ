@@ -1,8 +1,16 @@
+from io import BytesIO
 from typing import Any
 
 import pytest
+from PIL import Image
 
-from fsq_agent.core import ArtifactStore, HarnessInterface
+from fsq_agent.core import (
+    ArtifactStore,
+    CapabilityDefinitionFactory,
+    CapabilityRegistry,
+    HarnessInterface,
+    StepRunner,
+)
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._driver_tools import _windows_driver_tool
 from fsq_agent.core.harness._windows import WindowsHarness
@@ -54,12 +62,12 @@ class FakeWindowsDriver(AIAssertionBackendToolMixin):
         "launchApp",
         description="Launch the configured Windows desktop application.",
         capture_evidence=True,
-        metadata={"evidence_capture_before": False, "evidence_capture_on_failure": False},
+        metadata={"evidence_capture_on_failure": False},
     )
     def launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
         return self._record("launch_app", params)
 
-    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
+    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.", capture_evidence=True)
     def kill_app(self, params: WindowsKillAppParams) -> dict[str, object]:
         return self._record("kill_app", params)
 
@@ -321,6 +329,110 @@ def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store
     assert (tmp_path / screenshot_ref.path).read_bytes() == b"fake-png"
     assert "Notepad" in (tmp_path / snapshot_ref.path).read_text(encoding="utf-8")
     assert driver.calls == [("context", None), ("screenshot", None), ("ui_snapshot", {})]
+
+
+@pytest.mark.parametrize("phase", ["prepare", "finalize"])
+def test_windows_harness_uses_empty_artifacts_when_evidence_window_capture_fails(tmp_path, phase) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+        def ui_snapshot(self, params: WindowsUiSnapshotParams) -> dict[str, object]:
+            raise RuntimeError("window is unavailable")
+
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+    context = harness.get_context()
+
+    screenshot_ref = harness.capture_artifact(
+        kind="screenshot",
+        reason="before-action" if phase == "prepare" else "after-action",
+        context=context,
+        step_id="step-1",
+        phase=phase,
+    )
+    snapshot_ref = harness.capture_artifact(
+        kind="ui_snapshot",
+        reason="before-action" if phase == "prepare" else "after-action",
+        context=context,
+        step_id="step-1",
+        phase=phase,
+    )
+
+    screenshot = (tmp_path / screenshot_ref.path).read_bytes()
+    image = Image.open(BytesIO(screenshot))
+    image.load()
+    assert image.size == (1, 1)
+    assert image.convert("RGB").getpixel((0, 0)) == (255, 255, 255)
+    assert (tmp_path / snapshot_ref.path).read_text(encoding="utf-8") == "{}"
+
+
+def test_windows_harness_does_not_hide_invoke_capture_failures(tmp_path) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="window is unavailable"):
+        harness.capture_artifact(
+            kind="screenshot",
+            reason="ai-assertion",
+            context=harness.get_context(),
+            step_id="step-1",
+            phase="invoke",
+        )
+
+
+@pytest.mark.parametrize(
+    ("action_name", "params"),
+    [("launchApp", {"app_path": "notepad.exe"}), ("killApp", {})],
+)
+def test_windows_runner_lifecycle_captures_before_and_after_when_window_capture_fails(
+    tmp_path,
+    action_name,
+    params,
+) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+        def ui_snapshot(self, params: WindowsUiSnapshotParams) -> dict[str, object]:
+            raise RuntimeError("window is unavailable")
+
+    definitions = CapabilityDefinitionFactory().platform_definitions(
+        platform="windows",
+        backend="pywinauto",
+        include_ai_assertion=False,
+    )
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+    runner = StepRunner(
+        harness=harness,
+        capability_registry=CapabilityRegistry.from_definitions(definitions),
+    )
+
+    result = runner.run_step(
+        run_id="run-1",
+        step=_step(action_name, params),
+    )
+
+    assert result.status == "passed"
+    assert result.failure_category is None
+    assert [report.status for report in result.phase_reports] == ["passed", "passed", "passed"]
+    assert [artifact.kind for report in result.phase_reports for artifact in report.artifact_refs] == [
+        "screenshot",
+        "ui_snapshot",
+        "screenshot",
+        "ui_snapshot",
+    ]
 
 
 def test_windows_harness_assert_with_ai_uses_injected_evaluator(tmp_path) -> None:

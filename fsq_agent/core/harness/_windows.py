@@ -1,3 +1,5 @@
+import base64
+
 from pydantic import BaseModel, ValidationError
 
 from fsq_agent.core.evidence import ArtifactStore
@@ -16,6 +18,11 @@ from fsq_agent.models import (
     RuntimeSecretSettings,
     StepPhase,
     WindowsUiSnapshotParams,
+)
+
+
+_BLANK_SCREENSHOT_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"
 )
 
 
@@ -126,7 +133,7 @@ class WindowsHarness:
                     step_id=step_id,
                     phase=phase,
                     name=reason,
-                    data=self.driver.screenshot(),
+                    data=self._capture_screenshot(phase),
                 )
             )
         if kind == "ui_snapshot":
@@ -136,10 +143,26 @@ class WindowsHarness:
                     step_id=step_id,
                     phase=phase,
                     name=reason,
-                    payload=self.driver.ui_snapshot(WindowsUiSnapshotParams()),
+                    payload=self._capture_ui_snapshot(phase),
                 )
             )
         raise RuntimeError(f"Unsupported Windows artifact kind: {kind}")
+
+    def _capture_screenshot(self, phase: StepPhase) -> bytes:
+        try:
+            return self.driver.screenshot()
+        except Exception:  # noqa: BLE001 - before/after evidence must tolerate unavailable windows.
+            if phase not in {"prepare", "finalize"}:
+                raise
+            return _BLANK_SCREENSHOT_PNG
+
+    def _capture_ui_snapshot(self, phase: StepPhase) -> dict[str, object]:
+        try:
+            return self.driver.ui_snapshot(WindowsUiSnapshotParams())
+        except Exception:  # noqa: BLE001 - before/after evidence must tolerate unavailable windows.
+            if phase not in {"prepare", "finalize"}:
+                raise
+            return {}
 
     def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory:
         if isinstance(error, LookupError):
