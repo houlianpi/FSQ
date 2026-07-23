@@ -11,12 +11,20 @@
       "description": "The New Tab Page exposes an Account menu entry, a stable NTP readiness marker."
     },
     {
+      "name": "NTP container visible",
+      "description": "The New Tab Page container resource com.microsoft.emmx:id/edge_ntp_swipe_refresh_layout is a deterministic readiness and return marker."
+    },
+    {
       "name": "NTP scroll view visible",
       "description": "The main New Tab Page container is visible after returning from hub panels or dialogs."
     },
     {
       "name": "Search box visible",
       "description": "The NTP search box/address entry is available for search and URL entry flows."
+    },
+    {
+      "name": "Copilot entry visible",
+      "description": "The NTP location bar exposes a Copilot button for opening the Copilot chat page."
     }
   ],
   "images": [
@@ -69,6 +77,12 @@
           "selector": "com.microsoft.emmx:id/overflow_button_bottom",
           "confidence": "high",
           "notes": "Bottom toolbar overflow button opens the browser menu from NTP and returned NTP states."
+        },
+        {
+          "strategy": "accessibility id",
+          "selector": "Browser menu",
+          "confidence": "high",
+          "notes": "Observed together with the overflow_button_bottom resource id in the signed-in MSA flow."
         }
       ],
       "operations": [
@@ -78,6 +92,34 @@
             "type": "navigate",
             "to_page_id": "edge_android_overflow_menu",
             "description": "Opens the browser overflow menu from the bottom toolbar."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Copilot button",
+      "role": "button",
+      "reference_locators": [
+        {
+          "strategy": "id",
+          "selector": "com.microsoft.emmx:id/edge_location_bar_copilot_button",
+          "confidence": "high",
+          "notes": "Stable NTP entry point used by chat, close, retention, new-chat, and history flows."
+        },
+        {
+          "strategy": "accessibility id",
+          "selector": "Copilot",
+          "confidence": "medium",
+          "notes": "Available in some NTP states; prefer the resource id when present."
+        }
+      ],
+      "operations": [
+        {
+          "operation": "tap",
+          "result": {
+            "type": "navigate",
+            "to_page_id": "edge_android_copilot_chat_page",
+            "description": "Opens the Copilot chat page from the New Tab Page."
           }
         }
       ]
@@ -135,6 +177,12 @@
           "selector": "com.microsoft.emmx:id/edge_bottom_bar_plus_button",
           "confidence": "high",
           "notes": "Tab counter available after loading pages and returning to toolbar state."
+        },
+        {
+          "strategy": "accessibility id",
+          "selector": "Add New tab",
+          "confidence": "medium",
+          "notes": "Observed when creating a fresh NTP before opening Copilot."
         }
       ],
       "operations": [
@@ -144,6 +192,50 @@
             "type": "navigate",
             "to_page_id": "edge_android_new_tab_page",
             "description": "Creates a new tab and opens a fresh New Tab Page."
+          }
+        }
+      ]
+    },
+    {
+      "name": "New Tab Page container",
+      "role": "container",
+      "reference_locators": [
+        {
+          "strategy": "id",
+          "selector": "com.microsoft.emmx:id/edge_ntp_swipe_refresh_layout",
+          "confidence": "high",
+          "notes": "Passed post-Back assertions after dismissing the overflow menu."
+        }
+      ],
+      "operations": [
+        {
+          "operation": "verify_visible",
+          "result": {
+            "type": "verify",
+            "to_page_id": null,
+            "description": "Confirms the New Tab Page is visible after launch, Back dismissal, or returning from panels."
+          }
+        }
+      ]
+    },
+    {
+      "name": "URL bar on NTP",
+      "role": "text field entry point",
+      "reference_locators": [
+        {
+          "strategy": "id",
+          "selector": "com.microsoft.emmx:id/url_bar",
+          "confidence": "medium",
+          "notes": "After closing Copilot, this element was enabled/clickable and contained Search or ask anything."
+        }
+      ],
+      "operations": [
+        {
+          "operation": "verify_state",
+          "result": {
+            "type": "verify",
+            "to_page_id": null,
+            "description": "Confirms Copilot is closed and the NTP search/address bar is available."
           }
         }
       ]

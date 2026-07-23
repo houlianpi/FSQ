@@ -11,13 +11,25 @@
       "page_id": "edge_android_new_tab_page",
       "file": "pages/edge_android_new_tab_page.md",
       "name": "New Tab Page",
-      "intents": ["new tab", "ntp", "start browsing", "open search", "open menu", "account", "rewards"]
+      "intents": ["new tab", "ntp", "start browsing", "open search", "open menu", "account", "rewards", "copilot", "open copilot"]
+    },
+    {
+      "page_id": "edge_android_copilot_chat_page",
+      "file": "pages/edge_android_copilot_chat_page.md",
+      "name": "Copilot Chat Page",
+      "intents": ["copilot", "chat with copilot", "send message", "copilot response", "new chat", "close copilot", "conversation retention"]
+    },
+    {
+      "page_id": "edge_android_copilot_history_page",
+      "file": "pages/edge_android_copilot_history_page.md",
+      "name": "Copilot History Page",
+      "intents": ["copilot history", "chat history", "open prior copilot conversation", "conversation retention"]
     },
     {
       "page_id": "edge_android_overflow_menu",
       "file": "pages/edge_android_overflow_menu.md",
       "name": "Overflow Menu",
-      "intents": ["browser menu", "downloads", "favorites", "history", "settings", "inprivate", "exit browser", "all menu"]
+      "intents": ["browser menu", "downloads", "favorites", "history", "settings", "inprivate", "exit browser", "all menu", "account type", "personal account"]
     },
     {
       "page_id": "edge_android_downloads_panel",

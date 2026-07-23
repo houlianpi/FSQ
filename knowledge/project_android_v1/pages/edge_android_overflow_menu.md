@@ -13,6 +13,10 @@
     {
       "name": "Opened from NTP browser menu",
       "description": "This page opens by tapping the bottom overflow button on the NTP or a returned NTP state."
+    },
+    {
+      "name": "Signed-in account descriptor visible",
+      "description": "A signed-in MSA menu can expose com.microsoft.emmx:id/menu_active_account_desc with text Personal."
     }
   ],
   "images": [
@@ -22,6 +26,36 @@
     }
   ],
   "elements": [
+    {
+      "name": "Personal account type",
+      "role": "account descriptor",
+      "reference_locators": [
+        {
+          "strategy": "id + text",
+          "selector": "com.microsoft.emmx:id/menu_active_account_desc text=Personal",
+          "confidence": "high",
+          "notes": "Verified in a signed-in MSA flow after opening Browser menu from NTP."
+        }
+      ],
+      "operations": [
+        {
+          "operation": "verify_visible",
+          "result": {
+            "type": "verify",
+            "to_page_id": null,
+            "description": "Confirms the overflow menu is open and the active account is personal."
+          }
+        },
+        {
+          "operation": "press_key_back",
+          "result": {
+            "type": "navigate",
+            "to_page_id": "edge_android_new_tab_page",
+            "description": "Dismisses the overflow menu; the NTP container should be visible and this descriptor should no longer be visible."
+          }
+        }
+      ]
+    },
     {
       "name": "Downloads",
       "role": "menu item",
