@@ -499,6 +499,14 @@ def test_windows_harness_rejects_unknown_action() -> None:
     assert "Unsupported Windows action" in (result.error_message or "")
 
 
+def test_windows_harness_classifies_main_window_timeout() -> None:
+    harness = WindowsHarness(driver=FakeWindowsDriver())
+
+    category = harness.classify_error(TimeoutError("main window timeout"), "invoke", _step("launchApp"))
+
+    assert category == "timeout_error"
+
+
 @pytest.mark.parametrize(
     ("wait_for", "expected_wait_state"),
     [(None, "exists visible"), ("exists visible enabled", "exists visible enabled")],
@@ -563,6 +571,47 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re(
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == [expected_wait_state]
+
+
+def test_pywinauto_driver_main_window_timeout_includes_resolution_context(monkeypatch) -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FailingApp:
+        def connect(self, **kwargs: object) -> object:
+            raise LookupError("window not found")
+
+    driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
+    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+    monotonic_values = iter([100.0, 131.0])
+    monkeypatch.setattr("fsq_agent.core.harness._pywinauto_driver.time.monotonic", lambda: next(monotonic_values))
+
+    with pytest.raises(
+        TimeoutError,
+        match=r"Timed out after 30\.0 seconds resolving Windows main window.*title_re='\.\*Edge Beta'.*wait_for='exists visible'",
+    ) as error:
+        driver._resolve_main_window(wait=True)  # type: ignore[attr-defined]
+
+    assert isinstance(error.value.__cause__, LookupError)
+    assert "window not found" in str(error.value)
+
+
+def test_pywinauto_driver_main_window_immediate_failure_includes_resolution_context() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FailingApp:
+        def connect(self, **kwargs: object) -> object:
+            raise LookupError("window not found")
+
+    driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
+    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Failed to resolve Windows main window.*title_re='\.\*Edge Beta'.*wait_for='exists visible'",
+    ) as error:
+        driver._resolve_main_window()  # type: ignore[attr-defined]
+
+    assert isinstance(error.value.__cause__, LookupError)
 
 
 def test_pywinauto_driver_resolves_window_on_every_use() -> None:

@@ -107,9 +107,18 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                 window.wait(wait_for, timeout=2 if wait else 0)
                 self._app = connected
                 return window
-            except Exception:  # noqa: BLE001 - retry until the window appears or timeout.
-                if deadline is None or time.monotonic() >= deadline:
-                    raise
+            except Exception as exc:  # noqa: BLE001 - retry until the window appears or timeout.
+                details = (
+                    f"title_re={self.window_title_re!r}, wait_for={wait_for!r}, "
+                    f"backend={self.backend_kind!r}; last error: {exc}"
+                )
+                if deadline is None:
+                    raise RuntimeError(f"Failed to resolve Windows main window ({details})") from exc
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Timed out after {WINDOW_READY_TIMEOUT_SECONDS:.1f} seconds resolving Windows main window "
+                        f"({details})"
+                    ) from exc
                 time.sleep(1.0)
 
     @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.", capture_evidence=True)
