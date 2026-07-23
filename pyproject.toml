@@ -12,7 +12,7 @@ dependencies = [
     "openai==2.34.0",
     "openai-agents==0.15.2",
     "pydantic==2.13.3",
-    "pydantic-settings==2.14.0",
+    "pydantic-settings==2.14.2",
     "aiofiles==25.1.0",
     "structlog==25.5.0",
     "click==8.3.3",
@@ -33,7 +33,7 @@ web = [
 ]
 windows = [
     "pywinauto==0.6.9",
-    "pillow==12.2.0",
+    "pillow==12.3.0",
 ]
 macos = [
     "Appium-Python-Client==2.6.1",

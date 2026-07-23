@@ -1,8 +1,16 @@
+from io import BytesIO
 from typing import Any
 
 import pytest
+from PIL import Image
 
-from fsq_agent.core import ArtifactStore, HarnessInterface
+from fsq_agent.core import (
+    ArtifactStore,
+    CapabilityDefinitionFactory,
+    CapabilityRegistry,
+    HarnessInterface,
+    StepRunner,
+)
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._driver_tools import _windows_driver_tool
 from fsq_agent.core.harness._windows import WindowsHarness
@@ -316,6 +324,110 @@ def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store
     assert driver.calls == [("context", None), ("screenshot", None), ("ui_snapshot", {})]
 
 
+@pytest.mark.parametrize("phase", ["prepare", "finalize"])
+def test_windows_harness_uses_empty_artifacts_when_evidence_window_capture_fails(tmp_path, phase) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+        def ui_snapshot(self, params: WindowsUiSnapshotParams) -> dict[str, object]:
+            raise RuntimeError("window is unavailable")
+
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+    context = harness.get_context()
+
+    screenshot_ref = harness.capture_artifact(
+        kind="screenshot",
+        reason="before-action" if phase == "prepare" else "after-action",
+        context=context,
+        step_id="step-1",
+        phase=phase,
+    )
+    snapshot_ref = harness.capture_artifact(
+        kind="ui_snapshot",
+        reason="before-action" if phase == "prepare" else "after-action",
+        context=context,
+        step_id="step-1",
+        phase=phase,
+    )
+
+    screenshot = (tmp_path / screenshot_ref.path).read_bytes()
+    image = Image.open(BytesIO(screenshot))
+    image.load()
+    assert image.size == (1, 1)
+    assert image.convert("RGB").getpixel((0, 0)) == (255, 255, 255)
+    assert (tmp_path / snapshot_ref.path).read_text(encoding="utf-8") == "{}"
+
+
+def test_windows_harness_does_not_hide_invoke_capture_failures(tmp_path) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="window is unavailable"):
+        harness.capture_artifact(
+            kind="screenshot",
+            reason="ai-assertion",
+            context=harness.get_context(),
+            step_id="step-1",
+            phase="invoke",
+        )
+
+
+@pytest.mark.parametrize(
+    ("action_name", "params"),
+    [("launchApp", {"app_path": "notepad.exe"}), ("killApp", {})],
+)
+def test_windows_runner_lifecycle_captures_before_and_after_when_window_capture_fails(
+    tmp_path,
+    action_name,
+    params,
+) -> None:
+    class UnavailableWindowDriver(FakeWindowsDriver):
+        def screenshot(self, params: object | None = None) -> bytes:
+            raise RuntimeError("window is unavailable")
+
+        def ui_snapshot(self, params: WindowsUiSnapshotParams) -> dict[str, object]:
+            raise RuntimeError("window is unavailable")
+
+    definitions = CapabilityDefinitionFactory().platform_definitions(
+        platform="windows",
+        backend="pywinauto",
+        include_ai_assertion=False,
+    )
+    harness = WindowsHarness(
+        driver=UnavailableWindowDriver(),
+        artifact_store=ArtifactStore(run_dir=tmp_path),
+    )
+    runner = StepRunner(
+        harness=harness,
+        capability_registry=CapabilityRegistry.from_definitions(definitions),
+    )
+
+    result = runner.run_step(
+        run_id="run-1",
+        step=_step(action_name, params),
+    )
+
+    assert result.status == "passed"
+    assert result.failure_category is None
+    assert [report.status for report in result.phase_reports] == ["passed", "passed", "passed"]
+    assert [artifact.kind for report in result.phase_reports for artifact in report.artifact_refs] == [
+        "screenshot",
+        "ui_snapshot",
+        "screenshot",
+        "ui_snapshot",
+    ]
+
+
 def test_windows_harness_assert_with_ai_uses_injected_evaluator(tmp_path) -> None:
     class FakeEvaluator:
         def __init__(self) -> None:
@@ -410,7 +522,6 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
         app_path="msedge.exe",
         window_title_re=".*Microsoft.*Edge Beta",
         launch_args=["--no-first-run", "--window-size=1280,920"],
-        window=object(),
     )
     driver._application_cls = lambda: (lambda backend: fake_app)  # type: ignore[attr-defined]
 
@@ -422,7 +533,35 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == ["exists visible enabled"]
-    assert driver._window is fake_app.window_obj
+
+
+def test_pywinauto_driver_resolves_window_on_every_use() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    windows = iter([object(), object()])
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: next(windows)  # type: ignore[method-assign]
+
+    first = driver._require_window()  # type: ignore[attr-defined]
+    second = driver._require_window()  # type: ignore[attr-defined]
+
+    assert first is not second
+    assert not hasattr(driver, "_window")
+
+
+def test_pywinauto_driver_context_tolerates_window_closed_after_resolution() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class ClosedWindow:
+        def rectangle(self) -> object:
+            raise RuntimeError("window is closed")
+
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: ClosedWindow()  # type: ignore[method-assign]
+
+    context = driver.context()
+
+    assert context["screen_size"] is None
 
 
 def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -> None:
@@ -451,7 +590,8 @@ def test_pywinauto_driver_control_falls_back_from_exact_title_to_title_regex() -
             return FakeControl(exists="title_re" in kwargs)
 
     window = FakeWindow()
-    driver = PywinautoWindowsDriver(window=window)
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: window  # type: ignore[method-assign]
 
     control = driver._control_from_kwargs(  # type: ignore[attr-defined]
         {"title": "Document.*Notepad", "control_type": "Edit", "automation_id": "15", "index": 2}
@@ -480,7 +620,8 @@ def test_pywinauto_driver_control_returns_wrapper_for_exact_match() -> None:
         def child_window(self, **kwargs: object) -> ExactControl:
             return ExactControl()
 
-    driver = PywinautoWindowsDriver(window=FakeWindow())
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: FakeWindow()  # type: ignore[method-assign]
 
     control = driver._control_from_kwargs({"automation_id": "15"})  # type: ignore[attr-defined]
 
@@ -503,7 +644,8 @@ def test_pywinauto_driver_control_raises_without_title_match() -> None:
             return MissingControl()
 
     window = FakeWindow()
-    driver = PywinautoWindowsDriver(window=window)
+    driver = PywinautoWindowsDriver()
+    driver._resolve_main_window = lambda **kwargs: window  # type: ignore[method-assign]
 
     with pytest.raises(
         LookupError,
@@ -536,7 +678,7 @@ def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
             self.calls.append(("scroll", {"coords": coords, "wheel_dist": wheel_dist}))
 
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._control = lambda params: Wrapper()  # type: ignore[attr-defined]
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
@@ -572,7 +714,7 @@ def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup() -> None:
             pass
 
     queries: list[dict[str, object]] = []
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
 
     def resolve(locator: dict[str, object]) -> Wrapper:
         queries.append(locator)
@@ -606,7 +748,7 @@ def test_pywinauto_driver_drag_to_offset_moves_and_releases() -> None:
             self.calls.append(("release", {"coords": coords, "button": button}))
 
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
     result = driver.drag_to(
@@ -671,7 +813,7 @@ def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
 
     wrappers = {"Source": Wrapper((10, 20)), "Target": Wrapper((70, 80))}
     mouse = FakeMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._control_from_kwargs = lambda locator: wrappers[locator["automation_id"]]  # type: ignore[attr-defined]
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
@@ -699,7 +841,7 @@ def test_pywinauto_driver_drag_releases_mouse_after_move_failure() -> None:
             self.releases.append((coords, button))
 
     mouse = FailingMouse()
-    driver = PywinautoWindowsDriver(window=object())
+    driver = PywinautoWindowsDriver()
     driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
 
     with pytest.raises(RuntimeError, match="move failed"):
