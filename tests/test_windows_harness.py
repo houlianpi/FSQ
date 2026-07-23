@@ -172,7 +172,9 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
         screen_size=(1920, 1080),
         metadata={"backend_kind": "uia", "app_path_configured": True},
     )
-    assert driver.calls == [("context", None)] + [(method_name, params) for _action_name, params, method_name in cases]
+    expected_calls = [(method_name, params) for _action_name, params, method_name in cases]
+    expected_calls[0] = ("launch_app", {"app_path": "notepad.exe", "wait_for": "exists visible"})
+    assert driver.calls == [("context", None), *expected_calls]
 
 
 def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
@@ -304,6 +306,17 @@ def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
         WindowsScrollOnParams.model_validate(
             {"target": "Scroll results", "locator": {"title": "Results"}, "wheel_dist": 0}
         )
+
+
+def test_windows_launch_wait_for_validates_window_states() -> None:
+    assert WindowsLaunchAppParams(wait_for="exists   visible enabled").wait_for == "exists visible enabled"
+
+    with pytest.raises(ValueError, match="at least one window state"):
+        WindowsLaunchAppParams(wait_for="  ")
+    with pytest.raises(ValueError, match="unsupported window state"):
+        WindowsLaunchAppParams(wait_for="exists focused")
+    with pytest.raises(ValueError, match="unique window states"):
+        WindowsLaunchAppParams(wait_for="exists exists")
 
 
 def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
@@ -486,7 +499,14 @@ def test_windows_harness_rejects_unknown_action() -> None:
     assert "Unsupported Windows action" in (result.error_message or "")
 
 
-def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> None:
+@pytest.mark.parametrize(
+    ("wait_for", "expected_wait_state"),
+    [(None, "exists visible"), ("exists visible enabled", "exists visible enabled")],
+)
+def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re(
+    wait_for: str | None,
+    expected_wait_state: str,
+) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
     from fsq_agent.models import WindowsLaunchAppParams
 
@@ -532,14 +552,17 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     )
     driver._application_cls = lambda: (lambda backend: fake_app)  # type: ignore[attr-defined]
 
-    result = driver.launch_app(WindowsLaunchAppParams(extra_args=["--incognito"]))
+    launch_params = {"extra_args": ["--incognito"]}
+    if wait_for is not None:
+        launch_params["wait_for"] = wait_for
+    result = driver.launch_app(WindowsLaunchAppParams.model_validate(launch_params))
 
     assert result["status"] == "passed"
     assert fake_app.started_cmd == "msedge.exe --no-first-run --window-size=1280,920 --incognito"
     assert fake_app.connected_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
-    assert fake_app.window_obj.waited == ["exists visible enabled"]
+    assert fake_app.window_obj.waited == [expected_wait_state]
 
 
 def test_pywinauto_driver_resolves_window_on_every_use() -> None:

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
 StepPhase: TypeAlias = Literal["prepare", "invoke", "finalize"]
@@ -681,6 +681,21 @@ class WindowsLaunchAppParams(BaseModel):
 
     app_path: str | None = None
     extra_args: list[str] | None = None
+    wait_for: str = "exists visible"
+
+    @field_validator("wait_for")
+    @classmethod
+    def _validate_wait_for(cls, value: str) -> str:
+        states = value.split()
+        allowed = {"exists", "visible", "enabled", "ready", "active"}
+        if not states:
+            raise ValueError("requires at least one window state")
+        unknown = [state for state in states if state not in allowed]
+        if unknown:
+            raise ValueError(f"contains unsupported window state: {unknown[0]}")
+        if len(states) != len(set(states)):
+            raise ValueError("requires unique window states")
+        return " ".join(states)
 
 
 class WindowsKillAppParams(BaseModel):

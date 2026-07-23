@@ -90,10 +90,10 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         launch_args = [*self.launch_args, *(params.extra_args or [])]
         cmd = subprocess.list2cmdline([app_path, *launch_args])
         self._app = application_cls(backend=self.backend_kind).start(cmd)
-        self._resolve_main_window(wait=True)
+        self._resolve_main_window(wait=True, wait_for=params.wait_for)
         return self._passed({"app_path": app_path, "launch_args": launch_args, "window_title_re": self.window_title_re})
 
-    def _resolve_main_window(self, *, wait: bool = False) -> object:
+    def _resolve_main_window(self, *, wait: bool = False, wait_for: str = "exists visible") -> object:
         application_cls = self._application_cls()
         deadline = time.monotonic() + WINDOW_READY_TIMEOUT_SECONDS if wait else None
         while True:
@@ -104,7 +104,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                 else:
                     connected = application_cls(backend=self.backend_kind).connect(active_only=True)
                     window = connected.top_window()
-                window.wait("exists visible enabled", timeout=2 if wait else 0)
+                window.wait(wait_for, timeout=2 if wait else 0)
                 self._app = connected
                 return window
             except Exception:  # noqa: BLE001 - retry until the window appears or timeout.
