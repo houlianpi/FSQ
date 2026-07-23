@@ -24,6 +24,17 @@ _SEMANTIC_ACTION_MARKERS = (
     "ordered key",
 )
 
+_PROVIDER_CONTENT_FILTER_MARKERS = (
+    "provider_content_filter",
+    "content_filter",
+)
+
+_PROVIDER_INCOMPLETE_MARKERS = (
+    "provider_response_incomplete",
+    "response.incomplete",
+    "status=incomplete",
+)
+
 
 class FailureAnalyzer:
     def classify(
@@ -34,6 +45,10 @@ class FailureAnalyzer:
     ) -> str:
         if verification.status == "success":
             return "success"
+        if self._has_provider_content_filter(steps, verification, tool_calls or []):
+            return "provider_content_filter"
+        if self._has_provider_response_incomplete(steps, verification, tool_calls or []):
+            return "provider_response_incomplete"
         labels: list[str] = []
         if self._has_tool_usage_error(steps, verification, tool_calls or []):
             labels.append("tool_usage_error")
@@ -59,6 +74,45 @@ class FailureAnalyzer:
             texts.append(self._normalize(call.get("output_preview")))
             texts.append(self._normalize(call.get("error")))
         return any(any(marker in text for marker in _TOOL_USAGE_MARKERS) for text in texts)
+
+    def _has_provider_content_filter(
+        self,
+        steps: list[StepResult],
+        verification: VerificationResult,
+        tool_calls: list[dict[str, Any]],
+    ) -> bool:
+        texts = self._failure_texts(steps, verification, tool_calls)
+        return any(any(marker in text for marker in _PROVIDER_CONTENT_FILTER_MARKERS) for text in texts)
+
+    def _has_provider_response_incomplete(
+        self,
+        steps: list[StepResult],
+        verification: VerificationResult,
+        tool_calls: list[dict[str, Any]],
+    ) -> bool:
+        texts = self._failure_texts(steps, verification, tool_calls)
+        return any(any(marker in text for marker in _PROVIDER_INCOMPLETE_MARKERS) for text in texts)
+
+    def _failure_texts(
+        self,
+        steps: list[StepResult],
+        verification: VerificationResult,
+        tool_calls: list[dict[str, Any]],
+    ) -> list[str]:
+        texts = []
+        for step in steps:
+            if step.status == "failed":
+                texts.append(self._normalize(step.error))
+                texts.append(self._normalize(step.actual_outcome))
+                texts.append(self._normalize(step.tool_output))
+        texts.append(self._normalize(verification.summary))
+        texts.extend(self._normalize(value) for value in verification.diagnostics)
+        texts.extend(self._normalize(value) for value in verification.unmet_criteria)
+        for call in tool_calls:
+            texts.append(self._normalize(call.get("output_preview")))
+            texts.append(self._normalize(call.get("error")))
+            texts.append(self._normalize(call.get("status")))
+        return texts
 
     def _has_semantic_action_unmet(self, verification: VerificationResult) -> bool:
         texts = [self._normalize(value) for value in verification.unmet_criteria]

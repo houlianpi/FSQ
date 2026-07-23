@@ -230,6 +230,35 @@ def test_report_generator_classifies_conflicting_key_identity_diagnostic(tmp_pat
     assert "Failure Classification: `tool_usage_error + semantic_action_unmet`" in artifact.path.read_text(encoding="utf-8")
 
 
+def test_report_generator_classifies_provider_content_filter(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-provider-content-filter"
+    run_dir.mkdir(parents=True)
+    steps = [
+        StepResult(
+            step_id=1,
+            status="failed",
+            actual_outcome="OpenAI Agents SDK run ended with an incomplete provider response due to content filtering.",
+            error=(
+                "Responses stream ended with terminal event `response.incomplete`. "
+                "status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter')."
+            ),
+            tool_name="openai_agents.runner",
+            tool_output={"failure_category": "provider_content_filter", "failure_reason": "content_filter"},
+        )
+    ]
+    verification = VerificationResult(
+        status="failed",
+        summary="The automation run failed before completion.",
+        unmet_criteria=["Final state was not verified."],
+    )
+
+    artifact = ReportGenerator(tmp_path).generate("run-provider-content-filter", _task(), steps, verification)
+
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    assert payload["failure_classification"] == "provider_content_filter"
+    assert "Failure Classification: `provider_content_filter`" in artifact.path.read_text(encoding="utf-8")
+
+
 def test_report_generator_summarizes_common_tool_calls_without_call_id(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-local-events"
     run_dir.mkdir(parents=True)

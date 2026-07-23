@@ -18,7 +18,7 @@ class ContextTrimmingSettings(BaseModel):
 
     enabled: bool = True
     recent_turns: int = Field(default=2, ge=1)
-    max_tool_output_chars: int = Field(default=8000, ge=1)
+    max_tool_output_chars: int = Field(default=30000, ge=1)
     preview_chars: int = Field(default=1000, ge=0)
     trimmable_tools: list[str] = Field(default_factory=list)
 

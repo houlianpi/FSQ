@@ -7,7 +7,7 @@
   "name": "Omnibox ZIP Suggestions",
   "identifiers": [
     {"name": "Top sites list visible", "description": "Opening the NTP search box shows the ZIP/top-sites suggestion list."},
-    {"name": "Camera and microphone actions visible", "description": "The omnibox state exposes camera search and Copilot voice/mic buttons."},
+    {"name": "Camera and microphone actions visible", "description": "The focused omnibox state exposes attachment camera search and mic buttons. If the unfocused NTP already shows edge_ntp_mic_button, voice can start directly from the NTP without first focusing the URL bar."},
     {"name": "URL bar focused", "description": "The editable URL bar receives typed keywords and URLs."}
   ],
   "images": [
@@ -60,10 +60,12 @@
       "name": "Copilot voice button",
       "role": "button",
       "reference_locators": [
-        {"strategy": "id", "selector": "com.microsoft.emmx:id/attachment_right_mic_button", "confidence": "high", "notes": "Verified as an omnibox marker in top and bottom mode."}
+        {"strategy": "id", "selector": "com.microsoft.emmx:id/attachment_right_mic_button", "confidence": "high", "notes": "Focused-omnibox mic button. Use only after the URL bar has been focused; for direct NTP voice, prefer edge_ntp_mic_button on the New Tab Page."},
+        {"strategy": "accessibility id", "selector": "Start voice search", "confidence": "medium", "notes": "Shared accessibility label with the direct NTP mic."}
       ],
       "operations": [
-        {"operation": "verify_visible", "result": {"type": "verify", "to_page_id": null, "description": "Confirms the voice/Copilot action is available."}}
+        {"operation": "verify_visible", "result": {"type": "verify", "to_page_id": null, "description": "Confirms the focused-omnibox voice action is available."}},
+        {"operation": "tap", "result": {"type": "navigate", "to_page_id": "edge_android_voice_search_page", "description": "Starts voice from the focused omnibox state."}}
       ]
     },
     {

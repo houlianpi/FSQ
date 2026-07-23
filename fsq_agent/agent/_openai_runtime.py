@@ -39,6 +39,28 @@ _RUNTIME_TOOL_NAMES = {
 }
 
 
+def _sdk_failure_metadata(exc: BaseException) -> dict[str, str]:
+    message = str(exc)
+    normalized = message.lower()
+    if "response.incomplete" in normalized and "content_filter" in normalized:
+        return {
+            "failure_category": "provider_content_filter",
+            "failure_reason": "content_filter",
+            "failure_summary": "OpenAI Agents SDK run ended with an incomplete provider response due to content filtering.",
+        }
+    if "response.incomplete" in normalized or "status=incomplete" in normalized:
+        return {
+            "failure_category": "provider_response_incomplete",
+            "failure_reason": "incomplete",
+            "failure_summary": "OpenAI Agents SDK run ended with an incomplete provider response.",
+        }
+    return {
+        "failure_category": "sdk_error",
+        "failure_reason": "sdk_error",
+        "failure_summary": "OpenAI Agents SDK run failed before producing structured verification output.",
+    }
+
+
 class _RecentToolOutputInputFilter:
     def __init__(
         self,
@@ -78,7 +100,7 @@ class _RecentToolOutputInputFilter:
             output_text = output if isinstance(output, str) else str(output)
             is_sensitive = self._is_sensitive_tool_output(output_text)
             artifact_path = self._artifact_path_for(item, tool_names, output_text)
-            if index in protected:
+            if index in protected and len(output_text) <= self.max_output_chars:
                 new_items.append(item)
                 continue
             if is_sensitive:
@@ -280,7 +302,7 @@ class OpenAIAgentsRuntime:
                     FunctionTool,
                     run_id=run_id,
                     task_id=task.id,
-                    event_sink=event_sink,
+                    event_sink=None,
                     runner_invoker=harness_adapter.run_step_with_capability_result,
                 )
                 harness_tools = harness_adapter.build_tools(FunctionTool)
@@ -336,6 +358,8 @@ class OpenAIAgentsRuntime:
                         await self._emit(event_sink, run_event)
             except Exception as exc:
                 duration_ms = int((time.perf_counter() - started) * 1000)
+                failure_metadata = _sdk_failure_metadata(exc)
+                error_message = self._replace_secret_values(str(exc), self._runtime_secret_values())
                 await self._emit(
                     event_sink,
                     RunEvent(
@@ -343,22 +367,26 @@ class OpenAIAgentsRuntime:
                         task_id=task.id,
                         type="run_failed",
                         title="SDK run failed",
-                        message=self._replace_secret_values(str(exc), self._runtime_secret_values()),
+                        message=error_message,
                         duration_ms=duration_ms,
+                        payload=failure_metadata,
                     ),
                 )
                 return [
                     StepResult(
                         step_id=1,
                         status="failed",
-                        actual_outcome="OpenAI Agents SDK run failed before producing structured verification output.",
+                        actual_outcome=failure_metadata["failure_summary"],
                         duration_ms=duration_ms,
-                        error=self._replace_secret_values(str(exc), self._runtime_secret_values()),
+                        error=error_message,
                         tool_name="openai_agents.runner",
+                        tool_output=failure_metadata,
                     )
                 ]
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            failure_metadata = _sdk_failure_metadata(exc)
+            error_message = self._replace_secret_values(str(exc), self._runtime_secret_values())
             await self._emit(
                 event_sink,
                 RunEvent(
@@ -366,18 +394,20 @@ class OpenAIAgentsRuntime:
                     task_id=task.id,
                     type="run_failed",
                     title="SDK run failed",
-                    message=self._replace_secret_values(str(exc), self._runtime_secret_values()),
+                    message=error_message,
                     duration_ms=duration_ms,
+                    payload=failure_metadata,
                 ),
             )
             return [
                 StepResult(
                     step_id=1,
                     status="failed",
-                    actual_outcome="OpenAI Agents SDK run failed before producing structured verification output.",
+                    actual_outcome=failure_metadata["failure_summary"],
                     duration_ms=duration_ms,
-                    error=self._replace_secret_values(str(exc), self._runtime_secret_values()),
+                    error=error_message,
                     tool_name="openai_agents.runner",
+                    tool_output=failure_metadata,
                 )
             ]
         finally:
@@ -1146,6 +1176,12 @@ class OpenAIAgentsRuntime:
         parsed = self._json_payload(output)
         if not isinstance(parsed, dict):
             return payload
+        parsed_tool_name = parsed.get("tool_name")
+        if isinstance(parsed_tool_name, str) and parsed_tool_name:
+            payload["tool_name"] = parsed_tool_name
+            payload["tool_origin"] = self._tool_origin(parsed_tool_name)
+            if payload["tool_origin"] == "agent_tool":
+                payload["executor_kind"] = "agent_tool"
         safe_keys = {
             "tool_name",
             "tool_origin",
@@ -1175,6 +1211,14 @@ class OpenAIAgentsRuntime:
             payload["metadata"] = metadata
         result = parsed.get("result")
         if isinstance(result, dict):
+            if "tool_name" not in payload and isinstance(result.get("tool_name"), str):
+                result_tool_name = str(result["tool_name"])
+                payload["tool_name"] = result_tool_name
+                payload["tool_origin"] = self._tool_origin(result_tool_name)
+                if payload["tool_origin"] == "agent_tool":
+                    payload["executor_kind"] = "agent_tool"
+            if "duration_ms" not in payload and isinstance(result.get("duration_ms"), int):
+                payload["duration_ms"] = result["duration_ms"]
             if "status" not in payload and result.get("status") is not None:
                 payload["status"] = result.get("status")
             if "failure_category" not in payload and result.get("failure_category") is not None:

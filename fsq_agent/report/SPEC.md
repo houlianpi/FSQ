@@ -82,6 +82,6 @@ Stored report lookup raises `ReportGenerationError` when no report exists for th
 - Report artifacts are stored below `output.runs_dir/<run-id>` so installed CLI usage does not create report files in the caller's current directory.
 - LLM and strict-core reports intentionally keep separate internal shapes. CLI unifies only lookup and printing through `resolve_report_path`.
 - HTML report generation is intentionally out of scope.
-- Failure analysis starts rule-assisted and can later include LLM-assisted explanations.
+- Failure analysis starts rule-assisted and can later include LLM-assisted explanations. Provider-side incomplete response failures such as OpenAI Agents SDK `response.incomplete` with `content_filter` must be classified as provider failures, not tool usage errors.
 - Deterministic core execution reports should be generated from persisted evidence manifests rather than live runner objects. This keeps report generation replayable and allows reports to be regenerated after real-device runs.
 - Regression comparison reports should be generated after execution from persisted strict and recovery manifests. This keeps self-healing auditable and prevents recovery from masking the original regression signal. AI assertion verdicts in strict evidence remain part of the strict result, while AI-assisted repair attempts belong only to separate recovery evidence.

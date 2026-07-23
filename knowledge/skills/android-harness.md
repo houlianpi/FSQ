@@ -22,7 +22,7 @@ Use when `harness.platform` is Android. This skill contains Android-specific sta
 
 - Use `assert_state` for deterministic element state or text checks, such as verifying that `com.microsoft.emmx:id/url_bar` contains or equals a required URL or keyword.
 - Use `assert_visible` or `assert_not_visible` for required presence or absence of visible UI elements.
-- Use `assert_with_ai` only for visual/page-content assertions that cannot be expressed deterministically with element state or text.
+- Use `assert_with_ai` for visual/page-content assertions or when the only deterministic option is a brittle complex locator, such as a long XPath through repeated generic controls or reused switch ids.
 - Use `ui_tree` to inspect, locate, or collect evidence before an assertion. Before teardown, collect the final required verification with an assertion tool when an assertion-capable locator or text condition is available.
 
 ## Argument Rules

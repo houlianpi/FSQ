@@ -40,6 +40,15 @@ class _EmptyToolFactory:
         return []
 
 
+class _CapturingToolFactory:
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] | None = None
+
+    def build_tools(self, *_args: Any, **kwargs: Any) -> list[Any]:
+        self.kwargs = kwargs
+        return []
+
+
 class _FakeFunctionTool:
     def __init__(self, **kwargs: Any) -> None:
         self.name = kwargs["name"]
@@ -362,6 +371,39 @@ def test_runtime_harness_timeout_does_not_wait_for_worker_shutdown() -> None:
     asyncio.run(run_timeout())
 
     assert time.perf_counter() - started < 1.8
+
+
+@pytest.mark.asyncio
+async def test_runtime_classifies_sdk_content_filter_incomplete(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agents
+
+    class _ContentFilterRunResult:
+        async def stream_events(self) -> Any:
+            raise RuntimeError(
+                "Responses stream ended with terminal event `response.incomplete`. "
+                "status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter')."
+            )
+            yield None
+
+    class _ContentFilterRunner:
+        @staticmethod
+        def run_streamed(_agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _ContentFilterRunResult:
+            return _ContentFilterRunResult()
+
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
+    _patch_runtime_sdk(monkeypatch)
+    monkeypatch.setattr(agents, "Runner", _ContentFilterRunner)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), _fake_harness_factory)
+    events: list[Any] = []
+
+    results = await runtime.run_task(Task(id="content-filter", description="Trigger content filter."), KnowledgeBundle(), [], "content-filter-run", events.append)
+
+    assert results[0].status == "failed"
+    assert results[0].actual_outcome == "OpenAI Agents SDK run ended with an incomplete provider response due to content filtering."
+    assert results[0].tool_output["failure_category"] == "provider_content_filter"
+    assert events[-1].type == "run_failed"
+    assert events[-1].payload["failure_category"] == "provider_content_filter"
+    assert events[-1].payload["failure_reason"] == "content_filter"
 
 
 def test_runtime_builds_configured_web_harness(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -925,6 +967,48 @@ def test_runtime_tool_output_payload_preserves_runner_evidence_fields() -> None:
     assert payload["artifact_refs"] == [{"kind": "screenshot", "path": "artifacts/screenshots/before.png"}]
 
 
+def test_runtime_tool_output_payload_adds_agent_tool_fields() -> None:
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory())
+    runtime._agent_tool_names = {"search_artifact"}
+    output = json.dumps(
+        {
+            "tool_name": "search_artifact",
+            "model_output": "full",
+            "artifact": {"path": None, "content_chars": None},
+            "status": "passed",
+            "result": {
+                "tool_name": "search_artifact",
+                "status": "success",
+                "output": {"matches": []},
+                "duration_ms": 12,
+            },
+        }
+    )
+
+    payload = runtime._tool_output_payload(output)
+
+    assert payload["tool_name"] == "search_artifact"
+    assert payload["tool_origin"] == "agent_tool"
+    assert payload["executor_kind"] == "agent_tool"
+    assert payload["status"] == "passed"
+    assert payload["duration_ms"] == 12
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_sdk_stream_events_for_agent_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
+    _patch_runtime_sdk(monkeypatch)
+    tool_factory = _CapturingToolFactory()
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), tool_factory, _fake_harness_factory)
+    task = Task(id="agent-tools", name="Agent Tools", description="Run with AgentTools.")
+
+    await runtime.run_task(task, KnowledgeBundle(), [], "agent-tools-run", event_sink=lambda _event: None)
+
+    assert tool_factory.kwargs is not None
+    assert tool_factory.kwargs["event_sink"] is None
+    assert callable(tool_factory.kwargs["runner_invoker"])
+
+
 def test_runtime_stream_tool_output_preserves_tool_name_from_started_event() -> None:
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory())
     started = SimpleNamespace(
@@ -1070,7 +1154,7 @@ def test_runtime_builds_run_config_with_tool_output_trimmer(monkeypatch: pytest.
     assert input_filter.recent_tool_outputs == 3
     assert input_filter.sdk_filter.kwargs == {
         "recent_turns": 2,
-        "max_output_chars": 8000,
+        "max_output_chars": 30000,
         "preview_chars": 1000,
         "trimmable_tools": None,
     }
@@ -1138,7 +1222,7 @@ def test_provider_session_builds_azure_openai_agents_provider(monkeypatch: pytes
     }
 
 
-def test_runtime_tool_count_filter_keeps_recent_outputs_and_trims_history() -> None:
+def test_runtime_tool_count_filter_keeps_small_recent_outputs_and_trims_large_outputs() -> None:
     from types import SimpleNamespace
 
     from agents.run_config import ModelInputData
@@ -1157,8 +1241,8 @@ def test_runtime_tool_count_filter_keeps_recent_outputs_and_trims_history() -> N
     settings = Settings(openai_agents=OpenAIAgentsSettings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
     input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider").kwargs["call_model_input_filter"]
-    old_output = "old-output " * 1000
-    recent_output = "recent-output " * 1000
+    old_output = "old-output " * 4000
+    recent_output = "recent-output " * 4000
     data = SimpleNamespace(
         model_data=ModelInputData(
             input=[
@@ -1178,7 +1262,9 @@ def test_runtime_tool_count_filter_keeps_recent_outputs_and_trims_history() -> N
     filtered = input_filter(data)
 
     assert filtered.input[1]["output"].startswith("[Trimmed historical read_file output")
-    assert filtered.input[7]["output"] == recent_output
+    assert filtered.input[3]["output"] == "recent 1"
+    assert filtered.input[5]["output"] == "recent 2"
+    assert filtered.input[7]["output"].startswith("[Trimmed historical read_file output")
 
 
 def test_runtime_tool_count_filter_writes_artifact_for_trimmed_history(tmp_path: Path) -> None:
@@ -1210,7 +1296,7 @@ def test_runtime_tool_count_filter_writes_artifact_for_trimmed_history(tmp_path:
         model_data=ModelInputData(
             input=[
                 {"type": "function_call", "call_id": "1", "name": "harness_source"},
-                {"type": "function_call_output", "call_id": "1", "output": "<node>" * 2000},
+                {"type": "function_call_output", "call_id": "1", "output": "<node>" * 7000},
             ],
             instructions="instructions",
         )
@@ -1219,6 +1305,54 @@ def test_runtime_tool_count_filter_writes_artifact_for_trimmed_history(tmp_path:
     filtered = input_filter(data)
 
     assert "Artifact path:" in filtered.input[1]["output"]
+    assert list((tmp_path / "runs" / "run-1" / "artifacts" / "tools").glob("*.json"))
+
+
+def test_runtime_input_filter_trims_recent_large_ui_snapshot_to_artifact(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from agents.run_config import ModelInputData
+
+    class _RunConfig:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+
+    class _ToolOutputTrimmer:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __call__(self, data: Any) -> Any:
+            return data.model_data
+
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    settings = Settings(openai_agents=OpenAIAgentsSettings(), output=output_settings)
+    runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
+        "call_model_input_filter"
+    ]
+    snapshot_output = json.dumps(
+        {
+            "tool_name": "ui_snapshot",
+            "status": "passed",
+            "result": {"output": {"xml": "<node password=\"false\">" + ("visible text " * 5000) + "</node>"}},
+        }
+    )
+    data = SimpleNamespace(
+        model_data=ModelInputData(
+            input=[
+                {"type": "function_call", "call_id": "snapshot", "name": "ui_snapshot"},
+                {"type": "function_call_output", "call_id": "snapshot", "output": snapshot_output},
+            ],
+            instructions="instructions",
+        )
+    )
+
+    filtered = input_filter(data)
+
+    assert filtered.input[1]["output"].startswith("[Trimmed historical ui_snapshot output")
+    assert "Artifact path:" in filtered.input[1]["output"]
+    assert len(filtered.input[1]["output"]) < len(snapshot_output)
     assert list((tmp_path / "runs" / "run-1" / "artifacts" / "tools").glob("*.json"))
 
 

@@ -73,7 +73,7 @@ def test_openai_agents_settings_defaults_to_safe_offline_mode() -> None:
     assert settings.prompt.task_template_path is None
     assert settings.prompt.variables == {}
     assert settings.context_trimming.enabled is True
-    assert settings.context_trimming.max_tool_output_chars == 8000
+    assert settings.context_trimming.max_tool_output_chars == 30000
     assert settings.local_tool_output.always_write_artifact is True
     assert settings.local_tool_output.full_output_max_chars == 30000
 

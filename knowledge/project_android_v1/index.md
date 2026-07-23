@@ -11,7 +11,13 @@
       "page_id": "edge_android_new_tab_page",
       "file": "pages/edge_android_new_tab_page.md",
       "name": "New Tab Page",
-      "intents": ["new tab", "ntp", "start browsing", "open search", "open menu", "account", "rewards", "copilot", "open copilot"]
+      "intents": ["new tab", "ntp", "start browsing", "open search", "open menu", "account", "rewards", "copilot", "open copilot", "voice search", "start voice"]
+    },
+    {
+      "page_id": "edge_android_voice_search_page",
+      "file": "pages/edge_android_voice_search_page.md",
+      "name": "Voice Search Page",
+      "intents": ["voice search", "start voice", "microphone", "blue wave", "close voice"]
     },
     {
       "page_id": "edge_android_copilot_chat_page",
@@ -53,7 +59,7 @@
       "page_id": "edge_android_omnibox_zip",
       "file": "pages/edge_android_omnibox_zip.md",
       "name": "Omnibox ZIP Suggestions",
-      "intents": ["search", "type url", "type keyword", "suggestions", "search history", "top sites"]
+      "intents": ["search", "type url", "type keyword", "suggestions", "search history", "top sites", "focused omnibox voice"]
     },
     {
       "page_id": "edge_android_web_page",

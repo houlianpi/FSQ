@@ -23,6 +23,10 @@
       "description": "The NTP search box/address entry is available for search and URL entry flows."
     },
     {
+      "name": "Direct NTP voice search button visible",
+      "description": "The New Tab Page can expose com.microsoft.emmx:id/edge_ntp_mic_button with Start voice search, which starts voice directly without first focusing the URL bar."
+    },
+    {
       "name": "Copilot entry visible",
       "description": "The NTP location bar exposes a Copilot button for opening the Copilot chat page."
     }
@@ -142,6 +146,42 @@
             "type": "navigate",
             "to_page_id": "edge_android_omnibox_zip",
             "description": "Focuses the omnibox and opens the ZIP suggestions page."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Direct voice search button",
+      "role": "button",
+      "reference_locators": [
+        {
+          "strategy": "id",
+          "selector": "com.microsoft.emmx:id/edge_ntp_mic_button",
+          "confidence": "high",
+          "notes": "Visible on the unfocused NTP search bar; use this directly for voice-search cases when the mic is already visible."
+        },
+        {
+          "strategy": "accessibility id",
+          "selector": "Start voice search",
+          "confidence": "medium",
+          "notes": "Shared accessibility label with the focused omnibox mic; pair with the NTP mic resource id when possible."
+        }
+      ],
+      "operations": [
+        {
+          "operation": "tap",
+          "result": {
+            "type": "navigate",
+            "to_page_id": "edge_android_voice_search_page",
+            "description": "Starts the non-Copilot voice search page directly from the New Tab Page. Do not focus the URL bar first unless the case explicitly requires the focused omnibox state or the direct NTP mic is absent."
+          }
+        },
+        {
+          "operation": "verify_visible",
+          "result": {
+            "type": "verify",
+            "to_page_id": null,
+            "description": "Confirms voice search can be started directly from the New Tab Page."
           }
         }
       ]

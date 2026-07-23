@@ -24,7 +24,7 @@ Use when `harness.platform` is macOS. This skill contains macOS-specific stabili
 - Use `assert_elements_order` when the requirement is about visual order, such as toolbar item sequence or vertical list ordering.
 - For `assert_elements_order`, keep `expected_order` as zero-based indexes of the provided `elements`; omit it when the authored element list is already the expected order.
 - Use `assert_visible` for required presence or visibility of a macOS accessibility element.
-- Use `assert_with_ai` only when deterministic accessibility assertions cannot express the requirement.
+- Use `assert_with_ai` when deterministic accessibility assertions cannot express the requirement or would require a brittle complex locator.
 
 ## Argument Rules
 

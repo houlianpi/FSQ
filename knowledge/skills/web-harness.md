@@ -16,7 +16,7 @@ Use when `harness.platform` is Web. This skill contains Web-specific stability g
 
 - Use `assert_text` for deterministic page text or field text requirements.
 - Use `assert_visible` or `assert_not_visible` for required presence or absence of page elements.
-- Use `assert_with_ai` only when the assertion requires visual judgment or page interpretation that deterministic selectors/text cannot express.
+- Use `assert_with_ai` when the assertion requires visual judgment, page interpretation, or a deterministic check would require a brittle complex selector.
 - Use `page_snapshot` to inspect, locate, or collect context before an assertion.
 
 ## Argument Rules
