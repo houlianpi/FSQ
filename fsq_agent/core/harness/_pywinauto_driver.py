@@ -76,8 +76,6 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
     @_windows_driver_tool(
         "launchApp",
         description="Launch the configured Windows desktop application.",
-        capture_evidence=True,
-        metadata={"evidence_capture_on_failure": False},
     )
     def launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
         return self._run_sync(lambda: self._launch_app(params))
@@ -112,7 +110,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                     raise
                 time.sleep(1.0)
 
-    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.", capture_evidence=True)
+    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
     def kill_app(self, params: WindowsKillAppParams) -> dict[str, object]:
         return self._run_sync(self._kill_app)
 
@@ -124,7 +122,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         self._app = None
         return self._passed()
 
-    @_windows_driver_tool("clickOn", description="Click a Windows control resolved from the UI snapshot.", capture_evidence=True)
+    @_windows_driver_tool("clickOn", description="Click a Windows control resolved from the UI snapshot.")
     def click_on(self, params: WindowsClickOnParams) -> dict[str, object]:
         return self._run_sync(lambda: self._click_on(params))
 
@@ -137,7 +135,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             control.click_input(button=button)
         return self._passed()
 
-    @_windows_driver_tool("doubleClickOn", description="Double-click a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("doubleClickOn", description="Double-click a Windows control.")
     def double_click_on(self, params: WindowsDoubleClickOnParams) -> dict[str, object]:
         return self._run_sync(lambda: self._double_click_on(params))
 
@@ -146,7 +144,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         control.double_click_input(button=params.button or "left")
         return self._passed()
 
-    @_windows_driver_tool("rightClickOn", description="Right-click a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("rightClickOn", description="Right-click a Windows control.")
     def right_click_on(self, params: WindowsRightClickOnParams) -> dict[str, object]:
         return self._run_sync(lambda: self._right_click_on(params))
 
@@ -155,7 +153,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         control.click_input(button="right")
         return self._passed()
 
-    @_windows_driver_tool("typeText", description="Type text into a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("typeText", description="Type text into a Windows control.")
     def type_text(self, params: WindowsTypeTextParams) -> dict[str, object]:
         return self._run_sync(lambda: self._type_text(params))
 
@@ -167,7 +165,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         control.type_keys(params.text, with_spaces=True)
         return self._passed()
 
-    @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.", capture_evidence=True)
+    @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.")
     def press_key(self, params: WindowsPressKeyParams) -> dict[str, object]:
         return self._run_sync(lambda: self._press_key(params))
 
@@ -185,7 +183,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         self._mouse_module().move(coords=point)
         return self._passed()
 
-    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.")
     def scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
         return self._run_sync(lambda: self._scroll_on(params))
 
@@ -194,7 +192,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         self._mouse_module().scroll(coords=point, wheel_dist=params.wheel_dist)
         return self._passed()
 
-    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.", capture_evidence=True)
+    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.")
     def drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
         return self._run_sync(lambda: self._drag_to(params))
 

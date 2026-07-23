@@ -144,9 +144,9 @@ def test_run_fsq_core_case_writes_manifest_and_returns_bundle(tmp_path: Path) ->
     assert [step["step_id"] for step in manifest["steps"]] == ["core_cli-step-001", "core_cli-step-002"]
     assert [step["status"] for step in manifest["steps"]] == ["passed", "passed"]
     assert [event["event_type"] for event in manifest["events"]].count("step_start") == 2
-    assert [artifact["kind"] for artifact in manifest["artifacts"]] == ["screenshot", "ui_tree"] * 4
+    assert [artifact["kind"] for artifact in manifest["artifacts"]] == ["screenshot", "ui_snapshot"] * 3
     artifact_reasons = [event["payload"]["reason"] for event in manifest["events"] if event["event_type"] == "artifact_captured"]
-    assert artifact_reasons.count("before-action") == 4
+    assert artifact_reasons.count("before-action") == 2
     assert artifact_reasons.count("after-action") == 4
 
 
@@ -203,7 +203,9 @@ def test_run_fsq_core_case_runs_trailing_teardown_after_failure(tmp_path: Path) 
         "core_cli_teardown-step-004",
     ]
     artifact_reasons = [event["payload"]["reason"] for event in manifest["events"] if event["event_type"] == "artifact_captured"]
-    assert artifact_reasons.count("failure") == 2
+    assert artifact_reasons.count("failure") == 0
+    assert artifact_reasons.count("after-action") == 4
+    assert artifact_reasons.count("before-action") == 4
 
 
 def test_run_fsq_core_case_runs_trailing_web_close_browser_after_failure(tmp_path: Path) -> None:

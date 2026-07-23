@@ -6,9 +6,8 @@ from pydantic import BaseModel
 
 from fsq_agent.capabilities import (
     CapabilityActionDefinition,
-    common_capability,
+    capability,
     discover_capability_definitions,
-    platform_capability,
     platform_driver_capability,
 )
 from fsq_agent._capability_bootstrap import build_capability_registry
@@ -28,14 +27,15 @@ class OtherParams(BaseModel):
     value: str
 
 
-def test_common_capability_discovery_returns_serializable_definition() -> None:
+def test_capability_discovery_returns_serializable_definition() -> None:
     class Provider:
-        @common_capability(
+        @capability(
             name="example_tool",
+            executor_kind="common",
+            owner="common",
             description="Example tool.",
             params_model=ExampleParams,
             replay=ReplayPolicy(kind="fsq_command", alias="exampleTool"),
-            capture_evidence=True,
             post_action_delay_seconds=0.5,
             metadata={"origin": "test"},
         )
@@ -49,7 +49,6 @@ def test_common_capability_discovery_returns_serializable_definition() -> None:
     assert definition.name == "example_tool"
     assert definition.executor_kind == "common"
     assert definition.owner == "common"
-    assert definition.capture_evidence is True
     assert definition.post_action_delay_seconds == 0.5
     assert definition.params_model is ExampleParams
     assert definition.replay == ReplayPolicy(kind="fsq_command", alias="exampleTool")
@@ -106,28 +105,6 @@ def test_capability_registry_rejects_cross_capability_replay_alias_conflict() ->
                 ),
             ]
         )
-
-
-def test_platform_capability_declares_platform_owned_harness_routed_capability() -> None:
-    class Provider:
-        @platform_capability(
-            name="assert_with_ai",
-            description="Assert with AI.",
-            params_model=ExampleParams,
-            platform="android",
-            step_kind="assertion",
-            replay=ReplayPolicy(kind="fsq_command", alias="assertWithAI"),
-        )
-        def assert_with_ai(self, params: ExampleParams) -> dict[str, object]:
-            return {}
-
-    definition = discover_capability_definitions(Provider)[0]
-
-    assert definition.name == "assert_with_ai"
-    assert definition.executor_kind == "harness"
-    assert definition.owner == "platform"
-    assert definition.platform == "android"
-    assert definition.step_kind == "assertion"
 
 
 def test_platform_driver_capability_validates_catalog_method_name() -> None:
@@ -201,8 +178,10 @@ def test_platform_driver_capability_inherits_and_overrides_catalog_delay() -> No
 def test_capability_rejects_negative_post_action_delay() -> None:
     with pytest.raises(ConfigurationError, match="post_action_delay_seconds"):
         class BadProvider:
-            @common_capability(
+            @capability(
                 name="bad_delay",
+                executor_kind="common",
+                owner="common",
                 description="Bad.",
                 params_model=ExampleParams,
                 post_action_delay_seconds=-0.1,
@@ -250,12 +229,10 @@ def test_android_driver_declarations_keep_catalog_backed_metadata() -> None:
     assert tap.owner == "driver"
     assert tap.platform == "android"
     assert tap.backend == "uiautomator2"
-    assert tap.capture_evidence is True
     assert tap.metadata["driver_method"] == "tap_on"
     assert tap.metadata["fsq_action_name"] == "tapOn"
     assert tap.replay == ReplayPolicy(kind="fsq_command", alias="tapOn")
-    assert definitions["ui_tree"].capture_evidence is False
-    assert definitions["ui_tree"].step_kind == "observation"
+    assert definitions["ui_snapshot"].step_kind == "observation"
     assert "perform_actions" not in definitions
 
 
@@ -274,13 +251,11 @@ def test_playwright_web_driver_declarations_keep_catalog_backed_metadata() -> No
     assert click.owner == "driver"
     assert click.platform == "web"
     assert click.backend == "playwright"
-    assert click.capture_evidence is True
     assert click.metadata["driver_method"] == "click_on"
     assert click.metadata["fsq_action_name"] == "clickOn"
     assert click.replay == ReplayPolicy(kind="fsq_command", alias="clickOn")
     assert definitions["page_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="pageSnapshot")
     assert definitions["page_snapshot"].step_kind == "observation"
-    assert definitions["page_snapshot"].capture_evidence is False
     assert definitions["assert_visible"].step_kind == "assertion"
     assert definitions["assert_with_ai"].replay == ReplayPolicy(kind="fsq_command", alias="assertWithAI")
     assert definitions["assert_with_ai"].executor_kind == "driver"
@@ -303,13 +278,11 @@ def test_appium_mac2_driver_declarations_keep_catalog_backed_metadata() -> None:
     assert click.owner == "driver"
     assert click.platform == "macos"
     assert click.backend == "appium_mac2"
-    assert click.capture_evidence is True
     assert click.metadata["driver_method"] == "click_on"
     assert click.metadata["fsq_action_name"] == "clickOn"
     assert click.replay == ReplayPolicy(kind="fsq_command", alias="clickOn")
     assert definitions["ui_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="uiSnapshot")
     assert definitions["ui_snapshot"].step_kind == "observation"
-    assert definitions["ui_snapshot"].capture_evidence is False
     assert definitions["assert_elements_order"].replay == ReplayPolicy(kind="fsq_command", alias="assertElementsOrder")
     assert definitions["assert_elements_order"].step_kind == "assertion"
     assert definitions["assert_with_ai"].replay == ReplayPolicy(kind="fsq_command", alias="assertWithAI")
@@ -329,7 +302,6 @@ def test_web_registry_uses_web_only_platform_capabilities_without_playwright_imp
     assert definitions["click_on"].executor_kind == "driver"
     assert definitions["click_on"].platform == "web"
     assert definitions["click_on"].backend == "playwright"
-    assert definitions["click_on"].capture_evidence is True
     assert definitions["click_on"].metadata["driver_method"] == "click_on"
     assert definitions["page_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="pageSnapshot")
     assert definitions["page_snapshot"].step_kind == "observation"
@@ -350,7 +322,6 @@ def test_macos_registry_uses_macos_only_platform_capabilities_without_appium_imp
     assert definitions["click_on"].executor_kind == "driver"
     assert definitions["click_on"].platform == "macos"
     assert definitions["click_on"].backend == "appium_mac2"
-    assert definitions["click_on"].capture_evidence is True
     assert definitions["click_on"].metadata["driver_method"] == "click_on"
     assert definitions["ui_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="uiSnapshot")
     assert definitions["ui_snapshot"].step_kind == "observation"

@@ -56,13 +56,11 @@ class _FakeHarness:
         tool_name: str = "tap_on",
         driver_method: str = "tap_on",
         fsq_action_name: str = "tapOn",
-        capture_evidence: bool = True,
         screen_size: tuple[int, int] | None = None,
     ) -> None:
         self.tool_name = tool_name
         self.driver_method = driver_method
         self.fsq_action_name = fsq_action_name
-        self.capture_evidence = capture_evidence
         self.screen_size = screen_size
         self.steps: list[Any] = []
         self.calls: list[str] = []
@@ -76,7 +74,6 @@ class _FakeHarness:
                 platform="android",
                 driver_method=self.driver_method,
                 fsq_action_name=self.fsq_action_name,
-                capture_evidence=self.capture_evidence,
             )
         ]
 
@@ -568,7 +565,7 @@ def test_runtime_pre_plan_tool_summary_uses_active_platform_registry() -> None:
     by_name = {tool["name"]: tool for tool in tools}
     assert by_name["tap_on"]["alias"] == "tapOn"
     assert by_name["tap_at"]["alias"] == "tapAt"
-    assert by_name["ui_tree"]["alias"] == "uiTree"
+    assert by_name["ui_snapshot"]["alias"] == "uiTree"
     assert by_name["assert_visible"]["step_kind"] == "assertion"
     assert by_name["get_runtime_secret"]["executor_kind"] == "common"
     assert by_name["get_runtime_secret"]["platform"] is None
@@ -755,7 +752,7 @@ async def test_harness_tool_adapter_applies_evidence_policy_to_mutating_action()
     assert payload["driver_method"] == "tap_on"
     assert payload["fsq_action_name"] == "tapOn"
     assert payload["result"]["output"]["params"] == {"target": "Downloads"}
-    assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_tree", "screenshot", "ui_tree"]
+    assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_snapshot", "screenshot", "ui_snapshot"]
     assert payload["result"]["artifact_refs"] == payload["artifact_refs"]
     assert payload["runner_result"]["phase_reports"][0]["phase"] == "prepare"
     assert payload["runner_result"]["phase_reports"][2]["phase"] == "finalize"
@@ -764,13 +761,13 @@ async def test_harness_tool_adapter_applies_evidence_policy_to_mutating_action()
     assert harness.steps[0].kind == "action"
     assert harness.steps[0].evidence_policy.capture_before is True
     assert harness.steps[0].evidence_policy.capture_after is True
-    assert harness.steps[0].evidence_policy.capture_on_failure is True
-    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_tree"]
+    assert harness.steps[0].evidence_policy.capture_on_failure is False
+    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_snapshot"]
     assert [call for call in harness.calls if call.startswith("capture:")] == [
         "capture:screenshot:before-action:agent-tap_on-1:prepare:session-1",
-        "capture:ui_tree:before-action:agent-tap_on-1:prepare:session-1",
+        "capture:ui_snapshot:before-action:agent-tap_on-1:prepare:session-1",
         "capture:screenshot:after-action:agent-tap_on-1:finalize:session-1",
-        "capture:ui_tree:after-action:agent-tap_on-1:finalize:session-1",
+        "capture:ui_snapshot:after-action:agent-tap_on-1:finalize:session-1",
     ]
 
 
@@ -805,7 +802,6 @@ async def test_harness_tool_adapter_keeps_default_evidence_policy_for_assertion_
         tool_name="assert_visible",
         driver_method="assert_visible",
         fsq_action_name="assertVisible",
-        capture_evidence=False,
     )
     adapter = HarnessToolAdapter(harness, run_id="run-1")
 
@@ -814,19 +810,23 @@ async def test_harness_tool_adapter_keeps_default_evidence_policy_for_assertion_
 
     payload = json.loads(output)
     assert payload["status"] == "passed"
-    assert payload["artifact_refs"] == []
-    assert payload["result"]["artifact_refs"] == []
+    assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_snapshot"]
+    assert payload["result"]["artifact_refs"] == payload["artifact_refs"]
     assert harness.steps[0].action_name == "assert_visible"
     assert harness.steps[0].metadata["authored_action_name"] == "assertVisible"
     assert harness.steps[0].kind == "assertion"
-    assert harness.steps[0].evidence_policy.capture_before is False
-    assert harness.steps[0].evidence_policy.artifact_kinds == []
-    assert not any(call.startswith("capture:") for call in harness.calls)
+    assert harness.steps[0].evidence_policy.capture_before is True
+    assert harness.steps[0].evidence_policy.capture_after is False
+    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_snapshot"]
+    assert [call for call in harness.calls if call.startswith("capture:")] == [
+        "capture:screenshot:before-action:agent-assert_visible-1:prepare:session-1",
+        "capture:ui_snapshot:before-action:agent-assert_visible-1:prepare:session-1",
+    ]
 
 
 @pytest.mark.asyncio
-async def test_harness_tool_adapter_uses_registry_metadata_for_effective_evidence_policy() -> None:
-    harness = _FakeHarness(capture_evidence=False)
+async def test_harness_tool_adapter_uses_step_kind_for_effective_evidence_policy() -> None:
+    harness = _FakeHarness()
     adapter = HarnessToolAdapter(harness, run_id="run-1")
 
     tools = adapter.build_tools(_FakeFunctionTool)
@@ -835,16 +835,16 @@ async def test_harness_tool_adapter_uses_registry_metadata_for_effective_evidenc
     payload = json.loads(output)
     assert payload["status"] == "passed"
     assert payload["fsq_action_name"] == "tapOn"
-    assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_tree", "screenshot", "ui_tree"]
+    assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_snapshot", "screenshot", "ui_snapshot"]
     assert harness.steps[0].action_name == "tap_on"
     assert harness.steps[0].metadata["authored_action_name"] == "tapOn"
     assert harness.steps[0].evidence_policy.capture_before is True
-    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_tree"]
+    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_snapshot"]
     assert [call for call in harness.calls if call.startswith("capture:")] == [
         "capture:screenshot:before-action:agent-tap_on-1:prepare:session-1",
-        "capture:ui_tree:before-action:agent-tap_on-1:prepare:session-1",
+        "capture:ui_snapshot:before-action:agent-tap_on-1:prepare:session-1",
         "capture:screenshot:after-action:agent-tap_on-1:finalize:session-1",
-        "capture:ui_tree:after-action:agent-tap_on-1:finalize:session-1",
+        "capture:ui_snapshot:after-action:agent-tap_on-1:finalize:session-1",
     ]
 
 
@@ -861,13 +861,13 @@ async def test_harness_tool_adapter_uses_web_platform_registry_for_evidence_poli
     assert payload["fsq_action_name"] == "clickOn"
     assert [ref["kind"] for ref in payload["artifact_refs"]] == [
         "screenshot",
-        "page_snapshot",
+        "ui_snapshot",
         "screenshot",
-        "page_snapshot",
+        "ui_snapshot",
     ]
     assert harness.steps[0].action_name == "click_on"
     assert harness.steps[0].metadata["authored_action_name"] == "clickOn"
-    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "page_snapshot"]
+    assert harness.steps[0].evidence_policy.artifact_kinds == ["screenshot", "ui_snapshot"]
 
 
 @pytest.mark.asyncio

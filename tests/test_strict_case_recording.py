@@ -265,12 +265,12 @@ def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> No
             task_id="task-1",
             type="tool_call_started",
             title="Tool call started",
-            tool_name="ui_tree",
+            tool_name="ui_snapshot",
             tool_call_id="call-2",
             tool_arguments={},
             payload={
                 "tool_origin": "platform",
-                "capability_name": "ui_tree",
+                "capability_name": "ui_snapshot",
                 "step_kind": "observation",
                 "replay": {"kind": "fsq_command", "alias": "uiTree"},
             },
@@ -283,11 +283,11 @@ def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> No
             task_id="task-1",
             type="tool_call_completed",
             title="Tool call completed",
-            tool_name="ui_tree",
+            tool_name="ui_snapshot",
             tool_call_id="call-2",
             payload={
                 "tool_origin": "platform",
-                "capability_name": "ui_tree",
+                "capability_name": "ui_snapshot",
                 "step_kind": "observation",
                 "replay": {"kind": "fsq_command", "alias": "uiTree"},
                 "status": "passed",
@@ -301,10 +301,10 @@ def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> No
     docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
     assert docs[0]["properties"]["recording"]["warnings"] == []
     assert docs[1] == [{"tapOn": {"target": "Login"}}]
-    assert recording.skipped_tool_calls == [{"tool_name": "ui_tree", "reason": "observation tool is not recorded"}]
+    assert recording.skipped_tool_calls == [{"tool_name": "ui_snapshot", "reason": "observation tool is not recorded"}]
     manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
     assert manifest["warnings"] == []
-    assert manifest["skipped_tool_calls"] == [{"tool_name": "ui_tree", "reason": "observation tool is not recorded"}]
+    assert manifest["skipped_tool_calls"] == [{"tool_name": "ui_snapshot", "reason": "observation tool is not recorded"}]
 
 
 def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: Path) -> None:

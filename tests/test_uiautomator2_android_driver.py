@@ -129,7 +129,7 @@ def test_uiautomator2_driver_context_launch_kill_and_artifacts() -> None:
     assert driver.launch_app({})["status"] == "passed"
     assert driver.kill_app({})["status"] == "passed"
     assert driver.screenshot() == b"fake-png"
-    assert driver.ui_tree({}) == {"xml": "<hierarchy />"}
+    assert driver.ui_snapshot({}) == {"xml": "<hierarchy />"}
     assert device.calls == [
         ("app_start", "com.example.app", {}),
         ("app_stop", "com.example.app"),
@@ -235,11 +235,11 @@ def test_uiautomator2_driver_scales_point_based_swipe_from_reference_screen_size
     assert device.calls == [("swipe", 400, 950, 100, 950, 1.0)]
 
 
-def test_uiautomator2_driver_exposes_ui_tree_output() -> None:
+def test_uiautomator2_driver_exposes_ui_snapshot_output_with_ui_tree_alias() -> None:
     device = FakeDevice()
     driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
 
-    result = driver.ui_tree({})
+    result = driver.ui_snapshot({})
 
     assert result == {"xml": "<hierarchy />"}
     assert device.calls == [("dump_hierarchy",)]

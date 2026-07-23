@@ -29,7 +29,6 @@ class CapabilityDeclaration:
     platform: HarnessPlatform | None = None
     backend: str | None = None
     step_kind: ExecutableStepKind = "action"
-    capture_evidence: bool = False
     post_action_delay_seconds: float | None = None
     sensitivity: bool = False
     replay: ReplayPolicy | None = None
@@ -48,7 +47,6 @@ def capability(
     platform: HarnessPlatform | None = None,
     backend: str | None = None,
     step_kind: ExecutableStepKind = "action",
-    capture_evidence: bool | None = None,
     post_action_delay_seconds: float | None = None,
     sensitivity: bool = False,
     replay: ReplayPolicy | None = None,
@@ -65,7 +63,6 @@ def capability(
         platform=platform,
         backend=backend,
         step_kind=step_kind,
-        capture_evidence=capture_evidence,
         post_action_delay_seconds=post_action_delay_seconds,
         sensitivity=sensitivity,
         replay=replay,
@@ -82,125 +79,6 @@ def capability(
     return decorate
 
 
-def common_capability(
-    *,
-    name: str,
-    description: str,
-    params_model: type[BaseModel],
-    step_kind: ExecutableStepKind = "action",
-    replay: ReplayPolicy | None = None,
-    sensitivity: bool = False,
-    capture_evidence: bool = False,
-    post_action_delay_seconds: float | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> Callable[[F], F]:
-    return capability(
-        name=name,
-        executor_kind="common",
-        owner="common",
-        params_model=params_model,
-        description=description,
-        step_kind=step_kind,
-        replay=replay,
-        sensitivity=sensitivity,
-        capture_evidence=capture_evidence,
-        post_action_delay_seconds=post_action_delay_seconds,
-        metadata=metadata,
-    )
-
-
-def driver_capability(
-    *,
-    name: str | None = None,
-    description: str,
-    params_model: type[BaseModel] | None = None,
-    platform: HarnessPlatform | None = None,
-    backend: str | None = None,
-    step_kind: ExecutableStepKind = "action",
-    replay: ReplayPolicy | None = None,
-    capture_evidence: bool = False,
-    post_action_delay_seconds: float | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> Callable[[F], F]:
-    return capability(
-        name=name,
-        executor_kind="driver",
-        owner="driver",
-        params_model=params_model,
-        description=description,
-        platform=platform,
-        backend=backend,
-        step_kind=step_kind,
-        replay=replay,
-        capture_evidence=capture_evidence,
-        post_action_delay_seconds=post_action_delay_seconds,
-        metadata=metadata,
-    )
-
-
-def harness_capability(
-    *,
-    name: str,
-    description: str,
-    params_model: type[BaseModel],
-    platform: HarnessPlatform | None = None,
-    backend: str | None = None,
-    owner: str = "harness",
-    step_kind: ExecutableStepKind = "action",
-    replay: ReplayPolicy | None = None,
-    capture_evidence: bool = False,
-    post_action_delay_seconds: float | None = None,
-    sensitivity: bool = False,
-    metadata: dict[str, Any] | None = None,
-) -> Callable[[F], F]:
-    return capability(
-        name=name,
-        executor_kind="harness",
-        owner=owner,
-        params_model=params_model,
-        description=description,
-        platform=platform,
-        backend=backend,
-        step_kind=step_kind,
-        replay=replay,
-        capture_evidence=capture_evidence,
-        post_action_delay_seconds=post_action_delay_seconds,
-        sensitivity=sensitivity,
-        metadata=metadata,
-    )
-
-
-def platform_capability(
-    *,
-    name: str,
-    description: str,
-    params_model: type[BaseModel],
-    platform: HarnessPlatform | None = None,
-    backend: str | None = None,
-    step_kind: ExecutableStepKind = "action",
-    replay: ReplayPolicy | None = None,
-    capture_evidence: bool = False,
-    post_action_delay_seconds: float | None = None,
-    sensitivity: bool = False,
-    metadata: dict[str, Any] | None = None,
-) -> Callable[[F], F]:
-    return capability(
-        name=name,
-        executor_kind="harness",
-        owner="platform",
-        params_model=params_model,
-        description=description,
-        platform=platform,
-        backend=backend,
-        step_kind=step_kind,
-        replay=replay,
-        capture_evidence=capture_evidence,
-        post_action_delay_seconds=post_action_delay_seconds,
-        sensitivity=sensitivity,
-        metadata=metadata,
-    )
-
-
 def platform_driver_capability(
     *,
     platform: HarnessPlatform,
@@ -211,7 +89,6 @@ def platform_driver_capability(
         action_name: str,
         *,
         description: str,
-        capture_evidence: bool | None = None,
         post_action_delay_seconds: float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Callable[[F], F]:
@@ -222,7 +99,6 @@ def platform_driver_capability(
             description=description,
             platform=platform,
             backend=backend,
-            capture_evidence=action_definition.capture_evidence if capture_evidence is None else capture_evidence,
             post_action_delay_seconds=post_action_delay_seconds,
             metadata=metadata,
             action_catalog=catalog,
@@ -253,7 +129,6 @@ def _declaration_from_args(
     platform: HarnessPlatform | None,
     backend: str | None,
     step_kind: ExecutableStepKind,
-    capture_evidence: bool | None,
     post_action_delay_seconds: float | None,
     sensitivity: bool,
     replay: ReplayPolicy | None,
@@ -262,7 +137,6 @@ def _declaration_from_args(
     action_name: str | None,
 ) -> CapabilityDeclaration:
     _validate_basic_combination(executor_kind, action_catalog, action_name)
-    resolved_capture_evidence = False if capture_evidence is None else capture_evidence
     safe_metadata = dict(metadata or {})
     _validate_safe_metadata(safe_metadata)
     _validate_post_action_delay(post_action_delay_seconds)
@@ -279,7 +153,6 @@ def _declaration_from_args(
         if step_kind == "action":
             step_kind = action_definition.step_kind
         replay = replay or action_definition.replay
-        resolved_capture_evidence = action_definition.capture_evidence if capture_evidence is None else capture_evidence
         resolved_post_action_delay_seconds = (
             action_definition.post_action_delay_seconds
             if post_action_delay_seconds is None
@@ -298,7 +171,6 @@ def _declaration_from_args(
         platform=platform,
         backend=backend,
         step_kind=step_kind,
-        capture_evidence=resolved_capture_evidence,
         post_action_delay_seconds=resolved_post_action_delay_seconds,
         sensitivity=sensitivity,
         replay=replay,
@@ -313,7 +185,7 @@ def _validate_basic_combination(
     action_catalog: CapabilityActionCatalog | None,
     action_name: str | None,
 ) -> None:
-    if executor_kind not in {"common", "harness", "driver"}:
+    if executor_kind not in {"common", "driver"}:
         raise ConfigurationError("Invalid capability executor kind.", context={"executor_kind": executor_kind})
     if executor_kind == "common" and action_catalog is not None:
         raise ConfigurationError("Common capabilities must not use a platform action catalog.")

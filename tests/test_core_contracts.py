@@ -50,6 +50,7 @@ def test_core_public_exports_follow_strict_boundary() -> None:
     expected_core_public_names = {
         "CapabilityDefinitionFactory",
         "CommonPlatformTools",
+        "DriverObservationInterface",
         "DriverFactory",
         "HarnessFactory",
         "AndroidDriverInterface",
@@ -204,6 +205,34 @@ def test_fake_harness_satisfies_runtime_protocol() -> None:
     assert isinstance(FakeHarness(), HarnessInterface)
 
 
+def test_fake_driver_satisfies_observation_protocol() -> None:
+    from fsq_agent.core.harness import DriverObservationInterface
+
+    class FakeDriver:
+        def screenshot(self, params: object | None = None) -> bytes:
+            return b"png"
+
+        def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
+            return {"nodes": []}
+
+    assert isinstance(FakeDriver(), DriverObservationInterface)
+
+
+def test_platform_driver_protocols_extend_observation_contract() -> None:
+    from fsq_agent.core.harness import (
+        AndroidDriverInterface,
+        DriverObservationInterface,
+        MacOSDriverInterface,
+        WebDriverInterface,
+        WindowsDriverInterface,
+    )
+
+    assert issubclass(AndroidDriverInterface, DriverObservationInterface)
+    assert issubclass(WebDriverInterface, DriverObservationInterface)
+    assert issubclass(WindowsDriverInterface, DriverObservationInterface)
+    assert issubclass(MacOSDriverInterface, DriverObservationInterface)
+
+
 def test_harness_function_schema_is_serializable_contract() -> None:
     schema = HarnessFunctionSchema(
         name="tap_on",
@@ -212,7 +241,6 @@ def test_harness_function_schema_is_serializable_contract() -> None:
         platform="android",
         driver_method="tap_on",
         fsq_action_name="tapOn",
-        capture_evidence=True,
         metadata={"backend": "uiautomator2"},
     )
 
@@ -220,7 +248,6 @@ def test_harness_function_schema_is_serializable_contract() -> None:
 
     assert dumped["name"] == "tap_on"
     assert "strict" not in dumped
-    assert dumped["capture_evidence"] is True
     assert dumped["params_json_schema"]["type"] == "object"
     assert dumped["metadata"] == {"backend": "uiautomator2"}
 
@@ -269,7 +296,7 @@ def test_android_action_definitions_are_single_source_for_android_contract() -> 
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["tapAt"].step_kind == "action"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["pressKey"].driver_method == "press_key"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["pressKey"].params_model is AndroidPressKeyParams
-    assert ANDROID_ACTION_DEFINITIONS_BY_NAME["uiTree"].driver_method == "ui_tree"
+    assert ANDROID_ACTION_DEFINITIONS_BY_NAME["uiTree"].driver_method == "ui_snapshot"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["uiTree"].params_model is AndroidUiTreeParams
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["uiTree"].step_kind == "observation"
     assert ANDROID_ACTION_DEFINITIONS_BY_NAME["assertWithAI"].driver_method == "assert_with_ai"
@@ -284,14 +311,11 @@ def test_web_action_definitions_are_single_source_for_web_contract() -> None:
     assert WEB_ACTION_DEFINITIONS_BY_NAME["startBrowser"].driver_method == "start_browser"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["startBrowser"].params_model is WebStartBrowserParams
     assert WEB_ACTION_DEFINITIONS_BY_NAME["startBrowser"].step_kind == "setup"
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["startBrowser"].capture_evidence is False
     assert WEB_ACTION_DEFINITIONS_BY_NAME["closeBrowser"].driver_method == "close_browser"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["closeBrowser"].params_model is WebCloseBrowserParams
     assert WEB_ACTION_DEFINITIONS_BY_NAME["closeBrowser"].step_kind == "teardown"
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["closeBrowser"].capture_evidence is False
     assert WEB_ACTION_DEFINITIONS_BY_NAME["clickOn"].driver_method == "click_on"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["clickOn"].params_model is WebClickOnParams
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["clickOn"].capture_evidence is True
     assert WEB_ACTION_DEFINITIONS_BY_NAME["typeText"].driver_method == "type_text"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["typeText"].params_model is WebTypeTextParams
     assert WEB_ACTION_DEFINITIONS_BY_NAME["waitFor"].driver_method == "wait_for"

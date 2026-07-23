@@ -136,7 +136,6 @@ class HarnessFunctionSchema(BaseModel):
     platform: HarnessPlatform
     driver_method: str
     fsq_action_name: str | None = None
-    capture_evidence: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -547,7 +546,7 @@ ANDROID_ACTION_DEFINITIONS: tuple[AndroidActionDefinition, ...] = (
     AndroidActionDefinition("assertNotVisible", "assert_not_visible", AndroidAssertNotVisibleParams, "assertion"),
     AndroidActionDefinition("longPressOn", "long_press_on", AndroidLongPressOnParams, "action"),
     AndroidActionDefinition("swipe", "swipe", AndroidSwipeParams, "action"),
-    AndroidActionDefinition("uiTree", "ui_tree", AndroidUiTreeParams, "observation"),
+    AndroidActionDefinition("uiTree", "ui_snapshot", AndroidUiTreeParams, "observation"),
     AndroidActionDefinition("assertWithAI", "assert_with_ai", AndroidAssertWithAIParams, "assertion"),
 )
 ANDROID_ACTION_DEFINITIONS_BY_NAME: dict[str, AndroidActionDefinition] = {
@@ -562,19 +561,18 @@ class WebActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    capture_evidence: bool = False
 
 
 WEB_ACTION_DEFINITIONS: tuple[WebActionDefinition, ...] = (
     WebActionDefinition("startBrowser", "start_browser", WebStartBrowserParams, "setup"),
     WebActionDefinition("closeBrowser", "close_browser", WebCloseBrowserParams, "teardown"),
-    WebActionDefinition("navigateTo", "navigate_to", WebNavigateToParams, "action", capture_evidence=True),
-    WebActionDefinition("navigateBack", "navigate_back", WebNavigateBackParams, "action", capture_evidence=True),
-    WebActionDefinition("clickOn", "click_on", WebClickOnParams, "action", capture_evidence=True),
-    WebActionDefinition("typeText", "type_text", WebTypeTextParams, "action", capture_evidence=True),
-    WebActionDefinition("selectOption", "select_option", WebSelectOptionParams, "action", capture_evidence=True),
-    WebActionDefinition("hoverOn", "hover_on", WebHoverOnParams, "action", capture_evidence=True),
-    WebActionDefinition("pressKey", "press_key", WebPressKeyParams, "action", capture_evidence=True),
+    WebActionDefinition("navigateTo", "navigate_to", WebNavigateToParams, "action"),
+    WebActionDefinition("navigateBack", "navigate_back", WebNavigateBackParams, "action"),
+    WebActionDefinition("clickOn", "click_on", WebClickOnParams, "action"),
+    WebActionDefinition("typeText", "type_text", WebTypeTextParams, "action"),
+    WebActionDefinition("selectOption", "select_option", WebSelectOptionParams, "action"),
+    WebActionDefinition("hoverOn", "hover_on", WebHoverOnParams, "action"),
+    WebActionDefinition("pressKey", "press_key", WebPressKeyParams, "action"),
     WebActionDefinition("waitFor", "wait_for", WebWaitForParams, "action"),
     WebActionDefinition("takeScreenshot", "take_screenshot", WebTakeScreenshotParams, "observation"),
     WebActionDefinition("pageSnapshot", "page_snapshot", WebPageSnapshotParams, "observation"),
@@ -980,19 +978,18 @@ class MacOSActionDefinition:
     params_model: type[BaseModel]
     step_kind: ExecutableStepKind
     owner: Literal["driver", "platform", "harness"] = "driver"
-    capture_evidence: bool = False
 
 
 MACOS_ACTION_DEFINITIONS: tuple[MacOSActionDefinition, ...] = (
-    MacOSActionDefinition("launchApp", "launch_app", MacOSLaunchAppParams, "setup", capture_evidence=True),
+    MacOSActionDefinition("launchApp", "launch_app", MacOSLaunchAppParams, "setup"),
     MacOSActionDefinition("killApp", "kill_app", MacOSKillAppParams, "teardown"),
-    MacOSActionDefinition("clickOn", "click_on", MacOSClickOnParams, "action", capture_evidence=True),
-    MacOSActionDefinition("doubleClickOn", "double_click_on", MacOSDoubleClickOnParams, "action", capture_evidence=True),
-    MacOSActionDefinition("rightClickOn", "right_click_on", MacOSRightClickOnParams, "action", capture_evidence=True),
-    MacOSActionDefinition("typeText", "type_text", MacOSTypeTextParams, "action", capture_evidence=True),
-    MacOSActionDefinition("pressKey", "press_key", MacOSPressKeyParams, "action", capture_evidence=True),
+    MacOSActionDefinition("clickOn", "click_on", MacOSClickOnParams, "action"),
+    MacOSActionDefinition("doubleClickOn", "double_click_on", MacOSDoubleClickOnParams, "action"),
+    MacOSActionDefinition("rightClickOn", "right_click_on", MacOSRightClickOnParams, "action"),
+    MacOSActionDefinition("typeText", "type_text", MacOSTypeTextParams, "action"),
+    MacOSActionDefinition("pressKey", "press_key", MacOSPressKeyParams, "action"),
     MacOSActionDefinition("hoverOn", "hover_on", MacOSHoverOnParams, "action"),
-    MacOSActionDefinition("dragTo", "drag_to", MacOSDragToParams, "action", capture_evidence=True),
+    MacOSActionDefinition("dragTo", "drag_to", MacOSDragToParams, "action"),
     MacOSActionDefinition("takeScreenshot", "take_screenshot", MacOSTakeScreenshotParams, "observation"),
     MacOSActionDefinition("uiSnapshot", "ui_snapshot", MacOSUiSnapshotParams, "observation"),
     MacOSActionDefinition("assertVisible", "assert_visible", MacOSAssertVisibleParams, "assertion"),

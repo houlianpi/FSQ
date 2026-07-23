@@ -3,7 +3,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from fsq_agent.capabilities import CapabilityActionDefinition, driver_capability, discover_capability_definitions, platform_driver_capability
+from fsq_agent.capabilities import CapabilityActionDefinition, discover_capability_definitions, platform_driver_capability
 from fsq_agent.models import (
     ANDROID_ACTION_DEFINITIONS,
     MACOS_ACTION_DEFINITIONS,
@@ -62,7 +62,6 @@ WEB_DRIVER_ACTION_CATALOG = {
         step_kind=definition.step_kind,
         method_name=definition.driver_method,
         replay=ReplayPolicy(kind="fsq_command", alias=definition.fsq_action_name),
-        capture_evidence=definition.capture_evidence,
     )
     for definition in WEB_ACTION_DEFINITIONS
     if definition.owner == "driver"
@@ -80,7 +79,6 @@ def _windows_action(
     params_model: type[BaseModel],
     *,
     step_kind: ExecutableStepKind = "action",
-    capture_evidence: bool = False,
 ) -> CapabilityActionDefinition:
     return CapabilityActionDefinition(
         action_name=action_name,
@@ -91,23 +89,22 @@ def _windows_action(
         step_kind=step_kind,
         method_name=canonical_name,
         replay=ReplayPolicy(kind="fsq_command", alias=action_name),
-        capture_evidence=capture_evidence,
     )
 
 
 WINDOWS_DRIVER_ACTION_CATALOG = {
     definition.action_name: definition
     for definition in (
-        _windows_action("launchApp", "launch_app", WindowsLaunchAppParams, step_kind="setup", capture_evidence=True),
+        _windows_action("launchApp", "launch_app", WindowsLaunchAppParams, step_kind="setup"),
         _windows_action("killApp", "kill_app", WindowsKillAppParams, step_kind="teardown"),
-        _windows_action("clickOn", "click_on", WindowsClickOnParams, capture_evidence=True),
-        _windows_action("doubleClickOn", "double_click_on", WindowsDoubleClickOnParams, capture_evidence=True),
-        _windows_action("rightClickOn", "right_click_on", WindowsRightClickOnParams, capture_evidence=True),
-        _windows_action("typeText", "type_text", WindowsTypeTextParams, capture_evidence=True),
-        _windows_action("pressKey", "press_key", WindowsPressKeyParams, capture_evidence=True),
-        _windows_action("hoverOn", "hover_on", WindowsHoverOnParams, capture_evidence=True),
-        _windows_action("scrollOn", "scroll_on", WindowsScrollOnParams, capture_evidence=True),
-        _windows_action("dragTo", "drag_to", WindowsDragToParams, capture_evidence=True),
+        _windows_action("clickOn", "click_on", WindowsClickOnParams),
+        _windows_action("doubleClickOn", "double_click_on", WindowsDoubleClickOnParams),
+        _windows_action("rightClickOn", "right_click_on", WindowsRightClickOnParams),
+        _windows_action("typeText", "type_text", WindowsTypeTextParams),
+        _windows_action("pressKey", "press_key", WindowsPressKeyParams),
+        _windows_action("hoverOn", "hover_on", WindowsHoverOnParams),
+        _windows_action("scrollOn", "scroll_on", WindowsScrollOnParams),
+        _windows_action("dragTo", "drag_to", WindowsDragToParams),
         _windows_action("assertVisible", "assert_visible", WindowsAssertVisibleParams, step_kind="assertion"),
         _windows_action("uiSnapshot", "ui_snapshot", WindowsUiSnapshotParams, step_kind="observation"),
         _windows_action("assertWithAI", "assert_with_ai", WindowsAssertWithAIParams, step_kind="assertion"),
@@ -129,7 +126,6 @@ MACOS_DRIVER_ACTION_CATALOG = {
         step_kind=definition.step_kind,
         method_name=definition.driver_method,
         replay=ReplayPolicy(kind="fsq_command", alias=definition.fsq_action_name),
-        capture_evidence=definition.capture_evidence,
     )
     for definition in MACOS_ACTION_DEFINITIONS
     if definition.owner == "driver"
@@ -141,42 +137,15 @@ _macos_driver_capability = platform_driver_capability(
 )
 
 
-def driver_tool(
-    *,
-    description: str,
-    params_model: type[BaseModel] | None = None,
-    fsq_action_name: str | None = None,
-    capture_evidence: bool = False,
-    metadata: dict[str, object] | None = None,
-) -> Callable[[F], F]:
-    def decorate(method: F) -> F:
-        method_name = getattr(method, "__name__", None)
-        declaration_metadata = dict(metadata or {})
-        if fsq_action_name is not None:
-            declaration_metadata["fsq_action_name"] = fsq_action_name
-        return driver_capability(
-            name=method_name,
-            description=description,
-            params_model=params_model,
-            replay=ReplayPolicy(kind="fsq_command", alias=fsq_action_name) if fsq_action_name else None,
-            capture_evidence=capture_evidence,
-            metadata=declaration_metadata,
-        )(method)
-
-    return decorate
-
-
 def _android_driver_tool(
     fsq_action_name: str,
     *,
     description: str,
-    capture_evidence: bool = False,
     metadata: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     return _android_driver_capability(
         fsq_action_name,
         description=description,
-        capture_evidence=capture_evidence,
         metadata=metadata,
     )
 
@@ -185,13 +154,11 @@ def _web_driver_tool(
     fsq_action_name: str,
     *,
     description: str,
-    capture_evidence: bool | None = None,
     metadata: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     return _web_driver_capability(
         fsq_action_name,
         description=description,
-        capture_evidence=capture_evidence,
         metadata=metadata,
     )
 
@@ -200,13 +167,11 @@ def _windows_driver_tool(
     fsq_action_name: str,
     *,
     description: str,
-    capture_evidence: bool | None = None,
     metadata: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     return _windows_driver_capability(
         fsq_action_name,
         description=description,
-        capture_evidence=capture_evidence,
         metadata=metadata,
     )
 
@@ -215,13 +180,11 @@ def _macos_driver_tool(
     fsq_action_name: str,
     *,
     description: str,
-    capture_evidence: bool | None = None,
     metadata: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     return _macos_driver_capability(
         fsq_action_name,
         description=description,
-        capture_evidence=capture_evidence,
         metadata=metadata,
     )
 
@@ -305,6 +268,5 @@ def _schema_from_capability_definition(
         platform=definition.platform or platform,
         driver_method=driver_method,
         fsq_action_name=fsq_action_name,
-        capture_evidence=definition.capture_evidence,
         metadata=schema_metadata,
     )

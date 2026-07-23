@@ -8,7 +8,6 @@ from fsq_agent.core import CapabilityRegistry, StepRunner
 from fsq_agent.models import (
     CapabilityDefinition,
     CapabilityExecutionResult,
-    EvidencePolicy,
     ExecutableStep,
     FailureCategory,
     HarnessActionResult,
@@ -411,32 +410,7 @@ def test_step_runner_attaches_action_result_artifacts_to_invoke_phase() -> None:
     assert invoke_report.artifact_refs[0].path == Path("artifacts/screenshots/ai-screenshot.png")
 
 
-def test_step_runner_captures_before_and_after_artifacts_from_policy() -> None:
-    harness = CapturingHarness()
-    runner = StepRunner(harness=harness)
-    step = ExecutableStep(
-        step_id="step-1",
-        kind="action",
-        action_name="tap",
-        evidence_policy=EvidencePolicy(
-            capture_before=True,
-            capture_after=True,
-            artifact_kinds=["screenshot", "ui_tree"],
-        ),
-    )
-
-    result = runner.run_step(run_id="run-1", step=step)
-
-    prepare_report = result.phase_reports[0]
-    finalize_report = result.phase_reports[2]
-    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "ui_tree"]
-    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "ui_tree"]
-    assert [event.event_type for event in runner.events].count("artifact_captured") == 4
-    assert "capture:screenshot:before-action:step-1:prepare" in harness.calls
-    assert "capture:ui_tree:after-action:step-1:finalize" in harness.calls
-
-
-def test_step_runner_derives_capture_evidence_policy_from_capability_metadata() -> None:
+def test_step_runner_derives_action_evidence_from_driver_step_kind() -> None:
     harness = CapturingHarness()
     runner = _runner(harness)
     step = ExecutableStep(
@@ -451,15 +425,15 @@ def test_step_runner_derives_capture_evidence_policy_from_capability_metadata() 
     prepare_report = result.phase_reports[0]
     finalize_report = result.phase_reports[2]
     assert result.status == "passed"
-    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "ui_tree"]
-    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "ui_tree"]
+    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "ui_snapshot"]
     assert "before:tap_on:session-1" in harness.calls
     assert "invoke:tap_on:session-1" in harness.calls
     assert "capture:screenshot:before-action:step-1:prepare" in harness.calls
-    assert "capture:ui_tree:after-action:step-1:finalize" in harness.calls
+    assert "capture:ui_snapshot:after-action:step-1:finalize" in harness.calls
 
 
-def test_step_runner_derives_web_page_snapshot_policy_from_capability_metadata() -> None:
+def test_step_runner_uses_normalized_ui_snapshot_for_web_driver_steps() -> None:
     class WebCapturingHarness(CapturingHarness):
         def get_context(self) -> HarnessContext:
             self.calls.append("get_context")
@@ -479,15 +453,15 @@ def test_step_runner_derives_web_page_snapshot_policy_from_capability_metadata()
     prepare_report = result.phase_reports[0]
     finalize_report = result.phase_reports[2]
     assert result.status == "passed"
-    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "page_snapshot"]
-    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "page_snapshot"]
+    assert [artifact.kind for artifact in prepare_report.artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert [artifact.kind for artifact in finalize_report.artifact_refs] == ["screenshot", "ui_snapshot"]
     assert "before:click_on:session-1" in harness.calls
     assert "invoke:click_on:session-1" in harness.calls
     assert "capture:screenshot:before-action:step-1:prepare" in harness.calls
-    assert "capture:page_snapshot:after-action:step-1:finalize" in harness.calls
+    assert "capture:ui_snapshot:after-action:step-1:finalize" in harness.calls
 
 
-def test_step_runner_derives_macos_ui_snapshot_policy_from_capability_metadata() -> None:
+def test_step_runner_uses_normalized_ui_snapshot_for_macos_driver_steps() -> None:
     class MacOSCapturingHarness(CapturingHarness):
         def get_context(self) -> HarnessContext:
             self.calls.append("get_context")
@@ -515,28 +489,7 @@ def test_step_runner_derives_macos_ui_snapshot_policy_from_capability_metadata()
     assert "capture:ui_snapshot:after-action:step-1:finalize" in harness.calls
 
 
-def test_step_runner_preserves_explicit_evidence_policy_over_capability_metadata() -> None:
-    harness = CapturingHarness()
-    runner = _runner(harness)
-    step = ExecutableStep(
-        step_id="step-1",
-        kind="action",
-        action_name="tapOn",
-        params={"target": "Login"},
-        evidence_policy=EvidencePolicy(capture_before=False, capture_after=True, artifact_kinds=["log"]),
-    )
-
-    result = runner.run_step(run_id="run-1", step=step)
-
-    assert result.status == "passed"
-    assert result.phase_reports[0].artifact_refs == []
-    assert [artifact.kind for artifact in result.phase_reports[2].artifact_refs] == ["log"]
-    assert "capture:log:after-action:step-1:finalize" in harness.calls
-    assert not any("capture:screenshot" in call for call in harness.calls)
-    assert not any("capture:ui_tree" in call for call in harness.calls)
-
-
-def test_step_runner_does_not_derive_policy_for_capture_evidence_false_capability() -> None:
+def test_step_runner_derives_assertion_evidence_from_driver_step_kind() -> None:
     harness = CapturingHarness()
     runner = _runner(harness)
     step = ExecutableStep(
@@ -549,12 +502,73 @@ def test_step_runner_does_not_derive_policy_for_capture_evidence_false_capabilit
     result = runner.run_step(run_id="run-1", step=step)
 
     assert result.status == "passed"
-    assert [phase.artifact_refs for phase in result.phase_reports] == [[], [], []]
-    assert "invoke:assert_visible:session-1" in harness.calls
+    assert [artifact.kind for artifact in result.phase_reports[0].artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert result.phase_reports[2].artifact_refs == []
+    assert "capture:screenshot:before-action:assert-1:prepare" in harness.calls
+    assert not any("after-action:assert-1" in call for call in harness.calls)
+
+
+def test_step_runner_derives_setup_evidence_from_driver_step_kind() -> None:
+    harness = CapturingHarness()
+    runner = _runner(harness)
+    step = ExecutableStep(
+        step_id="setup-1",
+        kind="setup",
+        action_name="launchApp",
+        params={},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "passed"
+    assert result.phase_reports[0].artifact_refs == []
+    assert [artifact.kind for artifact in result.phase_reports[2].artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert "capture:screenshot:after-action:setup-1:finalize" in harness.calls
+
+
+def test_step_runner_derives_teardown_evidence_from_driver_step_kind() -> None:
+    harness = CapturingHarness()
+    runner = _runner(harness)
+    step = ExecutableStep(
+        step_id="teardown-1",
+        kind="teardown",
+        action_name="killApp",
+        params={},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "passed"
+    assert [artifact.kind for artifact in result.phase_reports[0].artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert result.phase_reports[2].artifact_refs == []
+    assert "capture:screenshot:before-action:teardown-1:prepare" in harness.calls
+    assert not any("after-action:teardown-1" in call for call in harness.calls)
+
+
+def test_step_runner_does_not_capture_common_observation_or_diagnostic_steps() -> None:
+    harness = CapturingHarness()
+    registry = CapabilityRegistry.from_definitions(
+        [
+            CapabilityDefinition(name="custom_common", executor_kind="common", params_model=NoParams),
+            CapabilityDefinition(name="custom_observation", executor_kind="driver", params_model=NoParams, step_kind="observation"),
+            CapabilityDefinition(name="custom_diagnostic", executor_kind="driver", params_model=NoParams, step_kind="diagnostic"),
+        ]
+    )
+    runner = StepRunner(harness=harness, capability_registry=registry)
+
+    for step in (
+        ExecutableStep(step_id="common-1", kind="action", action_name="custom_common"),
+        ExecutableStep(step_id="observation-1", kind="observation", action_name="custom_observation"),
+        ExecutableStep(step_id="diagnostic-1", kind="diagnostic", action_name="custom_diagnostic"),
+    ):
+        result = runner.run_step(run_id="run-1", step=step)
+        assert result.status == "passed"
+        assert [phase.artifact_refs for phase in result.phase_reports] == [[], [], []]
+
     assert not any(call.startswith("capture:") for call in harness.calls)
 
 
-def test_step_runner_derives_failure_artifacts_from_capability_metadata() -> None:
+def test_step_runner_after_capture_includes_failed_action_without_extra_failure_artifacts() -> None:
     harness = FailedCapturingHarness()
     runner = _runner(harness)
     step = ExecutableStep(
@@ -567,49 +581,23 @@ def test_step_runner_derives_failure_artifacts_from_capability_metadata() -> Non
     result = runner.run_step(run_id="run-1", step=step)
 
     assert result.status == "failed"
-    assert [artifact.kind for artifact in result.phase_reports[0].artifact_refs] == ["screenshot", "ui_tree"]
+    assert [artifact.kind for artifact in result.phase_reports[0].artifact_refs] == ["screenshot", "ui_snapshot"]
     assert [artifact.kind for artifact in result.phase_reports[2].artifact_refs] == [
         "screenshot",
-        "ui_tree",
-        "screenshot",
-        "ui_tree",
+        "ui_snapshot",
     ]
-    assert "capture:screenshot:failure:step-1:finalize" in harness.calls
-    assert "capture:ui_tree:failure:step-1:finalize" in harness.calls
-
-
-def test_step_runner_captures_failure_artifacts_from_policy() -> None:
-    harness = CapturingHarness()
-    runner = StepRunner(harness=harness)
-    step = ExecutableStep(
-        step_id="step-1",
-        kind="action",
-        action_name="tap",
-        evidence_policy=EvidencePolicy(capture_after=False, capture_on_failure=True, artifact_kinds=["screenshot"]),
-    )
-
-    result = runner.run_step(run_id="run-1", step=step)
-
-    assert result.status == "passed"
-    assert [artifact.kind for artifact in result.phase_reports[2].artifact_refs] == []
-
-    failed_harness = FailedCapturingHarness()
-    failed_runner = StepRunner(harness=failed_harness)
-    failed_result = failed_runner.run_step(run_id="run-1", step=step)
-
-    assert failed_result.status == "failed"
-    assert [artifact.kind for artifact in failed_result.phase_reports[2].artifact_refs] == ["screenshot"]
-    assert "capture:screenshot:failure:step-1:finalize" in failed_harness.calls
+    assert "capture:screenshot:after-action:step-1:finalize" in harness.calls
+    assert not any(":failure:" in call for call in harness.calls)
 
 
 def test_step_runner_reports_artifact_capture_errors_without_crashing() -> None:
     harness = FailingCaptureHarness()
-    runner = StepRunner(harness=harness)
+    runner = _runner(harness)
     step = ExecutableStep(
         step_id="step-1",
         kind="action",
-        action_name="tap",
-        evidence_policy=EvidencePolicy(capture_after=True, artifact_kinds=["screenshot"]),
+        action_name="tapOn",
+        params={"target": "Login"},
     )
 
     result = runner.run_step(run_id="run-1", step=step)

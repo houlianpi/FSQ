@@ -170,6 +170,5 @@ class CommonPlatformTools:
             platform=self.platform,
             driver_method=definition.name,
             fsq_action_name=definition.replay.alias if definition.replay and definition.replay.kind == "fsq_command" else None,
-            capture_evidence=definition.capture_evidence,
             metadata=metadata,
         )

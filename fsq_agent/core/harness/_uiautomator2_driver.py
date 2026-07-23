@@ -51,7 +51,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
             },
         }
 
-    @_android_driver_tool("launchApp", description="Launch the configured Android app.", capture_evidence=True)
+    @_android_driver_tool("launchApp", description="Launch the configured Android app.")
     def launch_app(self, params: AndroidLaunchAppParams) -> dict[str, object]:
         data = self._param_data(params)
         app_id = str(data.get("app_id") or self.app_id)
@@ -59,14 +59,14 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         self.device.app_start(app_id, **options)
         return self._passed({"app_id": app_id})
 
-    @_android_driver_tool("killApp", description="Stop the configured Android app.", capture_evidence=True)
+    @_android_driver_tool("killApp", description="Stop the configured Android app.")
     def kill_app(self, params: AndroidKillAppParams) -> dict[str, object]:
         data = self._param_data(params)
         app_id = str(data.get("app_id") or self.app_id)
         self.device.app_stop(app_id)
         return self._passed({"app_id": app_id})
 
-    @_android_driver_tool("tapOn", description="Tap an Android UI target.", capture_evidence=True)
+    @_android_driver_tool("tapOn", description="Tap an Android UI target.")
     def tap_on(self, params: AndroidTapOnParams) -> dict[str, object]:
         data = self._param_data(params)
         selector = self._selector(data)
@@ -75,7 +75,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         selector.click()
         return self._passed()
 
-    @_android_driver_tool("tapAt", description="Tap Android screen coordinates.", capture_evidence=True)
+    @_android_driver_tool("tapAt", description="Tap Android screen coordinates.")
     def tap_at(self, params: AndroidTapAtParams) -> dict[str, object]:
         data = self._param_data(params)
         point = self._point_payload(data)
@@ -85,7 +85,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         self.device.click(x, y)
         return self._passed({"point": {"x": x, "y": y}})
 
-    @_android_driver_tool("longPressOn", description="Long press an Android UI target.", capture_evidence=True)
+    @_android_driver_tool("longPressOn", description="Long press an Android UI target.")
     def long_press_on(self, params: AndroidLongPressOnParams) -> dict[str, object]:
         data = self._param_data(params)
         selector = self._selector(data)
@@ -94,7 +94,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         selector.long_click()
         return self._passed()
 
-    @_android_driver_tool("inputText", description="Enter text into a focused Android UI target.", capture_evidence=True)
+    @_android_driver_tool("inputText", description="Enter text into a focused Android UI target.")
     def input_text(self, params: AndroidInputTextParams) -> dict[str, object]:
         data = self._param_data(params)
         text = data.get("text")
@@ -110,7 +110,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         selector.set_text(text)
         return self._passed()
 
-    @_android_driver_tool("pressKey", description="Press an Android key.", capture_evidence=True)
+    @_android_driver_tool("pressKey", description="Press an Android key.")
     def press_key(self, params: AndroidPressKeyParams) -> dict[str, object]:
         data = self._param_data(params)
         key = data.get("key")
@@ -119,7 +119,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         self.device.press(key.strip().lower())
         return self._passed({"key": key.strip()})
 
-    @_android_driver_tool("swipe", description="Swipe by direction or explicit Android screen coordinates.", capture_evidence=True)
+    @_android_driver_tool("swipe", description="Swipe by direction or explicit Android screen coordinates.")
     def swipe(self, params: AndroidSwipeParams) -> dict[str, object]:
         data = self._param_data(params)
         direction = data.get("direction")
@@ -184,7 +184,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
     def assert_with_ai(self, params: AndroidAssertWithAIParams) -> dict[str, object]:
         return self._run_ai_assertion_tool(params)
 
-    def screenshot(self) -> bytes:
+    def screenshot(self, params: object | None = None) -> bytes:
         image = self.device.screenshot(format="pillow")
         if isinstance(image, bytes):
             return image
@@ -195,7 +195,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         return output.getvalue()
 
     @_android_driver_tool("uiTree", description="Return the current Android UI hierarchy XML.")
-    def ui_tree(self, params: AndroidUiTreeParams) -> dict[str, object]:
+    def ui_snapshot(self, params: AndroidUiTreeParams) -> dict[str, object]:
         return {"xml": self.device.dump_hierarchy()}
 
     def _connect(self, serial: str | None) -> object:

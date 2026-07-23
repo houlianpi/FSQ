@@ -15,7 +15,6 @@ from fsq_agent.models import (
     HarnessFunctionSchema,
     RuntimeSecretSettings,
     StepPhase,
-    WebPageSnapshotParams,
     WebTakeScreenshotParams,
 )
 
@@ -148,14 +147,14 @@ class WebHarness:
                     data=self.screenshot(WebTakeScreenshotParams()),
                 )
             )
-        if kind == "page_snapshot":
+        if kind == "ui_snapshot":
             return self._to_harness_artifact_ref(
                 self.artifact_store.write_json(
-                    kind="page_snapshot",
+                    kind="ui_snapshot",
                     step_id=step_id,
                     phase=phase,
                     name=reason,
-                    payload=self.driver.page_snapshot(WebPageSnapshotParams()),
+                    payload=self.driver.ui_snapshot(),
                 )
             )
         raise RuntimeError(f"Unsupported Web artifact kind: {kind}")

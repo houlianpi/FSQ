@@ -8,7 +8,7 @@ Goal-only FSQ cases may omit the command document or provide an empty command li
 
 ## Dependencies
 
-- `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep`, `SourceRef`, and `EvidencePolicy`, strict replay refs such as `RuntimeSecretRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
+- `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep` and `SourceRef`, strict replay refs such as `RuntimeSecretRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
 
 The fsq module must not import `capabilities`, `core`, or `tools`. It receives a `CapabilityRegistrySnapshot` from entry code and resolves authored command names through that serializable snapshot.
 
@@ -128,7 +128,7 @@ Each generated step should include:
 - `source_ref`: `source_type="fsq"`, `source_id` set to the case path string, `step_index` set to the zero-based command index, and metadata containing the case name and platform.
 - `metadata`: the original command payload, `authored_action_name`, canonical `capability_name`, replay metadata when applicable, and selected case metadata useful for evidence and debugging.
 - `timeout_ms`: copied from command object `timeout` when present and valid.
-- `evidence_policy`: default shared model policy. Rich FSQ evidence controls are a later batch; during execution, `core.StepRunner` derives the effective evidence policy from capability metadata and any explicit step policy.
+- FSQ does not set default screenshot evidence policy on generated steps. During execution, `core.StepRunner` derives automatic evidence capture from `executor_kind == "driver"` plus `ExecutableStep.kind` and writes normalized `screenshot`/`ui_snapshot` artifacts when applicable.
 
 Malformed command entries that cannot be reduced to one FSQ action must raise `ConfigurationError` with the case path and command index. Unknown actions, ambiguous replay aliases, actions without active `fsq_command` replay support in strict input, and payloads that fail the resolved capability parameter model validation must also raise `ConfigurationError` before execution starts, with enough context to identify the case path, command index, action name, and validation problem. A generated `inputText.text.runtimeSecret` ref is valid only as a pre-resolution replay value; other redaction markers or unresolved secret-like objects are invalid. Optional commands are still converted into executable steps; optional/non-blocking execution semantics belong to the core runner or a later policy layer, not this adapter.
 

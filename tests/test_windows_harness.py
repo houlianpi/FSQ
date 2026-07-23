@@ -61,33 +61,31 @@ class FakeWindowsDriver(AIAssertionBackendToolMixin):
     @_windows_driver_tool(
         "launchApp",
         description="Launch the configured Windows desktop application.",
-        capture_evidence=True,
-        metadata={"evidence_capture_on_failure": False},
     )
     def launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
         return self._record("launch_app", params)
 
-    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.", capture_evidence=True)
+    @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
     def kill_app(self, params: WindowsKillAppParams) -> dict[str, object]:
         return self._record("kill_app", params)
 
-    @_windows_driver_tool("clickOn", description="Click a Windows control resolved from the UI snapshot.", capture_evidence=True)
+    @_windows_driver_tool("clickOn", description="Click a Windows control resolved from the UI snapshot.")
     def click_on(self, params: WindowsClickOnParams) -> dict[str, object]:
         return self._record("click_on", params)
 
-    @_windows_driver_tool("doubleClickOn", description="Double-click a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("doubleClickOn", description="Double-click a Windows control.")
     def double_click_on(self, params: WindowsDoubleClickOnParams) -> dict[str, object]:
         return self._record("double_click_on", params)
 
-    @_windows_driver_tool("rightClickOn", description="Right-click a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("rightClickOn", description="Right-click a Windows control.")
     def right_click_on(self, params: WindowsRightClickOnParams) -> dict[str, object]:
         return self._record("right_click_on", params)
 
-    @_windows_driver_tool("typeText", description="Type text into a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("typeText", description="Type text into a Windows control.")
     def type_text(self, params: WindowsTypeTextParams) -> dict[str, object]:
         return self._record("type_text", params)
 
-    @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.", capture_evidence=True)
+    @_windows_driver_tool("pressKey", description="Send a keyboard key sequence to the active Windows window.")
     def press_key(self, params: WindowsPressKeyParams) -> dict[str, object]:
         return self._record("press_key", params)
 
@@ -95,11 +93,11 @@ class FakeWindowsDriver(AIAssertionBackendToolMixin):
     def hover_on(self, params: WindowsHoverOnParams) -> dict[str, object]:
         return self._record("hover_on", params)
 
-    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.", capture_evidence=True)
+    @_windows_driver_tool("scrollOn", description="Scroll over a Windows control.")
     def scroll_on(self, params: WindowsScrollOnParams) -> dict[str, object]:
         return self._record("scroll_on", params)
 
-    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.", capture_evidence=True)
+    @_windows_driver_tool("dragTo", description="Drag between Windows controls or points.")
     def drag_to(self, params: WindowsDragToParams) -> dict[str, object]:
         return self._record("drag_to", params)
 
@@ -186,7 +184,6 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert schemas["click_on"].driver_method == "click_on"
     assert schemas["click_on"].fsq_action_name == "clickOn"
     assert schemas["click_on"].platform == "windows"
-    assert schemas["click_on"].capture_evidence is True
     assert schemas["click_on"].metadata["driver_class"] == "FakeWindowsDriver"
     assert schemas["click_on"].metadata["backend"] == "fake-pywinauto"
     assert schemas["click_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "clickOn"}
@@ -194,13 +191,9 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
     assert "target" in schemas["click_on"].params_json_schema["required"]
-    assert schemas["hover_on"].capture_evidence is True
-    assert schemas["scroll_on"].capture_evidence is True
-    assert schemas["drag_to"].capture_evidence is True
     assert schemas["drag_to"].fsq_action_name == "dragTo"
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
-    assert schemas["ui_snapshot"].capture_evidence is False
 
 
 def test_windows_harness_validation_failure_does_not_call_driver_method() -> None:

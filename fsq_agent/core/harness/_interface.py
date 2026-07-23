@@ -20,6 +20,15 @@ class AIAssertionEvaluatorProtocol(Protocol):
 
 
 @runtime_checkable
+class DriverObservationInterface(Protocol):
+    def screenshot(self, params: object | None = None) -> bytes:
+        ...
+
+    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
+        ...
+
+
+@runtime_checkable
 class HarnessInterface(Protocol):
     def get_context(self) -> HarnessContext:
         ...

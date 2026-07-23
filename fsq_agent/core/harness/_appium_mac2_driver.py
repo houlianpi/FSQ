@@ -88,8 +88,6 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
     @_macos_driver_tool(
         "launchApp",
         description="Create or reuse an Appium Mac2 session for the configured macOS application.",
-        capture_evidence=True,
-        metadata={"evidence_capture_before": False, "evidence_capture_on_failure": False},
     )
     def launch_app(self, params: MacOSLaunchAppParams) -> dict[str, object]:
         session = self._ensure_session(params)
@@ -118,7 +116,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
             self._session = None
         return self._passed({"bundle_id": bundle_id, "close_session": bool(params.close_session)})
 
-    @_macos_driver_tool("clickOn", description="Click a macOS element or point resolved through Appium Mac2.", capture_evidence=True)
+    @_macos_driver_tool("clickOn", description="Click a macOS element or point resolved through Appium Mac2.")
     def click_on(self, params: MacOSClickOnParams) -> dict[str, object]:
         element = self._resolve_element_or_none(params)
         if element is not None:
@@ -132,11 +130,11 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         self._perform_pointer_click(point)
         return self._passed({"point": point.model_dump(mode="json")})
 
-    @_macos_driver_tool("doubleClickOn", description="Double-click a macOS element or point.", capture_evidence=True)
+    @_macos_driver_tool("doubleClickOn", description="Double-click a macOS element or point.")
     def double_click_on(self, params: MacOSDoubleClickOnParams) -> dict[str, object]:
         return self._click_count(params, count=2)
 
-    @_macos_driver_tool("rightClickOn", description="Right-click a macOS element or point.", capture_evidence=True)
+    @_macos_driver_tool("rightClickOn", description="Right-click a macOS element or point.")
     def right_click_on(self, params: MacOSRightClickOnParams) -> dict[str, object]:
         point = self._point_from_params(params)
         if point is None:
@@ -147,7 +145,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         self._perform_pointer_click(point, button="right")
         return self._passed({"point": point.model_dump(mode="json")})
 
-    @_macos_driver_tool("typeText", description="Type text into the active or resolved macOS element.", capture_evidence=True)
+    @_macos_driver_tool("typeText", description="Type text into the active or resolved macOS element.")
     def type_text(self, params: MacOSTypeTextParams) -> dict[str, object]:
         element = self._resolve_element_or_none(params)
         if element is not None:
@@ -169,7 +167,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
             return self._passed()
         return self._failed("action_error", "Appium session cannot send keyboard input.")
 
-    @_macos_driver_tool("pressKey", description="Send a keyboard shortcut or key to macOS.", capture_evidence=True)
+    @_macos_driver_tool("pressKey", description="Send a keyboard shortcut or key to macOS.")
     def press_key(self, params: MacOSPressKeyParams) -> dict[str, object]:
         session = self._require_session()
         key_sequence = self._key_sequence(params)
@@ -190,7 +188,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         self._perform_pointer_move(point)
         return self._passed({"point": point.model_dump(mode="json")})
 
-    @_macos_driver_tool("dragTo", description="Drag from one macOS element or point to another.", capture_evidence=True)
+    @_macos_driver_tool("dragTo", description="Drag from one macOS element or point to another.")
     def drag_to(self, params: MacOSDragToParams) -> dict[str, object]:
         source = self._point_from_endpoint(params.source)
         destination = self._point_from_endpoint(params.destination)

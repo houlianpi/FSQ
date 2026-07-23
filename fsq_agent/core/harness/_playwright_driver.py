@@ -259,6 +259,9 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
     def page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]:
         return self._run_sync(lambda: self._page_snapshot(params))
 
+    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
+        return self.page_snapshot(WebPageSnapshotParams())
+
     def _page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]:
         if self.page is None:
             return self._browser_not_started()

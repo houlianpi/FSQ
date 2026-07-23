@@ -1,5 +1,7 @@
 from typing import Protocol, runtime_checkable
 
+from fsq_agent.core.harness._interface import DriverObservationInterface
+
 from fsq_agent.models import (
     WindowsAssertWithAIParams,
     WindowsAssertVisibleParams,
@@ -18,7 +20,7 @@ from fsq_agent.models import (
 
 
 @runtime_checkable
-class WindowsDriverInterface(Protocol):
+class WindowsDriverInterface(DriverObservationInterface, Protocol):
     def context(self) -> dict[str, object]:
         ...
 
