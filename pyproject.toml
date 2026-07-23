@@ -33,7 +33,7 @@ web = [
 ]
 windows = [
     "pywinauto==0.6.9",
-    "pillow==12.2.0",
+    "pillow==12.3.0",
 ]
 macos = [
     "Appium-Python-Client==2.6.1",
