@@ -31,6 +31,7 @@ from fsq_agent.models import (
 
 DEFAULT_WINDOWS_WAIT_TIMEOUT_SECONDS = 10.0
 WINDOW_READY_TIMEOUT_SECONDS = 30.0
+WINDOW_LAUNCH_WAIT_FOR = "exists visible enabled"
 UI_SNAPSHOT_MAX_DEPTH = 20
 UI_SNAPSHOT_MAX_NODES = 1200
 UI_SNAPSHOT_MAX_CHILDREN = 60
@@ -83,14 +84,14 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         return self._run_sync(lambda: self._launch_app(params))
 
     def _launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
-        app_path = params.app_path or self.app_path
+        app_path = self.app_path
         if not app_path:
             return self._failed("configuration_error", "Windows app path is not configured.")
         application_cls = self._application_cls()
         launch_args = [*self.launch_args, *(params.extra_args or [])]
         cmd = subprocess.list2cmdline([app_path, *launch_args])
         self._app = application_cls(backend=self.backend_kind).start(cmd)
-        self._resolve_main_window(wait=True, wait_for=params.wait_for)
+        self._resolve_main_window(wait=True, wait_for=WINDOW_LAUNCH_WAIT_FOR)
         return self._passed({"app_path": app_path, "launch_args": launch_args, "window_title_re": self.window_title_re})
 
     def _resolve_main_window(self, *, wait: bool = False, wait_for: str = "exists visible") -> object:

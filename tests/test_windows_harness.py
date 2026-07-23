@@ -136,7 +136,7 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
     context = harness.get_context()
 
     cases = [
-        ("launchApp", {"app_path": "notepad.exe"}, "launch_app"),
+        ("launchApp", {}, "launch_app"),
         ("clickOn", {"target": "Open the File menu", "locator": {"title": "File"}}, "click_on"),
         ("doubleClickOn", {"target": "Open the document", "locator": {"title": "Document", "control_type": "Edit"}}, "double_click_on"),
         ("rightClickOn", {"target": "Open the File context menu", "locator": {"title": "File"}}, "right_click_on"),
@@ -172,9 +172,7 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
         screen_size=(1920, 1080),
         metadata={"backend_kind": "uia", "app_path_configured": True},
     )
-    expected_calls = [(method_name, params) for _action_name, params, method_name in cases]
-    expected_calls[0] = ("launch_app", {"app_path": "notepad.exe", "wait_for": "exists visible"})
-    assert driver.calls == [("context", None), *expected_calls]
+    assert driver.calls == [("context", None)] + [(method_name, params) for _action_name, params, method_name in cases]
 
 
 def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
@@ -185,6 +183,7 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "click_on" in schemas
     assert "ui_snapshot" in schemas
     assert "assert_with_ai" not in schemas
+    assert set(schemas["launch_app"].params_json_schema["properties"]) == {"extra_args"}
     assert schemas["click_on"].driver_method == "click_on"
     assert schemas["click_on"].fsq_action_name == "clickOn"
     assert schemas["click_on"].platform == "windows"
@@ -203,6 +202,20 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
     assert schemas["ui_snapshot"].capture_evidence is False
+
+
+@pytest.mark.parametrize("private_param", ["app_path", "wait_for"])
+def test_windows_harness_rejects_internal_launch_params(private_param: str) -> None:
+    driver = FakeWindowsDriver()
+    harness = WindowsHarness(driver=driver)
+
+    result = harness.invoke_action(_step("launchApp", {private_param: "not-exposed"}), harness.get_context())
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert result.error_message is not None
+    assert f"{private_param}: Extra inputs are not permitted" in result.error_message
+    assert driver.calls == [("context", None)]
 
 
 def test_windows_harness_validation_failure_does_not_call_driver_method() -> None:
@@ -308,17 +321,6 @@ def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
         )
 
 
-def test_windows_launch_wait_for_validates_window_states() -> None:
-    assert WindowsLaunchAppParams(wait_for="exists   visible enabled").wait_for == "exists visible enabled"
-
-    with pytest.raises(ValueError, match="at least one window state"):
-        WindowsLaunchAppParams(wait_for="  ")
-    with pytest.raises(ValueError, match="unsupported window state"):
-        WindowsLaunchAppParams(wait_for="exists focused")
-    with pytest.raises(ValueError, match="unique window states"):
-        WindowsLaunchAppParams(wait_for="exists exists")
-
-
 def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
     driver = FakeWindowsDriver()
     harness = WindowsHarness(driver=driver, artifact_store=ArtifactStore(run_dir=tmp_path))
@@ -404,7 +406,7 @@ def test_windows_harness_does_not_hide_invoke_capture_failures(tmp_path) -> None
 
 @pytest.mark.parametrize(
     ("action_name", "params"),
-    [("launchApp", {"app_path": "notepad.exe"}), ("killApp", {})],
+    [("launchApp", {}), ("killApp", {})],
 )
 def test_windows_runner_lifecycle_captures_before_and_after_when_window_capture_fails(
     tmp_path,
@@ -507,14 +509,7 @@ def test_windows_harness_classifies_main_window_timeout() -> None:
     assert category == "timeout_error"
 
 
-@pytest.mark.parametrize(
-    ("wait_for", "expected_wait_state"),
-    [(None, "exists visible"), ("exists visible enabled", "exists visible enabled")],
-)
-def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re(
-    wait_for: str | None,
-    expected_wait_state: str,
-) -> None:
+def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
     from fsq_agent.models import WindowsLaunchAppParams
 
@@ -560,17 +555,14 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re(
     )
     driver._application_cls = lambda: (lambda backend: fake_app)  # type: ignore[attr-defined]
 
-    launch_params = {"extra_args": ["--incognito"]}
-    if wait_for is not None:
-        launch_params["wait_for"] = wait_for
-    result = driver.launch_app(WindowsLaunchAppParams.model_validate(launch_params))
+    result = driver.launch_app(WindowsLaunchAppParams(extra_args=["--incognito"]))
 
     assert result["status"] == "passed"
     assert fake_app.started_cmd == "msedge.exe --no-first-run --window-size=1280,920 --incognito"
     assert fake_app.connected_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
-    assert fake_app.window_obj.waited == [expected_wait_state]
+    assert fake_app.window_obj.waited == ["exists visible enabled"]
 
 
 def test_pywinauto_driver_main_window_timeout_includes_resolution_context(monkeypatch) -> None:
