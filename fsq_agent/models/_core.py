@@ -677,7 +677,6 @@ class WindowsMouseDestination(BaseModel):
 class WindowsLaunchAppParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    app_path: str | None = None
     extra_args: list[str] | None = None
 
 

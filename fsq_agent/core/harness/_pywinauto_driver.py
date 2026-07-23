@@ -31,6 +31,7 @@ from fsq_agent.models import (
 
 DEFAULT_WINDOWS_WAIT_TIMEOUT_SECONDS = 10.0
 WINDOW_READY_TIMEOUT_SECONDS = 30.0
+WINDOW_LAUNCH_WAIT_FOR = "exists visible enabled"
 UI_SNAPSHOT_MAX_DEPTH = 20
 UI_SNAPSHOT_MAX_NODES = 1200
 UI_SNAPSHOT_MAX_CHILDREN = 60
@@ -81,17 +82,17 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         return self._run_sync(lambda: self._launch_app(params))
 
     def _launch_app(self, params: WindowsLaunchAppParams) -> dict[str, object]:
-        app_path = params.app_path or self.app_path
+        app_path = self.app_path
         if not app_path:
             return self._failed("configuration_error", "Windows app path is not configured.")
         application_cls = self._application_cls()
         launch_args = [*self.launch_args, *(params.extra_args or [])]
         cmd = subprocess.list2cmdline([app_path, *launch_args])
         self._app = application_cls(backend=self.backend_kind).start(cmd)
-        self._resolve_main_window(wait=True)
+        self._resolve_main_window(wait=True, wait_for=WINDOW_LAUNCH_WAIT_FOR)
         return self._passed({"app_path": app_path, "launch_args": launch_args, "window_title_re": self.window_title_re})
 
-    def _resolve_main_window(self, *, wait: bool = False) -> object:
+    def _resolve_main_window(self, *, wait: bool = False, wait_for: str = "exists visible") -> object:
         application_cls = self._application_cls()
         deadline = time.monotonic() + WINDOW_READY_TIMEOUT_SECONDS if wait else None
         while True:
@@ -102,12 +103,21 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                 else:
                     connected = application_cls(backend=self.backend_kind).connect(active_only=True)
                     window = connected.top_window()
-                window.wait("exists visible enabled", timeout=2 if wait else 0)
+                window.wait(wait_for, timeout=2 if wait else 0)
                 self._app = connected
                 return window
-            except Exception:  # noqa: BLE001 - retry until the window appears or timeout.
-                if deadline is None or time.monotonic() >= deadline:
-                    raise
+            except Exception as exc:  # noqa: BLE001 - retry until the window appears or timeout.
+                details = (
+                    f"title_re={self.window_title_re!r}, wait_for={wait_for!r}, "
+                    f"backend={self.backend_kind!r}; last error: {exc}"
+                )
+                if deadline is None:
+                    raise RuntimeError(f"Failed to resolve Windows main window ({details})") from exc
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Timed out after {WINDOW_READY_TIMEOUT_SECONDS:.1f} seconds resolving Windows main window "
+                        f"({details})"
+                    ) from exc
                 time.sleep(1.0)
 
     @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
