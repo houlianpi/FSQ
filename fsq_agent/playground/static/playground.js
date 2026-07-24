@@ -28,6 +28,12 @@ const state = {
   yamlInputContent: '',
   yamlRecordedContent: '',
   yamlInputDisplay: null,
+  yamlInputRevision: '',
+  yamlInputEditable: false,
+  yamlLifecycleSnapshot: null,
+  yamlLifecycleDraft: null,
+  yamlLifecycleDirty: false,
+  yamlLifecycleSaving: false,
   yamlRecordedDisplay: null,
   yamlInputLastPreviewPath: '',
   selectedYamlRegion: null,
@@ -41,6 +47,7 @@ const state = {
   currentExecutionMode: null,
   platformId: null,
   platformLabel: null,
+  toastTimer: null,
 };
 
 function createRunModeState() {
@@ -56,6 +63,11 @@ function createRunModeState() {
     yamlActiveView: '',
     yamlInputContent: '',
     yamlInputDisplay: null,
+    yamlInputRevision: '',
+    yamlInputEditable: false,
+    yamlLifecycleSnapshot: null,
+    yamlLifecycleDraft: null,
+    yamlLifecycleDirty: false,
     yamlInputLastPreviewPath: '',
     yamlInputStatusText: '',
     yamlInputStatusClassName: 'yaml-status yaml-status-neutral',
@@ -86,6 +98,7 @@ const YAML_STEP_CENTER_TOLERANCE_RATIO = 0.15;
 
 const els = {
   shell: document.querySelector('.shell'),
+  toast: document.getElementById('toast'),
   controlPanel: document.querySelector('.control-panel'),
   panelResizer: document.getElementById('panel-resizer'),
   status: document.getElementById('server-status'),
@@ -109,6 +122,10 @@ const els = {
   yamlInputPane: document.getElementById('yaml-input-pane'),
   yamlRecordedPane: document.getElementById('yaml-recorded-pane'),
   yamlInputStatus: document.getElementById('yaml-input-status'),
+  yamlLifecycleToolbar: document.getElementById('yaml-lifecycle-toolbar'),
+  yamlLifecycleDirty: document.getElementById('yaml-lifecycle-dirty'),
+  yamlLifecycleSave: document.getElementById('yaml-lifecycle-save'),
+  yamlLifecycleDiscard: document.getElementById('yaml-lifecycle-discard'),
   yamlRecordedStatus: document.getElementById('yaml-recorded-status'),
   yamlInputViewer: document.getElementById('yaml-input-viewer'),
   yamlRecordedViewer: document.getElementById('yaml-recorded-viewer'),
@@ -169,6 +186,7 @@ function clearPage() {
   state.loadedRunAvailability = null;
   clearStepArtifactPreview();
   resetLoadRunForm({ collapse: true });
+  hideToast();
 
   els.goal.value = '';
   els.caseYaml.value = '';
@@ -323,6 +341,11 @@ async function runSelected() {
     await cancelExecution();
     return;
   }
+  if (hasUnsavedLifecycleDraft()) {
+    showYamlView('input');
+    setYamlInputStatus('Save or discard lifecycle changes before running.', 'error');
+    return;
+  }
   if (currentRunMode() === 'yaml' || currentRunMode() === 'strict-yaml') {
     await runYaml();
     return;
@@ -360,6 +383,11 @@ function saveRunModeState(mode = state.activeRunMode) {
   modeState.yamlActiveView = state.yamlActiveView;
   modeState.yamlInputContent = state.yamlInputContent;
   modeState.yamlInputDisplay = state.yamlInputDisplay;
+  modeState.yamlInputRevision = state.yamlInputRevision;
+  modeState.yamlInputEditable = state.yamlInputEditable;
+  modeState.yamlLifecycleSnapshot = cloneLifecycle(state.yamlLifecycleSnapshot);
+  modeState.yamlLifecycleDraft = cloneLifecycle(state.yamlLifecycleDraft);
+  modeState.yamlLifecycleDirty = state.yamlLifecycleDirty;
   modeState.yamlInputLastPreviewPath = state.yamlInputLastPreviewPath;
   modeState.yamlInputStatusText = els.yamlInputStatus.textContent;
   modeState.yamlInputStatusClassName = els.yamlInputStatus.className;
@@ -389,11 +417,16 @@ function restoreRunModeState(mode = state.activeRunMode) {
   state.progressDetailOpenState = new Map(modeState.progressDetailOpenEntries);
   state.yamlInputContent = modeState.yamlInputContent;
   state.yamlInputDisplay = modeState.yamlInputDisplay;
+  state.yamlInputRevision = modeState.yamlInputRevision;
+  state.yamlInputEditable = modeState.yamlInputEditable;
+  state.yamlLifecycleSnapshot = cloneLifecycle(modeState.yamlLifecycleSnapshot);
+  state.yamlLifecycleDraft = cloneLifecycle(modeState.yamlLifecycleDraft);
+  state.yamlLifecycleDirty = modeState.yamlLifecycleDirty;
   state.yamlInputLastPreviewPath = modeState.yamlInputLastPreviewPath;
   els.yamlInputStatus.textContent = modeState.yamlInputStatusText;
   els.yamlInputStatus.className = modeState.yamlInputStatusClassName;
   els.yamlInputStatus.hidden = modeState.yamlInputStatusHidden;
-  els.yamlInputViewer.innerHTML = modeState.yamlInputHtml;
+  renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'No YAML loaded.', { lifecycleEditor: state.yamlInputEditable });
   state.yamlRecordedContent = modeState.yamlRecordedContent;
   state.yamlRecordedDisplay = modeState.yamlRecordedDisplay;
   els.yamlRecordedStatus.textContent = modeState.yamlRecordedStatusText;
@@ -408,6 +441,7 @@ function restoreRunModeState(mode = state.activeRunMode) {
   clearSelectedProgressRunId();
   clearSelectedProgressItem();
   clearActiveProgressItem();
+  updateLifecycleToolbar();
 }
 
 function stripTransientModeClasses() {
@@ -476,6 +510,7 @@ function updateRunMode({ preserveView = false } = {}) {
   }
   if (!state.currentRequestId && !state.finishingRun) setRunButtonIdle();
   setLoadRunControlsDisabled();
+  updateLifecycleToolbar();
 }
 
 function syncYamlTabOrder(mode) {
@@ -632,6 +667,7 @@ async function applyProgress(progress) {
     state.currentRequestId = null;
     state.finishingRun = true;
     setRunButtonCancel({ disabled: true });
+    updateLifecycleToolbar();
     scheduleClearActiveYamlStepCard();
     appendProgress(`Finished: ${progress.status}`, null, [], statusFromValue(progress.status));
     if (progress.error) appendProgress(`Error: ${progress.error}`, null, [], 'failed');
@@ -642,7 +678,7 @@ async function applyProgress(progress) {
       await loadRecordedYaml(progress.result.runId, progress.result.recording || null);
       await refreshPreviewFromReplay(progress.result.runId);
     }
-    if (state.replayRequestId && progress.status !== 'cancelled') {
+    if (progress.result?.runId && state.replayRequestId && progress.status !== 'cancelled') {
       try {
         const replay = await loadReplayFrames(state.replayRequestId);
         appendReplayFramesProgress(replay.frames);
@@ -734,17 +770,30 @@ async function loadInputYaml() {
     setYamlInputStatus('YAML path is required.', 'error');
     return;
   }
+  if (state.yamlLifecycleDirty) {
+    if (!window.confirm('Discard unsaved lifecycle changes and reload YAML?')) {
+      els.caseYaml.value = state.yamlInputLastPreviewPath;
+      return;
+    }
+  }
   setYamlInputStatus('Loading YAML...', 'neutral');
   try {
     const yaml = await api(`/yaml/input?path=${encodeURIComponent(path)}`);
     state.yamlInputContent = yaml.content || '';
     state.yamlInputDisplay = yaml.display || null;
+    state.yamlInputRevision = yaml.revision || '';
+    state.yamlInputEditable = yaml.editable === true;
+    state.yamlLifecycleSnapshot = cloneLifecycle(yaml.display?.lifecycle || emptyLifecycle());
+    state.yamlLifecycleDraft = cloneLifecycle(state.yamlLifecycleSnapshot);
+    state.yamlLifecycleDirty = false;
     state.yamlInputLastPreviewPath = path;
-    renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.');
+    renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.', { lifecycleEditor: state.yamlInputEditable });
+    updateLifecycleToolbar();
     setYamlInputStatus('', 'success');
   } catch (error) {
     state.yamlInputContent = '';
     state.yamlInputDisplay = null;
+    resetLifecycleState();
     renderYamlEmpty(els.yamlInputViewer, '');
     setYamlInputStatus(error.message, 'error');
   }
@@ -786,6 +835,7 @@ function clearYamlInput(message = 'No YAML loaded.') {
   state.yamlInputContent = '';
   state.yamlInputDisplay = null;
   state.yamlInputLastPreviewPath = '';
+  resetLifecycleState();
   setYamlInputStatus(message === 'No YAML loaded.' ? '' : message, 'neutral');
   renderYamlEmpty(els.yamlInputViewer, message);
 }
@@ -833,6 +883,10 @@ function setLoadRunControlsDisabled(serverBusy = false) {
 
 async function loadExistingRun() {
   if (state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
+  if (hasUnsavedLifecycleDraft()) {
+    setLoadRunStatus('Save or discard lifecycle changes before loading a run.', 'error');
+    return;
+  }
   const path = els.loadRunPath.value.trim();
   if (!path) {
     setLoadRunStatus('Run directory path is required.', 'error');
@@ -956,7 +1010,7 @@ function showYamlView(viewName) {
   els.yamlProgressTab.setAttribute('aria-selected', String(progressAvailable && showProgress));
 }
 
-function renderYamlDisplay(root, display, emptyMessage) {
+function renderYamlDisplay(root, display, emptyMessage, { lifecycleEditor = false } = {}) {
   clearSelectedYamlRegion(root);
   root.innerHTML = '';
   if (!display) {
@@ -966,8 +1020,257 @@ function renderYamlDisplay(root, display, emptyMessage) {
   const fragment = document.createDocumentFragment();
   fragment.appendChild(renderYamlCaseTitle(display.metadata || {}));
   fragment.appendChild(renderYamlCaseSummary(display.metadata || {}));
-  fragment.appendChild(renderYamlSteps(display.steps || []));
+  if (lifecycleEditor) fragment.appendChild(renderLifecycleSection('onCaseStart', 'Before case'));
+  fragment.appendChild(renderYamlCaseSteps(display.steps || []));
+  if (lifecycleEditor) fragment.appendChild(renderLifecycleSection('onCaseComplete', 'After case'));
   root.appendChild(fragment);
+}
+
+function renderYamlCaseSteps(steps) {
+  const section = document.createElement('section');
+  section.className = 'yaml-case-steps-section';
+  const heading = document.createElement('div');
+  heading.className = 'yaml-lifecycle-heading yaml-case-steps-heading';
+  const title = document.createElement('h3');
+  title.textContent = 'Case steps';
+  heading.appendChild(title);
+  section.append(heading, renderYamlSteps(steps));
+  return section;
+}
+
+function emptyLifecycle() {
+  return LifecycleEditorModel.empty();
+}
+
+function cloneLifecycle(value) {
+  return LifecycleEditorModel.clone(value);
+}
+
+function resetLifecycleState() {
+  state.yamlInputRevision = '';
+  state.yamlInputEditable = false;
+  state.yamlLifecycleSnapshot = null;
+  state.yamlLifecycleDraft = null;
+  state.yamlLifecycleDirty = false;
+  state.yamlLifecycleSaving = false;
+  updateLifecycleToolbar();
+}
+
+function lifecycleActions(field) {
+  return LifecycleEditorModel.actions(state.yamlLifecycleDraft, field);
+}
+
+function renderLifecycleSection(field, label) {
+  const section = document.createElement('section');
+  section.className = 'yaml-lifecycle-section';
+  section.dataset.lifecycleField = field;
+  const heading = document.createElement('div');
+  heading.className = 'yaml-lifecycle-heading';
+  const title = document.createElement('h3');
+  title.textContent = label;
+  const add = iconButton('+', `Add ${label} action`, () => addLifecycleAction(field));
+  heading.append(title, add);
+  section.appendChild(heading);
+  const actions = lifecycleActions(field);
+  if (!actions.length) {
+    const empty = document.createElement('div');
+    empty.className = 'yaml-lifecycle-empty';
+    empty.textContent = 'No actions.';
+    section.appendChild(empty);
+    return section;
+  }
+  const list = document.createElement('div');
+  list.className = 'yaml-lifecycle-list';
+  actions.forEach((action, actionIndex) => list.appendChild(renderLifecycleAction(field, action, actionIndex)));
+  section.appendChild(list);
+  return section;
+}
+
+function renderLifecycleAction(field, action, actionIndex) {
+  const row = document.createElement('div');
+  row.className = 'yaml-lifecycle-action-row';
+  const number = document.createElement('span');
+  number.textContent = String(actionIndex + 1).padStart(2, '0');
+  number.className = 'yaml-step-index';
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', 'Lifecycle action type');
+  for (const type of ['runCase', 'runShell']) {
+    const option = document.createElement('option');
+    option.value = type;
+    option.textContent = type;
+    option.selected = action.action === type;
+    select.appendChild(option);
+  }
+  select.addEventListener('change', () => updateLifecycleAction(field, actionIndex, 'action', select.value));
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = action.value || '';
+  input.placeholder = action.action === 'runShell' ? 'Shell command...' : 'Case path...';
+  input.setAttribute('aria-label', `${action.action || 'Lifecycle'} value`);
+  input.addEventListener('input', () => updateLifecycleAction(field, actionIndex, 'value', input.value));
+  const controls = document.createElement('div');
+  controls.className = 'yaml-lifecycle-action-controls';
+  controls.append(
+    iconButton('↑', 'Move action up', () => moveLifecycleAction(field, actionIndex, -1), actionIndex === 0),
+    iconButton('↓', 'Move action down', () => moveLifecycleAction(field, actionIndex, 1), actionIndex === lifecycleActions(field).length - 1),
+    iconButton('×', 'Delete action', () => deleteLifecycleAction(field, actionIndex)),
+  );
+  row.append(number, select, input, controls);
+  return row;
+}
+
+function iconButton(symbol, label, handler, disabled = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'yaml-lifecycle-icon-button';
+  button.textContent = symbol;
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.disabled = disabled;
+  button.addEventListener('click', handler);
+  return button;
+}
+
+function markLifecycleDirty() {
+  state.yamlLifecycleDirty = JSON.stringify(state.yamlLifecycleDraft) !== JSON.stringify(state.yamlLifecycleSnapshot);
+  updateLifecycleToolbar();
+}
+
+function hasUnsavedLifecycleDraft() {
+  if (state.yamlLifecycleDirty) return true;
+  return Object.values(state.modeStates).some((modeState) => modeState.yamlLifecycleDirty);
+}
+
+function rerenderLifecycleEditor() {
+  renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.', { lifecycleEditor: true });
+  markLifecycleDirty();
+}
+
+function addLifecycleAction(field, action = 'runCase') {
+  if (lifecycleEditorIsDisabled()) return;
+  state.yamlLifecycleDraft = LifecycleEditorModel.addAction(state.yamlLifecycleDraft, field, action);
+  rerenderLifecycleEditor();
+}
+
+function updateLifecycleAction(field, actionIndex, key, value) {
+  if (lifecycleEditorIsDisabled()) return;
+  state.yamlLifecycleDraft = LifecycleEditorModel.updateAction(
+    state.yamlLifecycleDraft, field, actionIndex, key, value,
+  );
+  if (!lifecycleValidationError()) setYamlInputStatus('', 'neutral');
+  markLifecycleDirty();
+}
+
+function deleteLifecycleAction(field, actionIndex) {
+  if (lifecycleEditorIsDisabled()) return;
+  state.yamlLifecycleDraft = LifecycleEditorModel.deleteAction(
+    state.yamlLifecycleDraft, field, actionIndex,
+  );
+  rerenderLifecycleEditor();
+}
+
+function moveLifecycleAction(field, actionIndex, delta) {
+  if (lifecycleEditorIsDisabled()) return;
+  state.yamlLifecycleDraft = LifecycleEditorModel.moveAction(
+    state.yamlLifecycleDraft, field, actionIndex, delta,
+  );
+  rerenderLifecycleEditor();
+}
+
+function lifecycleValidationError() {
+  return LifecycleEditorModel.validationError(state.yamlLifecycleDraft);
+}
+
+function updateLifecycleToolbar() {
+  if (!els.yamlLifecycleToolbar) return;
+  const available = state.yamlInputEditable && !state.loadedRunId;
+  const editorDisabled = Boolean(state.currentRequestId || state.finishingRun || state.yamlLifecycleSaving);
+  els.yamlLifecycleToolbar.hidden = !available;
+  els.yamlLifecycleDirty.hidden = !state.yamlLifecycleDirty;
+  els.yamlLifecycleSave.disabled = !available || !state.yamlLifecycleDirty || editorDisabled;
+  els.yamlLifecycleDiscard.disabled = !available || !state.yamlLifecycleDirty || editorDisabled;
+  setLifecycleEditorDisabled(!available || editorDisabled);
+}
+
+function lifecycleEditorIsDisabled() {
+  return Boolean(state.currentRequestId || state.finishingRun || state.yamlLifecycleSaving);
+}
+
+function setLifecycleEditorDisabled(disabled) {
+  for (const control of els.yamlInputViewer.querySelectorAll(
+    '.yaml-lifecycle-section select, .yaml-lifecycle-section input, .yaml-lifecycle-section button',
+  )) {
+    if (disabled) {
+      if (!Object.hasOwn(control.dataset, 'lifecycleWasDisabled')) {
+        control.dataset.lifecycleWasDisabled = String(control.disabled);
+      }
+      control.disabled = true;
+    } else {
+      const wasDisabled = control.dataset.lifecycleWasDisabled === 'true';
+      control.disabled = wasDisabled;
+      delete control.dataset.lifecycleWasDisabled;
+    }
+  }
+}
+
+async function saveLifecycleDraft() {
+  const validationError = lifecycleValidationError();
+  if (validationError) {
+    setYamlInputStatus(validationError, 'error');
+    return;
+  }
+  state.yamlLifecycleSaving = true;
+  updateLifecycleToolbar();
+  setYamlInputStatus('Saving lifecycle hooks...', 'neutral');
+  try {
+    const payload = await api('/yaml/input/lifecycle', {
+      method: 'PUT',
+      body: JSON.stringify({
+        path: state.yamlInputLastPreviewPath,
+        revision: state.yamlInputRevision,
+        onCaseStart: lifecycleActions('onCaseStart').map(({ action, value }) => ({ action, value })),
+        onCaseComplete: lifecycleActions('onCaseComplete').map(({ action, value }) => ({ action, value })),
+      }),
+    });
+    state.yamlInputContent = payload.content || '';
+    state.yamlInputDisplay = payload.display || null;
+    state.yamlInputRevision = payload.revision || '';
+    state.yamlLifecycleSnapshot = cloneLifecycle(payload.display?.lifecycle || emptyLifecycle());
+    state.yamlLifecycleDraft = cloneLifecycle(state.yamlLifecycleSnapshot);
+    state.yamlLifecycleDirty = false;
+    renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.', { lifecycleEditor: true });
+    setYamlInputStatus('', 'neutral');
+    showToast('Lifecycle hooks saved.');
+  } catch (error) {
+    setYamlInputStatus(error.message, 'error');
+  } finally {
+    state.yamlLifecycleSaving = false;
+    updateLifecycleToolbar();
+  }
+}
+
+function showToast(message, durationMs = 2000) {
+  if (state.toastTimer) window.clearTimeout(state.toastTimer);
+  els.toast.textContent = message;
+  els.toast.hidden = false;
+  els.toast.classList.add('toast-visible');
+  state.toastTimer = window.setTimeout(() => hideToast(), durationMs);
+}
+
+function hideToast() {
+  if (state.toastTimer) window.clearTimeout(state.toastTimer);
+  state.toastTimer = null;
+  els.toast.classList.remove('toast-visible');
+  els.toast.hidden = true;
+  els.toast.textContent = '';
+}
+
+function discardLifecycleDraft() {
+  state.yamlLifecycleDraft = cloneLifecycle(state.yamlLifecycleSnapshot);
+  state.yamlLifecycleDirty = false;
+  renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.', { lifecycleEditor: true });
+  setYamlInputStatus('', 'neutral');
+  updateLifecycleToolbar();
 }
 
 function renderYamlCaseTitle(metadata) {
@@ -2906,6 +3209,8 @@ els.loadRunPath.addEventListener('keydown', (event) => {
 });
 els.progressRunId.addEventListener('click', handleProgressRunIdClick);
 els.yamlInputTab.addEventListener('click', () => showYamlView('input'));
+els.yamlLifecycleSave.addEventListener('click', saveLifecycleDraft);
+els.yamlLifecycleDiscard.addEventListener('click', discardLifecycleDraft);
 els.yamlRecordedTab.addEventListener('click', () => showYamlView('recorded'));
 els.yamlProgressTab.addEventListener('click', () => showYamlView('progress'));
 document.addEventListener('click', handleYamlRegionClick);

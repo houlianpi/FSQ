@@ -12,6 +12,22 @@ body {
   overflow: hidden;
 }
 
+.toast {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1000;
+  max-width: min(360px, calc(100vw - 36px));
+  padding: 10px 14px;
+  border: 1px solid #86c89a;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #166534;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  font-size: 13px;
+  font-weight: 650;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -300,7 +316,7 @@ h2 {
   flex-direction: column;
   flex: 1 1 auto;
   gap: 10px;
-  min-height: 260px;
+  min-height: 320px;
 }
 
 .yaml-tabs {
@@ -347,6 +363,7 @@ h2 {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .yaml-path-row {
@@ -391,6 +408,136 @@ h2 {
 .yaml-empty {
   padding: 12px;
   color: #64748b;
+}
+
+.yaml-lifecycle-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d8dee8;
+  border-bottom: 0;
+  background: #ffffff;
+}
+
+.yaml-lifecycle-dirty {
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.yaml-lifecycle-toolbar-actions,
+.yaml-lifecycle-action-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.yaml-lifecycle-toolbar-actions {
+  margin-left: auto;
+}
+
+.yaml-lifecycle-section {
+  scroll-margin-top: 56px;
+  padding: 10px;
+  border-bottom: 1px solid #d8dee8;
+  background: #f8fafc;
+}
+
+.yaml-lifecycle-section[data-lifecycle-field="onCaseComplete"] {
+  border-top: 1px solid #d8dee8;
+}
+
+.yaml-case-steps-section {
+  background: #f8fafc;
+}
+
+.yaml-case-steps-heading {
+  padding: 10px 10px 0;
+}
+
+.yaml-lifecycle-heading,
+.yaml-lifecycle-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.yaml-lifecycle-heading h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.yaml-lifecycle-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.yaml-lifecycle-action-row {
+  display: grid;
+  grid-template-columns: auto minmax(92px, 118px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.yaml-lifecycle-action-row select,
+.yaml-lifecycle-action-row input {
+  height: 32px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #1f2937;
+  font: inherit;
+  line-height: 1.2;
+}
+
+.yaml-lifecycle-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.yaml-lifecycle-icon-button:hover:not(:disabled) {
+  border-color: #7aa7d9;
+  background: #eaf3ff;
+}
+
+.yaml-lifecycle-icon-button:disabled {
+  opacity: 0.35;
+}
+
+.yaml-lifecycle-empty {
+  padding: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .yaml-lifecycle-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .yaml-lifecycle-action-controls {
+    justify-content: flex-end;
+  }
 }
 
 .yaml-case-summary {
@@ -448,6 +595,7 @@ h2 {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .yaml-chip {
