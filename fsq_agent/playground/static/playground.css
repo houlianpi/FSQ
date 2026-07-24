@@ -6,6 +6,10 @@
   color: #15171a;
 }
 
+.progress-item-with-artifacts {
+  cursor: pointer;
+}
+
 body {
   margin: 0;
   height: 100vh;

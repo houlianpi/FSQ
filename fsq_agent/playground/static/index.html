@@ -20,7 +20,7 @@
 
         <section id="yaml-section" class="section yaml-section">
           <div class="section-heading-row">
-            <h2>YAML</h2>
+            <h2>Execution</h2>
             <button id="load-run-toggle" class="secondary-button load-run-toggle" type="button" aria-expanded="false" aria-controls="load-run-form">Load Run</button>
           </div>
           <div id="load-run-form" class="load-run-form" hidden>
@@ -33,7 +33,7 @@
           </div>
           <div class="yaml-tabs" role="tablist" aria-label="YAML views">
             <button id="yaml-input-tab" class="yaml-tab-button active" type="button" role="tab" aria-selected="true" aria-controls="yaml-input-pane">Input</button>
-            <button id="yaml-recorded-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="yaml-recorded-pane">Recorded</button>
+            <button id="yaml-recorded-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="yaml-recorded-pane">Generated YAML</button>
             <button id="yaml-progress-tab" class="yaml-tab-button" type="button" role="tab" aria-selected="false" aria-controls="progress-pane">Progress</button>
           </div>
           <div id="yaml-input-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-input-tab">
@@ -48,7 +48,7 @@
             <div id="yaml-input-viewer" class="yaml-viewer" aria-live="polite"></div>
           </div>
           <div id="yaml-recorded-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-recorded-tab" hidden>
-            <p id="yaml-recorded-status" class="yaml-status">No recorded YAML yet.</p>
+            <p id="yaml-recorded-status" class="yaml-status">No generated YAML yet.</p>
             <div id="yaml-recorded-viewer" class="yaml-viewer" aria-live="polite"></div>
           </div>
           <section id="progress-pane" class="yaml-pane progress-pane" role="tabpanel" aria-labelledby="yaml-progress-tab" hidden>
