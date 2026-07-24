@@ -1,6 +1,7 @@
 import builtins
 from io import BytesIO
 from typing import Any
+from xml.etree import ElementTree
 
 import pytest
 
@@ -61,11 +62,13 @@ class FakeDevice:
         text: str = "Loaded",
         wait_result: bool = True,
         wait_gone_result: bool = True,
+        hierarchy: str = "<hierarchy />",
     ) -> None:
         self.exists = exists
         self.text = text
         self.wait_result = wait_result
         self.wait_gone_result = wait_gone_result
+        self.hierarchy = hierarchy
         self.calls: list[tuple[Any, ...]] = []
         self.selector_info: dict[str, object] = {
             "enabled": True,
@@ -109,7 +112,19 @@ class FakeDevice:
 
     def dump_hierarchy(self) -> str:
         self.calls.append(("dump_hierarchy",))
-        return "<hierarchy />"
+        return self.hierarchy
+
+
+class FakeCompressedDevice(FakeDevice):
+    def __init__(self, *, compressed_hierarchy: str, hierarchy: str = "<hierarchy />") -> None:
+        super().__init__(hierarchy=hierarchy)
+        self.compressed_hierarchy = compressed_hierarchy
+
+    def dump_hierarchy(self, compressed: bool = False) -> str:
+        self.calls.append(("dump_hierarchy", compressed))
+        if compressed:
+            return self.compressed_hierarchy
+        return self.hierarchy
 
 
 class FakeImage:
@@ -243,6 +258,155 @@ def test_uiautomator2_driver_exposes_ui_snapshot_output_with_ui_tree_alias() -> 
 
     assert result == {"xml": "<hierarchy />"}
     assert device.calls == [("dump_hierarchy",)]
+
+
+def test_uiautomator2_driver_uses_compressed_hierarchy_when_supported() -> None:
+    device = FakeCompressedDevice(
+        hierarchy='<hierarchy><node text="Raw" /></hierarchy>',
+        compressed_hierarchy='<hierarchy><node text="Compressed" /></hierarchy>',
+    )
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.ui_snapshot({})
+
+    assert result == {"xml": '<hierarchy><node text="Compressed" /></hierarchy>'}
+    assert device.calls == [("dump_hierarchy", True)]
+
+
+def test_uiautomator2_driver_compacts_android_ui_snapshot_xml() -> None:
+    long_text = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    device = FakeDevice(
+        hierarchy=f'''
+<hierarchy rotation="0">
+    <node
+        index="0"
+        package="com.example"
+        class="android.widget.FrameLayout"
+        bounds="[0,0][1080,2400]"
+        enabled="true"
+        displayed="true"
+        clickable="false">
+        <node
+            index="0"
+            package="com.example"
+            class="android.widget.LinearLayout"
+            bounds="[0,0][1080,2400]"
+            enabled="true"
+            displayed="true"
+            focusable="false">
+            <node
+                index="1"
+                text="{long_text}"
+                resource-id="com.example:id/title"
+                class="android.widget.TextView"
+                package="com.example"
+                checkable="false"
+                checked="false"
+                clickable="false"
+                enabled="true"
+                focusable="false"
+                focused="false"
+                long-clickable="false"
+                scrollable="false"
+                password="false"
+                selected="false"
+                bounds="[0,0][100,50]"
+                displayed="true" />
+            <node
+                index="2"
+                text=""
+                class="android.view.View"
+                package="com.example"
+                bounds="[0,50][100,100]"
+                enabled="true"
+                displayed="true" />
+            <node
+                index="3"
+                text=""
+                content-desc="Open menu"
+                class="android.widget.ImageButton"
+                package="com.example"
+                clickable="true"
+                enabled="true"
+                bounds="[100,0][160,60]"
+                displayed="true" />
+            <node
+                index="4"
+                text=""
+                resource-id="com.example:id/disabled"
+                class="android.widget.Button"
+                package="com.example"
+                enabled="false"
+                displayed="false"
+                bounds="[0,100][100,160]" />
+        </node>
+    </node>
+</hierarchy>
+'''
+    )
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.ui_snapshot({})
+
+    root = ElementTree.fromstring(str(result["xml"]))
+    nodes = list(root)
+    assert [node.attrib for node in nodes] == [
+        {
+            "text": long_text[:50],
+            "resource-id": "com.example:id/title",
+            "class": "android.widget.TextView",
+            "bounds": "[0,0][100,50]",
+        },
+        {
+            "content-desc": "Open menu",
+            "class": "android.widget.ImageButton",
+            "clickable": "true",
+            "bounds": "[100,0][160,60]",
+        },
+        {
+            "resource-id": "com.example:id/disabled",
+            "class": "android.widget.Button",
+            "bounds": "[0,100][100,160]",
+            "displayed": "false",
+            "enabled": "false",
+        },
+    ]
+    assert "package" not in result["xml"]
+    assert "index" not in result["xml"]
+    assert "FrameLayout" not in result["xml"]
+    assert "LinearLayout" not in result["xml"]
+    assert "android.view.View" not in result["xml"]
+    assert device.calls == [("dump_hierarchy",)]
+
+
+def test_uiautomator2_driver_returns_raw_snapshot_when_xml_is_malformed() -> None:
+    device = FakeDevice(hierarchy="<hierarchy><node")
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    result = driver.ui_snapshot({})
+
+    assert result == {"xml": "<hierarchy><node"}
+    assert device.calls == [("dump_hierarchy",)]
+
+
+def test_uiautomator2_driver_falls_back_to_raw_hierarchy_when_compaction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = FakeCompressedDevice(
+        hierarchy='<hierarchy><node text="Raw" /></hierarchy>',
+        compressed_hierarchy='<hierarchy><node text="Compressed" /></hierarchy>',
+    )
+    driver = UiAutomator2AndroidDriver(app_id="com.example.app", device=device)
+
+    def fail_compaction(source_xml: str) -> str:
+        raise RuntimeError(f"cannot compact {source_xml}")
+
+    monkeypatch.setattr(driver, "_compact_ui_snapshot_xml", fail_compaction)
+
+    result = driver.ui_snapshot({})
+
+    assert result == {"xml": '<hierarchy><node text="Raw" /></hierarchy>'}
+    assert device.calls == [("dump_hierarchy", True), ("dump_hierarchy", False)]
 
 
 def test_uiautomator2_driver_rejects_malformed_point_based_swipe() -> None:

@@ -1,5 +1,6 @@
 from io import BytesIO
 from typing import Any
+from xml.etree import ElementTree
 
 from pydantic import BaseModel
 
@@ -27,6 +28,36 @@ from fsq_agent.models import (
 DEFAULT_ELEMENT_WAIT_TIMEOUT_SECONDS = 10.0
 ANDROID_STATE_ASSERTION_FIELDS = ("enabled", "checked", "selected", "clickable", "focused")
 ANDROID_LOCATOR_FIELDS = ("resourceId", "accessibilityId", "text", "className", "xpath")
+ANDROID_UI_SNAPSHOT_TEXT_LIMIT_CHARS = 50
+ANDROID_UI_SNAPSHOT_TEXT_ATTRIBUTES = frozenset(
+    {"text", "content-desc", "contentDescription", "hint", "label", "name", "value"}
+)
+ANDROID_UI_SNAPSHOT_LOCATOR_ATTRIBUTES = frozenset(
+    {"id", "resource-id", "resourceId", "accessibility-id", "content-desc", "contentDescription"}
+)
+ANDROID_UI_SNAPSHOT_STRUCTURAL_ATTRIBUTES = frozenset({"class", "className", "bounds"})
+ANDROID_UI_SNAPSHOT_TRUE_STATE_ATTRIBUTES = frozenset(
+    {
+        "checkable",
+        "checked",
+        "clickable",
+        "focusable",
+        "focused",
+        "long-clickable",
+        "longClickable",
+        "password",
+        "scrollable",
+        "selected",
+    }
+)
+ANDROID_UI_SNAPSHOT_NEGATIVE_STATE_ATTRIBUTES = frozenset({"displayed", "enabled"})
+ANDROID_UI_SNAPSHOT_ALLOWED_ATTRIBUTES = (
+    ANDROID_UI_SNAPSHOT_TEXT_ATTRIBUTES
+    | ANDROID_UI_SNAPSHOT_LOCATOR_ATTRIBUTES
+    | ANDROID_UI_SNAPSHOT_STRUCTURAL_ATTRIBUTES
+    | ANDROID_UI_SNAPSHOT_TRUE_STATE_ATTRIBUTES
+    | ANDROID_UI_SNAPSHOT_NEGATIVE_STATE_ATTRIBUTES
+)
 
 
 class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
@@ -194,9 +225,79 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         image.save(output, format="PNG")
         return output.getvalue()
 
-    @_android_driver_tool("uiTree", description="Return the current Android UI hierarchy XML.")
+    @_android_driver_tool(
+        "uiTree",
+        description=(
+            "Return a compact Android UI hierarchy XML snapshot. Layout-only wrapper nodes and unused/default "
+            "attributes may be removed, and long text-like attributes are clipped to the first 50 characters."
+        ),
+    )
     def ui_snapshot(self, params: AndroidUiTreeParams) -> dict[str, object]:
-        return {"xml": self.device.dump_hierarchy()}
+        source_xml = self._dump_hierarchy_xml()
+        try:
+            compact_xml = self._compact_ui_snapshot_xml(source_xml)
+        except Exception:
+            compact_xml = self._raw_hierarchy_xml_or(source_xml)
+        return {"xml": compact_xml}
+
+    def _dump_hierarchy_xml(self) -> str:
+        try:
+            return str(self.device.dump_hierarchy(compressed=True))
+        except Exception as compressed_error:
+            try:
+                return str(self.device.dump_hierarchy())
+            except Exception:
+                raise compressed_error
+
+    def _raw_hierarchy_xml_or(self, fallback_xml: str) -> str:
+        try:
+            return str(self.device.dump_hierarchy())
+        except Exception:
+            return fallback_xml
+
+    def _compact_ui_snapshot_xml(self, source_xml: str) -> str:
+        try:
+            source_root = ElementTree.fromstring(source_xml)
+        except ElementTree.ParseError:
+            return source_xml
+
+        compact_root = ElementTree.Element(source_root.tag, self._compact_ui_snapshot_attributes(source_root.attrib))
+        for child in source_root:
+            compact_root.extend(self._compact_ui_snapshot_node(child))
+        return ElementTree.tostring(compact_root, encoding="unicode", short_empty_elements=True)
+
+    def _compact_ui_snapshot_node(self, source_node: ElementTree.Element) -> list[ElementTree.Element]:
+        attributes = self._compact_ui_snapshot_attributes(source_node.attrib)
+        children: list[ElementTree.Element] = []
+        for child in source_node:
+            children.extend(self._compact_ui_snapshot_node(child))
+
+        if not self._has_ui_snapshot_signal(attributes):
+            return children
+
+        compact_node = ElementTree.Element(source_node.tag, attributes)
+        compact_node.extend(children)
+        return [compact_node]
+
+    def _compact_ui_snapshot_attributes(self, attributes: dict[str, str]) -> dict[str, str]:
+        compact: dict[str, str] = {}
+        for key, raw_value in attributes.items():
+            value = str(raw_value)
+            if not value or key not in ANDROID_UI_SNAPSHOT_ALLOWED_ATTRIBUTES:
+                continue
+            if key in ANDROID_UI_SNAPSHOT_TEXT_ATTRIBUTES:
+                value = value[:ANDROID_UI_SNAPSHOT_TEXT_LIMIT_CHARS]
+                if not value:
+                    continue
+            if key in ANDROID_UI_SNAPSHOT_TRUE_STATE_ATTRIBUTES and value.lower() != "true":
+                continue
+            if key in ANDROID_UI_SNAPSHOT_NEGATIVE_STATE_ATTRIBUTES and value.lower() == "true":
+                continue
+            compact[key] = value
+        return compact
+
+    def _has_ui_snapshot_signal(self, attributes: dict[str, str]) -> bool:
+        return any(key not in ANDROID_UI_SNAPSHOT_STRUCTURAL_ATTRIBUTES for key in attributes)
 
     def _connect(self, serial: str | None) -> object:
         try:
