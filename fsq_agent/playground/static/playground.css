@@ -315,7 +315,7 @@ h2 {
   }
 }
 
-.yaml-section {
+.execution-section {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -598,8 +598,8 @@ h2 {
   font-weight: 750;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .yaml-chip {
@@ -1605,7 +1605,7 @@ body.step-artifact-resizing {
   background: #ffffff;
 }
 
-.yaml-section .progress-pane {
+.execution-section .progress-pane {
   padding: 0;
   background: transparent;
 }

@@ -108,7 +108,7 @@ const els = {
   goal: document.getElementById('goal'),
   caseYaml: document.getElementById('case-yaml'),
   yamlPathRow: document.getElementById('yaml-path-row'),
-  yamlSection: document.getElementById('yaml-section'),
+  executionSection: document.getElementById('execution-section'),
   loadRunToggle: document.getElementById('load-run-toggle'),
   loadRunForm: document.getElementById('load-run-form'),
   loadRunPath: document.getElementById('load-run-path'),
@@ -491,7 +491,7 @@ function updateRunMode({ preserveView = false } = {}) {
   if (!loadRunAvailable && !els.loadRunForm.hidden) resetLoadRunForm({ collapse: true });
   els.caseYaml.disabled = !hasInputYaml || Boolean(state.currentRequestId);
   for (const input of els.runModeInputs) input.disabled = Boolean(state.currentRequestId || state.finishingRun);
-  els.yamlSection.hidden = false;
+  els.executionSection.hidden = false;
   els.yamlTabs.hidden = false;
   els.yamlProgressTab.hidden = false;
   syncYamlTabOrder(mode);
@@ -819,7 +819,7 @@ async function loadRecordedYaml(runId, recording, { existingRun = false } = {}) 
     return;
   }
   setRecordedYamlNoContent('Loading generated YAML...', 'neutral');
-  els.yamlSection.hidden = false;
+  els.executionSection.hidden = false;
   try {
     const yaml = await api(`/yaml/recorded/${encodeURIComponent(runId)}`);
     state.yamlRecordedContent = yaml.content || '';
@@ -830,13 +830,13 @@ async function loadRecordedYaml(runId, recording, { existingRun = false } = {}) 
       renderYamlEmpty(els.yamlRecordedViewer, recordingStatusDetails(yaml));
     }
     setYamlRecordedStatus('', 'neutral');
-    els.yamlSection.hidden = false;
+    els.executionSection.hidden = false;
   } catch (error) {
     state.yamlRecordedContent = '';
     state.yamlRecordedDisplay = null;
     renderYamlEmpty(els.yamlRecordedViewer, error.message);
     setYamlRecordedStatus(error.message, 'error');
-    els.yamlSection.hidden = false;
+    els.executionSection.hidden = false;
   }
 }
 

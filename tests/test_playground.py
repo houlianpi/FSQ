@@ -3542,23 +3542,26 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
     run_start = html.index('class="section run-section"')
     run_section = html[run_start:html.index("</section>", run_start)]
-    yaml_section = html[html.index('id="yaml-section"'):html.index('</section>\n\n        <section class="section">')]
+    execution_section = html[html.index('id="execution-section"'):html.index('</section>\n\n        <section class="section">')]
 
-    assert html.index('id="yaml-section"') < html.index("<h2>Session</h2>")
-    assert "<h2>Execution</h2>" in yaml_section
-    assert "<h2>YAML</h2>" not in yaml_section
+    assert html.index('id="execution-section"') < html.index("<h2>Session</h2>")
+    assert "<h2>Execution</h2>" in execution_section
+    assert "<h2>YAML</h2>" not in execution_section
     assert html.index('id="case-yaml"') > html.index('class="section run-section"')
     assert 'id="case-yaml"' in run_section
     assert 'id="yaml-path-row"' in run_section
     assert 'class="run-input-row"' in run_section
-    assert 'id="case-yaml"' not in yaml_section
-    assert 'id="load-run-toggle"' in yaml_section
-    assert 'id="load-run-form"' in yaml_section
-    assert 'id="load-run-path"' in yaml_section
-    assert 'id="load-run-submit"' in yaml_section
-    assert 'id="load-run-cancel"' in yaml_section
-    assert 'id="load-run-status"' in yaml_section
+    assert 'id="case-yaml"' not in execution_section
+    assert 'id="load-run-toggle"' in execution_section
+    assert 'id="load-run-form"' in execution_section
+    assert 'id="load-run-path"' in execution_section
+    assert 'id="load-run-submit"' in execution_section
+    assert 'id="load-run-cancel"' in execution_section
+    assert 'id="load-run-status"' in execution_section
     assert "yaml-input-tab" in html
+    assert '>Source YAML</button>' in html
+    assert '>Input YAML</button>' not in html
+    assert '>Input</button>' not in html
     assert "yaml-recorded-tab" in html
     assert '>Generated YAML</button>' in html
     assert '>Recorded</button>' not in html
@@ -3572,6 +3575,9 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yaml-copy" not in html
     assert "yaml-input-viewer" in html
     assert "yaml-recorded-viewer" in html
+    yaml_title_style = styles[styles.index(".yaml-case-title {"):styles.index("}", styles.index(".yaml-case-title {"))]
+    assert "line-clamp: 2" in yaml_title_style
+    assert "line-clamp: 3" not in yaml_title_style
     assert "yaml-placeholder" not in html
     assert "loadInputYaml" in script
     assert "loadRecordedYaml" in script
@@ -3636,9 +3642,9 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yamlPathRow" in script
     assert "loadRunToggle" in script
     assert "loadRunForm" in script
-    assert "yamlSection" in script
+    assert "executionSection" in script
     assert "yamlTabs" in script
-    assert "els.yamlSection.hidden = false" in script
+    assert "els.executionSection.hidden = false" in script
     assert "els.yamlCopy" not in script
     assert "els.yamlInputTab.hidden = true" in script
     assert "els.yamlRecordedTab.hidden = false" in script
@@ -3683,7 +3689,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "if (stepCard && stepCard !== region) stepCard.classList.add('yaml-region-selected')" in script
     assert "if (caseSummary && caseSummary !== region) caseSummary.classList.add('yaml-region-selected')" in script
     assert "state.selectedYamlCaseTitle.classList.add('yaml-region-selected')" in script
-    assert "yaml-section" in styles
+    assert "execution-section" in styles
     assert "flex: 1 1 auto" in styles
     assert "min-height: 320px" in styles
     assert "--control-panel-width: clamp(320px, 32vw, 520px)" in styles
@@ -3721,7 +3727,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "border-bottom: 1px solid #d8e8fb" in styles
     assert "background: #eef6ff" in styles
     assert "color: #0f4c81" in styles
-    assert "-webkit-line-clamp: 3" in styles
+    assert "-webkit-line-clamp: 2" in styles
     assert "title.title = title.textContent" in script
     assert "yaml-metadata-grid" in styles
     assert ".yaml-metadata-item:hover" in styles
