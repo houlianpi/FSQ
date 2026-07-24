@@ -305,7 +305,11 @@ def test_playground_server_loaded_run_progress_restores_persisted_events(tmp_pat
     run_dir.mkdir(parents=True)
     events = [
         {"type": "run_started", "title": "Run started", "sequence": 7, "payload": {}},
-        {"type": "tool_call_completed", "title": "Clicked", "payload": {"status": "passed"}},
+        {
+            "type": "tool_call_completed",
+            "title": "Clicked",
+            "payload": {"status": "passed", "runner_step_id": "run-1-step-002"},
+        },
         {"type": "run_completed", "title": "Run completed", "sequence": 0, "payload": {"status": "success"}},
     ]
     (run_dir / "events.jsonl").write_text(
@@ -320,6 +324,7 @@ def test_playground_server_loaded_run_progress_restores_persisted_events(tmp_pat
     assert payload["runId"] == "run-1"
     assert [event["title"] for event in payload["events"]] == ["Run started", "Clicked", "Run completed"]
     assert [event["sequence"] for event in payload["events"]] == [7, 8, 9]
+    assert payload["events"][1]["payload"]["runner_step_id"] == "run-1-step-002"
 
 
 def test_playground_server_loaded_run_progress_returns_empty_without_event_log(tmp_path: Path) -> None:
@@ -3179,6 +3184,15 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "showYamlView('progress')" in script
     assert "renderProgressText" in script
     assert "handleProgressItemClick" in script
+    assert "function progressEventStepId(event)" in script
+    assert "payload.runner_step_id" in script
+    assert "runnerResult.step_id" in script
+    assert "item.dataset.yamlStepId = stepId" in script
+    assert "item.dataset.progressSequenceLabel = sequence" in script
+    assert "if (item.dataset.yamlStepId) loadStepArtifactsForCard(item)" in script
+    assert "appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event), event)" in script
+    assert ".progress-item-with-artifacts" in styles
+    assert "stepCard.dataset.progressSequenceLabel || stepCard.dataset.yamlStepIndex" in script
     assert "if (state.currentRequestId || state.finishingRun) return" in script
     assert "activateProgressItem(item)" in script
     assert "scheduleClearActiveProgressItem" in script
@@ -3449,6 +3463,38 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     assert "@media (max-width: 760px)" in styles
 
 
+def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
+    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script = script_path.read_text(encoding="utf-8")
+    switch_body = script[script.index("function switchRunMode()"):script.index("function updateRunMode(")]
+    start_body = script[script.index("async function startExecution(payload)"):script.index("function highlightRunStartSummary()")]
+    load_body = script[script.index("async function activateLoadedRun(runId, availability)"):script.index("async function loadExistingRunProgress(runId)")]
+
+    assert "saveRunModeState(state.activeRunMode);" in load_body
+    assert "restoreRunModeState(mode);" in switch_body
+    assert "state.loadedRunId = null;" not in switch_body
+    assert "saveRunModeState('goal');" in load_body
+    assert "function loadedRunIsActive()" in script
+    assert "if (loadedRunId)" not in switch_body
+    assert "if (state.loadedRunId)" in start_body
+    assert "restoreRunModeState(state.activeRunMode);" in start_body
+    assert start_body.index("restoreRunModeState(state.activeRunMode);") < start_body.index("state.loadedRunId = null;")
+
+
+def test_playground_static_load_run_is_goal_mode_only() -> None:
+    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script = script_path.read_text(encoding="utf-8")
+    update_body = script[script.index("function updateRunMode("):script.index("function syncYamlTabOrder(mode)")]
+    toggle_body = script[script.index("function toggleLoadRunForm()"):script.index("function resetLoadRunForm(")]
+    load_body = script[script.index("async function loadExistingRun()"):script.index("async function activateLoadedRun(")]
+
+    assert "const loadRunAvailable = mode === 'goal';" in update_body
+    assert "els.loadRunToggle.hidden = !loadRunAvailable;" in update_body
+    assert "resetLoadRunForm({ collapse: true })" in update_body
+    assert "currentRunMode() !== 'goal'" in toggle_body
+    assert "currentRunMode() !== 'goal'" in load_body
+
+
 def test_playground_lifecycle_editor_model_behavior() -> None:
     node = shutil.which("node")
     if node is None:
@@ -3497,28 +3543,42 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
     run_start = html.index('class="section run-section"')
     run_section = html[run_start:html.index("</section>", run_start)]
-    yaml_section = html[html.index('id="yaml-section"'):html.index('</section>\n\n        <section class="section">')]
+    execution_section = html[html.index('id="execution-section"'):html.index('</section>\n\n        <section class="section">')]
 
-    assert html.index('id="yaml-section"') < html.index("<h2>Session</h2>")
+    assert html.index('id="execution-section"') < html.index("<h2>Session</h2>")
+    assert "<h2>Execution</h2>" in execution_section
+    assert "<h2>YAML</h2>" not in execution_section
     assert html.index('id="case-yaml"') > html.index('class="section run-section"')
     assert 'id="case-yaml"' in run_section
     assert 'id="yaml-path-row"' in run_section
     assert 'class="run-input-row"' in run_section
-    assert 'id="case-yaml"' not in yaml_section
-    assert 'id="load-run-toggle"' in yaml_section
-    assert 'id="load-run-form"' in yaml_section
-    assert 'id="load-run-path"' in yaml_section
-    assert 'id="load-run-submit"' in yaml_section
-    assert 'id="load-run-cancel"' in yaml_section
-    assert 'id="load-run-status"' in yaml_section
+    assert 'id="case-yaml"' not in execution_section
+    assert 'id="load-run-toggle"' in execution_section
+    assert 'id="load-run-form"' in execution_section
+    assert 'id="load-run-path"' in execution_section
+    assert 'id="load-run-submit"' in execution_section
+    assert 'id="load-run-cancel"' in execution_section
+    assert 'id="load-run-status"' in execution_section
     assert "yaml-input-tab" in html
+    assert '>Source YAML</button>' in html
+    assert '>Input YAML</button>' not in html
+    assert '>Input</button>' not in html
     assert "yaml-recorded-tab" in html
+    assert '>Generated YAML</button>' in html
+    assert '>Recorded</button>' not in html
+    assert "No generated YAML yet." in html
+    assert "Loading generated YAML..." in script
+    assert "Generated YAML is empty." in script
+    assert "No generated YAML is available for this run." in script
     assert "yaml-input-pane" in html
     assert "yaml-recorded-pane" in html
     assert "yaml-refresh" not in html
     assert "yaml-copy" not in html
     assert "yaml-input-viewer" in html
     assert "yaml-recorded-viewer" in html
+    yaml_title_style = styles[styles.index(".yaml-case-title {"):styles.index("}", styles.index(".yaml-case-title {"))]
+    assert "line-clamp: 2" in yaml_title_style
+    assert "line-clamp: 3" not in yaml_title_style
     assert "yaml-placeholder" not in html
     assert "loadInputYaml" in script
     assert "loadRecordedYaml" in script
@@ -3531,7 +3591,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "await loadRecordedYaml(runId, availability.recordedYaml, { existingRun: true })" in script
     assert "async function loadExistingRunProgress(runId)" in script
     assert "api(`/runs/${encodeURIComponent(runId)}/progress`)" in script
-    assert "appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event))" in script
+    assert "appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event), event)" in script
     assert "No persisted progress events are available for this run." in script
     assert "Loaded existing run:" not in script
     assert "els.loadRunPath.addEventListener('keydown'" in script
@@ -3583,9 +3643,9 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yamlPathRow" in script
     assert "loadRunToggle" in script
     assert "loadRunForm" in script
-    assert "yamlSection" in script
+    assert "executionSection" in script
     assert "yamlTabs" in script
-    assert "els.yamlSection.hidden = false" in script
+    assert "els.executionSection.hidden = false" in script
     assert "els.yamlCopy" not in script
     assert "els.yamlInputTab.hidden = true" in script
     assert "els.yamlRecordedTab.hidden = false" in script
@@ -3630,7 +3690,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "if (stepCard && stepCard !== region) stepCard.classList.add('yaml-region-selected')" in script
     assert "if (caseSummary && caseSummary !== region) caseSummary.classList.add('yaml-region-selected')" in script
     assert "state.selectedYamlCaseTitle.classList.add('yaml-region-selected')" in script
-    assert "yaml-section" in styles
+    assert "execution-section" in styles
     assert "flex: 1 1 auto" in styles
     assert "min-height: 320px" in styles
     assert "--control-panel-width: clamp(320px, 32vw, 520px)" in styles
@@ -3668,7 +3728,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "border-bottom: 1px solid #d8e8fb" in styles
     assert "background: #eef6ff" in styles
     assert "color: #0f4c81" in styles
-    assert "-webkit-line-clamp: 3" in styles
+    assert "-webkit-line-clamp: 2" in styles
     assert "title.title = title.textContent" in script
     assert "yaml-metadata-grid" in styles
     assert ".yaml-metadata-item:hover" in styles

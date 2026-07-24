@@ -108,7 +108,7 @@ const els = {
   goal: document.getElementById('goal'),
   caseYaml: document.getElementById('case-yaml'),
   yamlPathRow: document.getElementById('yaml-path-row'),
-  yamlSection: document.getElementById('yaml-section'),
+  executionSection: document.getElementById('execution-section'),
   loadRunToggle: document.getElementById('load-run-toggle'),
   loadRunForm: document.getElementById('load-run-form'),
   loadRunPath: document.getElementById('load-run-path'),
@@ -469,7 +469,9 @@ function defaultYamlViewForMode(mode) {
 function switchRunMode() {
   if (state.currentRequestId || state.finishingRun) return;
   if (state.loadedRunId) {
-    state.activeRunMode = currentRunMode();
+    const mode = currentRunMode();
+    state.activeRunMode = mode;
+    restoreRunModeState(mode);
     updateRunMode({ preserveView: true });
     return;
   }
@@ -482,16 +484,19 @@ function switchRunMode() {
 function updateRunMode({ preserveView = false } = {}) {
   const mode = currentRunMode();
   const hasInputYaml = mode === 'yaml' || mode === 'strict-yaml';
+  const loadRunAvailable = mode === 'goal';
   els.goal.hidden = hasInputYaml;
   els.yamlPathRow.hidden = !hasInputYaml;
+  els.loadRunToggle.hidden = !loadRunAvailable;
+  if (!loadRunAvailable && !els.loadRunForm.hidden) resetLoadRunForm({ collapse: true });
   els.caseYaml.disabled = !hasInputYaml || Boolean(state.currentRequestId);
   for (const input of els.runModeInputs) input.disabled = Boolean(state.currentRequestId || state.finishingRun);
-  els.yamlSection.hidden = false;
+  els.executionSection.hidden = false;
   els.yamlTabs.hidden = false;
   els.yamlProgressTab.hidden = false;
   syncYamlTabOrder(mode);
   const targetView = preserveView ? state.yamlActiveView : defaultYamlViewForMode(mode);
-  if (state.loadedRunId) {
+  if (loadedRunIsActive()) {
     els.yamlInputTab.hidden = true;
     els.yamlRecordedTab.hidden = !state.loadedRunAvailability?.recordedYaml;
     showYamlView(targetView);
@@ -522,6 +527,10 @@ function syncYamlTabOrder(mode) {
 
 async function startExecution(payload) {
   if (!(await ensureSession())) return;
+  if (state.loadedRunId) {
+    state.activeRunMode = currentRunMode();
+    restoreRunModeState(state.activeRunMode);
+  }
   state.loadedRunId = null;
   state.loadedRunAvailability = null;
   resetLoadRunForm({ collapse: true });
@@ -655,7 +664,7 @@ async function applyProgress(progress) {
   if (!state.currentRequestId) return;
   for (const event of progress.events || []) {
     if (event.type === 'run_started') setRunId(event.run_id || event.runId);
-    appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event));
+    appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event), event);
     updateLastProgressSequence(event.sequence);
   }
   if (progress.preview?.token && progress.preview.token !== state.previewToken) {
@@ -809,25 +818,25 @@ async function loadRecordedYaml(runId, recording, { existingRun = false } = {}) 
     clearRecordedYaml();
     return;
   }
-  setRecordedYamlNoContent('Loading recorded YAML...', 'neutral');
-  els.yamlSection.hidden = false;
+  setRecordedYamlNoContent('Loading generated YAML...', 'neutral');
+  els.executionSection.hidden = false;
   try {
     const yaml = await api(`/yaml/recorded/${encodeURIComponent(runId)}`);
     state.yamlRecordedContent = yaml.content || '';
     state.yamlRecordedDisplay = yaml.display || null;
     if (yaml.content) {
-      renderYamlDisplay(els.yamlRecordedViewer, state.yamlRecordedDisplay, 'Recorded YAML is empty.');
+      renderYamlDisplay(els.yamlRecordedViewer, state.yamlRecordedDisplay, 'Generated YAML is empty.');
     } else {
       renderYamlEmpty(els.yamlRecordedViewer, recordingStatusDetails(yaml));
     }
     setYamlRecordedStatus('', 'neutral');
-    els.yamlSection.hidden = false;
+    els.executionSection.hidden = false;
   } catch (error) {
     state.yamlRecordedContent = '';
     state.yamlRecordedDisplay = null;
     renderYamlEmpty(els.yamlRecordedViewer, error.message);
     setYamlRecordedStatus(error.message, 'error');
-    els.yamlSection.hidden = false;
+    els.executionSection.hidden = false;
   }
 }
 
@@ -844,11 +853,11 @@ function clearRecordedYaml() {
   state.yamlRecordedContent = '';
   state.yamlRecordedDisplay = null;
   setYamlRecordedStatus('', 'neutral');
-  renderYamlEmpty(els.yamlRecordedViewer, 'No recorded YAML yet.');
+  renderYamlEmpty(els.yamlRecordedViewer, 'No generated YAML yet.');
 }
 
 function toggleLoadRunForm() {
-  if (state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
+  if (currentRunMode() !== 'goal' || state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
   const opening = els.loadRunForm.hidden;
   els.loadRunForm.hidden = !opening;
   els.loadRunToggle.setAttribute('aria-expanded', String(opening));
@@ -882,7 +891,7 @@ function setLoadRunControlsDisabled(serverBusy = false) {
 }
 
 async function loadExistingRun() {
-  if (state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
+  if (currentRunMode() !== 'goal' || state.currentRequestId || state.finishingRun || state.loadRunInFlight) return;
   if (hasUnsavedLifecycleDraft()) {
     setLoadRunStatus('Save or discard lifecycle changes before loading a run.', 'error');
     return;
@@ -908,6 +917,7 @@ async function loadExistingRun() {
 
 async function activateLoadedRun(runId, availability) {
   stopProgressUpdates();
+  saveRunModeState(state.activeRunMode);
   state.loadedRunId = runId;
   state.loadedRunAvailability = availability;
   state.replayRequestId = runId;
@@ -936,7 +946,7 @@ async function activateLoadedRun(runId, availability) {
   if (availability.recordedYaml) {
     await loadRecordedYaml(runId, availability.recordedYaml, { existingRun: true });
   } else {
-    setRecordedYamlNoContent('No recorded YAML is available for this run.', 'neutral');
+    setRecordedYamlNoContent('No generated YAML is available for this run.', 'neutral');
   }
   if (availability.replay) {
     await showCompletedRunReplayPreview(runId);
@@ -944,6 +954,11 @@ async function activateLoadedRun(runId, availability) {
     clearPreview('No replay video is available for this run.');
   }
   showRightTab('preview');
+  saveRunModeState('goal');
+}
+
+function loadedRunIsActive() {
+  return Boolean(state.loadedRunId && currentRunMode() === 'goal');
 }
 
 async function loadExistingRunProgress(runId) {
@@ -955,7 +970,7 @@ async function loadExistingRunProgress(runId) {
     const progress = await api(`/runs/${encodeURIComponent(runId)}/progress`);
     const events = Array.isArray(progress.events) ? progress.events : [];
     for (const event of events) {
-      appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event));
+      appendProgress(eventLabel(event), event.sequence, eventDetails(event), eventStatus(event), event);
       updateLastProgressSequence(event.sequence);
     }
     if (events.length === 0) {
@@ -1183,7 +1198,7 @@ function lifecycleValidationError() {
 
 function updateLifecycleToolbar() {
   if (!els.yamlLifecycleToolbar) return;
-  const available = state.yamlInputEditable && !state.loadedRunId;
+  const available = state.yamlInputEditable && !loadedRunIsActive();
   const editorDisabled = Boolean(state.currentRequestId || state.finishingRun || state.yamlLifecycleSaving);
   els.yamlLifecycleToolbar.hidden = !available;
   els.yamlLifecycleDirty.hidden = !state.yamlLifecycleDirty;
@@ -1561,6 +1576,7 @@ function handleYamlRegionClick(event) {
 }
 
 function completedRunId() {
+  if (state.loadedRunId) return loadedRunIsActive() ? state.loadedRunId : '';
   return !state.currentRequestId && state.replayRequestId ? state.replayRequestId : '';
 }
 
@@ -1838,9 +1854,10 @@ function stepArtifactShell(stepCard, emptyMessage = '') {
 }
 
 function stepArtifactTitle(stepCard) {
-  const index = stepCard.dataset.yamlStepIndex || '?';
+  const index = stepCard.dataset.progressSequenceLabel || stepCard.dataset.yamlStepIndex || '?';
   const action = stepCard.dataset.yamlAction || 'command';
-  return `${String(index).padStart(2, '0')} ${action}`;
+  const paddedIndex = stepCard.dataset.progressSequenceLabel ? index : String(index).padStart(2, '0');
+  return `${paddedIndex} ${action}`;
 }
 
 function renderStepArtifactScreenshots(screenshots) {
@@ -2434,7 +2451,7 @@ function recordingStatusDetails(recording) {
   for (const warning of recording.warnings || []) messages.push(`Warning: ${formatProgressValue(warning)}`);
   for (const error of recording.errors || []) messages.push(`Error: ${formatProgressValue(error)}`);
   if ((recording.skippedToolCalls || []).length > 0) messages.push(`Skipped tool calls: ${recording.skippedToolCalls.length}`);
-  return messages.join('\n') || 'No recorded YAML content.';
+  return messages.join('\n') || 'No generated YAML content.';
 }
 
 function renderMarkdown(markdown) {
@@ -2532,7 +2549,7 @@ function showRightTab(tabName) {
   }
 }
 
-function appendProgress(content, backendSequence = null, details = [], status = 'neutral') {
+function appendProgress(content, backendSequence = null, details = [], status = 'neutral', event = null) {
   const hasBackendSequence = Number.isInteger(backendSequence) && backendSequence >= 0;
   if (hasBackendSequence) {
     state.progressSequence = Math.max(state.progressSequence, backendSequence);
@@ -2543,6 +2560,13 @@ function appendProgress(content, backendSequence = null, details = [], status = 
   item.className = 'progress-item';
   item.tabIndex = 0;
   const sequence = String(hasBackendSequence ? backendSequence : state.progressSequence).padStart(3, '0');
+  item.dataset.progressSequenceLabel = sequence;
+  const stepId = progressEventStepId(event);
+  if (stepId) {
+    item.dataset.yamlStepId = stepId;
+    item.dataset.yamlAction = event?.tool_name || event?.title || event?.type || 'step';
+    item.classList.add('progress-item-with-artifacts');
+  }
   const number = document.createElement('span');
   number.className = 'progress-number';
   number.textContent = `${sequence}.`;
@@ -2615,10 +2639,23 @@ function handleProgressItemClick(event) {
     if (state.currentRequestId || state.finishingRun) return;
     clearSelectedProgressRunId();
     selectProgressItem(item);
+    if (item.dataset.yamlStepId) loadStepArtifactsForCard(item);
     return;
   }
   clearSelectedProgressRunId();
   clearSelectedProgressItem();
+}
+
+function progressEventStepId(event) {
+  if (!event || typeof event !== 'object') return '';
+  const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+  const runnerResult = payload.runner_result && typeof payload.runner_result === 'object'
+    ? payload.runner_result
+    : {};
+  for (const candidate of [event.step_id, event.stepId, payload.runner_step_id, payload.step_id, runnerResult.step_id]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
 }
 
 function scheduleProgressScroll() {
