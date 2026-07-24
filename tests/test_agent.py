@@ -217,7 +217,7 @@ def test_recent_tool_output_filter_does_not_artifact_sensitive_outputs() -> None
 
     path = input_filter._artifact_path_for(
         {"call_id": "call-1"},
-        {"get_runtime_secret"},
+        {"secret_debug_tool"},
         '{"type":"runtime_secret","name":"TEST_ACCOUNT_PASSWORD","value":"secret","sensitive":true}',
     )
 
@@ -238,8 +238,8 @@ def test_recent_tool_output_filter_omits_wrapped_sensitive_history_preview() -> 
         artifact_store=artifact_store,  # type: ignore[arg-type]
     )
     output = (
-        '{"tool_name":"get_runtime_secret","model_output":"full","result":'
-        '{"tool_name":"get_runtime_secret","status":"success","output":'
+        '{"tool_name":"secret_debug_tool","model_output":"full","result":'
+        '{"tool_name":"secret_debug_tool","status":"success","output":'
         '{"type":"runtime_secret","name":"TEST_ACCOUNT_PASSWORD","value":"secret-password","sensitive":true},'
         '"sensitive":true}}'
     )
@@ -249,7 +249,7 @@ def test_recent_tool_output_filter_omits_wrapped_sensitive_history_preview() -> 
         {
             "model_data": ModelInputData(
                 input=[
-                    {"type": "function_call", "call_id": "call-1", "name": "get_runtime_secret"},
+                    {"type": "function_call", "call_id": "call-1", "name": "secret_debug_tool"},
                     {"type": "function_call_output", "call_id": "call-1", "output": output},
                 ],
                 instructions="instructions",
@@ -261,7 +261,7 @@ def test_recent_tool_output_filter_omits_wrapped_sensitive_history_preview() -> 
 
     assert artifact_store.writes == []
     assert "secret-password" not in filtered.input[1]["output"]
-    assert filtered.input[1]["output"] == "[Sensitive historical get_runtime_secret output omitted.]"
+    assert filtered.input[1]["output"] == "[Sensitive historical secret_debug_tool output omitted.]"
 
 
 def test_recent_tool_output_filter_omits_small_wrapped_sensitive_history() -> None:
@@ -277,8 +277,8 @@ def test_recent_tool_output_filter_omits_small_wrapped_sensitive_history() -> No
         artifact_store=artifact_store,  # type: ignore[arg-type]
     )
     output = (
-        '{"tool_name":"get_runtime_secret","model_output":"full","result":'
-        '{"tool_name":"get_runtime_secret","status":"success","output":'
+        '{"tool_name":"secret_debug_tool","model_output":"full","result":'
+        '{"tool_name":"secret_debug_tool","status":"success","output":'
         '{"type":"runtime_secret","name":"TEST_ACCOUNT_PASSWORD","value":"secret-password","sensitive":true},'
         '"sensitive":true}}'
     )
@@ -288,7 +288,7 @@ def test_recent_tool_output_filter_omits_small_wrapped_sensitive_history() -> No
         {
             "model_data": ModelInputData(
                 input=[
-                    {"type": "function_call", "call_id": "call-1", "name": "get_runtime_secret"},
+                    {"type": "function_call", "call_id": "call-1", "name": "secret_debug_tool"},
                     {"type": "function_call_output", "call_id": "call-1", "output": output},
                 ],
                 instructions="instructions",
@@ -300,7 +300,7 @@ def test_recent_tool_output_filter_omits_small_wrapped_sensitive_history() -> No
 
     assert artifact_store.writes == []
     assert "secret-password" not in filtered.input[1]["output"]
-    assert filtered.input[1]["output"] == "[Sensitive historical get_runtime_secret output omitted.]"
+    assert filtered.input[1]["output"] == "[Sensitive historical secret_debug_tool output omitted.]"
 
 
 @pytest.mark.asyncio

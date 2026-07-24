@@ -61,8 +61,7 @@ def test_common_platform_tools_use_shared_declaration_layer() -> None:
     assert definitions["wait_ms"].executor_kind == "common"
     assert definitions["wait_ms"].owner == "common"
     assert definitions["wait_ms"].replay == ReplayPolicy(kind="fsq_command", alias="waitMs")
-    assert definitions["get_runtime_secret"].sensitivity is True
-    assert definitions["get_runtime_secret"].replay == ReplayPolicy(kind="dependency", alias="runtimeSecret")
+    assert set(definitions) == {"wait_ms"}
 
 
 def test_capability_registry_resolves_replay_alias_and_allows_self_alias() -> None:

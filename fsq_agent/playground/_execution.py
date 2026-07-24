@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import json
 from pathlib import Path
 import re
@@ -19,11 +18,12 @@ from fsq_agent.core import (
 	HarnessFactory,
 	EvidenceRecorder,
 	HarnessInterface,
+	RuntimeSecretStore,
 	StepRunner,
 	StepSequenceRunner,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, RuntimeSecretRef, Task, TaskResult, VerificationResult
+from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.playground._recording import record_dynamic_result
 from fsq_agent.playground._state import PlaygroundState
 from fsq_agent.providers import build_ai_assertion_evaluator
@@ -341,6 +341,7 @@ def _run_strict_case_yaml(
 		steps=steps,
 		registry=registry,
 		post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+		runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
 		state=state,
 		request_id=request_id,
 	)
@@ -419,6 +420,7 @@ def _run_strict_core_steps(
 	steps: list[ExecutableStep],
 	registry,
 	post_action_delay_seconds: PostActionDelaySettings,
+	runtime_secret_store: RuntimeSecretStore | None,
 	state: PlaygroundState,
 	request_id: str,
 ) -> ReportArtifact:
@@ -429,6 +431,7 @@ def _run_strict_core_steps(
 			harness=harness,
 			capability_registry=registry,
 			post_action_delay_seconds=post_action_delay_seconds,
+			runtime_secret_store=runtime_secret_store,
 		),
 		evidence_recorder=recorder,
 	).run_steps(run_id=run_id, steps=normal_steps, teardown_steps=teardown_steps)
@@ -511,37 +514,37 @@ def _resolve_strict_replay_steps(
 	snapshot = registry_snapshot or build_capability_registry(platform=settings.harness.platform).snapshot()
 	resolved_steps = []
 	for step in steps:
-		resolved_params = _resolve_replay_value(step.params, allowed_names, step.step_id)
-		_validate_resolved_params(step, resolved_params, snapshot)
-		resolved_steps.append(step.model_copy(update={"params": resolved_params}))
+		_validate_runtime_secret_refs(step.params, allowed_names, step.step_id)
+		_validate_resolved_params(step, step.params, snapshot)
+		resolved_steps.append(step)
 	return resolved_steps
 
 
-def _resolve_replay_value(value: Any, allowed_names: set[str], step_id: str) -> Any:
-	ref = _as_runtime_secret_ref(value)
-	if ref is not None:
-		if ref.env_name not in allowed_names:
-			raise ValueError(f"Runtime secret name is not allowed for strict replay: {ref.env_name}")
-		secret_value = os.getenv(ref.env_name)
-		if not secret_value:
-			raise ValueError(f"Runtime secret is not set for strict replay: {ref.env_name}")
-		return secret_value
+def _validate_runtime_secret_refs(value: Any, allowed_names: set[str], step_id: str) -> None:
+	for name in _collect_runtime_secret_refs(value):
+		if name not in allowed_names:
+			raise ValueError(f"Runtime secret name is not allowed for strict replay: {name}")
+
+
+def _collect_runtime_secret_refs(value: Any) -> set[str]:
+	names: set[str] = set()
+	_collect_runtime_secret_refs_into(value, names)
+	return names
+
+
+def _collect_runtime_secret_refs_into(value: Any, names: set[str]) -> None:
 	if isinstance(value, dict):
-		return {key: _resolve_replay_value(item, allowed_names, step_id) for key, item in value.items()}
+		text_type = value.get("textType")
+		text = value.get("text")
+		if text_type == "runtimeSecret" and isinstance(text, str) and text.strip():
+			names.add(text.strip())
+			return
+		for item in value.values():
+			_collect_runtime_secret_refs_into(item, names)
+		return
 	if isinstance(value, list):
-		return [_resolve_replay_value(item, allowed_names, step_id) for item in value]
-	return value
-
-
-def _as_runtime_secret_ref(value: Any) -> RuntimeSecretRef | None:
-	if isinstance(value, RuntimeSecretRef):
-		return value
-	if isinstance(value, dict) and set(value) == {"runtimeSecret"}:
-		try:
-			return RuntimeSecretRef.model_validate(value)
-		except ValidationError as exc:
-			raise ValueError("Invalid runtimeSecret replay reference.") from exc
-	return None
+		for item in value:
+			_collect_runtime_secret_refs_into(item, names)
 
 
 def _validate_resolved_params(step: ExecutableStep, params: dict[str, Any], registry_snapshot: CapabilityRegistrySnapshot) -> None:

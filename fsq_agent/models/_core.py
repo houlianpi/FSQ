@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 StepPhase: TypeAlias = Literal["prepare", "invoke", "finalize"]
 RunnerStatus: TypeAlias = Literal["pending", "running", "passed", "failed", "skipped", "cancelled"]
+TextSourceType: TypeAlias = Literal["literal", "runtimeSecret"]
 ExecutableStepKind: TypeAlias = Literal["action", "assertion", "observation", "diagnostic", "setup", "teardown"]
 FailureCategory: TypeAlias = Literal[
     "configuration_error",
@@ -152,18 +153,6 @@ class AndroidLocator(BaseModel):
         return any(isinstance(value, str) and value.strip() for value in self.model_dump().values())
 
 
-class RuntimeSecretRef(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    env_name: str = Field(alias="runtimeSecret")
-
-    @model_validator(mode="after")
-    def _require_env_name(self) -> "RuntimeSecretRef":
-        if self.env_name.strip():
-            return self
-        raise ValueError("requires non-empty runtimeSecret name")
-
-
 class WaitMsParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -232,6 +221,7 @@ class AndroidLongPressOnParams(_AndroidTargetParams):
 
 class AndroidInputTextParams(_AndroidTargetParams):
     text: str
+    textType: TextSourceType = "literal"
 
 
 class AndroidPressKeyParams(BaseModel):
@@ -408,6 +398,7 @@ class WebClickOnParams(_WebTargetParams):
 
 class WebTypeTextParams(_WebTargetParams):
     text: str
+    textType: TextSourceType = "literal"
     clear: bool | None = None
 
     @model_validator(mode="after")
@@ -700,6 +691,7 @@ class WindowsRightClickOnParams(_WindowsTargetParams):
 
 class WindowsTypeTextParams(_WindowsTargetParams):
     text: str
+    textType: TextSourceType = "literal"
     clear: bool | None = None
 
     @model_validator(mode="after")
@@ -883,6 +875,7 @@ class MacOSTypeTextParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
+    textType: TextSourceType = "literal"
     target: str | None = None
     locator: MacOSLocator | None = None
     point: MacOSPoint | None = None

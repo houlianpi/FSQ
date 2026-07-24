@@ -106,7 +106,7 @@ def test_android_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("tapOn", {"target": "Menu"}, "tap_on"),
         ("tapAt", {"point": {"x": 100, "y": 200}}, "tap_at"),
         ("assertVisible", {"target": "Menu"}, "assert_visible"),
-        ("inputText", {"text": "bing.com", "target": "Search box"}, "input_text"),
+        ("inputText", {"text": "bing.com", "textType": "literal", "target": "Search box"}, "input_text"),
         ("longPressOn", {"target": "Address bar"}, "long_press_on"),
         ("swipe", {"direction": "up", "duration": 1000}, "swipe"),
         ("uiTree", {}, "ui_snapshot"),

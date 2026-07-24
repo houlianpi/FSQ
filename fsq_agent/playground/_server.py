@@ -830,8 +830,6 @@ class PlaygroundServer:
         return [{"key": "value", **self._yaml_display_value(payload)}]
 
     def _yaml_display_value(self, value: object) -> dict[str, object]:
-        if isinstance(value, dict) and isinstance(value.get("runtimeSecret"), str):
-            return {"value": value["runtimeSecret"], "kind": "secret"}
         if isinstance(value, dict):
             return {
                 "value": "",

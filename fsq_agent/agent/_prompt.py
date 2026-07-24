@@ -60,7 +60,13 @@ class PromptModelBuilder:
             variables=dict(self.settings.variables),
         )
 
-    def build_task_prompt(self, task: Task, runtime_policy: list[str] | None = None) -> TaskPromptModel:
+    def build_task_prompt(
+        self,
+        task: Task,
+        runtime_policy: list[str] | None = None,
+        runtime_secret_names: list[str] | None = None,
+        runtime_secret_warnings: list[str] | None = None,
+    ) -> TaskPromptModel:
         acceptance_policy = (
             "Use the provided key actions as execution guidance and the verification_goal as the only final success target."
             if task.key_actions or task.verification_goal
@@ -72,6 +78,8 @@ class PromptModelBuilder:
             key_actions=list(task.key_actions),
             verification_goal=task.verification_goal,
             runtime_policy=list(runtime_policy or []),
+            runtime_secret_names=list(runtime_secret_names or []),
+            runtime_secret_warnings=list(runtime_secret_warnings or []),
             acceptance_policy=acceptance_policy,
         )
         return TaskPromptModel(

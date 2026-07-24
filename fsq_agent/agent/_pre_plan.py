@@ -59,11 +59,15 @@ def build_pre_plan_input(
     skills: list[SkillBundle],
     reference_type: str = "goal",
     available_platform_tools: list[dict[str, Any]] | None = None,
+    runtime_secret_names: list[str] | None = None,
+    runtime_secret_warnings: list[str] | None = None,
 ) -> str:
     payload = {
         "reference_type": reference_type,
         "reference_text": reference_text,
         "available_platform_tools": list(available_platform_tools or []),
+        "runtime_secret_names": list(runtime_secret_names or []),
+        "runtime_secret_warnings": list(runtime_secret_warnings or []),
         "knowledge_items": knowledge.items,
         "skills": [
             {

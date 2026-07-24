@@ -127,9 +127,6 @@ class _RecordingCollector:
         self.required_runtime_secret_names: set[str] = set()
         self.warnings: list[str] = []
         self.skipped_tool_calls: list[dict[str, Any]] = []
-        self._pending_runtime_secret_names: list[str] = []
-        self._active_runtime_secret_name: str | None = None
-        self._used_runtime_secret_ref = False
 
     def collect(self, events: list[RunEvent]) -> list[dict[str, Any]]:
         commands: list[dict[str, Any]] = []
@@ -163,12 +160,6 @@ class _RecordingCollector:
             self._skip(event.tool_name, "common tool did not complete successfully")
             return
         replay = self._replay_policy(payload)
-        if replay.get("kind") == "dependency" and replay.get("alias") == "runtimeSecret":
-            name = payload.get("runtime_secret_name")
-            if isinstance(name, str) and name.strip():
-                self._pending_runtime_secret_names.append(name)
-                self.required_runtime_secret_names.add(name)
-            return
         if replay.get("kind") == "fsq_command" and replay.get("alias") == "waitMs":
             duration_ms = payload.get("duration_ms")
             if not isinstance(duration_ms, int):
@@ -179,6 +170,8 @@ class _RecordingCollector:
             if isinstance(reason, str) and reason:
                 params["reason"] = reason
             commands.append({"waitMs": params})
+            return
+        self._skip(event.tool_name, "common tool replay metadata is not recorded as a command", warn=False)
 
     def _collect_harness(self, start: RunEvent, event: RunEvent, commands: list[dict[str, Any]]) -> None:
         payload = event.payload
@@ -201,41 +194,22 @@ class _RecordingCollector:
         if args is None:
             self._skip(start.tool_name, "platform tool arguments were not a JSON object")
             return
-        try:
-            self._active_runtime_secret_name = None
-            self._used_runtime_secret_ref = False
-            resolved_args = self._replace_redacted_values(args)
-        except ConfigurationError as exc:
-            self._skip(start.tool_name, str(exc))
-            return
-        finally:
-            self._active_runtime_secret_name = None
-        if self._used_runtime_secret_ref:
-            self._pending_runtime_secret_names.clear()
-        commands.append({fsq_action_name: resolved_args})
+        self._collect_runtime_secret_names(args)
+        commands.append({fsq_action_name: args})
 
-    def _replace_redacted_values(self, value: Any) -> Any:
+    def _collect_runtime_secret_names(self, value: Any) -> None:
         if isinstance(value, dict):
-            return {key: self._replace_redacted_values(item) for key, item in value.items()}
+            text_type = value.get("textType")
+            text = value.get("text")
+            if text_type == "runtimeSecret" and isinstance(text, str) and text.strip():
+                self.required_runtime_secret_names.add(text.strip())
+                return
+            for item in value.values():
+                self._collect_runtime_secret_names(item)
+            return
         if isinstance(value, list):
-            return [self._replace_redacted_values(item) for item in value]
-        if value == "***":
-            secret_name = self._active_runtime_secret_name or self._single_pending_runtime_secret_name()
-            if not secret_name:
-                raise ConfigurationError("Redacted harness argument has no matching runtime secret dependency.")
-            self._active_runtime_secret_name = secret_name
-            self._used_runtime_secret_ref = True
-            self.required_runtime_secret_names.add(secret_name)
-            return {"runtimeSecret": secret_name}
-        return value
-
-    def _single_pending_runtime_secret_name(self) -> str | None:
-        unique_names = sorted(set(self._pending_runtime_secret_names))
-        if not unique_names:
-            return None
-        if len(unique_names) > 1:
-            raise ConfigurationError("Ambiguous runtime secret binding for redacted harness argument.")
-        return unique_names[0]
+            for item in value:
+                self._collect_runtime_secret_names(item)
 
     def _origin(self, start: RunEvent, event: RunEvent) -> str:
         origin = start.payload.get("tool_origin") or event.payload.get("tool_origin")
@@ -251,12 +225,8 @@ class _RecordingCollector:
         replay_kind = payload.get("replay_kind")
         # Legacy event logs used replay_kind before structured replay metadata existed.
         # New recorder behavior must not infer replayability from tool names or fsq_action_name.
-        if replay_kind == "runtimeSecret":
-            return {"kind": "dependency", "alias": "runtimeSecret"}
         if replay_kind == "waitMs":
             return {"kind": "fsq_command", "alias": "waitMs"}
-        if isinstance(replay_kind, str) and replay_kind:
-            return {"kind": "fsq_command", "alias": replay_kind}
         return {}
 
     def _step_kind(self, start: RunEvent, event: RunEvent) -> str | None:

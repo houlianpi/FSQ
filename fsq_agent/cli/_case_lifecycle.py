@@ -10,7 +10,7 @@ from typing import Literal
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import resolve_case_yaml_path
 from fsq_agent.config import Settings
-from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, StepRunner, StepSequenceRunner
+from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     CapabilityRegistrySnapshot,
@@ -148,6 +148,7 @@ class _StrictLifecycleExecutor:
             harness=harness,
             capability_registry=registry,
             post_action_delay_seconds=post_action_delay_seconds,
+            runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
         )
         self.recorder = _StrictLifecycleEvidenceRecorder(
             EvidenceRecorder(

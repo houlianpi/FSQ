@@ -99,7 +99,7 @@ def test_capability_definition_factory_selects_platform_and_filters_ai_assertion
     web_definitions = factory.platform_definitions(platform="web", backend="playwright")
     web_without_ai = factory.platform_definitions(platform="web", backend="playwright", include_ai_assertion=False)
 
-    assert {definition.name for definition in CommonPlatformTools.capability_definitions()} == {"wait_ms", "get_runtime_secret"}
+    assert {definition.name for definition in CommonPlatformTools.capability_definitions()} == {"wait_ms"}
     assert {definition.name for definition in web_definitions} >= {"start_browser", "close_browser", "assert_with_ai"}
     assert "assert_with_ai" not in {definition.name for definition in web_without_ai}
     assert all(definition.platform == "web" for definition in web_definitions)
@@ -340,6 +340,7 @@ def test_web_parameter_models_produce_canonical_dumps_and_reject_extra_fields() 
     assert typed.model_dump(mode="json", exclude_none=True) == {
         "locator": {"role": "textbox", "name": "Search"},
         "text": "bing.com",
+        "textType": "literal",
     }
     assert wait.model_dump(mode="json", exclude_none=True) == {"text": "Results", "state": "visible", "timeout_ms": 5000}
     with pytest.raises(ValidationError):

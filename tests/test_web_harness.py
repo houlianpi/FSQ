@@ -146,7 +146,7 @@ def test_web_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("navigateTo", {"url": "https://www.bing.com"}, "navigate_to"),
         ("navigateBack", {}, "navigate_back"),
         ("clickOn", {"target": "Search box"}, "click_on"),
-        ("typeText", {"target": "Search box", "text": "playwright"}, "type_text"),
+        ("typeText", {"target": "Search box", "text": "playwright", "textType": "literal"}, "type_text"),
         ("selectOption", {"target": "Region", "label": "United States"}, "select_option"),
         ("hoverOn", {"target": "Menu"}, "hover_on"),
         ("pressKey", {"key": "Enter"}, "press_key"),

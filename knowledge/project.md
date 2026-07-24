@@ -10,6 +10,6 @@
 
 - Start sign-in from the New Tab Page account area or Edge overflow menu.
 - If signed out, tap `Sign in to sync` or equivalent before account-dependent actions.
-- Use `TEST_ACCOUNT_EMAIL` and `TEST_ACCOUNT_PASSWORD` only through `get_runtime_secret`.
+- Use only the configured test account for sign-in. Do not choose or continue with any saved/on-device account unless it matches the configured account.
 - After email entry, password may be behind `Other ways to sign in`, `Use another way`, or similar options. Choose password sign-in.
 - After password submission, verify the signed-in Edge account marker before Rewards or other account-only flows.

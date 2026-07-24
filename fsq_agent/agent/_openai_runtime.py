@@ -14,6 +14,7 @@ from fsq_agent.core import (
     ArtifactStore,
     HarnessFactory,
     HarnessInterface,
+    RuntimeSecretStore,
 )
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
 from fsq_agent.models import AgentFinalOutput, ConfigurationError, GoalPrePlan, KnowledgeBundle, PlanningError, RunEvent, RunEventSink, SkillBundle, StepResult, Task
@@ -294,6 +295,7 @@ class OpenAIAgentsRuntime:
                     run_id=run_id,
                     reserved_tool_names={*self._agent_tool_names, *_RUNTIME_TOOL_NAMES},
                     post_action_delay_seconds=self.settings.execution.post_action_delay_seconds,
+                    runtime_secret_store=self._runtime_secret_store(),
                     platform=self.settings.harness.platform,
                 )
                 self._harness_tool_names = harness_adapter.tool_names
@@ -585,6 +587,8 @@ class OpenAIAgentsRuntime:
                     skills,
                     reference_type=reference_type,
                     available_platform_tools=self._pre_plan_tool_summary(),
+                    runtime_secret_names=list(self._runtime_secret_store().available_names()),
+                    runtime_secret_warnings=list(self._runtime_secret_store().warnings()),
                 ),
                 max_turns=self.settings.openai_agents.max_turns,
                 run_config=self._build_run_config(RunConfig, ToolOutputTrimmer, provider, run_id),
@@ -1129,8 +1133,17 @@ class OpenAIAgentsRuntime:
 
     def _build_task_input(self, task: Task, runtime_policy: list[str] | None = None) -> str:
         prompt = self.settings.openai_agents.prompt
-        model = PromptModelBuilder(prompt).build_task_prompt(task, runtime_policy)
+        store = self._runtime_secret_store()
+        model = PromptModelBuilder(prompt).build_task_prompt(
+            task,
+            runtime_policy,
+            runtime_secret_names=list(store.available_names()),
+            runtime_secret_warnings=list(store.warnings()),
+        )
         return PromptRenderer(prompt).render_task_prompt(model)
+
+    def _runtime_secret_store(self) -> RuntimeSecretStore:
+        return RuntimeSecretStore.from_settings(self.settings.runtime_secrets)
 
     def _tool_origin(self, tool_name: str | None) -> str:
         if not tool_name:

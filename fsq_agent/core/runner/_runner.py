@@ -2,11 +2,15 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
+
 from fsq_agent.core._capabilities import CapabilityRegistry
+from fsq_agent.core._runtime_secrets import RuntimeSecretStore
 from fsq_agent.core.harness import HarnessInterface
 from fsq_agent.models import (
     CapabilityDefinition,
     CapabilityExecutionResult,
+    ConfigurationError,
     EvidenceArtifactRef,
     EvidencePolicy,
     ExecutableStep,
@@ -40,10 +44,12 @@ class StepRunner:
         *,
         capability_registry: CapabilityRegistry | None = None,
         post_action_delay_seconds: PostActionDelaySettings | None = None,
+        runtime_secret_store: RuntimeSecretStore | None = None,
     ) -> None:
         self.harness = harness
         self.capability_registry = capability_registry or CapabilityRegistry()
         self.post_action_delay_seconds = post_action_delay_seconds or PostActionDelaySettings(platform=0.0, common=0.0)
+        self.runtime_secret_store = runtime_secret_store or RuntimeSecretStore.empty()
         self._events: list[RunnerEvent] = []
         self._last_capability_execution_result: CapabilityExecutionResult | None = None
 
@@ -168,11 +174,14 @@ class StepRunner:
     ) -> HarnessActionResult | None:
         self._emit(run_id=run_id, event_type="phase_start", step=step, phase="invoke")
         self._emit(run_id=run_id, event_type="harness_call_start", step=step, phase="invoke")
+        invoke_step = step
         action_result: HarnessActionResult | None = None
         phase_status: RunnerStatus = "failed"
         try:
-            action_result = self.harness.invoke_action(step, context)
-            self._last_capability_execution_result = self._capability_execution_result(action_result, step, capability, context)
+            validated_step = self._with_validated_params(step, capability)
+            invoke_step = self._resolve_runtime_secret_text_step(validated_step, capability)
+            action_result = self.harness.invoke_action(invoke_step, context)
+            self._last_capability_execution_result = self._capability_execution_result(action_result, invoke_step, capability, context)
             phase_status = action_result.status
             self._emit(run_id=run_id, event_type="harness_call_finish", step=step, phase="invoke")
             if action_result.status in {"failed", "cancelled", "skipped"}:
@@ -186,9 +195,23 @@ class StepRunner:
                 status=action_result.status,
                 artifact_refs=self._action_result_artifacts(run_id, step, action_result, "invoke"),
                 metadata=self._with_post_action_delay_metadata(
-                    self._action_result_metadata(action_result, step, capability, context),
+                    self._action_result_metadata(action_result, step, invoke_step, capability, context),
                     delay_seconds,
                 ),
+            )
+        except ConfigurationError as exc:
+            state.failure_category = "configuration_error"
+            state.error_message = str(exc)
+            self._emit(run_id=run_id, event_type="harness_call_finish", step=step, phase="invoke")
+            self._emit(run_id=run_id, event_type="step_error", step=step, phase="invoke")
+            self._append_phase_report(
+                state,
+                step=step,
+                phase="invoke",
+                status="failed",
+                failure_category=state.failure_category,
+                error_message=state.error_message,
+                metadata=self._post_action_delay_metadata(delay_seconds),
             )
         except Exception as exc:  # noqa: BLE001 - runner converts phase exceptions into structured results.
             state.failure_category = self.harness.classify_error(exc, "invoke", step)
@@ -212,6 +235,44 @@ class StepRunner:
             payload={"status": phase_status, "post_action_delay_seconds": delay_seconds},
         )
         return action_result
+
+    def _with_validated_params(self, step: ExecutableStep, capability: CapabilityDefinition | None) -> ExecutableStep:
+        if capability is None:
+            return step
+        try:
+            parsed = capability.params_model.model_validate(step.params)
+        except ValidationError as exc:
+            raise ConfigurationError(
+                "Invalid capability parameters.",
+                context={
+                    "step_id": step.step_id,
+                    "action_name": step.action_name,
+                    "validation_errors": self._validation_errors(exc),
+                },
+            ) from exc
+        return step.model_copy(update={"params": parsed.model_dump(mode="json", exclude_none=True)})
+
+    def _validation_errors(self, error: ValidationError) -> list[dict[str, object]]:
+        try:
+            return error.errors(include_url=False, include_context=False)
+        except TypeError:
+            return error.errors()
+
+    def _resolve_runtime_secret_text_step(self, step: ExecutableStep, capability: CapabilityDefinition | None) -> ExecutableStep:
+        if capability is None:
+            return step
+        params = dict(step.params)
+        if params.get("textType") != "runtimeSecret":
+            return step
+        text = params.get("text")
+        if not isinstance(text, str):
+            raise ConfigurationError(
+                "Runtime secret text input requires a string text value.",
+                context={"step_id": step.step_id, "action_name": step.action_name},
+            )
+        params["text"] = self.runtime_secret_store.resolve(text)
+        params["textType"] = "literal"
+        return step.model_copy(update={"params": params})
 
     def _run_harness_finalize_phase(
         self,
@@ -449,7 +510,8 @@ class StepRunner:
     def _action_result_metadata(
         self,
         action_result: HarnessActionResult,
-        step: ExecutableStep,
+        original_step: ExecutableStep,
+        invoke_step: ExecutableStep,
         capability: CapabilityDefinition | None,
         context: object,
     ) -> dict[str, object]:
@@ -458,12 +520,15 @@ class StepRunner:
             if action_result.output is not None and not metadata.get("sensitivity"):
                 metadata.setdefault("common_output", action_result.output)
             return metadata
-        metadata: dict[str, object] = self._capability_metadata(capability, step, context)
+        metadata: dict[str, object] = self._capability_metadata(capability, original_step, context)
         if action_result.metadata:
             metadata["harness_metadata"] = action_result.metadata
-        if action_result.output is not None:
+        if action_result.output is not None and not self._used_runtime_secret_text(original_step, invoke_step):
             metadata["harness_output"] = action_result.output
         return metadata
+
+    def _used_runtime_secret_text(self, original_step: ExecutableStep, invoke_step: ExecutableStep) -> bool:
+        return original_step.params.get("textType") == "runtimeSecret" and original_step.params != invoke_step.params
 
     def _capability_metadata(
         self,
@@ -494,9 +559,11 @@ class StepRunner:
         capability: CapabilityDefinition,
         context: object,
     ) -> dict[str, object]:
+        params = dict(step.params)
+        if params.get("textType") == "runtimeSecret":
+            return params
         if capability.name not in {"tap_at", "swipe"}:
             return {}
-        params = dict(step.params)
         if capability.name == "swipe" and not self._has_swipe_points(params):
             return {}
         if "reference_screen_size" in params:

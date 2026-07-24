@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.core import CapabilityRegistry, StepRunner
+from fsq_agent.core import CapabilityRegistry, RuntimeSecretStore, StepRunner
 from fsq_agent.models import (
     CapabilityDefinition,
     CapabilityExecutionResult,
@@ -157,6 +157,17 @@ class ArtifactResultHarness(SuccessfulHarness):
         )
 
 
+class RecordingHarness(SuccessfulHarness):
+    def __init__(self) -> None:
+        super().__init__()
+        self.invoked_steps: list[ExecutableStep] = []
+
+    def invoke_action(self, step: ExecutableStep, context: HarnessContext) -> HarnessActionResult:
+        self.calls.append(f"invoke:{step.action_name}:{context.session_id}")
+        self.invoked_steps.append(step)
+        return HarnessActionResult(status="passed", action_name=step.action_name, output={"params": step.params})
+
+
 def _tap_step() -> ExecutableStep:
     return ExecutableStep(
         step_id="step-1",
@@ -258,6 +269,69 @@ def test_step_runner_executes_wait_ms_through_harness_invoke_action() -> None:
     assert metadata["replay"] == {"kind": "fsq_command", "alias": "waitMs"}
     assert metadata["common_output"]["type"] == "wait_completed"
     assert "harness_call_start" in [event.event_type for event in runner.events]
+
+
+def test_step_runner_resolves_runtime_secret_text_before_driver_invocation() -> None:
+    harness = RecordingHarness()
+    runner = StepRunner(
+        harness=harness,
+        capability_registry=build_capability_registry(),
+        runtime_secret_store=RuntimeSecretStore(["TEST_ACCOUNT_EMAIL"], {"TEST_ACCOUNT_EMAIL": "user@example.com"}),
+    )
+    step = ExecutableStep(
+        step_id="input-1",
+        kind="action",
+        action_name="inputText",
+        params={"target": "Email", "text": "TEST_ACCOUNT_EMAIL", "textType": "runtimeSecret"},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "passed"
+    assert harness.invoked_steps[0].params == {"target": "Email", "text": "user@example.com", "textType": "literal"}
+    metadata = result.phase_reports[1].metadata
+    assert metadata["safe_replay_params"] == {"target": "Email", "text": "TEST_ACCOUNT_EMAIL", "textType": "runtimeSecret"}
+    assert "harness_output" not in metadata
+
+
+def test_step_runner_fails_runtime_secret_text_before_driver_invocation_when_missing() -> None:
+    harness = RecordingHarness()
+    runner = StepRunner(
+        harness=harness,
+        capability_registry=build_capability_registry(),
+        runtime_secret_store=RuntimeSecretStore(["TEST_ACCOUNT_EMAIL"], {}),
+    )
+    step = ExecutableStep(
+        step_id="input-1",
+        kind="action",
+        action_name="inputText",
+        params={"target": "Email", "text": "TEST_ACCOUNT_EMAIL", "textType": "runtimeSecret"},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert "Runtime secret is not set" in (result.error_message or "")
+    assert harness.invoked_steps == []
+
+
+def test_step_runner_validates_capability_params_before_driver_invocation() -> None:
+    harness = RecordingHarness()
+    runner = StepRunner(harness=harness, capability_registry=build_capability_registry())
+    step = ExecutableStep(
+        step_id="input-1",
+        kind="action",
+        action_name="inputText",
+        params={"text": "hello"},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert "Invalid capability parameters" in (result.error_message or "")
+    assert harness.invoked_steps == []
 
 
 def test_step_runner_applies_platform_delay_after_invoke_before_finalize(monkeypatch) -> None:

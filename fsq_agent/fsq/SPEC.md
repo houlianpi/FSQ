@@ -8,7 +8,7 @@ Goal-only FSQ cases may omit the command document or provide an empty command li
 
 ## Dependencies
 
-- `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep` and `SourceRef`, strict replay refs such as `RuntimeSecretRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
+- `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep` and `SourceRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
 
 The fsq module must not import `capabilities`, `core`, or `tools`. It receives a `CapabilityRegistrySnapshot` from entry code and resolves authored command names through that serializable snapshot.
 
@@ -60,7 +60,7 @@ Android command block:
 | `swipe: {...}` | `swipe` | validated `AndroidSwipeParams` dump |
 | `assert: {element: ..., text: ...}` | `assert_state` | validated `AndroidAssertStateParams` dump |
 | `assertWithAI: {prompt: ...}` | `assert_with_ai` | validated `AndroidAssertWithAIParams` dump |
-| `inputText: {text: {runtimeSecret: TEST_PASSWORD}, ...}` | `input_text` | pre-resolution params preserving `{"text": {"runtimeSecret": "TEST_PASSWORD"}}` for strict entry resolution |
+| `inputText: {text: TEST_ACCOUNT_EMAIL, textType: runtimeSecret, ...}` | `input_text` | validated `AndroidInputTextParams` dump preserving `textType: runtimeSecret` for core runtime-secret resolution |
 
 Web command block:
 
@@ -105,7 +105,7 @@ Shared command block:
 |---|---|---|
 | `waitMs: {duration_ms: 1000, reason: settle}` | `wait_ms` | validated `WaitMsParams` dump |
 
-For commands containing `runtimeSecret` replay refs, `FsqExecutableStepAdapter` may validate the non-secret shape using placeholder text while preserving the `RuntimeSecretRef` object/dict in `ExecutableStep.params`. Final capability parameter validation with the real secret value is owned by the strict CLI entry after in-memory resolution.
+For text-entry commands omitting `textType`, `FsqExecutableStepAdapter` validates and stores the payload as literal text for historical YAML compatibility. For commands containing `textType: runtimeSecret`, the adapter validates the text-entry shape while preserving the environment variable name in `ExecutableStep.params`; final value resolution is owned by `core` immediately before driver invocation. The old `text: {runtimeSecret: NAME}` shape does not require compatibility in this SPEC cycle.
 
 Runner-owned metadata such as valid `timeout` values should be extracted before driver parameter validation and stored in `ExecutableStep.timeout_ms`, not passed through to driver parameter models. The original raw command remains available in `ExecutableStep.metadata` for evidence and debugging.
 
@@ -145,7 +145,7 @@ Malformed command entries that cannot be reduced to one FSQ action must raise `C
 - Public API: `FsqCaseLoader`, `FsqExecutableStepAdapter`, and `is_fsq_case_file` exported from `__init__.py`.
 - Internal modules: `_loader.py` and `_step_adapter.py` are private implementation modules.
 - Domain boundaries: this module owns deterministic YAML loading, lifecycle hook metadata validation, and conversion to shared executable-step contracts. It does not execute steps or hooks, resolve real secrets, resolve hook file paths, run shell commands, construct registries, create harnesses, or generate reports.
-- Boundary models: parsed cases, lifecycle hooks, executable steps, runtime secret refs, and capability metadata models come from `models`.
+- Boundary models: parsed cases, lifecycle hooks, executable steps, text-entry runtime secret fields, and capability metadata models come from `models`.
 - Dependency direction: imports public `models` only; registry snapshots are passed in by entry modules.
 - Rationale: focused parsing/normalization behavior fits Level 2 and does not require orchestration layers.
 
@@ -167,7 +167,7 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported 
 - Markdown conversion reports are intentionally ignored and are not loaded as task inputs.
 - FSQ commands are deterministic ordered input for the strict-core execution path when converted by `FsqExecutableStepAdapter`. Generated recorded cases may include strict replay refs and pure wait commands, but those are still deterministic authored input by the time strict execution begins.
 - FSQ lifecycle hooks are deterministic metadata around strict command execution, not commands in `case.commands`. The fsq module validates hook syntax and preserves hook order, but the CLI owns strict lifecycle orchestration so `fsq` stays independent of path resolution, shell execution, harnesses, evidence, and reports.
-- Deterministic command payload normalization uses the platform-selected capability registry snapshot. Authored command payloads use the same object field names as the resolved capability parameter models, which keeps case parsing, future case generation, harness dispatch, and SDK schemas aligned to one payload contract while preserving authored names in metadata. Strict replay refs are the sole exception: the adapter may preserve `RuntimeSecretRef` values in pre-resolution params so the CLI strict entry can resolve them before final validation.
+- Deterministic command payload normalization uses the platform-selected capability registry snapshot. Authored command payloads use the same object field names as the capability parameter models, including `textType` on text-entry commands, which keeps case parsing, future case generation, harness dispatch, and SDK schemas aligned to one payload contract while preserving authored names in metadata. Missing `textType` is interpreted as `literal` for historical YAML compatibility.
 - Capability decorators and platform action catalogs are declaration-time inputs only. FSQ parsing consumes resolved `CapabilityDefinition` data from the registry snapshot and must not inspect decorated functions or platform catalog objects directly.
 - `waitMs` is a generated strict replay alias for the inherited `wait_ms` CommonTool capability. It is validated by `WaitMsParams`, converted into an `ExecutableStep(action_name="wait_ms")`, and later handled by `StepRunner` through the normal registry path without invoking Android gesture or Web page actions.
 - `assertWithAI` is parsed and validated like any other authored assertion command. This module does not evaluate AI assertions, build provider-backed evaluators, capture screenshots, or decide assertion verdicts.

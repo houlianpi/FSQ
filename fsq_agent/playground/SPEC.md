@@ -61,6 +61,7 @@ Initial HTTP API:
 Shared playground behavior:
 
 - Runtime info reports the active platform and safe backend metadata.
+- Dynamic and strict execution use the same runtime secret store semantics as CLI execution. Playground startup/settings loading may report safe runtime secret presence warnings by environment variable name, but must not expose secret values. Restarting the playground remains the way to pick up `.env` changes.
 - `/execute`, progress polling, screenshots, replay frames/video, and report lookup route through the active platform execution path.
 - Strict execution parses YAML through the active platform registry snapshot containing inherited CommonTools plus active PlatformTools. Authored command names resolve through canonical capability names and active `fsq_command` replay aliases.
 - Existing-run loading is platform-neutral, read-only, and reuses the same report, recorded-YAML, replay, and step-artifact endpoints used after a live completed run.

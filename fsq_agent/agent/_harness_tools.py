@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.core import HarnessInterface, StepRunner
+from fsq_agent.core import HarnessInterface, RuntimeSecretStore, StepRunner
 from fsq_agent.models import CapabilityDefinition, ConfigurationError, ExecutableStep, HarnessFunctionSchema, HarnessPlatform, PostActionDelaySettings, RunnerStepResult
 
 
@@ -16,6 +16,7 @@ class HarnessToolAdapter:
         run_id: str,
         reserved_tool_names: set[str] | None = None,
         post_action_delay_seconds: PostActionDelaySettings | None = None,
+        runtime_secret_store: RuntimeSecretStore | None = None,
         platform: HarnessPlatform = "android",
     ) -> None:
         self.harness = harness
@@ -25,6 +26,7 @@ class HarnessToolAdapter:
             harness=harness,
             capability_registry=self._capability_registry,
             post_action_delay_seconds=post_action_delay_seconds,
+            runtime_secret_store=runtime_secret_store,
         )
         self.reserved_tool_names = reserved_tool_names or set()
         self._counter = itertools.count(1)

@@ -6,7 +6,7 @@ Expose dynamic-only AgentTools for the OpenAI Agents SDK runtime. AgentTools hel
 
 The tools module owns scoped file read/write behavior, bounded run-artifact search and slice reads, AgentTool result normalization, model-facing output artifacting for large helper outputs, and safe AgentTool run-event metadata.
 
-The tools module does not own CommonTools, PlatformTools, platform actions, AI assertions, runtime progress events, local CLI execution, or shell execution. Recordable CommonTool capabilities such as `wait_ms` and `get_runtime_secret` are inherited by platform tool providers owned by `core`. Platform actions and `assertWithAI` are PlatformTools owned by `core`, with backend-specific tool bodies on concrete drivers. Progress events are runtime-internal events emitted by `agent`; provider-backed AI evaluation is owned by `providers` and injected into platform runtimes by entry-layer code.
+The tools module does not own CommonTools, PlatformTools, platform actions, AI assertions, runtime progress events, local CLI execution, shell execution, or runtime-secret resolution. Recordable CommonTool capabilities such as `wait_ms` are inherited by platform tool providers owned by `core`; runtime-secret text input is resolved by `core`, not by an AgentTool or secret-fetch helper. Platform actions and `assertWithAI` are PlatformTools owned by `core`, with backend-specific tool bodies on concrete drivers. Progress events are runtime-internal events emitted by `agent`; provider-backed AI evaluation is owned by `providers` and injected into platform runtimes by entry-layer code.
 
 ## Dependencies
 
@@ -38,7 +38,7 @@ The AgentTool names exposed in this SPEC cycle are:
 
 AgentTools have no `ReplayPolicy`, do not produce `CapabilityDefinition` records, and must not be converted into generated strict replay commands.
 
-Removed from this module's target contract: `wait_ms`, `get_runtime_secret`, `run_cli_tool`, SDK `ShellTool` construction/execution, public/common `submit_visual_assertion`, and public/common `publish_progress`.
+Removed from this module's target contract: `wait_ms`, `get_runtime_secret`, runtime-secret resolution, `run_cli_tool`, SDK `ShellTool` construction/execution, public/common `submit_visual_assertion`, and public/common `publish_progress`.
 
 ## Internal Structure
 
@@ -72,7 +72,7 @@ AgentTool events must use an AgentTool-specific origin such as `agent_tool`. Rec
 
 - Unit tests: AgentTool registry duplicate detection, scoped file reads/writes, artifact search/slice bounds, large-output artifacting, and structured failure results.
 - Adapter tests: SDK adapter builds only AgentTools, emits AgentTool-origin events, and does not emit replay metadata.
-- Regression tests: `wait_ms` and `get_runtime_secret` are absent from AgentTool exposure; AgentTools are not registered in strict capability registries; dynamic recording ignores AgentTool events.
+- Regression tests: `wait_ms`, `get_runtime_secret`, and runtime-secret resolution are absent from AgentTool exposure; AgentTools are not registered in strict capability registries; dynamic recording ignores AgentTool events.
 - Verification commands: `./.venv/Scripts/python.exe -m pytest tests/test_tools.py tests/test_openai_runtime.py tests/test_strict_case_recording.py` plus broader runtime tests when adapter call sites change.
 
 ## Design Decisions

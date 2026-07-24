@@ -161,6 +161,8 @@ def test_macos_harness_dispatches_fsq_action_names_to_driver() -> None:
         metadata={"backend": "fake-appium-mac2", "bundle_id_configured": True},
     )
     assert [method_name for method_name, _params in driver.calls] == ["context"] + [method_name for _action, _params, method_name in cases]
+    type_text_call = next(params for method_name, params in driver.calls if method_name == "type_text")
+    assert type_text_call == {"target": "Search", "text": "hello", "textType": "literal"}
 
 
 def test_macos_harness_action_space_returns_catalog_backed_schemas() -> None:

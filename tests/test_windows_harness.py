@@ -138,7 +138,7 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("clickOn", {"target": "Open the File menu", "locator": {"title": "File"}}, "click_on"),
         ("doubleClickOn", {"target": "Open the document", "locator": {"title": "Document", "control_type": "Edit"}}, "double_click_on"),
         ("rightClickOn", {"target": "Open the File context menu", "locator": {"title": "File"}}, "right_click_on"),
-        ("typeText", {"target": "Enter document text", "locator": {"title": "Document"}, "text": "hello"}, "type_text"),
+        ("typeText", {"target": "Enter document text", "locator": {"title": "Document"}, "text": "hello", "textType": "literal"}, "type_text"),
         ("pressKey", {"key": "^s"}, "press_key"),
         ("hoverOn", {"target": "Hover Save", "locator": {"title": "Save"}}, "hover_on"),
         ("scrollOn", {"target": "Scroll results", "locator": {"automation_id": "Results"}, "wheel_dist": -5}, "scroll_on"),

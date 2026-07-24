@@ -435,7 +435,7 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
     run_dir.mkdir(parents=True)
     recorded_path = run_dir / "recorded.codex.yaml"
     recorded_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n- inputText:\n    text:\n      runtimeSecret: TEST_PASSWORD\n    target: Password\n    locator:\n      resourceId: com.example:id/password\n      text: null\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n- inputText:\n    text: TEST_PASSWORD\n    textType: runtimeSecret\n    target: Password\n    locator:\n      resourceId: com.example:id/password\n      text: null\n",
         encoding="utf-8",
     )
     (run_dir / "recording.json").write_text(
@@ -472,7 +472,8 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
     assert {field["key"]: field["value"] for field in payload["display"]["metadata"]["fields"]}["path"] == str(recorded_path)
     assert payload["display"]["steps"][0]["action"] == "inputText"
     assert payload["display"]["steps"][0]["params"] == [
-        {"key": "text", "value": "TEST_PASSWORD", "kind": "secret"},
+            {"key": "text", "value": "TEST_PASSWORD", "kind": "scalar"},
+            {"key": "textType", "value": "runtimeSecret", "kind": "scalar"},
         {"key": "target", "value": "Password", "kind": "scalar"},
         {
             "key": "locator",

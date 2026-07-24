@@ -18,8 +18,8 @@ name: Secret Replay
 platform: android
 ---
 - inputText:
-    text:
-      runtimeSecret: TEST_ACCOUNT_PASSWORD
+    text: TEST_ACCOUNT_PASSWORD
+    textType: runtimeSecret
     target: Password field
 """,
         encoding="utf-8",
@@ -29,7 +29,7 @@ platform: android
     )
 
 
-def test_resolve_strict_replay_steps_substitutes_runtime_secret_in_memory(
+def test_resolve_strict_replay_steps_preserves_runtime_secret_ref_for_core_resolution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -40,8 +40,9 @@ def test_resolve_strict_replay_steps_substitutes_runtime_secret_in_memory(
     resolved = resolve_strict_replay_steps(steps, settings)
 
     assert collect_runtime_secret_refs(steps[0].params) == {"TEST_ACCOUNT_PASSWORD"}
-    assert resolved[0].params["text"] == "super-secret"
-    assert steps[0].params["text"] == {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}
+    assert resolved[0].params["text"] == "TEST_ACCOUNT_PASSWORD"
+    assert resolved[0].params["textType"] == "runtimeSecret"
+    assert steps[0].params["text"] == "TEST_ACCOUNT_PASSWORD"
 
 
 def test_resolve_strict_replay_steps_requires_allowlisted_secret(tmp_path: Path) -> None:
@@ -49,3 +50,28 @@ def test_resolve_strict_replay_steps_requires_allowlisted_secret(tmp_path: Path)
 
     with pytest.raises(ConfigurationError, match="not allowed"):
         resolve_strict_replay_steps(steps, Settings())
+
+
+def test_resolve_strict_replay_steps_keeps_missing_text_type_literal(tmp_path: Path) -> None:
+    case_path = tmp_path / "literal.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Literal Replay
+platform: android
+---
+- inputText:
+    text: TEST_ACCOUNT_PASSWORD
+    target: Search field
+""",
+        encoding="utf-8",
+    )
+    steps = FsqExecutableStepAdapter(registry_snapshot=build_capability_registry().snapshot()).to_executable_steps(
+        FsqCaseLoader().load_case(case_path)
+    )
+
+    resolved = resolve_strict_replay_steps(steps, Settings())
+
+    assert collect_runtime_secret_refs(steps[0].params) == set()
+    assert resolved[0].params["text"] == "TEST_ACCOUNT_PASSWORD"
+    assert "textType" not in resolved[0].params

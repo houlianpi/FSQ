@@ -36,27 +36,11 @@ def test_record_dynamic_run_writes_strict_yaml_with_runtime_secret_and_wait(tmp_
         RunEvent(
             run_id="recorded-run",
             task_id="task-1",
-            type="tool_call_completed",
-            title="Tool call completed",
-            tool_name="get_runtime_secret",
-            payload={
-                "tool_origin": "common",
-                "replay": {"kind": "dependency", "alias": "runtimeSecret"},
-                "runtime_secret_name": "TEST_ACCOUNT_PASSWORD",
-                "sensitive": True,
-            },
-        ),
-    )
-    _write_event(
-        events_path,
-        RunEvent(
-            run_id="recorded-run",
-            task_id="task-1",
             type="tool_call_started",
             title="Tool call started",
             tool_name="input_text",
             tool_call_id="call-1",
-            tool_arguments={"text": "***", "target": "Password field"},
+            tool_arguments={"text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret", "target": "Password field"},
             payload={"tool_origin": "platform", "capability_name": "input_text", "replay": {"kind": "fsq_command", "alias": "inputText"}},
         ),
     )
@@ -91,7 +75,7 @@ def test_record_dynamic_run_writes_strict_yaml_with_runtime_secret_and_wait(tmp_
     docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
     assert docs[0]["properties"]["recording"]["required_runtime_secret_names"] == ["TEST_ACCOUNT_PASSWORD"]
     assert docs[1] == [
-        {"inputText": {"text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}, "target": "Password field"}},
+        {"inputText": {"text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret", "target": "Password field"}},
         {"waitMs": {"duration_ms": 1, "reason": "settle"}},
     ]
     manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))

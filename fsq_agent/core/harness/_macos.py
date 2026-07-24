@@ -48,7 +48,6 @@ class MacOSHarness:
         self.artifact_store = artifact_store
         self.ai_assertion_evaluator = ai_assertion_evaluator
         self.common_tools = CommonPlatformTools(
-            runtime_secret_settings=runtime_secret_settings,
             platform="macos",
         )
         self._configure_driver_ai_assertion_tool()

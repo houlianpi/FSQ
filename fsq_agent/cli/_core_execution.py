@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
-from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, StepRunner, StepSequenceRunner
+from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import EvidenceBundle, ExecutableStep, PostActionDelaySettings, ReportArtifact, ReportGenerationError
 from fsq_agent.report import CoreEvidenceReportGenerator
@@ -16,6 +16,7 @@ def run_fsq_core_case(
     registry: CapabilityRegistry | None = None,
     steps: list[ExecutableStep] | None = None,
     post_action_delay_seconds: PostActionDelaySettings | None = None,
+    runtime_secret_store: RuntimeSecretStore | None = None,
 ) -> EvidenceBundle:
     registry = registry or build_capability_registry()
     if steps is None:
@@ -28,6 +29,7 @@ def run_fsq_core_case(
             harness=harness,
             capability_registry=registry,
             post_action_delay_seconds=post_action_delay_seconds,
+            runtime_secret_store=runtime_secret_store,
         ),
         evidence_recorder=recorder,
     ).run_steps(
@@ -55,6 +57,7 @@ def run_strict_fsq_core_case(
     registry: CapabilityRegistry | None = None,
     steps: list[ExecutableStep] | None = None,
     post_action_delay_seconds: PostActionDelaySettings | None = None,
+    runtime_secret_store: RuntimeSecretStore | None = None,
 ) -> ReportArtifact:
     bundle = run_fsq_core_case(
         case_path=case_path,
@@ -64,6 +67,7 @@ def run_strict_fsq_core_case(
         registry=registry,
         steps=steps,
         post_action_delay_seconds=post_action_delay_seconds,
+        runtime_secret_store=runtime_secret_store,
     )
     if bundle.manifest_path is None:
         raise ReportGenerationError(

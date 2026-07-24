@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 import time
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from fsq_agent.capabilities import capability, discover_capability_definitions
 from fsq_agent.models import (
@@ -14,68 +13,18 @@ from fsq_agent.models import (
     HarnessFunctionSchema,
     HarnessPlatform,
     ReplayPolicy,
-    RuntimeSecretSettings,
     WaitMsParams,
 )
 
 
-class _RuntimeSecretArgs(BaseModel):
-    name: str = Field(description="Allowed environment variable name to retrieve for the current run.")
-
-
 class CommonPlatformTools:
-    def __init__(self, *, runtime_secret_settings: RuntimeSecretSettings | None = None, platform: HarnessPlatform = "android") -> None:
+    def __init__(self, *, platform: HarnessPlatform = "android") -> None:
         self.platform = platform
-        self.runtime_secret_settings = runtime_secret_settings or RuntimeSecretSettings()
 
     @classmethod
     def capability_definitions(cls) -> list[CapabilityDefinition]:
         capabilities = {definition.name: definition for definition in discover_capability_definitions(cls)}
-        return [capabilities[name] for name in ("get_runtime_secret", "wait_ms") if name in capabilities]
-
-    @capability(
-        name="get_runtime_secret",
-        description="Retrieve a whitelisted runtime secret by environment variable name without recording its value.",
-        executor_kind="common",
-        owner="common",
-        params_model=_RuntimeSecretArgs,
-        replay=ReplayPolicy(kind="dependency", alias="runtimeSecret"),
-        sensitivity=True,
-        metadata={"redact_output": True},
-    )
-    def _get_runtime_secret_result(self, params: _RuntimeSecretArgs) -> CapabilityExecutionResult:
-        allowed_names = set(self.runtime_secret_settings.allowed_env_names)
-        if params.name not in allowed_names:
-            return CapabilityExecutionResult(
-                capability_name="get_runtime_secret",
-                executor_kind="common",
-                status="failed",
-                failure_category="configuration_error",
-                error_message=f"Runtime secret is not allowed: {params.name}",
-                replay=ReplayPolicy(kind="dependency", alias="runtimeSecret"),
-                sensitivity=True,
-                metadata={"runtime_secret_name": params.name, "allowed": sorted(allowed_names)},
-            )
-        if params.name not in os.environ:
-            return CapabilityExecutionResult(
-                capability_name="get_runtime_secret",
-                executor_kind="common",
-                status="failed",
-                failure_category="configuration_error",
-                error_message=f"Runtime secret is not set: {params.name}",
-                replay=ReplayPolicy(kind="dependency", alias="runtimeSecret"),
-                sensitivity=True,
-                metadata={"runtime_secret_name": params.name},
-            )
-        return CapabilityExecutionResult(
-            capability_name="get_runtime_secret",
-            executor_kind="common",
-            status="passed",
-            output={"name": params.name, "value": os.environ[params.name]},
-            replay=ReplayPolicy(kind="dependency", alias="runtimeSecret"),
-            sensitivity=True,
-            metadata={"runtime_secret_name": params.name},
-        )
+        return [capabilities[name] for name in ("wait_ms",) if name in capabilities]
 
     @capability(
         name="wait_ms",

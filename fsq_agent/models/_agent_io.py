@@ -19,6 +19,8 @@ class AgentTaskInput(BaseModel):
     key_actions: list[str] = Field(default_factory=list)
     verification_goal: str | None = None
     runtime_policy: list[str] = Field(default_factory=list)
+    runtime_secret_names: list[str] = Field(default_factory=list)
+    runtime_secret_warnings: list[str] = Field(default_factory=list)
     acceptance_policy: str
     output_contract: Literal["task_run_v1"] = AGENT_FINAL_OUTPUT_SCHEMA_VERSION
 

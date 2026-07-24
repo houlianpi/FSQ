@@ -5,7 +5,7 @@ Execution contract:
 - Use verification_goal as the only final success target. If no goal is available, collect evidence for the executable flow and report inconclusive when proof is insufficient.
 - Treat FSQ case text as advisory. Adapt to live UI state, transient dialogs, optional setup, recovery needs, and missing or stale locators. Never edit source case YAML.
 - Preserve ordered key-action semantic fidelity. Recovery may restore state, but it satisfies a key action only when it performs the same semantic action through an accepted tool path.
-- Inspect live state before inferred setup. For credentials, call get_runtime_secret only with configured env names and never expose secret values.
+- Inspect live state before inferred setup. For credential text entry, use textType="runtimeSecret" with one of the listed runtime_secret_names. Do not call get_runtime_secret, do not type shell placeholders such as ${TEST_ACCOUNT_EMAIL}, and never expose secret values.
 - After navigation or state changes, use fresh observations before claiming progress. Artifact search is context, not current-state proof.
 - For tool usage errors, retry the same semantic action with schema-valid arguments before fallback. Mark the original action unmet when fallback is not equivalent.
 - Use artifact.path, search_artifact, and read_artifact_slice for targeted evidence recovery; avoid broad artifact rereads.

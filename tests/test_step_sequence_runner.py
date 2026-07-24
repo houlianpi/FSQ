@@ -59,7 +59,12 @@ class SequenceHarness:
 
 
 def _step(step_id: str, action_name: str) -> ExecutableStep:
-    return ExecutableStep(step_id=step_id, kind="action", action_name=action_name)
+    params: dict[str, object] = {}
+    if action_name == "tapOn":
+        params = {"target": "Button"}
+    elif action_name == "inputText":
+        params = {"target": "Field", "text": "hello"}
+    return ExecutableStep(step_id=step_id, kind="action", action_name=action_name, params=params)
 
 
 def _runner(harness: SequenceHarness, recorder: EvidenceRecorder) -> StepSequenceRunner:

@@ -9,7 +9,7 @@ from fsq_agent.models._core import ExecutableStepKind, FailureCategory, HarnessA
 AgentToolStatus = Literal["success", "failed", "skipped"]
 CommonToolStatus = AgentToolStatus
 CapabilityExecutorKind = Literal["common", "driver"]
-ReplayKind = Literal["fsq_command", "dependency"]
+ReplayKind = Literal["fsq_command"]
 ToolKind = Literal["common", "cli", "file", "harness", "shell"]
 ToolStatus = Literal["success", "failed", "skipped"]
 

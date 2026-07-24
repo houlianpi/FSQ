@@ -63,9 +63,8 @@ Use one payload from the matching semantic action. Do not combine unrelated fiel
     "control_type": "Edit",
     "automation_id": "PasswordBox"
   },
-  "text": {
-    "runtimeSecret": "TEST_ACCOUNT_PASSWORD"
-  }
+  "text": "TEST_ACCOUNT_PASSWORD",
+  "textType": "runtimeSecret"
 }
 ```
 

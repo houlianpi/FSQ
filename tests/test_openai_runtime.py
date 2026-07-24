@@ -567,6 +567,23 @@ def test_runtime_task_input_uses_goal_only_verification_contract() -> None:
     assert "verification_goal" in task_input
 
 
+def test_runtime_task_input_includes_runtime_secret_names_and_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_ACCOUNT_EMAIL", "user@example.com")
+    monkeypatch.delenv("TEST_ACCOUNT_PASSWORD", raising=False)
+    settings = Settings(
+        openai_agents=OpenAIAgentsSettings(),
+        runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_EMAIL", "TEST_ACCOUNT_PASSWORD"]),
+    )
+    runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
+    task = Task(id="login", name="Login", description="Sign in.")
+
+    task_input = runtime._build_task_input(task)
+
+    assert '"runtime_secret_names": [\n    "TEST_ACCOUNT_EMAIL"\n  ]' in task_input
+    assert "Runtime secret TEST_ACCOUNT_PASSWORD is configured but not set." in task_input
+    assert "user@example.com" not in task_input
+
+
 def test_pre_plan_input_includes_available_platform_tools() -> None:
     payload = json.loads(
         build_pre_plan_input(
@@ -598,6 +615,21 @@ def test_pre_plan_input_includes_available_platform_tools() -> None:
     ]
 
 
+def test_pre_plan_input_includes_runtime_secret_names_without_values() -> None:
+    payload = json.loads(
+        build_pre_plan_input(
+            "Sign in.",
+            KnowledgeBundle(),
+            [],
+            runtime_secret_names=["TEST_ACCOUNT_EMAIL"],
+            runtime_secret_warnings=["Runtime secret TEST_ACCOUNT_PASSWORD is configured but not set."],
+        )
+    )
+
+    assert payload["runtime_secret_names"] == ["TEST_ACCOUNT_EMAIL"]
+    assert payload["runtime_secret_warnings"] == ["Runtime secret TEST_ACCOUNT_PASSWORD is configured but not set."]
+
+
 def test_runtime_pre_plan_tool_summary_uses_active_platform_registry() -> None:
     settings = Settings(harness={"platform": "android"}, openai_agents=OpenAIAgentsSettings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
@@ -609,8 +641,7 @@ def test_runtime_pre_plan_tool_summary_uses_active_platform_registry() -> None:
     assert by_name["tap_at"]["alias"] == "tapAt"
     assert by_name["ui_snapshot"]["alias"] == "uiTree"
     assert by_name["assert_visible"]["step_kind"] == "assertion"
-    assert by_name["get_runtime_secret"]["executor_kind"] == "common"
-    assert by_name["get_runtime_secret"]["platform"] is None
+    assert "get_runtime_secret" not in by_name
 
 
 def test_runtime_instructions_exclude_loader_diagnostics() -> None:
@@ -1360,10 +1391,10 @@ def test_runtime_preview_redacts_wrapped_sensitive_tool_output() -> None:
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory())
     output = json.dumps(
         {
-            "tool_name": "get_runtime_secret",
+            "tool_name": "secret_debug_tool",
             "model_output": "full",
             "result": {
-                "tool_name": "get_runtime_secret",
+                "tool_name": "secret_debug_tool",
                 "status": "success",
                 "output": {
                     "type": "runtime_secret",

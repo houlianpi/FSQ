@@ -64,6 +64,10 @@ def _macos_adapter() -> FsqExecutableStepAdapter:
     return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="macos").snapshot())
 
 
+def _windows_adapter() -> FsqExecutableStepAdapter:
+    return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="windows").snapshot())
+
+
 def test_fsq_executable_step_adapter_preserves_order_and_canonical_action_names(tmp_path: Path) -> None:
     case = _load_case(tmp_path)
 
@@ -155,7 +159,7 @@ platform: android
     assert steps[0].metadata["authored_action_name"] == "tapAt"
 
 
-def test_fsq_executable_step_adapter_preserves_runtime_secret_refs_and_waits(tmp_path: Path) -> None:
+def test_fsq_executable_step_adapter_preserves_text_type_runtime_secret_and_waits(tmp_path: Path) -> None:
     case_path = tmp_path / "recorded.codex.yaml"
     case_path.write_text(
         """
@@ -164,8 +168,8 @@ name: Recorded Secret Case
 platform: android
 ---
 - inputText:
-    text:
-      runtimeSecret: TEST_ACCOUNT_PASSWORD
+    text: TEST_ACCOUNT_PASSWORD
+    textType: runtimeSecret
     target: Password field
 - waitMs:
     duration_ms: 1
@@ -177,7 +181,7 @@ platform: android
 
     steps = _adapter().to_executable_steps(case)
 
-    assert steps[0].params == {"text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}, "target": "Password field"}
+    assert steps[0].params == {"text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret", "target": "Password field"}
     assert steps[1].action_name == "wait_ms"
     assert steps[1].metadata["authored_action_name"] == "waitMs"
     assert steps[1].params == {"duration_ms": 1, "reason": "settle"}
@@ -385,7 +389,7 @@ platform: web
     assert exc_info.value.context["validation_errors"][0]["loc"] == ("locator", "ref")
 
 
-def test_fsq_executable_step_adapter_preserves_web_runtime_secret_refs(tmp_path: Path) -> None:
+def test_fsq_executable_step_adapter_preserves_web_text_type_runtime_secret(tmp_path: Path) -> None:
     case_path = tmp_path / "web_secret.codex.yaml"
     case_path.write_text(
         """
@@ -394,8 +398,8 @@ name: Web Secret Case
 platform: web
 ---
 - typeText:
-    text:
-      runtimeSecret: TEST_ACCOUNT_PASSWORD
+    text: TEST_ACCOUNT_PASSWORD
+    textType: runtimeSecret
     target: Password field
 """,
         encoding="utf-8",
@@ -405,7 +409,7 @@ platform: web
     steps = _web_adapter().to_executable_steps(case)
 
     assert steps[0].action_name == "type_text"
-    assert steps[0].params == {"text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}, "target": "Password field"}
+    assert steps[0].params == {"text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret", "target": "Password field"}
 
 
 def test_fsq_executable_step_adapter_resolves_macos_aliases_and_asserts_order(tmp_path: Path) -> None:
@@ -423,8 +427,8 @@ platform: macos
       y: 240
 - typeText:
     target: Search field
-    text:
-      runtimeSecret: TEST_ACCOUNT_PASSWORD
+    text: TEST_ACCOUNT_PASSWORD
+    textType: runtimeSecret
 - assertElementsOrder:
     direction: horizontal
     elements:
@@ -451,7 +455,7 @@ platform: macos
     ]
     assert [step.kind for step in steps] == ["setup", "action", "action", "assertion", "teardown"]
     assert steps[1].params == {"point": {"x": 120, "y": 240}}
-    assert steps[2].params == {"target": "Search field", "text": {"runtimeSecret": "TEST_ACCOUNT_PASSWORD"}}
+    assert steps[2].params == {"target": "Search field", "text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret"}
     assert steps[3].params == {
         "elements": [{"target": "File"}, {"locator": {"accessibilityId": "Edit"}}],
         "direction": "horizontal",
@@ -459,3 +463,33 @@ platform: macos
         "require_all": True,
     }
     assert all(step.metadata["platform"] == "macos" for step in steps)
+
+
+def test_fsq_executable_step_adapter_preserves_windows_text_type_runtime_secret(tmp_path: Path) -> None:
+    case_path = tmp_path / "windows_secret.codex.yaml"
+    case_path.write_text(
+        """
+schemaVersion: fsq.ai-test/v1
+name: Windows Secret Case
+platform: windows
+---
+- typeText:
+    target: Password field
+    locator:
+      title: Password
+    text: TEST_ACCOUNT_PASSWORD
+    textType: runtimeSecret
+""",
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+
+    steps = _windows_adapter().to_executable_steps(case)
+
+    assert steps[0].action_name == "type_text"
+    assert steps[0].params == {
+        "target": "Password field",
+        "locator": {"title": "Password"},
+        "text": "TEST_ACCOUNT_PASSWORD",
+        "textType": "runtimeSecret",
+    }

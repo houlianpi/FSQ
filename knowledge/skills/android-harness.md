@@ -50,6 +50,16 @@ Use one payload from the matching semantic action. Do not combine semantic keys 
 }
 ```
 
+### `inputText` with a runtime secret
+
+```json
+{
+  "target": "Password field",
+  "text": "TEST_ACCOUNT_PASSWORD",
+  "textType": "runtimeSecret"
+}
+```
+
 ### Invalid mixed key call
 
 Do not call `press_key` with conflicting identities:

@@ -50,6 +50,8 @@ def test_repository_android_harness_skill_documents_tool_usage_recovery() -> Non
     assert "Start each Android case with `launch_app`" in bundles[0].instructions
     assert "End each Android case with `kill_app`" in bundles[0].instructions
     assert "Use coordinate taps only when current platform evidence" in bundles[0].instructions
+    assert "textType" in bundles[0].instructions
+    assert "runtimeSecret" in bundles[0].instructions
     assert '"key": "Back"' in bundles[0].instructions
     assert '"key": "Enter"' in bundles[0].instructions
     assert '"key": "BACK"' in bundles[0].instructions
@@ -73,6 +75,7 @@ def test_repository_web_harness_skill_documents_snapshot_first_guidance() -> Non
     assert "Tool Usage Error Recovery" in bundles[0].instructions
     assert "page_snapshot" in bundles[0].instructions
     assert "assert_text" in bundles[0].instructions
+    assert "textType" in bundles[0].instructions
     assert "runtimeSecret" in bundles[0].instructions
     assert "Unsupported Capability Families" not in bundles[0].instructions
     assert "raw Playwright APIs" not in bundles[0].instructions

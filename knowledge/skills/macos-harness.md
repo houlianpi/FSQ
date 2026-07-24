@@ -68,6 +68,16 @@ Use this only when accessibility metadata is unavailable:
 }
 ```
 
+### `typeText` with a runtime secret
+
+```json
+{
+  "target": "Password field",
+  "text": "TEST_ACCOUNT_PASSWORD",
+  "textType": "runtimeSecret"
+}
+```
+
 ## Tool Usage Error Recovery
 
 - If a macOS tool validation fails, rebuild the payload from the active schema and the requested semantic action.
