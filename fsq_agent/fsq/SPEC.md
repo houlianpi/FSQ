@@ -105,7 +105,7 @@ Shared command block:
 |---|---|---|
 | `waitMs: {duration_ms: 1000, reason: settle}` | `wait_ms` | validated `WaitMsParams` dump |
 
-For text-entry commands omitting `textType`, `FsqExecutableStepAdapter` validates and stores the payload as literal text for YAML compatibility. For commands containing `textType: runtimeSecret`, the adapter validates the text-entry shape while preserving the environment variable name in `ExecutableStep.params`; final value resolution is owned by `core` immediately before driver invocation. The object shape `text: {runtimeSecret: NAME}` is not supported.
+For text-entry commands omitting `textType`, `FsqExecutableStepAdapter` validates and stores the payload as literal text for YAML compatibility. For commands containing `textType: runtimeSecret`, the adapter validates the text-entry shape while preserving the environment variable name in `ExecutableStep.params`; final value resolution is owned by `core` immediately before driver invocation. The object shape `text: {runtimeSecret: NAME}` is normalized to `text: NAME` plus `textType: runtimeSecret` before parameter validation.
 
 Runner-owned metadata such as valid `timeout` values should be extracted before driver parameter validation and stored in `ExecutableStep.timeout_ms`, not passed through to driver parameter models. The original raw command remains available in `ExecutableStep.metadata` for evidence and debugging.
 

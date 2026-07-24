@@ -2,10 +2,18 @@ import base64
 import asyncio
 import json
 from pathlib import Path
+import shutil
+import subprocess
+from urllib.error import HTTPError
+from urllib.request import Request
 from urllib.request import urlopen
 
+import pytest
+import yaml
+
 from fsq_agent.config import Settings
-from fsq_agent.models import HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
+from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.models import ConfigurationError, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, _PlaygroundEvidenceRecorder, _event_sink, _run_dynamic_task, task_from_case_yaml, task_from_goal
 from fsq_agent.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
@@ -371,6 +379,452 @@ def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -
     assert payload["display"]["steps"] == [
         {"index": 1, "displayIndex": 1, "artifactStepId": None, "action": "launchApp", "kind": "setup", "badges": [], "params": []}
     ]
+
+
+def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_revision(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "lifecycle.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Lifecycle\n"
+        "platform: android\n"
+        "onCaseStart:\n"
+        "- runShell: echo first\n"
+        "  runCase: hooks/login.codex.yaml\n"
+        "onCaseComplete:\n"
+        "- runShell: echo complete\n"
+        "---\n"
+        "- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["lifecycle.codex.yaml"]})
+
+    assert status == 200
+    assert payload["editable"] is True
+    assert payload["revision"].startswith("sha256:")
+    assert payload["display"]["lifecycle"] == {
+        "onCaseStart": [
+            {"index": 1, "action": "runShell", "value": "echo first"},
+            {"index": 2, "action": "runCase", "value": "hooks/login.codex.yaml"},
+        ],
+        "onCaseComplete": [
+            {"index": 1, "action": "runShell", "value": "echo complete"}
+        ],
+    }
+
+
+def test_playground_server_saves_input_lifecycle_and_preserves_commands(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "editable.codex.yaml"
+    original = (
+        "# case comment\n"
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Editable\n"
+        "platform: android\n"
+        "onCaseStart:\n"
+        "- runShell: echo old\n"
+        "onCaseComplete:\n"
+        "- runShell: echo remove\n"
+        "---\n"
+        "# command comment\n"
+        "- launchApp: {}\n"
+        "- tapOn:\n"
+        "    target: Login\n"
+        "    locator:\n"
+        "      text: Login\n"
+    )
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    get_status, loaded = server.handle_get("/yaml/input", {"path": ["editable.codex.yaml"]})
+    assert get_status == 200
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "editable.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [
+                {
+                    "action": "runCase",
+                    "value": "cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.codex.yaml",
+                },
+                {"action": "runCase", "value": "hooks/second.codex.yaml"},
+                {
+                    "action": "runShell",
+                    "value": "powershell -ExecutionPolicy Bypass -File .fsq-agent-workspace/scripts/clean_edge_data.ps1",
+                },
+            ],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 200
+    assert payload["revision"] != loaded["revision"]
+    assert payload["display"]["lifecycle"]["onCaseComplete"] == []
+    saved = case_path.read_text(encoding="utf-8")
+    assert "# case comment" in saved
+    assert "# command comment" in saved
+    long_run_case_line = "- runCase: cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.codex.yaml"
+    long_run_shell_line = "- runShell: powershell -ExecutionPolicy Bypass -File .fsq-agent-workspace/scripts/clean_edge_data.ps1"
+    assert long_run_case_line in saved
+    assert "runCase: hooks/second.codex.yaml" in saved
+    assert long_run_shell_line in saved
+    assert saved.index(long_run_case_line) < saved.index("runCase: hooks/second.codex.yaml") < saved.index(long_run_shell_line)
+    assert "onCaseComplete" not in saved
+    assert yaml.safe_load_all(saved)
+    assert list(yaml.safe_load_all(saved))[1] == list(yaml.safe_load_all(original))[1]
+
+
+def test_playground_server_lifecycle_save_preserves_leading_separator_quotes_and_hook_order(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "roundtrip.codex.yaml"
+    case_path.write_text(
+        "---\n"
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: \"Quoted case\"\n"
+        "platform: android\n"
+        "---\n"
+        "- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["roundtrip.codex.yaml"]})
+
+    status, _payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "roundtrip.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [
+                {"action": "runShell", "value": "echo first"},
+                {"action": "runShell", "value": "echo second"},
+                {"action": "runCase", "value": "hooks/second.codex.yaml"},
+            ],
+            "onCaseComplete": [],
+        },
+    )
+
+    saved = case_path.read_text(encoding="utf-8")
+    assert status == 200
+    assert saved.startswith("---\n")
+    assert 'name: "Quoted case"' in saved
+    assert saved.index("schemaVersion:") < saved.index("name:") < saved.index("platform:") < saved.index("onCaseStart:")
+    assert saved.index("echo first") < saved.index("echo second") < saved.index("hooks/second.codex.yaml")
+
+
+def test_playground_server_lifecycle_save_rejects_invalid_complete_case_without_writing(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "invalid-case.codex.yaml"
+    original = "name: Missing required metadata\nplatform: android\n---\n- launchApp: {}\n"
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid-case.codex.yaml"]})
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "invalid-case.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 400
+    assert payload["error"]
+    assert case_path.read_text(encoding="utf-8") == original
+    assert not list(case_path.parent.glob(f".{case_path.name}.*.tmp"))
+
+
+def test_playground_server_lifecycle_save_reports_path_and_size_errors(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    (settings.cases.dir / "folder.codex.yaml").mkdir()
+    large_path = settings.cases.dir / "large-save.codex.yaml"
+    large_path.write_text("x" * (YAML_DISPLAY_SIZE_LIMIT_BYTES + 1), encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    body = {"revision": "sha256:none", "onCaseStart": [], "onCaseComplete": []}
+
+    missing_status, _missing_payload = server.handle_put(
+        "/yaml/input/lifecycle", {"path": "missing.codex.yaml", **body}
+    )
+    directory_status, _directory_payload = server.handle_put(
+        "/yaml/input/lifecycle", {"path": "folder.codex.yaml", **body}
+    )
+    oversized_status, _oversized_payload = server.handle_put(
+        "/yaml/input/lifecycle", {"path": "large-save.codex.yaml", **body}
+    )
+
+    assert missing_status == 404
+    assert directory_status == 400
+    assert oversized_status == 413
+
+
+def test_playground_server_lifecycle_atomic_replace_failure_preserves_source(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "replace-failure.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: Replace\nplatform: android\n---\n- launchApp: {}\n"
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["replace-failure.codex.yaml"]})
+    monkeypatch.setattr(
+        "fsq_agent.playground._yaml_lifecycle.os.replace",
+        lambda source, destination: (_ for _ in ()).throw(OSError("replace failed")),
+    )
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "replace-failure.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 500
+    assert "replace failed" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == original
+    assert not list(case_path.parent.glob(f".{case_path.name}.*.tmp"))
+
+
+def test_playground_server_lifecycle_temp_write_failure_returns_500(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "temp-failure.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: Temp\nplatform: android\n---\n- launchApp: {}\n"
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["temp-failure.codex.yaml"]})
+    monkeypatch.setattr(
+        "fsq_agent.playground._yaml_lifecycle.tempfile.NamedTemporaryFile",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("temp create failed")),
+    )
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "temp-failure.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 500
+    assert "temp create failed" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == original
+
+
+def test_playground_server_lifecycle_serialization_failure_returns_400(tmp_path: Path, monkeypatch) -> None:
+    from ruamel.yaml import YAML
+
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "serialize-failure.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: Serialize\nplatform: android\n---\n- launchApp: {}\n"
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["serialize-failure.codex.yaml"]})
+    real_yaml = YAML(typ="rt")
+
+    class FailingYaml:
+        explicit_start = False
+
+        def load_all(self, text: str):
+            return real_yaml.load_all(text)
+
+        def dump_all(self, documents: object, output: object) -> None:
+            raise ValueError("serialize failed")
+
+    monkeypatch.setattr("fsq_agent.playground._yaml_lifecycle._round_trip_yaml", lambda: FailingYaml())
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "serialize-failure.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 400
+    assert "serialize failed" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == original
+
+
+def test_playground_server_lifecycle_result_size_limit_preserves_source(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "result-large.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: Large result\nplatform: android\n---\n- launchApp: {}\n"
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["result-large.codex.yaml"]})
+
+    status, _payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "result-large.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [
+                {"action": "runShell", "value": "x" * YAML_DISPLAY_SIZE_LIMIT_BYTES}
+            ],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 413
+    assert case_path.read_text(encoding="utf-8") == original
+
+
+def test_playground_server_lifecycle_save_uses_input_path_resolution_policy(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    cwd_case = cwd / "cwd.codex.yaml"
+    absolute_case = tmp_path / "absolute.codex.yaml"
+    content = "schemaVersion: fsq.ai-test/v1\nname: Path\nplatform: android\n---\n- launchApp: {}\n"
+    cwd_case.write_text(content, encoding="utf-8")
+    absolute_case.write_text(content, encoding="utf-8")
+    monkeypatch.chdir(cwd)
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    for path_text in ("cwd.codex.yaml", str(absolute_case)):
+        _status, loaded = server.handle_get("/yaml/input", {"path": [path_text]})
+        status, _payload = server.handle_put(
+            "/yaml/input/lifecycle",
+            {
+                "path": path_text,
+                "revision": loaded["revision"],
+                "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+                "onCaseComplete": [],
+            },
+        )
+        assert status == 200
+
+
+def test_playground_server_rejects_stale_lifecycle_revision_without_writing(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "conflict.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Conflict\nplatform: android\n---\n- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["conflict.codex.yaml"]})
+    externally_changed = case_path.read_text(encoding="utf-8").replace("name: Conflict", "name: Changed")
+    case_path.write_text(externally_changed, encoding="utf-8")
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "conflict.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 409
+    assert "changed on disk" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == externally_changed
+
+
+def test_playground_server_detects_source_change_during_lifecycle_validation(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "validation-race.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: Race\nplatform: android\n---\n- launchApp: {}\n"
+    external = original.replace("name: Race", "name: External")
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["validation-race.codex.yaml"]})
+    real_load_case = FsqCaseLoader.load_case
+
+    def change_source_during_validation(loader: FsqCaseLoader, path: Path):
+        result = real_load_case(loader, path)
+        case_path.write_text(external, encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(FsqCaseLoader, "load_case", change_source_during_validation)
+
+    status, payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "validation-race.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert status == 409
+    assert "changed on disk" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == external
+    assert not list(case_path.parent.glob(f".{case_path.name}.*.tmp"))
+
+
+def test_playground_server_rejects_invalid_or_busy_lifecycle_save(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "invalid.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Invalid\nplatform: android\n---\n- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid.codex.yaml"]})
+    original = case_path.read_text(encoding="utf-8")
+
+    invalid_status, invalid_payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "invalid.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [{"action": "runShell", "value": ""}],
+            "onCaseComplete": [],
+        },
+    )
+    server.state.start_task("busy")
+    busy_status, busy_payload = server.handle_put(
+        "/yaml/input/lifecycle",
+        {
+            "path": "invalid.codex.yaml",
+            "revision": loaded["revision"],
+            "onCaseStart": [],
+            "onCaseComplete": [],
+        },
+    )
+
+    assert invalid_status == 400
+    assert invalid_payload["error"]
+    assert busy_status == 409
+    assert "task is running" in busy_payload["error"]
+    assert case_path.read_text(encoding="utf-8") == original
 
 
 def test_playground_server_yaml_input_endpoint_reports_missing_file(tmp_path: Path) -> None:
@@ -1112,6 +1566,25 @@ def test_playground_state_assigns_sequence_for_unsequenced_events() -> None:
     assert [event["sequence"] for event in incremental_progress["events"]] == [2]
 
 
+def test_playground_state_includes_fsq_error_context() -> None:
+    state = PlaygroundState()
+    request_id = state.start_task("Invalid strict case")
+
+    state.fail_task(
+        request_id,
+        ConfigurationError(
+            "Invalid FSQ command parameters.",
+            context={"step_index": 0, "action_name": "launchApp", "validation_errors": [{"loc": ["app_path"]}]},
+        ),
+    )
+
+    progress = state.get_task(request_id)
+    assert progress is not None
+    assert "Invalid FSQ command parameters." in progress["error"]
+    assert '"action_name": "launchApp"' in progress["error"]
+    assert '"app_path"' in progress["error"]
+
+
 def test_playground_strict_recorder_updates_active_step_without_progress_events(tmp_path: Path) -> None:
     state = PlaygroundState()
     request_id = state.start_task("Strict progress")
@@ -1205,6 +1678,28 @@ def test_playground_server_persists_replay_frames(tmp_path: Path) -> None:
     assert progress["replay"]["runId"] == "run-1"
     assert progress["replay"]["frameCount"] == 2
     assert "manifestPath" not in progress["replay"]
+
+
+def test_playground_server_replay_returns_empty_for_known_request_without_frames(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+    request_id = server.state.start_task("No frames")
+    server.state.fail_task(request_id, "Invalid FSQ command parameters.")
+
+    status, payload = server.handle_get(f"/replay/{request_id}", {})
+    missing_status, missing_payload = server.handle_get("/replay/unknown", {})
+
+    assert status == 200
+    assert payload == {
+        "available": False,
+        "requestId": request_id,
+        "runId": request_id,
+        "frames": [],
+        "message": "No replay frames were captured.",
+    }
+    assert missing_status == 404
+    assert missing_payload["error"] == "Replay frames not found."
 
 
 def test_playground_server_replay_uses_evidence_screenshots(tmp_path: Path) -> None:
@@ -1858,8 +2353,9 @@ appId: com.microsoft.emmx
         def __init__(self, *, app_id: str, serial: str | None) -> None:
             captured["driver"] = {"app_id": app_id, "serial": serial}
 
-    def fake_run_strict_core_steps(**kwargs):
-        captured["steps"] = kwargs["steps"]
+    def fake_run_strict_lifecycle_case(**kwargs):
+        steps = FsqExecutableStepAdapter(registry_snapshot=kwargs["registry_snapshot"]).to_executable_steps(kwargs["case"])
+        captured["steps"] = kwargs["resolve_steps"](steps, kwargs["case"])
         output_dir = kwargs["output_dir"]
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "core-report.md"
@@ -1871,7 +2367,7 @@ appId: com.microsoft.emmx
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
+    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -1891,6 +2387,298 @@ appId: com.microsoft.emmx
     assert captured["driver"] == {"app_id": "com.microsoft.emmx", "serial": "device-1"}
     assert captured["steps"][0].action_name == "launch_app"
     assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"
+
+
+def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings(
+        cases={"dir": tmp_path / "cases"},
+        case_lifecycle={
+            "onCaseStart": [{"runShell": "echo config-before"}],
+            "onCaseComplete": [{"runShell": "echo config-after"}],
+        },
+    )
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.harness.android.app_id = "com.example"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "strict_lifecycle.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Strict Lifecycle\n"
+        "platform: android\n"
+        "appId: com.example\n"
+        "onCaseStart:\n"
+        "- runShell: echo case-before\n"
+        "onCaseComplete:\n"
+        "- runShell: echo case-after\n"
+        "---\n"
+        "- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    actions: list[str] = []
+
+    class FakeHarness:
+        def get_context(self) -> HarnessContext:
+            return HarnessContext(platform="android", session_id="session-1")
+
+        def action_space(self) -> dict[str, object]:
+            return {}
+
+        def before_action(self, step, context) -> None:
+            return None
+
+        def invoke_action(self, step, context):
+            actions.append(step.action_name)
+            return HarnessActionResult(status="passed", action_name=step.action_name)
+
+        def after_action(self, step, context, action_result) -> None:
+            return None
+
+        def capture_artifact(self, kind, reason, context, step_id, phase):
+            return HarnessArtifactRef(
+                artifact_id=f"{step_id}-{phase}-{kind}",
+                kind=kind,
+                path=Path(f"artifacts/raw/{step_id}-{phase}-{reason}.{kind}"),
+            )
+
+        def classify_error(self, error, phase, step):
+            return "unknown"
+
+    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
+    state = PlaygroundState()
+    request_id = state.start_task("Strict lifecycle")
+    active_steps: list[dict[str, object] | None] = []
+    original_set_active_step = state.set_active_step
+
+    def record_active_step(request_id_value: str, active_step: dict[str, object] | None) -> None:
+        active_steps.append(active_step)
+        original_set_active_step(request_id_value, active_step)
+
+    monkeypatch.setattr(state, "set_active_step", record_active_step)
+
+    _run_dynamic_task(
+        settings=settings,
+        state=state,
+        request_id=request_id,
+        goal=None,
+        case_yaml_path=None,
+        strict_case_yaml_path="strict_lifecycle.codex.yaml",
+        device_id=None,
+        record=True,
+        record_on_failure=True,
+    )
+
+    progress = state.get_task(request_id)
+    manifest_path = settings.output.runs_dir / "strict_lifecycle" / "evidence-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    commands = [step["metadata"].get("command") for step in manifest["steps"] if step["metadata"].get("command")]
+    assert progress is not None
+    assert progress["result"]["status"] == "success"
+    assert actions == ["launch_app"]
+    assert commands == ["echo config-before", "echo case-before", "echo case-after", "echo config-after"]
+    assert any(step and str(step.get("stepId", "")).startswith("strict_lifecycle-hook-shell-") for step in active_steps)
+    assert any(step.get("source_ref", {}).get("metadata", {}).get("lifecycle_phase") == "case" for step in manifest["steps"])
+
+
+def test_playground_strict_preflight_failure_runs_no_hooks_or_harness(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings(harness={"platform": "windows"}, cases={"dir": tmp_path / "cases"})
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.harness.windows.app_path = tmp_path / "app.exe"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "preflight.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Preflight\n"
+        "platform: windows\n"
+        "onCaseStart:\n"
+        "- runShell: should-not-run\n"
+        "---\n"
+        "- typeText:\n"
+        "    target: Secret\n"
+        "    locator:\n"
+        "      title: Secret\n"
+        "    text:\n"
+        "      runtimeSecret: NOT_ALLOWED\n",
+        encoding="utf-8",
+    )
+    shell_calls: list[str] = []
+    harness_builds: list[bool] = []
+    monkeypatch.setattr("fsq_agent._strict_lifecycle._run_shell_command", lambda command: shell_calls.append(command))
+    monkeypatch.setattr(
+        "fsq_agent.playground._execution._build_strict_harness",
+        lambda *args, **kwargs: harness_builds.append(True),
+    )
+    state = PlaygroundState()
+    request_id = state.start_task("Preflight")
+
+    _run_dynamic_task(
+        settings=settings,
+        state=state,
+        request_id=request_id,
+        goal=None,
+        case_yaml_path=None,
+        strict_case_yaml_path="preflight.codex.yaml",
+        device_id=None,
+        record=True,
+        record_on_failure=True,
+    )
+
+    progress = state.get_task(request_id)
+    assert progress is not None
+    assert progress["status"] == "error"
+    assert "Runtime secret name is not allowed" in progress["error"]
+    assert shell_calls == []
+    assert harness_builds == []
+
+
+def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings(cases={"dir": tmp_path / "cases"})
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.harness.android.app_id = "com.example"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "no-hooks.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: No Hooks\n"
+        "platform: android\n"
+        "appId: com.example\n"
+        "---\n"
+        "- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    def fake_shared(**kwargs):
+        calls.append(kwargs["case"].id)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "core-report.md"
+        report_path.write_text("report", encoding="utf-8")
+        report_path.with_suffix(".json").write_text(
+            '{"summary":{"status":"passed","failed_steps":0}}', encoding="utf-8"
+        )
+        manifest_path = output_dir / "evidence-manifest.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
+
+    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_shared)
+    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: object())
+    state = PlaygroundState()
+    request_id = state.start_task("No hooks")
+
+    _run_dynamic_task(
+        settings=settings,
+        state=state,
+        request_id=request_id,
+        goal=None,
+        case_yaml_path=None,
+        strict_case_yaml_path="no-hooks.codex.yaml",
+        device_id=None,
+        record=True,
+        record_on_failure=True,
+    )
+
+    assert calls == ["no-hooks"]
+
+
+def test_playground_child_run_case_is_active_before_child_steps_and_shares_manifest(tmp_path: Path, monkeypatch) -> None:
+    settings = Settings(cases={"dir": tmp_path / "cases"})
+    settings.output.runs_dir = tmp_path / "runs"
+    settings.harness.android.app_id = "com.example"
+    settings.cases.dir.mkdir()
+    child_path = settings.cases.dir / "child.codex.yaml"
+    child_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Child\n"
+        "platform: android\n"
+        "---\n"
+        "- tapOn:\n"
+        "    target: Child\n",
+        encoding="utf-8",
+    )
+    root_path = settings.cases.dir / "root-child.codex.yaml"
+    root_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Root Child\n"
+        "platform: android\n"
+        "appId: com.example\n"
+        "onCaseStart:\n"
+        "- runCase: child.codex.yaml\n"
+        "---\n"
+        "- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    actions: list[str] = []
+
+    class FakeHarness:
+        def get_context(self):
+            return HarnessContext(platform="android", session_id="session-1")
+
+        def action_space(self):
+            return {}
+
+        def before_action(self, step, context):
+            return None
+
+        def invoke_action(self, step, context):
+            actions.append(step.action_name)
+            return HarnessActionResult(status="passed", action_name=step.action_name)
+
+        def after_action(self, step, context, action_result):
+            return None
+
+        def capture_artifact(self, kind, reason, context, step_id, phase):
+            return HarnessArtifactRef(
+                artifact_id=f"{step_id}-{phase}-{kind}",
+                kind=kind,
+                path=Path(f"artifacts/raw/{step_id}-{phase}-{kind}"),
+            )
+
+        def classify_error(self, error, phase, step):
+            return "unknown"
+
+    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
+    state = PlaygroundState()
+    request_id = state.start_task("Root child")
+    active_ids: list[str] = []
+    preview_paths: list[str] = []
+    original_set_active = state.set_active_step
+    original_set_preview = state.set_preview
+
+    def record_active(request_id_value, active_step):
+        if active_step and active_step.get("stepId"):
+            active_ids.append(str(active_step["stepId"]))
+        original_set_active(request_id_value, active_step)
+
+    monkeypatch.setattr(state, "set_active_step", record_active)
+
+    def record_preview(request_id_value, preview):
+        preview_paths.append(str(preview.get("path", "")))
+        original_set_preview(request_id_value, preview)
+
+    monkeypatch.setattr(state, "set_preview", record_preview)
+
+    _run_dynamic_task(
+        settings=settings,
+        state=state,
+        request_id=request_id,
+        goal=None,
+        case_yaml_path=None,
+        strict_case_yaml_path="root-child.codex.yaml",
+        device_id=None,
+        record=True,
+        record_on_failure=True,
+    )
+
+    manifest_path = settings.output.runs_dir / "root-child" / "evidence-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    parent_index = next(index for index, step_id in enumerate(active_ids) if "hook-run-case" in step_id)
+    child_index = next(index for index, step_id in enumerate(active_ids) if step_id.startswith("child-case-step"))
+    assert parent_index < child_index
+    assert actions == ["tap_on", "launch_app"]
+    assert any("child-case-step-001" in path for path in preview_paths)
+    assert any(step["metadata"].get("hook_action_name") == "runCase" for step in manifest["steps"])
+    assert any(step["step_id"].startswith("child-case-step") for step in manifest["steps"])
+    assert any(step["step_id"] == "root-child-step-001" for step in manifest["steps"])
 
 
 def test_playground_strict_web_yaml_execution_uses_web_harness(tmp_path: Path, monkeypatch) -> None:
@@ -1938,8 +2726,9 @@ platform: web
         def __init__(self, **kwargs):
             captured["driver"] = kwargs
 
-    def fake_run_strict_core_steps(**kwargs):
-        captured["steps"] = kwargs["steps"]
+    def fake_run_strict_lifecycle_case(**kwargs):
+        steps = FsqExecutableStepAdapter(registry_snapshot=kwargs["registry_snapshot"]).to_executable_steps(kwargs["case"])
+        captured["steps"] = kwargs["resolve_steps"](steps, kwargs["case"])
         captured["registry"] = kwargs["registry"]
         output_dir = kwargs["output_dir"]
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1952,7 +2741,7 @@ platform: web
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", FakeWebDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
+    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -2023,8 +2812,9 @@ platform: windows
         def __init__(self, **kwargs):
             captured["driver"] = kwargs
 
-    def fake_run_strict_core_steps(**kwargs):
-        captured["steps"] = kwargs["steps"]
+    def fake_run_strict_lifecycle_case(**kwargs):
+        steps = FsqExecutableStepAdapter(registry_snapshot=kwargs["registry_snapshot"]).to_executable_steps(kwargs["case"])
+        captured["steps"] = kwargs["resolve_steps"](steps, kwargs["case"])
         captured["registry"] = kwargs["registry"]
         output_dir = kwargs["output_dir"]
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -2037,7 +2827,7 @@ platform: windows
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.core.harness._factory.PywinautoWindowsDriver", FakeWindowsDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution._run_strict_core_steps", fake_run_strict_core_steps)
+    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -2157,6 +2947,87 @@ def test_playground_server_serves_status_over_http(tmp_path: Path) -> None:
 
     assert payload["status"] == "ok"
     assert payload["busy"] is False
+
+
+def test_playground_server_saves_yaml_lifecycle_over_http(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("hello", encoding="utf-8")
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "http.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: HTTP\nplatform: android\n---\n- launchApp: {}\n",
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
+    server.start()
+    try:
+        with urlopen(f"{server.url}/yaml/input?path=http.codex.yaml", timeout=5) as response:
+            loaded = json.loads(response.read().decode("utf-8"))
+        request = Request(
+            f"{server.url}/yaml/input/lifecycle",
+            method="PUT",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(
+                {
+                    "path": "http.codex.yaml",
+                    "revision": loaded["revision"],
+                    "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+                    "onCaseComplete": [],
+                }
+            ).encode("utf-8"),
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.stop()
+
+    assert payload["display"]["lifecycle"]["onCaseStart"] == [
+        {"index": 1, "action": "runShell", "value": "echo setup"}
+    ]
+
+
+def test_playground_server_rejects_stale_yaml_lifecycle_over_http(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("hello", encoding="utf-8")
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    case_path = settings.cases.dir / "http-conflict.codex.yaml"
+    original = "schemaVersion: fsq.ai-test/v1\nname: HTTP conflict\nplatform: android\n---\n- launchApp: {}\n"
+    external = original.replace("name: HTTP conflict", "name: External")
+    case_path.write_text(original, encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
+    server.start()
+    try:
+        with urlopen(f"{server.url}/yaml/input?path=http-conflict.codex.yaml", timeout=5) as response:
+            loaded = json.loads(response.read().decode("utf-8"))
+        case_path.write_text(external, encoding="utf-8")
+        request = Request(
+            f"{server.url}/yaml/input/lifecycle",
+            method="PUT",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(
+                {
+                    "path": "http-conflict.codex.yaml",
+                    "revision": loaded["revision"],
+                    "onCaseStart": [{"action": "runShell", "value": "echo draft"}],
+                    "onCaseComplete": [],
+                }
+            ).encode("utf-8"),
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=5)
+        payload = json.loads(error.value.read().decode("utf-8"))
+    finally:
+        server.stop()
+
+    assert error.value.code == 409
+    assert "changed on disk" in payload["error"]
+    assert case_path.read_text(encoding="utf-8") == external
 
 
 def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
@@ -2427,6 +3298,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "Generating replay video..." in script
     assert "Replay video saved" in script
     assert "Replay video was not generated:" in script
+    assert "if (progress.result?.runId && state.replayRequestId && progress.status !== 'cancelled')" in script
     assert "MediaRecorder produced an empty video" in script
     assert "no replay frames found" in script
     assert "discardLiveReplayVideo" not in script
@@ -2462,7 +3334,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "api(`/replay/${encodeURIComponent(requestId)}`)" in script
     assert "next.timestamp - current.timestamp" in script
     assert "window.setTimeout" in script
-    assert "window.clearTimeout" not in script
+    assert "window.clearTimeout(state.replay" not in script
     assert "No replay frames yet." not in script
     assert "No replay run yet." not in script
     assert "Unable to load replay" not in script
@@ -2509,6 +3381,113 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "report-content" in styles
     assert "tab-button.active" in styles
     assert "[hidden]" in styles
+
+
+def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
+    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    html = (static_dir / "index.html").read_text(encoding="utf-8")
+    script = (static_dir / "playground.js").read_text(encoding="utf-8")
+    styles = (static_dir / "playground.css").read_text(encoding="utf-8")
+    lifecycle_model = (static_dir / "lifecycle-editor-model.js").read_text(encoding="utf-8")
+
+    assert 'id="yaml-lifecycle-save"' in html
+    assert 'id="yaml-lifecycle-discard"' in html
+    assert 'id="toast"' in html
+    assert 'role="status"' in html
+    assert '<script src="/lifecycle-editor-model.js"></script>' in html
+    assert "renderLifecycleSection('onCaseStart', 'Before case')" in script
+    assert "renderLifecycleSection('onCaseComplete', 'After case')" in script
+    assert "function renderYamlCaseSteps(steps)" in script
+    assert "title.textContent = 'Case steps'" in script
+    assert "renderYamlCaseSteps(display.steps || [])" in script
+    assert "addLifecycleAction" in script
+    assert "deleteLifecycleAction" in script
+    assert "moveLifecycleAction" in script
+    assert "method: 'PUT'" in script
+    assert "Save or discard lifecycle changes before running." in script
+    assert "Save or discard lifecycle changes before loading a run." in script
+    assert "Discard unsaved lifecycle changes and reload YAML?" in script
+    assert "function lifecycleValidationError()" in script
+    assert "Lifecycle action values cannot be empty." in lifecycle_model
+    update_toolbar_body = script[script.index("function updateLifecycleToolbar()"):script.index("async function saveLifecycleDraft()")]
+    save_body = script[script.index("async function saveLifecycleDraft()"):script.index("function discardLifecycleDraft()")]
+    assert "setYamlInputStatus(invalid, 'error')" not in update_toolbar_body
+    assert "Boolean(invalid)" not in update_toolbar_body
+    assert "setYamlInputStatus(validationError, 'error')" in save_body
+    assert "function saveLifecycleDraft()" in script
+    assert "function setLifecycleEditorDisabled(disabled)" in script
+    assert "function lifecycleEditorIsDisabled()" in script
+    assert "'.yaml-lifecycle-section select, .yaml-lifecycle-section input, .yaml-lifecycle-section button'" in script
+    assert "const editorDisabled = Boolean(state.currentRequestId || state.finishingRun || state.yamlLifecycleSaving)" in script
+    assert "if (!Object.hasOwn(control.dataset, 'lifecycleWasDisabled'))" in script
+    finishing_block = script[script.index("state.finishingRun = true;"):script.index("scheduleClearActiveYamlStepCard();")]
+    assert "updateLifecycleToolbar();" in finishing_block
+    assert "showToast('Lifecycle hooks saved.')" in script
+    assert "function showToast(message, durationMs = 2000)" in script
+    assert "function hideToast()" in script
+    assert "setYamlInputStatus('Lifecycle hooks saved.'" not in script
+    assert "function discardLifecycleDraft()" in script
+    assert "state.yamlLifecycleSnapshot = cloneLifecycle(payload.display?.lifecycle" in script
+    assert "setYamlInputStatus(error.message, 'error')" in script
+    catch_body = save_body[save_body.index("} catch (error) {"):save_body.index("} finally {")]
+    assert "state.yamlLifecycleDraft =" not in catch_body
+    assert "state.yamlLifecycleSnapshot =" not in catch_body
+    assert "renderYamlDisplay(els.yamlRecordedViewer, state.yamlRecordedDisplay" in script
+    assert "renderYamlDisplay(els.yamlRecordedViewer, state.yamlRecordedDisplay, 'Recorded YAML is empty.', { lifecycleEditor" not in script
+    assert "renderYamlDisplay(els.yamlInputViewer, state.yamlInputDisplay, 'YAML file is empty.', { lifecycleEditor: state.yamlInputEditable })" in script
+    assert html.index('id="yaml-lifecycle-toolbar"') < html.index('id="yaml-input-viewer"')
+    assert ".yaml-lifecycle-action-row" in styles
+    assert ".toast" in styles
+    assert ".yaml-lifecycle-toolbar-actions" in styles
+    assert "margin-left: auto" in styles
+    assert ".yaml-lifecycle-action-row select," in styles
+    assert "height: 32px" in styles
+    assert "margin: 0" in styles
+    assert ".yaml-case-steps-heading" in styles
+    assert '.yaml-lifecycle-section[data-lifecycle-field="onCaseComplete"]' in styles
+    assert "border-top: 1px solid #d8dee8" in styles
+    assert "@media (max-width: 760px)" in styles
+
+
+def test_playground_lifecycle_editor_model_behavior() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for lifecycle editor model verification.")
+    model_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "lifecycle-editor-model.js"
+    script = f"""
+const model = require({json.dumps(str(model_path))});
+const snapshot = model.empty();
+let draft = model.addAction(snapshot, 'onCaseStart', 'runCase');
+const invalidEmpty = model.validationError(draft);
+draft = model.updateAction(draft, 'onCaseStart', 0, 'value', 'hooks/setup.codex.yaml');
+draft = model.addAction(draft, 'onCaseStart', 'runCase');
+draft = model.updateAction(draft, 'onCaseStart', 1, 'value', 'hooks/second.codex.yaml');
+draft = model.addAction(draft, 'onCaseStart', 'runShell');
+draft = model.updateAction(draft, 'onCaseStart', 2, 'value', 'echo ready');
+draft = model.moveAction(draft, 'onCaseStart', 2, -1);
+draft = model.moveAction(draft, 'onCaseStart', 1, -1);
+const ordered = model.actions(draft, 'onCaseStart').map((action) => [action.action, action.value]);
+draft = model.deleteAction(draft, 'onCaseStart', 1);
+const valid = model.validationError(draft);
+const discarded = model.clone(snapshot);
+console.log(JSON.stringify({{ invalidEmpty, ordered, remaining: model.actions(draft, 'onCaseStart'), valid, discarded }}));
+"""
+
+    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    payload = json.loads(result.stdout)
+
+    assert payload["invalidEmpty"] == "Lifecycle action values cannot be empty."
+    assert payload["ordered"] == [
+        ["runShell", "echo ready"],
+        ["runCase", "hooks/setup.codex.yaml"],
+        ["runCase", "hooks/second.codex.yaml"],
+    ]
+    assert payload["remaining"] == [
+        {"action": "runShell", "value": "echo ready"},
+        {"action": "runCase", "value": "hooks/second.codex.yaml"},
+    ]
+    assert payload["valid"] == ""
+    assert payload["discarded"] == {"onCaseStart": [], "onCaseComplete": []}
 
 
 def test_playground_static_yaml_section_is_left_side_context() -> None:
@@ -2653,7 +3632,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "state.selectedYamlCaseTitle.classList.add('yaml-region-selected')" in script
     assert "yaml-section" in styles
     assert "flex: 1 1 auto" in styles
-    assert "min-height: 260px" in styles
+    assert "min-height: 320px" in styles
     assert "--control-panel-width: clamp(320px, 32vw, 520px)" in styles
     assert "grid-template-columns: minmax(300px, var(--control-panel-width)) 8px minmax(0, 1fr)" in styles
     assert "panel-resizer" in styles

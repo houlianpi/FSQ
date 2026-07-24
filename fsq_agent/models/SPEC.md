@@ -111,7 +111,7 @@ Web platform exports:
 
 Windows platform exports:
 
-- `WindowsLocator`: Pydantic model for Windows control locators. Windows element actions require non-empty `target` and `locator`; `target` is not used for lookup.
+- `WindowsLocator`: Pydantic model for Windows control locators. Windows element actions require a non-empty `locator`; optional `target` values are descriptive only and are not used for lookup.
 - `WindowsPoint` and `WindowsOffset`: Pydantic coordinate models for non-negative absolute points and non-zero signed offsets.
 - `WindowsMouseSource` and `WindowsMouseDestination`: Pydantic models selecting one supported locator, point, or destination-offset mode.
 - `WindowsHoverOnParams`, `WindowsScrollOnParams`, and `WindowsDragToParams`: Pydantic models for Windows mouse actions, including non-zero `wheel_dist` and default-left mouse button behavior where applicable.

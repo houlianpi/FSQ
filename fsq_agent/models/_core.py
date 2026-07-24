@@ -599,19 +599,14 @@ class WindowsLocator(BaseModel):
 class _WindowsTargetParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target: str
+    target: str | None = None
     locator: WindowsLocator
 
     @model_validator(mode="after")
     def _require_target(self) -> "_WindowsTargetParams":
-        if not self._has_target_value():
-            raise ValueError("requires non-empty target")
         if not self.locator.has_value():
             raise ValueError("requires non-empty locator")
         return self
-
-    def _has_target_value(self) -> bool:
-        return bool(self.target.strip())
 
 
 class WindowsPoint(BaseModel):
@@ -668,7 +663,6 @@ class WindowsMouseDestination(BaseModel):
 class WindowsLaunchAppParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    app_path: str | None = None
     extra_args: list[str] | None = None
 
 

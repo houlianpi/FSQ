@@ -11,6 +11,7 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from fsq_agent._capability_bootstrap import build_capability_registry
+from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
@@ -19,15 +20,12 @@ from fsq_agent.core import (
 	EvidenceRecorder,
 	HarnessInterface,
 	RuntimeSecretStore,
-	StepRunner,
-	StepSequenceRunner,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, PostActionDelaySettings, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
+from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.playground._recording import record_dynamic_result
 from fsq_agent.playground._state import PlaygroundState
 from fsq_agent.providers import build_ai_assertion_evaluator
-from fsq_agent.report import CoreEvidenceReportGenerator
 
 
 class PlaygroundTaskCancelled(RuntimeError):
@@ -313,10 +311,23 @@ def _run_strict_case_yaml(
 ) -> TaskResult:
 	case_path = _resolve_case_yaml_path(path_text, settings)
 	case = FsqCaseLoader().load_case(case_path)
-	_validate_strict_case_platform(settings, case)
 	registry = build_capability_registry(platform=settings.harness.platform)
 	registry_snapshot = registry.snapshot()
-	requires_ai_assertion = _case_requires_ai_assertion(case, registry_snapshot)
+	lifecycle_cases = collect_strict_lifecycle_cases(case_path=case_path, case=case, settings=settings)
+	for _lifecycle_path, lifecycle_case in lifecycle_cases:
+		_validate_strict_case_platform(settings, lifecycle_case)
+	requires_ai_assertion = any(
+		_case_requires_ai_assertion(lifecycle_case, registry_snapshot)
+		for _lifecycle_path, lifecycle_case in lifecycle_cases
+	)
+	resolved_steps_by_path = {
+		lifecycle_path.resolve(): _resolve_strict_replay_steps(
+			FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(lifecycle_case),
+			settings,
+			registry_snapshot,
+		)
+		for lifecycle_path, lifecycle_case in lifecycle_cases
+	}
 	validate_strict_core_settings(settings, requires_ai_assertion=requires_ai_assertion)
 	run_id = case.id
 	run_dir = Path(settings.output.runs_dir) / run_id
@@ -324,26 +335,27 @@ def _run_strict_case_yaml(
 		request_id,
 		RunEvent(run_id=run_id, task_id=case.id, type="run_started", title="Strict YAML started", message=str(case_path)),
 	)
-	steps = _resolve_strict_replay_steps(
-		FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case),
-		settings,
-		registry_snapshot,
-	)
 	harness = _build_strict_harness(settings, case, run_dir, requires_ai_assertion)
 	if handle is not None and settings.harness.platform in {"web", "windows", "macos"}:
 		handle.bind_harness(harness)
 	cancellable_harness = _CancellableHarness(harness, state, request_id)
-	artifact = _run_strict_core_steps(
+	recorder = _PlaygroundEvidenceRecorder(run_id=run_id, output_dir=run_dir, state=state, request_id=request_id)
+	artifact = run_strict_lifecycle_case(
 		case_path=case_path,
+		case=case,
+		settings=settings,
 		harness=cancellable_harness,
 		output_dir=run_dir,
 		run_id=run_id,
-		steps=steps,
 		registry=registry,
+		registry_snapshot=registry_snapshot,
 		post_action_delay_seconds=settings.execution.post_action_delay_seconds,
 		runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
-		state=state,
-		request_id=request_id,
+		recorder=recorder,
+		resolve_steps=lambda steps, _case: _resolve_strict_replay_steps(steps, settings, registry_snapshot),
+		resolved_steps_by_path=resolved_steps_by_path,
+		cases_by_path={lifecycle_path.resolve(): lifecycle_case for lifecycle_path, lifecycle_case in lifecycle_cases},
+		cancellation_check=lambda: _raise_if_cancelled(state, request_id),
 	)
 	status, summary = _strict_report_status(artifact)
 	state.add_event(
@@ -410,35 +422,6 @@ def _resolve_case_yaml_path(path_text: str, settings: Settings) -> Path:
 			return candidate.resolve()
 	raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
-
-def _run_strict_core_steps(
-	*,
-	case_path: Path,
-	harness: Any,
-	output_dir: Path,
-	run_id: str,
-	steps: list[ExecutableStep],
-	registry,
-	post_action_delay_seconds: PostActionDelaySettings,
-	runtime_secret_store: RuntimeSecretStore | None,
-	state: PlaygroundState,
-	request_id: str,
-) -> ReportArtifact:
-	normal_steps, teardown_steps = _split_trailing_teardown_steps(steps)
-	recorder = _PlaygroundEvidenceRecorder(run_id=run_id, output_dir=output_dir, state=state, request_id=request_id)
-	StepSequenceRunner(
-		step_runner=StepRunner(
-			harness=harness,
-			capability_registry=registry,
-			post_action_delay_seconds=post_action_delay_seconds,
-			runtime_secret_store=runtime_secret_store,
-		),
-		evidence_recorder=recorder,
-	).run_steps(run_id=run_id, steps=normal_steps, teardown_steps=teardown_steps)
-	manifest_path = recorder.write_manifest()
-	return CoreEvidenceReportGenerator().generate_from_manifest(manifest_path)
-
-
 class _PlaygroundEvidenceRecorder(EvidenceRecorder):
 	def __init__(self, *, run_id: str, output_dir: Path, state: PlaygroundState, request_id: str) -> None:
 		super().__init__(run_id=run_id, output_dir=output_dir)
@@ -481,13 +464,6 @@ def _step_index_from_step_id(step_id: str) -> int | None:
 	if match is None:
 		return None
 	return int(match.group(1))
-
-def _split_trailing_teardown_steps(steps: list[ExecutableStep]) -> tuple[list[ExecutableStep], list[ExecutableStep]]:
-	split_at = len(steps)
-	while split_at > 0 and steps[split_at - 1].kind == "teardown":
-		split_at -= 1
-	return steps[:split_at], steps[split_at:]
-
 
 def _strict_report_status(artifact: ReportArtifact) -> tuple[str, str]:
 	json_path = artifact.path.with_suffix(".json")

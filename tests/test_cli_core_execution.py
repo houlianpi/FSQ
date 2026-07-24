@@ -1,13 +1,14 @@
 import json
 import logging
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 
 import pytest
 
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
-from fsq_agent.cli._case_lifecycle import run_strict_fsq_lifecycle_case
+from fsq_agent.cli._case_lifecycle import _run_shell_command, run_strict_fsq_lifecycle_case
 from fsq_agent.cli._core_execution import run_fsq_core_case, run_strict_fsq_core_case
 from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader
@@ -67,7 +68,44 @@ platform: web
 
 def _python_exit_command(exit_code: int) -> str:
     executable = Path(sys.executable).as_posix()
+    if sys.platform == "win32":
+        return f'& "{executable}" -c "import sys; sys.exit({exit_code})"'
     return f'"{executable}" -c "import sys; sys.exit({exit_code})"'
+
+
+def test_run_shell_command_uses_powershell_on_windows(monkeypatch) -> None:
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("fsq_agent.cli._case_lifecycle.sys.platform", "win32")
+    monkeypatch.setattr("fsq_agent.cli._case_lifecycle.subprocess.run", fake_run)
+    command = "Remove-Item -LiteralPath 'C:\\temp\\test1' -Recurse -Force -Confirm:$false"
+
+    result = _run_shell_command(command)
+
+    assert result.returncode == 0
+    assert calls == [
+        (
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+            {"capture_output": True, "text": True, "check": False},
+        )
+    ]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell integration test")
+def test_run_shell_command_executes_windows_remove_item(tmp_path: Path) -> None:
+    target = tmp_path / "remove-me"
+    target.mkdir()
+    (target / "content.txt").write_text("content", encoding="utf-8")
+    command = f"Remove-Item -LiteralPath '{target}' -Recurse -Force -Confirm:$false"
+
+    result = _run_shell_command(command)
+
+    assert result.returncode == 0, result.stderr
+    assert not target.exists()
 
 
 class CliCoreHarness:

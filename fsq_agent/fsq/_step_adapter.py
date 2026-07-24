@@ -77,7 +77,7 @@ class FsqExecutableStepAdapter:
     ) -> dict[str, Any]:
         if capability is None:
             return params
-        driver_params = {key: value for key, value in params.items() if key != "timeout"}
+        driver_params = self._normalize_runtime_secret_text_param({key: value for key, value in params.items() if key != "timeout"})
         try:
             parsed = capability.params_model.model_validate(driver_params)
         except ValidationError as exc:
@@ -94,6 +94,17 @@ class FsqExecutableStepAdapter:
         if "textType" not in driver_params and canonical.get("textType") == "literal":
             canonical.pop("textType", None)
         return canonical
+
+    def _normalize_runtime_secret_text_param(self, params: dict[str, Any]) -> dict[str, Any]:
+        text = params.get("text")
+        if "textType" in params or not isinstance(text, dict):
+            return params
+        if set(text) != {"runtimeSecret"}:
+            return params
+        secret_name = text.get("runtimeSecret")
+        if not isinstance(secret_name, str):
+            return params
+        return {**params, "text": secret_name, "textType": "runtimeSecret"}
 
     def _timeout_ms(self, params: dict[str, Any]) -> int | None:
         timeout = params.get("timeout")

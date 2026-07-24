@@ -164,6 +164,8 @@ class WindowsHarness:
             return {}
 
     def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory:
+        if isinstance(error, TimeoutError):
+            return "timeout_error"
         if isinstance(error, LookupError):
             return "target_resolution_error"
         return "harness_error"

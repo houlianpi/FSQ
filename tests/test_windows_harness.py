@@ -134,7 +134,7 @@ def test_windows_harness_dispatches_fsq_action_names_to_driver() -> None:
     context = harness.get_context()
 
     cases = [
-        ("launchApp", {"app_path": "notepad.exe"}, "launch_app"),
+        ("launchApp", {}, "launch_app"),
         ("clickOn", {"target": "Open the File menu", "locator": {"title": "File"}}, "click_on"),
         ("doubleClickOn", {"target": "Open the document", "locator": {"title": "Document", "control_type": "Edit"}}, "double_click_on"),
         ("rightClickOn", {"target": "Open the File context menu", "locator": {"title": "File"}}, "right_click_on"),
@@ -181,6 +181,7 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "click_on" in schemas
     assert "ui_snapshot" in schemas
     assert "assert_with_ai" not in schemas
+    assert set(schemas["launch_app"].params_json_schema["properties"]) == {"extra_args"}
     assert schemas["click_on"].driver_method == "click_on"
     assert schemas["click_on"].fsq_action_name == "clickOn"
     assert schemas["click_on"].platform == "windows"
@@ -190,10 +191,24 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "locator" in schemas["click_on"].params_json_schema["properties"]
     assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
-    assert "target" in schemas["click_on"].params_json_schema["required"]
+    assert "target" not in schemas["click_on"].params_json_schema["required"]
     assert schemas["drag_to"].fsq_action_name == "dragTo"
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
+
+
+@pytest.mark.parametrize("private_param", ["app_path", "wait_for"])
+def test_windows_harness_rejects_internal_launch_params(private_param: str) -> None:
+    driver = FakeWindowsDriver()
+    harness = WindowsHarness(driver=driver)
+
+    result = harness.invoke_action(_step("launchApp", {private_param: "not-exposed"}), harness.get_context())
+
+    assert result.status == "failed"
+    assert result.failure_category == "configuration_error"
+    assert result.error_message is not None
+    assert f"{private_param}: Extra inputs are not permitted" in result.error_message
+    assert driver.calls == [("context", None)]
 
 
 def test_windows_harness_validation_failure_does_not_call_driver_method() -> None:
@@ -242,18 +257,15 @@ def test_windows_harness_reports_none_locator() -> None:
     assert driver.calls == [("context", None)]
 
 
-def test_windows_harness_reports_missing_target() -> None:
+def test_windows_harness_allows_missing_target() -> None:
     driver = FakeWindowsDriver()
     harness = WindowsHarness(driver=driver)
 
     result = harness.invoke_action(_step("clickOn", {"locator": {"title": "Login"}}), harness.get_context())
 
-    assert result.status == "failed"
-    assert result.failure_category == "configuration_error"
-    assert result.error_message is not None
-    assert "target: Field required" in result.error_message
-    assert result.metadata["validation_errors"][0]["loc"] == ("target",)
-    assert driver.calls == [("context", None)]
+    assert result.status == "passed"
+    assert result.failure_category is None
+    assert driver.calls == [("context", None), ("click_on", {"locator": {"title": "Login"}})]
 
 
 def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
@@ -384,7 +396,7 @@ def test_windows_harness_does_not_hide_invoke_capture_failures(tmp_path) -> None
 
 @pytest.mark.parametrize(
     ("action_name", "params"),
-    [("launchApp", {"app_path": "notepad.exe"}), ("killApp", {})],
+    [("launchApp", {}), ("killApp", {})],
 )
 def test_windows_runner_lifecycle_captures_before_and_after_when_window_capture_fails(
     tmp_path,
@@ -479,6 +491,14 @@ def test_windows_harness_rejects_unknown_action() -> None:
     assert "Unsupported Windows action" in (result.error_message or "")
 
 
+def test_windows_harness_classifies_main_window_timeout() -> None:
+    harness = WindowsHarness(driver=FakeWindowsDriver())
+
+    category = harness.classify_error(TimeoutError("main window timeout"), "invoke", _step("launchApp"))
+
+    assert category == "timeout_error"
+
+
 def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
     from fsq_agent.models import WindowsLaunchAppParams
@@ -533,6 +553,47 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
     assert fake_app.window_title_re == ".*Microsoft.*Edge Beta"
     assert fake_app.window_control_type == "Window"
     assert fake_app.window_obj.waited == ["exists visible enabled"]
+
+
+def test_pywinauto_driver_main_window_timeout_includes_resolution_context(monkeypatch) -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FailingApp:
+        def connect(self, **kwargs: object) -> object:
+            raise LookupError("window not found")
+
+    driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
+    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+    monotonic_values = iter([100.0, 131.0])
+    monkeypatch.setattr("fsq_agent.core.harness._pywinauto_driver.time.monotonic", lambda: next(monotonic_values))
+
+    with pytest.raises(
+        TimeoutError,
+        match=r"Timed out after 30\.0 seconds resolving Windows main window.*title_re='\.\*Edge Beta'.*wait_for='exists visible'",
+    ) as error:
+        driver._resolve_main_window(wait=True)  # type: ignore[attr-defined]
+
+    assert isinstance(error.value.__cause__, LookupError)
+    assert "window not found" in str(error.value)
+
+
+def test_pywinauto_driver_main_window_immediate_failure_includes_resolution_context() -> None:
+    from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
+
+    class FailingApp:
+        def connect(self, **kwargs: object) -> object:
+            raise LookupError("window not found")
+
+    driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
+    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Failed to resolve Windows main window.*title_re='\.\*Edge Beta'.*wait_for='exists visible'",
+    ) as error:
+        driver._resolve_main_window()  # type: ignore[attr-defined]
+
+    assert isinstance(error.value.__cause__, LookupError)
 
 
 def test_pywinauto_driver_resolves_window_on_every_use() -> None:

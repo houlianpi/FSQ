@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
 from threading import Condition
 from typing import Literal
 from uuid import uuid4
 
-from fsq_agent.models import RunEvent, TaskResult
+from fsq_agent.models import FsqAgentError, RunEvent, TaskResult
 
 
 TaskProgressStatus = Literal["running", "success", "failed", "inconclusive", "error", "cancelled"]
@@ -242,7 +243,11 @@ class PlaygroundState:
 				task.status = "error"
 				task.completed_at = _utc_now()
 				task.active_step = None
-				task.error = str(error) or error.__class__.__name__ if isinstance(error, BaseException) else str(error)
+				if isinstance(error, FsqAgentError) and error.context:
+					details = json.dumps(error.context, ensure_ascii=False, default=str)
+					task.error = f"{str(error) or error.__class__.__name__} Context: {details}"
+				else:
+					task.error = str(error) or error.__class__.__name__ if isinstance(error, BaseException) else str(error)
 			if self.current_request_id == request_id:
 				self.current_request_id = None
 			self._notify()
