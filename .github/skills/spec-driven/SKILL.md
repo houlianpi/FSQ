@@ -9,13 +9,24 @@ Translate approved design intent into root/module `SPEC.md` files, get confirmat
 
 ## Core Rule
 
-`SPEC.md` files are the source of truth for implementation.
+`SPEC.md` files are the source of truth for implementation and must describe current project or module facts.
 
-- Root `SPEC.md` owns repository-wide architecture, module navigation, dependency diagrams, and global development rules.
-- Module `SPEC.md` files own module contracts, public interfaces, internal structure, dependencies, error handling, testing contracts, and design decisions.
+- Root `SPEC.md` owns current repository-wide architecture, module navigation, dependency diagrams, global development rules, and the SDD contract needed to run the project workflow.
+- Module `SPEC.md` files own current module contracts, public interfaces, internal structure, dependencies, error handling, architecture level, and current invariants.
+- Design documents, implementation notes, migration history, removed behavior, future roadmap, and detailed test matrices are not SPEC content unless they describe a currently supported compatibility behavior or a current verification obligation.
 - `CLAUDE.md` and `AGENTS.md` are thin agent entry points only. They point agents to root `SPEC.md`; they are not specifications.
 
 Implementation must not start until relevant `SPEC.md` changes are reviewed and confirmed.
+
+## SPEC Hygiene Rule
+
+Before writing or updating any `SPEC.md`, apply this filter:
+
+- Keep: current behavior, current public API, current module ownership, current dependency direction, current configuration surface, current error semantics, current architecture level, and current invariants that constrain implementation.
+- Keep as compatibility facts only when true in code: legacy input shapes, compatibility aliases, obsolete keys that are actively rejected, and supported migration shims. Write them as present-tense facts, not as history.
+- Move out of SPEC: why a decision was made, discarded alternatives, design-process narrative, implementation plan, future platform ideas, planned signatures, target-state wording, removed behavior that code no longer accepts, and exhaustive test case lists.
+- Avoid process markers such as `target`, `planned`, `future`, `after this change`, `this SPEC cycle`, `first batch`, `transitional`, `removed`, `previously`, and `during migration` unless the sentence is documenting a current compatibility fact or current rejection behavior.
+- If a module SPEC starts to become a reference manual, keep only ownership and invariants in SPEC and move tables, examples, endpoint catalogs, or command catalogs to a reference document.
 
 ## Required Flow
 
@@ -44,6 +55,8 @@ docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
 ```
 
 The design document is input to SPEC updates, not implementation authority. Once `SPEC.md` is confirmed, code must be implemented against `SPEC.md`.
+
+When translating a design document into SPEC updates, copy only the resulting current contract. Do not copy the design process, rejected options, implementation sequence, temporary target state, or historical narrative into SPEC.
 
 ## Python Architecture Integration
 
@@ -121,20 +134,22 @@ Every module has exactly one `SPEC.md`. Use this structure unless root `SPEC.md`
 ## Internal Structure
 ## Python Architecture        (for Python modules)
 ## Error Handling             (if applicable)
-## Testing Contract
-## Design Decisions
+## Verification Scope         (optional; current externally visible verification obligations only)
+## Current Invariants         (optional; present-tense constraints that keep implementation aligned)
 ```
 
 Root `SPEC.md` should contain repository-wide sections such as:
 
 ```text
 # {project} Project Specification
-## Spec-Driven Development Workflow
+## SPEC Ownership And SDD Contract
 ## Module Table
 ## Architecture Diagram
 ## Development Rules
 ## Python Architecture Rules   (for Python repositories)
 ```
+
+Do not add `Testing Contract` or `Design Decisions` as default sections for new module specs. Existing sections with those names should be narrowed during touched updates: test matrices move to tests/docs, while decision rationale becomes current invariants only when it still constrains code.
 
 ## Implementation Rules
 
@@ -158,6 +173,7 @@ After implementation, verify relevant specs still match code:
 - [ ] Module `SPEC.md` Internal Structure lists actual module files.
 - [ ] Python Architecture section matches package layout, import direction, framework boundaries, and model boundaries.
 - [ ] Agent entry files remain thin pointers to root `SPEC.md`.
+- [ ] SPEC text contains current facts only; design process, historical narrative, target-state wording, future roadmap, and detailed test matrices are absent or moved elsewhere.
 
 If anything is out of sync, fix the spec or code before completion.
 

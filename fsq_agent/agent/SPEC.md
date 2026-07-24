@@ -20,13 +20,13 @@ The agent module consumes validated capability registry definitions and runner r
 
 ## Public Interface
 
-Target `__init__.py` exports via `__all__` after this change:
+Current `__init__.py` exports via `__all__`:
 
 - `FsqAgent`: Main orchestration class.
 - `OpenAIAgentsRuntime`: Builds and runs an OpenAI Agents SDK `Agent` with a provider session supplied by `providers`, registry-generated capability tools, skills, turn limits, tracing policy, and a `StepRunner` execution binding.
 - `Verifier`: Parses structured verifier-agent or runner final output and converts task status, evidence, and diagnostics into a `VerificationResult` for the task's single `verification_goal`.
 
-Planned signatures:
+Current public call shape:
 
 - `FsqAgent.from_config(path: str | Path | None = None, workspace: str | Path | None = None) -> FsqAgent`
 - `FsqAgent.from_settings(settings: Settings) -> FsqAgent`
@@ -40,7 +40,7 @@ Planned signatures:
 - `_core.py`: `FsqAgent` orchestration and lifecycle.
 - `_events.py`: Run event emission, sequencing, persistence fan-out, and user-sink dispatch.
 - `_openai_runtime.py`: OpenAI Agents SDK runtime assembly using provider sessions from `providers`, AgentTool provider construction or injection, platform-dispatching harness, platform CommonTool provider, and backend driver construction, platform-selected capability registry bootstrap, StepRunner construction with configured post-action delay settings, agent construction, `Runner.run_streamed` invocation, and SDK stream event mapping.
-- `_harness_tools.py`: Transitional name for the registry-backed platform capability `FunctionTool` adapter. Target behavior converts active platform CommonTool/PlatformTool schemas into SDK tools, maps SDK JSON arguments into canonical `ExecutableStep` records, delegates execution to `core.StepRunner` configured with runner-owned post-action delay policy, and serializes normalized capability results to bounded model-visible JSON with safe structured status/provenance fields suitable for reports and post-run recording. AgentTool SDK adaptation lives in `tools` and does not receive replay metadata.
+- `_harness_tools.py`: Registry-backed platform capability `FunctionTool` adapter. It converts active platform CommonTool/PlatformTool schemas into SDK tools, maps SDK JSON arguments into canonical `ExecutableStep` records, delegates execution to `core.StepRunner` configured with runner-owned post-action delay policy, and serializes normalized capability results to bounded model-visible JSON with safe structured status/provenance fields suitable for reports and post-run recording. AgentTool SDK adaptation lives in `tools` and does not receive replay metadata.
 - `_pre_plan.py`: Internal prompt instructions and helpers for dynamic goal planning from page knowledge when directly invoked by `FsqAgent.run`.
 - `_prompt.py`: Prompt model construction and template rendering for agent instructions and task input.
 - `_structured_output.py`: Shared coercion helpers for SDK final output values and compatibility parsing of legacy/raw final JSON strings.
@@ -77,10 +77,6 @@ macOS runtime:
 - Harness construction must not connect to Appium or launch a macOS application. Dynamic macOS runs receive `launch_app` and `kill_app` as normal harness tools, and the runtime must not auto-call or auto-inject them.
 - Expected platform skill is `macos-harness.md` when configured.
 
-Future platform runtime:
-
-- New platforms must provide harness construction, default capability definitions, skill guidance, and startup metadata before dynamic tool exposure.
-
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
@@ -99,7 +95,7 @@ Internal goal planning raises configuration errors when OpenAI Agents SDK config
 
 During `FsqAgent.run`, provider-local runtime credentials are refreshed once before the internal pre-plan begins. For GitHub Copilot, this refresh uses only the cached GitHub OAuth token created by `init --provider github_copilot`; it must not start device-code authentication. The refreshed short-lived provider token is then reused by pre-plan, main dynamic execution, verification, and provider-backed AI assertions through normal provider-session construction. A dynamic task is internally planned before external UI actions begin. The orchestrator uses the task's explicit planning reference text and kind when present, falling back to legacy goal/description selection only for compatibility, converts returned `GoalKeyAction` values into `Task.key_actions` as execution guidance, copies the returned `GoalPrePlan.verification_goal` into `Task.verification_goal`, and emits planning events on the same run timeline. Generated key actions must not become additional blocking final-verifier requirements. If planning returns no usable key actions or no usable verification goal, the run fails before external UI actions are attempted.
 
-## Design Decisions
+## Current Invariants
 
 - The orchestration module depends on all leaf modules, but leaf modules never depend on `agent`.
 - OpenAI Agents SDK is the selected agent runtime and tool-use integration layer for this project.
@@ -107,7 +103,7 @@ During `FsqAgent.run`, provider-local runtime credentials are refreshed once bef
 - Task execution requires the OpenAI Agents SDK package and provider authentication to be available through `providers`. There is no offline fallback execution path.
 - The SDK runner owns tool dispatch and turn continuation. The project should not reimplement the Responses function-call loop.
 - SDK tools are generated from validated AgentTool definitions plus active platform CommonTool/PlatformTool `action_space()` schemas. `OpenAIAgentsRuntime` converts dynamic helper tools and recordable platform capabilities into SDK `FunctionTool` objects using canonical names, schemas, and descriptions. Active capability SDK tools use strict JSON schema by default; per-capability schema strictness is not part of capability metadata. Unimplemented backend methods must not appear in `action_space()` because they must not be decorated as capabilities. It creates SDK agents with no external platform tool servers. `assert_with_ai` is a driver-backed PlatformTool exposed by the active backend when an evaluator is configured, not an AgentTool and not a concrete harness method.
-- `OpenAIAgentsRuntime` must pass explicit OpenAI Agents SDK `ModelSettings` with `reasoning.effort="medium"` and `verbosity="medium"` to the main execution agent, pre-planner, and verification agent unless a future SPEC adds first-class model-setting configuration. This prevents SDK package upgrades from silently injecting model-family defaults such as disabled reasoning or low verbosity into dynamic UI automation runs.
+- `OpenAIAgentsRuntime` passes explicit OpenAI Agents SDK `ModelSettings` with `reasoning.effort="medium"` and `verbosity="medium"` to the main execution agent, pre-planner, and verification agent unless a confirmed SPEC adds first-class model-setting configuration. This prevents SDK package upgrades from silently injecting model-family defaults such as disabled reasoning or low verbosity into dynamic UI automation runs.
 - `OpenAIAgentsRuntime` constructs the active harness through `HarnessFactory` from `settings.harness.platform`. Driver selection is delegated to `DriverFactory`, which chooses the private concrete backend from config-owned platform backend settings. The runtime must not inspect Playwright APIs, Appium APIs, MCP reference code, or decorator internals when exposing tools; it uses `harness.action_space()` and `StepRunner` like every other platform.
 - Web browser lifecycle is task-visible capability behavior. The runtime may construct a Web driver object for tool exposure, but it must not launch a browser until the agent executes `start_browser`, and it must not treat final resource cleanup as evidence that `close_browser` was executed.
 - The runtime treats decorators as compile/bootstrap-time declaration mechanics only. It consumes `CapabilityDefinition` values, `CapabilityRegistry` snapshots, and `StepRunner` results, and it must not inspect decorator marker attributes or platform action catalog entries directly.
@@ -132,7 +128,7 @@ During `FsqAgent.run`, provider-local runtime credentials are refreshed once bef
 - The runtime consumes OpenAI Agents SDK streaming semantic events through `Runner.run_streamed(...).stream_events()` and maps them into `RunEvent` values while preserving the final output path used by verification and reporting.
 - The runtime must not let the OpenAI Agents SDK trace exporter repeatedly warn when no OpenAI trace export key is configured. `openai_agents.tracing_enabled` expresses the user/config tracing request, but the SDK run config and SDK global tracing switch must disable SDK tracing when `OPENAI_API_KEY` is absent or blank because the SDK exporter uses that variable even when the model provider is GitHub Copilot or Azure OpenAI.
 - The runtime configures the OpenAI Agents SDK `call_model_input_filter` with `ToolOutputTrimmer` plus a project filter that preserves only bounded-size recent function tool outputs by tool-call count. Oversized tool outputs, including recent observation snapshots, are persisted to artifacts and replaced with bounded previews before each model call so raw UI dumps do not flood or destabilize provider input filtering.
-- The project filter persists SDK function-call outputs, including AgentTool and platform capability outputs when represented as function-call output items, into the current run's tool artifact directory before replacing historical oversized content with a bounded preview and artifact path.
+- The project filter persists SDK function-call outputs, including AgentTool and platform capability outputs when represented as function-call output items, into the current run's tool artifact directory before replacing oversized prior content with a bounded preview and artifact path.
 - Visual assertion image handling is owned by the active backend `assert_with_ai` PlatformTool and provider-backed evaluator, using harness runtime services for screenshot/artifact capture. The main runner does not use a local `submit_visual_assertion` tool or screenshot-to-next-turn attachment filter. When the model needs an authored `assertWithAI`, it calls the active backend `assert_with_ai` PlatformTool; shared backend support captures a screenshot through harness services, calls the injected evaluator, and returns a verdict as tool output evidence.
 - Runtime instructions tell the agent that AgentTool outputs may include artifact references and that `search_artifact`/`read_artifact_slice` should be used for targeted recovery rather than full artifact rereads. Artifact search is historical context and should not be treated as proof of current UI state without a fresh tool observation.
 - Runtime instructions tell the agent to treat inferred FSQ preconditions as conditional setup obligations. It must inspect live UI/account state first, execute missing setup before ordered key actions, use `textType: runtimeSecret` with one of the listed runtime secret names for credential text entry, avoid shell-style placeholders such as `${TEST_ACCOUNT_EMAIL}`, and never echo secret values in progress events, evidence, or final output.
@@ -141,7 +137,7 @@ During `FsqAgent.run`, provider-local runtime credentials are refreshed once bef
 - The default `agent_instructions.j2` should stay a compact dynamic execution contract: non-interactive single-task execution, configured tool boundaries, ordered key action semantics, goal-only final verification, source-case mutation boundaries, secret handling, artifact/evidence boundaries, structured-output semantics, and separate blocks for project knowledge and successfully loaded skills.
 - Runtime Markdown content under `knowledge/` is part of prompt quality. `knowledge/project.md` should contain only tested-project-specific guidance. Configured skills should contain concise, current, composable execution guidance aligned with exposed AgentTools, CommonTools, and PlatformTools. Page-knowledge Markdown should stay pre-plan-oriented, concise, indexed, and free of stale historical narrative that does not help route planning.
 - If the user description is too broad to derive domain-specific checks, the default success standard is that the executable task flow completes without unrecovered errors and with enough evidence to show completion.
-- Skills are descriptive guidance. Command execution is not exposed through configured CLI tools or SDK `ShellTool` in this SPEC cycle; execution is performed through AgentTools and active CommonTool/PlatformTool capabilities only.
+- Skills are descriptive guidance. Command execution is not exposed through configured CLI tools or SDK `ShellTool`; execution is performed through AgentTools and active CommonTool/PlatformTool capabilities only.
 - Harness- and platform-specific action selection, argument rules, and recovery recipes belong in configured skill Markdown rather than hard-coded agent runtime branches. Android runs should load `android-harness.md`; Web runs should load `web-harness.md`; macOS runs should load `macos-harness.md` alongside common automation guidance. The agent consumes those skills as current runtime policy while remaining decoupled from concrete platform backends.
 - The final SDK output must conform to `AgentFinalOutput`. `AgentFinalOutput` is passed to OpenAI Agents SDK through `Agent(output_type=AgentFinalOutput)`, which is the authoritative structured-output schema. The prompt may describe status and goal-verification semantics, but it must not duplicate the full JSON Schema text.
 - Final output includes `schema_version` for traceability. Schema selection is not configurable; the runtime owns the current contract.

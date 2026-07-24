@@ -12,12 +12,12 @@ No project module dependencies. May depend on external libraries such as `pydant
 
 ## Public Interface
 
-Target `__init__.py` exports via `__all__` after this change:
+Current `__init__.py` exports via `__all__`:
 
 Platform-neutral task, run, report, knowledge, capability, and execution exports:
 
 - `Task`: Pydantic model describing a dynamic LLM goal/reference task, optional metadata, optional explicit planning reference kind/text, optional execution key actions, one final `verification_goal`, retry limits, timeout, and knowledge references. Only `description` is required. `planning_reference_kind` may identify first-party planning inputs such as `goal` or `raw_case`; `planning_reference_text` stores the authoritative text the pre-planner should use before falling back to legacy goal/description behavior. Execution key actions are planning context only; final verification checks `verification_goal` against execution evidence.
-- `AGENT_FINAL_OUTPUT_SCHEMA_VERSION`: Constant containing the current supported final-output schema version. The runtime supports only the current schema; future compatible schema evolution may add fields, while breaking changes replace the current schema rather than exposing a user-selectable schema configuration.
+- `AGENT_FINAL_OUTPUT_SCHEMA_VERSION`: Constant containing the current supported final-output schema version. The runtime supports only the current schema; compatible schema evolution may add fields, while breaking changes replace the current schema rather than exposing a user-selectable schema configuration.
 - `AgentTaskInput`: Pydantic model describing the structured task envelope rendered into the model input. It includes a schema version, the task, complete key actions for execution planning, the single `verification_goal`, optional runtime policy text, and the final output contract name expected for the run.
 - `AgentPlanItem`: Pydantic model for one planned or adjusted agent step in final output.
 - `AgentFinalOutput`: Pydantic model for the OpenAI Agents SDK structured final output contract. It contains schema version, task status, summary, pre-plan, plan updates, goal-satisfaction claims, evidence, and errors.
@@ -58,10 +58,10 @@ Platform-neutral task, run, report, knowledge, capability, and execution exports
 - `AgentToolDefinition`: Pydantic model describing one dynamic-only AgentTool helper exposed to the OpenAI Agents SDK runtime. AgentTool definitions are not capability definitions and do not contain replay policy.
 - `AgentToolCall`: Pydantic model describing one SDK-neutral AgentTool invocation request against a canonical helper name.
 - `AgentToolResult`: Pydantic model describing a normalized AgentTool invocation response before it is serialized for the SDK runtime and run events.
-- `CommonToolCall` and `CommonToolResult`: Backward-compatible transitional aliases for AgentTool call/result models during migration only. New code should use AgentTool names.
-- `ToolDefinition`: Backward-compatible diagnostic alias for serializable capability metadata during migration. It is not an authoritative schema source in the target architecture.
-- `ToolCall`: Backward-compatible diagnostic alias for serializable tool invocation requests during migration.
-- `ToolResult`: Backward-compatible diagnostic alias for normalized tool invocation responses during migration.
+- `CommonToolCall` and `CommonToolResult`: Backward-compatible private aliases for AgentTool call/result models. New code uses AgentTool names.
+- `ToolDefinition`: Backward-compatible diagnostic alias for serializable capability metadata. It is not an authoritative schema source.
+- `ToolCall`: Backward-compatible diagnostic alias for serializable tool invocation requests.
+- `ToolResult`: Backward-compatible diagnostic alias for normalized tool invocation responses.
 - Execution-core contract models: Pydantic models for StepRunner, runner events, harness inputs/outputs, capability invocation/result metadata, and EvidenceBundle manifests. These include `ExecutableStep`, `SourceRef`, `RetryPolicy`, legacy `EvidencePolicy` compatibility fields when still present, `StepCallInfo`, `StepPhaseReport`, `RunnerStepResult`, `RunnerEvent`, `HarnessContext`, `HarnessActionResult`, `HarnessArtifactRef`, `EvidenceBundle`, and `EvidenceManifest`.
 - `WaitMsParams`: Pydantic model for the inherited `wait_ms` CommonTool capability and strict replay `waitMs` alias. It contains a bounded `duration_ms` value and optional reason text, and represents a pure elapsed-time wait that must not touch platform state.
 - `TextSourceType`: Shared text-source discriminator for recordable platform text-entry parameters. Supported serialized values are `literal` and `runtimeSecret`; omission defaults to `literal` for historical YAML compatibility.
@@ -80,7 +80,7 @@ Android platform exports:
 - `AndroidPressKeyParams`: Pydantic model for `press_key` parameters with one normalized required key string.
 - `AndroidSwipeParams`: Pydantic model for `swipe` parameters. It accepts either a direction string or both `start` and `end` points, with optional `reference_screen_size` for point-based strict replay scaling and optional duration in milliseconds.
 - `AndroidUiTreeParams`: Pydantic model for the Android `uiTree` replay alias of the canonical `ui_snapshot` driver observation capability. It accepts no fields and exists so dynamic agents and strict Android cases can request a compact current Android UI hierarchy through the normal harness action schema path. The model must remain fieldless in the Android compact-snapshot cycle; compaction options are not user-configurable parameters. Android compact UI snapshots preserve the `{"xml": ...}` payload shape, may omit layout-only/default data, and clip long text-like attributes to the first 50 characters.
-- `AndroidPerformActionsParams`: Pydantic model for future `perform_actions` parameters that wraps a W3C actions array as `actions`. The model existing in `models` is not sufficient to expose the action to dynamic LLM runs; concrete backend exposure requires an implemented, decorated driver capability that appears in harness `action_space()`.
+- `AndroidPerformActionsParams`: Pydantic model for non-exposed `perform_actions` parameters that wraps a W3C actions array as `actions`. The model existing in `models` is not sufficient to expose the action to dynamic LLM runs; concrete backend exposure requires an implemented, decorated driver capability that appears in harness `action_space()`.
 - `AndroidAssertVisibleParams`: Pydantic model for `assert_visible` parameters. It uses the Android target contract plus optional assertion metadata.
 - `AndroidAssertNotVisibleParams`: Pydantic model for `assert_not_visible` parameters. It uses the Android target contract plus optional assertion metadata.
 - `AndroidTextAssertion`: Pydantic model for text assertion predicates, supporting `contains` and `equals`.
@@ -94,7 +94,7 @@ Web platform exports:
 - `WebStartBrowserParams`: Pydantic model for the explicit `start_browser` Web lifecycle capability. It accepts no fields in the first lifecycle batch.
 - `WebCloseBrowserParams`: Pydantic model for the explicit `close_browser` Web lifecycle capability. It accepts no fields in the first lifecycle batch.
 - `WebNavigateToParams`: Pydantic model for `navigate_to` parameters, including required `url` and optional Playwright-safe `wait_until` lifecycle state.
-- `WebNavigateBackParams`: Pydantic model for `navigate_back` parameters. It accepts no fields in the first batch.
+- `WebNavigateBackParams`: Pydantic model for `navigate_back` parameters. It accepts no fields.
 - `WebClickOnParams`: Pydantic model for `click_on` parameters. It requires either an exact snapshot `target` or non-empty `locator`, with optional human-readable `element`, `double_click`, `button`, and `modifiers` fields.
 - `WebTypeTextParams`: Pydantic model for `type_text` parameters. It requires string `text`, optional serialized `textType` defaulting to `literal`, and either an exact snapshot `target` or non-empty `locator`, with optional human-readable `element`, `submit`, and `slowly` fields. When `textType="runtimeSecret"`, `text` is resolved by `core` before the Web driver receives the command.
 - `WebSelectOptionParams`: Pydantic model for `select_option` parameters. It requires one or more `values` plus either an exact snapshot `target` or non-empty `locator`, with optional human-readable `element`.
@@ -198,7 +198,7 @@ Web contracts:
 - Web parameter models include browser lifecycle, locator, navigation, click, text typing, select, hover, key, wait, screenshot, page snapshot, deterministic assertions, and Web AI assertion models.
 - Web settings are grouped under `WebHarnessSettings` and are selected by `HarnessSettings.platform == "web"`.
 - Web explicit observation command is represented as `page_snapshot`/`pageSnapshot`; automatic runner evidence captures normalized `ui_snapshot` content sourced from Web page/accessibility snapshot data.
-- Web action parameter design follows Playwright MCP's LLM-facing core automation conventions where appropriate: action targets are replayable semantic locators or stable unique selectors, optional `element` fields are human-readable descriptions for interaction permission/auditing, screenshots are evidence/debugging observations rather than the normal action-selection substrate, and unsafe/opt-in capability families are excluded from the first batch.
+- Web action parameter design follows Playwright MCP's LLM-facing core automation conventions where appropriate: action targets are replayable semantic locators or stable unique selectors, optional `element` fields are human-readable descriptions for interaction permission/auditing, screenshots are evidence/debugging observations rather than the normal action-selection substrate, and unsafe/opt-in capability families are not exposed.
 
 Windows contracts:
 
@@ -214,11 +214,6 @@ macOS contracts:
 - macOS settings are grouped under `MacOSHarnessSettings` and are selected by `HarnessSettings.platform == "macos"`.
 - macOS explicit observation command is represented as `ui_snapshot`/`uiSnapshot`; automatic runner evidence captures normalized `ui_snapshot` content through the same driver observation contract.
 - macOS action parameter design follows desktop conventions shared with Windows where possible: public replay aliases use `clickOn`, `typeText`, `pressKey`, and `uiSnapshot`; coordinate actions are represented as explicit point payloads inside semantic actions rather than as separate public replay aliases.
-
-Future platform contracts:
-
-- New platforms must add their own parameter and settings blocks here before implementation.
-- Shared models must remain serializable and must not import SDK objects, concrete drivers, or provider runtime objects.
 
 ## Internal Structure
 
@@ -252,24 +247,24 @@ Future platform contracts:
 
 All custom exceptions inherit from `FsqAgentError`. Exceptions carry concise human-readable messages and optional structured context fields where useful. Other modules must import exception classes from this module rather than defining their own.
 
-## Design Decisions
+## Current Invariants
 
 - Centralizing types prevents circular imports and inconsistent result schemas.
 - New cross-module execution contracts must be added to this module rather than to `fsq_agent.core`, because cross-module data structures live only in `models`.
-- Capability metadata is the authoritative executable contract for recordable CommonTools and PlatformTools. `CapabilityDefinition`, `ReplayPolicy`, step kind, post-action delay overrides, and registry snapshots replace separate harness function and static Android action schema authority in the target architecture. Live `CapabilityExecutorKind` values are `common` and `driver`; `harness` is not a live executor kind. Decorator declarations and platform catalog validation live in `capabilities`; `models` owns only the serializable contracts they produce. AgentTools use separate dynamic-only definition/call/result models and do not enter strict capability registries.
+- Capability metadata is the authoritative executable contract for recordable CommonTools and PlatformTools. `CapabilityDefinition`, `ReplayPolicy`, step kind, post-action delay overrides, and registry snapshots are the runtime authority instead of separate harness function or static Android action schemas. Live `CapabilityExecutorKind` values are `common` and `driver`; `harness` is not a live executor kind. Decorator declarations and platform catalog validation live in `capabilities`; `models` owns only the serializable contracts they produce. AgentTools use separate dynamic-only definition/call/result models and do not enter strict capability registries.
 - Shared platform parameter contracts and strict replay reference contracts must live in this module when they are consumed by more than one project module. Android parameter models are shared by `fsq` for YAML normalization, by `core` for dispatch validation, and by concrete drivers for typed backend calls. Strict replay references are shared by `fsq` parsing and `cli` strict replay resolution.
 - FSQ lifecycle hook metadata is a shared case contract. The models preserve operator-authored hook action order but do not execute hooks, resolve hook paths, run shell commands, construct registries, or generate evidence. Hook execution belongs to the strict CLI entry layer, while hook YAML validation belongs to the `fsq`/model boundary.
 - Config-level case lifecycle hook settings reuse the same `FsqCaseHook` entry models as case metadata. This keeps `caseLifecycle` configuration and `.codex.yaml` lifecycle fields aligned while preserving module boundaries: `models` validates shape, `config` loads settings, and `cli` executes strict lifecycle behavior.
 - `ReplayPolicy(kind="fsq_command").alias` preserves primary authored FSQ command names such as `tapOn`, `inputText`, `assertWithAI`, and `waitMs`, while canonical capability names such as `tap_on`, `input_text`, `assert_with_ai`, and `wait_ms` are stored in executable invocations. `CapabilityDefinition` does not carry a duplicate `aliases` list for these primary replay command names.
 - Android `uiTree` is a replay alias for the driver-owned, read-only canonical `ui_snapshot` observation capability. It may be exposed to dynamic agents through registry metadata and returns the current backend UI hierarchy. Dynamic recording skips observation capabilities even when their replay aliases remain valid for authored strict YAML cases. Automatic Android runner evidence uses the same normalized `ui_snapshot` artifact naming and content source.
-- Capability definitions are deliberately serializable. They do not import or wrap OpenAI Agents SDK tool objects, driver instances, Python function callables, decorator marker objects, platform catalog helper objects, default screenshot-capture policy, or SDK schema strictness knobs. Runtime bindings live in `tools`, `core`, and `agent`; declaration marker metadata lives in `capabilities`. Active SDK capability tools use strict JSON schema by default unless a future SPEC introduces a concrete reviewed non-strict schema requirement.
+- Capability definitions are deliberately serializable. They do not import or wrap OpenAI Agents SDK tool objects, driver instances, Python function callables, decorator marker objects, platform catalog helper objects, default screenshot-capture policy, or SDK schema strictness knobs. Runtime bindings live in `tools`, `core`, and `agent`; declaration marker metadata lives in `capabilities`. Active SDK capability tools use strict JSON schema by default.
 - Default automatic evidence capture is a core runner policy derived from the resolved capability plus `ExecutableStep.kind`, not from capability metadata flags or executor kind. Any retained `EvidencePolicy` fields such as `capture_before`, `capture_after`, `capture_on_failure`, or `artifact_kinds` are legacy compatibility fields only and must not create a second default capture path.
 - Android driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside driver parameter models.
 - Web driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, and step identifiers stays on `ExecutableStep` rather than inside Web driver parameter models.
 - Windows driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, redaction state, and step identifiers stays on `ExecutableStep` rather than inside Windows driver parameter models.
 - Windows mouse parameter models enforce endpoint and coordinate invariants at validation time.
 - macOS driver parameter models forbid unexpected fields and provide canonical `model_dump(mode="json", exclude_none=True)` output. Runtime-only step metadata such as evidence policy, timeout fields, source references, retry policy, replay-source metadata, redaction state, and step identifiers stays on `ExecutableStep` rather than inside macOS driver parameter models.
-- Runtime-secret text references are represented by text-entry parameter fields, not by a separate pre-resolution `RuntimeSecretRef` object in the target contract. Omitted `textType` means literal text for historical YAML compatibility; `textType="runtimeSecret"` means `text` is an environment variable name resolved by `core` before driver invocation.
+- Runtime-secret text references are represented by text-entry parameter fields, not by a separate pre-resolution `RuntimeSecretRef` object. Omitted `textType` means literal text for YAML compatibility; `textType="runtimeSecret"` means `text` is an environment variable name resolved by `core` before driver invocation.
 - `WaitMsParams` belongs to the inherited `wait_ms` CommonTool capability and its strict replay alias `waitMs`. It lets recorded strict cases replay pure waits without routing through Android gesture or driver APIs.
 - Web browser lifecycle is represented by explicit no-field parameter models `WebStartBrowserParams` and `WebCloseBrowserParams`; `navigate_to` is navigation on an already-started browser/page, not an implicit startup contract.
 - Web `page_snapshot` is a driver-owned, read-only explicit observation capability with canonical alias `pageSnapshot`. It returns a Web page snapshot, remains valid for authored strict YAML cases, is skipped by dynamic recording, and must not reuse Android-oriented `ui_tree` or `uiTree` naming. Automatic Web runner evidence uses normalized `ui_snapshot` artifact naming even when the underlying content comes from page snapshot data.

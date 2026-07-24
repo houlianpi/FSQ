@@ -14,7 +14,7 @@ This module does not execute capabilities, invoke CommonTool or PlatformTool pro
 
 ## Public Interface
 
-Target `__init__.py` exports via `__all__`:
+Current `__init__.py` exports via `__all__`:
 
 - `CapabilityActionDefinition`: Lightweight catalog entry for authored platform actions. It describes authored action name, canonical capability name, executor kind, owner, parameter model, optional required method name, step kind, replay policy, default evidence policy, optional post-action delay override, and safe metadata defaults. The authored action name supplies `ReplayPolicy(kind="fsq_command").alias` for replayable commands; catalog entries do not carry separate capability aliases or SDK schema strictness flags.
 - `CapabilityActionCatalog`: Mapping type alias from authored action name to `CapabilityActionDefinition`.
@@ -47,11 +47,6 @@ macOS declaration block:
 - macOS Appium Mac2 driver methods use catalog-backed `platform_driver_capability` entries with macOS desktop replay aliases and parameter models, including lifecycle actions `launchApp`/`killApp`, desktop interactions such as `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, and `dragTo`, observations such as `takeScreenshot` and `uiSnapshot`, and assertions such as `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
 - macOS reuses the existing neutral decorators, catalog validation, discovery, replay metadata, step-kind metadata, and backend metadata contracts. It must not introduce a macOS-only decorator, direct MCP schema importer, runtime Appium discovery path, default evidence metadata, or live `harness` executor kind in `capabilities`.
 - macOS catalog entries are declaration-time validation inputs only. Registry/bootstrap code chooses whether macOS entries are active based on `harness.platform == "macos"`.
-
-Future platform declaration block:
-
-- New platforms must provide a catalog and reuse existing decorators before registry exposure.
-- New platform behavior must not add new decorator semantics unless a later SPEC changes the shared declaration contract.
 
 ## Internal Structure
 
@@ -86,18 +81,16 @@ Declaration and discovery fail fast with `ConfigurationError` when a decorated c
 
 Duplicate capability names, replay alias conflicts, ambiguous replay aliases, and executable routing validation remain registry/bootstrap concerns owned by `core` and entry-layer code.
 
-## Testing Contract
+## Verification Scope
 
-- Unit tests: neutral decorator metadata, post-action delay override validation, catalog lookup/validation, method-name and parameter-model validation, discovery from class and instance targets, safe metadata merging, and no method invocation during discovery.
-- Regression tests: neutral `capability(...)` declarations produce the `CapabilityDefinition` shape expected by platform provider registry/bootstrap; catalog-backed Android, Web, Windows, and macOS PlatformTool declarations produce the expected canonical names, replay aliases through `ReplayPolicy`, parameter models, replay metadata, owner, platform/backend, step kind, and post-action delay overrides, without duplicate capability alias lists, default evidence flags, live `harness` executor kinds, or schema strictness fields.
-- Boundary tests: `capabilities` imports only `models` among project modules and has no dependency on `core`, `tools`, SDK objects, or concrete backend libraries.
-- Verification commands: `./.venv/Scripts/python.exe -m pytest tests/test_capabilities.py tests/test_tools.py tests/test_android_harness.py` plus broader capability/runner tests when implementations change.
+- Verification covers neutral decorator metadata, catalog-backed platform declarations, side-effect-free discovery, and the `CapabilityDefinition` shape consumed by registry/bootstrap code.
+- Boundary verification ensures `capabilities` imports only `models` among project modules and never depends on execution modules, SDK objects, or concrete backend libraries.
 
-## Design Decisions
+## Current Invariants
 
-- One declaration mechanism prevents CommonTool, Android, Web, Windows, macOS, future desktop, and future iOS PlatformTool capabilities from growing separate decorator semantics.
-- Unused thin compatibility helper decorators are removed from the public API so declaration code follows the live paths: direct `capability(...)` for simple declarations and catalog-backed `platform_driver_capability(...)` for platform driver declarations.
-- Platform differences belong in action catalogs, not in per-platform decorator implementations. Android, Web, Windows, and macOS catalogs reuse `platform_driver_capability`; future platforms should follow the same pattern.
+- One declaration mechanism prevents CommonTool and platform-specific PlatformTool capabilities from growing separate decorator semantics.
+- Thin compatibility helper decorators are not public API; declaration code follows the live paths: direct `capability(...)` for simple declarations and catalog-backed `platform_driver_capability(...)` for platform driver declarations.
+- Platform differences belong in action catalogs, not in per-platform decorator implementations. Android, Web, Windows, and macOS catalogs reuse `platform_driver_capability`.
 - `CapabilityDefinition` remains the runtime contract and registry input. Decorators attach declaration metadata to functions, including optional post-action delay overrides; discovery converts that metadata into serializable definitions.
 - Discovery must be side-effect free. It may inspect method signatures and type hints, but it must not call methods, connect to devices, instantiate SDK tools, or build providers.
 - Runtime routing is out of scope. `executor_kind` metadata is consumed by `core.StepRunner`; `capabilities` never invokes the selected provider or executor. Live declarations may use only `common` and `driver` executor kinds.

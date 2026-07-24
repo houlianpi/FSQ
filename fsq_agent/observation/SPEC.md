@@ -24,7 +24,7 @@ Current `__init__.py` exports via `__all__`:
 
 Event logging failures are treated as I/O errors from the underlying filesystem. Observation capture failures belong to the platform runtime service, PlatformTool, CommonTool, or AgentTool helper that provided the observation capability.
 
-## Design Decisions
+## Current Invariants
 
 - The observation module does not implement screenshot, UI tree, or page-source capture. Current platform observations should be requested through active PlatformTools or harness runtime services; dynamic historical artifact lookup should use AgentTools. If no active capability exposes an observation type, that observation type is unavailable for the run.
 - Live run event timelines are persisted as `output.runs_dir/<run-id>/events.jsonl` so interrupted or long-running tasks can be inspected before final reports are generated.

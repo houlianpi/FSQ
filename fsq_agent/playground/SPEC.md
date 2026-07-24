@@ -21,7 +21,7 @@ The playground module must not import `capabilities` or decorator internals. It 
 
 ## Public Interface
 
-Target `__init__.py` exports via `__all__`:
+Current `__init__.py` exports via `__all__`:
 
 - `PlaygroundServer`: Local HTTP server wrapper.
 - `PlaygroundServerOptions`: Host, port, open-browser flag, and optional static path overrides for tests.
@@ -94,10 +94,6 @@ macOS playground behavior:
 - macOS screenshot preview uses the active macOS harness/driver screenshot path when a Mac2 session exists and returns a structured unavailable/error response before `launchApp` or after session cleanup.
 - macOS strict execution parses replay aliases such as `clickOn`, `typeText`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI` through the macOS registry snapshot.
 
-Future platform playground behavior:
-
-- New platforms must add endpoint availability rules and preview behavior before being exposed in the playground.
-
 ## Internal Structure
 
 - `__init__.py`: Public exports only.
@@ -133,19 +129,12 @@ Existing-run Progress retrieval must accept only a non-empty direct-child run id
 
 Step artifact endpoints are read-only and must read only under the resolved run directory. They must return concise structured errors for unsafe paths, invalid step identifiers, and unsupported artifact content. Event `artifact_refs` are authoritative when present; the legacy singular `artifact_path` is a fallback only and must not add a duplicate screenshot with missing phase metadata when the same path already exists in `artifact_refs`. A text artifact exceeding the display size limit must return an error on that artifact without suppressing other step artifacts such as screenshots. Missing files or no matching artifacts must not imply run failure.
 
-## Testing Contract
+## Verification Scope
 
-- Unit tests cover playground state/session behavior, report lookup, replay/replay-video endpoints, task progress streaming and filtering, cancellation, runtime info, platform-specific setup availability, and strict/dynamic execution adapters.
-- YAML display tests must cover `GET /yaml/input` success with structured metadata/steps display data, missing file, directory path, display size-limit behavior, UTF-8 read failures when practical, malformed YAML presentation errors, and path resolution order.
-- Recorded YAML tests must cover `GET /yaml/recorded/{request_or_run_id}` with generated content, skipped recording metadata, failed recording metadata, missing run id, path safety for recorded-case paths, and recorded steps exposing `displayIndex` and `artifactStepId`, including ordered alias alignment when persisted events contain extra observation calls, compatibility with historical recorded YAML that contains observation commands, and historical successful platform events with `fsq_action_name` but no replay metadata.
-- Existing-run tests must cover `POST /runs/load` with a run id, relative directory, and runs-root-contained absolute directory; complete and partial availability; and rejection of empty input, the runs root, nested directories, files, traversal or symlink escapes where practical, missing directories, and unrecognized directories.
-- Existing-run Progress tests must cover event file order, preserving valid sequences, assigning missing or invalid sequences, malformed/non-object line skipping, a missing event log, and unsafe or missing run ids.
-- Step artifact tests must cover `GET /step-artifacts/{request_or_run_id}/{step_id_or_index}` success, no-artifacts response, missing run id, path safety, missing files, per-artifact text display size-limit behavior that preserves screenshots, resolving a step by its artifact step id, and suppressing a duplicate legacy `artifact_path` when the same screenshot already exists in phased `artifact_refs`.
-- Static UI tests must cover YAML section placement, run-mode path input behavior, Input/Recorded tab behavior, structured YAML rendering, recorded YAML loading, strict-run no-recorded-YAML behavior, and the existing-run heading control, inline form, Enter/Cancel behavior, disabled state, local errors, failed-load preservation, and Clear reset.
-- Static step-artifact UI tests must cover completed-run step-card artifact preview, running Preview remaining unchanged, screenshot and structured-artifact rendering, missing artifact kinds not rendering empty regions, Clear/new execution reset, and case title clicks showing completed-run replay video only after execution.
-- Verification command: `python -m pytest tests/test_playground.py`.
+- Verification covers playground state/session behavior, runtime info, dynamic and strict execution adapters, progress delivery, cancellation, report lookup, YAML display, recorded YAML display, existing-run loading, replay/video endpoints, and step-artifact preview.
+- Boundary verification ensures all run and artifact endpoints stay read-only where specified, reject unsafe paths, preserve secret redaction, and keep dynamic raw YAML display separate from strict YAML execution.
 
-## Design Decisions
+## Current Invariants
 
 ### Execution and Ownership
 

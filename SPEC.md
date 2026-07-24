@@ -2,25 +2,20 @@
 
 This repository uses spec-driven development. Root `SPEC.md` is the project-level specification and module navigation source of truth. Each module also owns a module-level `SPEC.md`.
 
-## Spec-Driven Development Workflow
+## SPEC Ownership And SDD Contract
 
-For non-trivial development:
+Root `SPEC.md` and module `SPEC.md` files are the current factual baseline for implementation. They describe present behavior, public contracts, module ownership, dependency direction, configuration surface, error semantics, architecture level, and implementation invariants.
 
-1. Clarify requirements and produce a design document.
-2. Update or create relevant module `SPEC.md` files from that design.
-3. Get `SPEC.md` confirmation before implementation.
-4. Implement only against confirmed `SPEC.md`.
-5. If implementation reveals missing design, stop and update `SPEC.md` first.
-6. Before claiming completion, run independent diff-based SPEC implementation audit.
+Spec-driven development uses design documents as inputs to produce confirmed SPEC deltas. Non-trivial development must update the relevant current-fact specs and receive confirmation before implementation. If implementation reveals that a spec is missing or wrong, implementation stops until the relevant spec is updated and confirmed. Bug fixes that do not change public interfaces or intended behavior may skip design-document creation, but must still read relevant specs and verify that they remain accurate.
 
-Bug fixes that do not change public interfaces or intended behavior may skip the design document, but must still read relevant `SPEC.md` files and verify that the specs remain accurate.
+SPEC files must not carry design-process narrative, migration history, discarded alternatives, future roadmap, planned signatures, removed behavior that code no longer supports, or detailed test matrices. Current compatibility behavior and current rejection behavior may be specified, but must be written as present-tense facts.
 
 ## Tool And Capability Execution
 
 fsq-agent separates dynamic-only helper tools from recordable execution capabilities.
 
 - AgentTools are OpenAI Agents SDK helper tools used only during dynamic execution. They include scoped file reads/writes and bounded run-artifact search/slice helpers. AgentTools are not strict replay capabilities, are not registered in FSQ capability registries, and are never recorded into generated strict YAML.
-- CommonTools are recordable platform-default execution capabilities inherited by every active platform. In this SPEC cycle the active CommonTool is `wait_ms`/`waitMs`. Runtime-secret credential input is represented on text-entry PlatformTools with `textType: runtimeSecret` and is resolved by execution core before driver invocation, not by an LLM-facing secret-fetch tool.
+- CommonTools are recordable platform-default execution capabilities inherited by every active platform. The active CommonTool is `wait_ms`/`waitMs`. Runtime-secret credential input is represented on text-entry PlatformTools with `textType: runtimeSecret` and is resolved by execution core before driver invocation, not by an LLM-facing secret-fetch tool.
 - PlatformTools are recordable active-platform capabilities. They include concrete backend driver actions, including backend-owned assertions such as `assert_with_ai`.
 
 All recordable execution behavior is declared through decorator-driven capability metadata. The neutral `capabilities` module owns shared declaration decorators, catalog-backed platform validation, and reflection/discovery helpers that produce `models.CapabilityDefinition` records for CommonTools and PlatformTools. The capability registry is the source of truth for canonical names, replay aliases from `ReplayPolicy(kind="fsq_command")`, parameter schemas, tool family, replay policy, sensitivity, step kind, platform/backend ownership, and provenance. Live capability executor kinds are `common` for inherited CommonTools and `driver` for driver-backed PlatformTools; `harness` is not a live capability executor kind. Capability metadata does not own per-tool SDK schema strictness or default screenshot capture policy; active SDK capability tools use strict JSON schema by default. Methods that are unfinished or should not be exposed to the LLM must not be decorated as active capabilities.
@@ -35,7 +30,7 @@ Capability registry bootstrap is platform-selected. Entry layers register the ac
 
 Dynamic LLM runs may optionally record the actual successful replayable execution trace as a generated strict FSQ `.codex.yaml` artifact under the run output directory. Recording is a CLI-owned post-run behavior: the agent runtime persists normalized capability events, while the CLI recorder converts replayable non-observation capability results into a strict candidate case according to `ReplayPolicy` metadata. Observation capabilities such as Android `uiTree`/canonical `ui_snapshot`, Web `pageSnapshot`/`page_snapshot`, desktop `uiSnapshot`/`ui_snapshot`, and screenshot/snapshot tools may remain callable in dynamic execution and authored strict cases, but dynamic recording must not emit them as generated strict YAML commands. By-design observation skips remain available in the recording manifest audit data and must not be emitted as generated case warning metadata. Generated cases must never mutate source cases or `cases.dir`, and runtime secret values must never be written to YAML, manifests, events, or reports. Runtime-secret text inputs are recorded by environment variable name using `textType: runtimeSecret`.
 
-Recorded strict cases may contain runtime-secret text input references using `textType: runtimeSecret` and `waitMs` replay aliases. Strict execution bootstraps the active platform capability registry before YAML parsing, treats missing `textType` on text-entry commands as literal text for historical case compatibility, resolves runtime-secret text values in memory before external text-entry actions begin, and resolves `waitMs` through the registry to the inherited `wait_ms` CommonTool capability.
+Recorded strict cases may contain runtime-secret text input references using `textType: runtimeSecret` and `waitMs` replay aliases. Strict execution bootstraps the active platform capability registry before YAML parsing, treats missing `textType` on text-entry commands as literal text for case compatibility, resolves runtime-secret text values in memory before external text-entry actions begin, and resolves `waitMs` through the registry to the inherited `wait_ms` CommonTool capability.
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
@@ -61,13 +56,13 @@ Shared platform rules:
 - Public CLI entry points select the active platform with `--platform android|web|windows|macos` where platform context is needed; config loading maps that platform id to the corresponding repository-owned `config.<platform>.yaml` preset before validation. Public CLI commands do not expose workspace selection and use the current working directory `.fsq-agent-workspace` as the managed workspace. Optional provider setup is part of `init --provider`, not a separate platform-neutral command.
 - Entry layers build a platform-selected capability registry: inherited CommonTool capabilities plus only the active platform's PlatformTool capabilities.
 - `StepRunner`, `StepSequenceRunner`, evidence, recording, report generation, and FSQ parsing stay platform-neutral and consume capability metadata rather than platform action-name branches.
-- Repository-owned platform YAML presets own stable platform defaults and policy; environment variables own provider selection, required operator-provided values, local paths, local server URLs, target identifiers, credentials, and other machine-specific values. Compatibility shims for older YAML-owned local paths must be explicit in module SPECs and examples should prefer the env-owned shape.
+- Repository-owned platform YAML presets own stable platform defaults and policy; environment variables own provider selection, required operator-provided values, local paths, local server URLs, target identifiers, credentials, and other machine-specific values. Current compatibility inputs for older YAML-owned local paths must be explicit in module SPECs, and examples use the env-owned shape.
 - Platform-specific behavior belongs in platform parameter models, action catalogs, harnesses, drivers, config blocks, and configured skill Markdown.
 
 Android platform block:
 
 - Platform id: `android`.
-- First backend: `uiautomator2`.
+- Backend: `uiautomator2`.
 - Local app/device values come from `FSQ_ANDROID_APP_ID` and `FSQ_ANDROID_SERIAL` or strict FSQ case metadata where allowed.
 - Explicit observation capability: canonical `ui_snapshot` with Android alias `uiTree`. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using compact Android UI hierarchy XML content. Android compact UI snapshots keep the existing `{"xml": ...}` payload shape, may use source-level hierarchy compression when available, remove layout-only/default data, clip long text-like attributes to the first 50 characters, and fall back to raw hierarchy XML if compaction is unavailable or unsafe.
 - Harness skill: `android-harness.md`.
@@ -75,19 +70,19 @@ Android platform block:
 Web platform block:
 
 - Platform id: `web`.
-- First backend: `playwright`.
+- Backend: `playwright`.
 - Runtime settings include browser channel, environment-backed browser executable path, headless mode, optional base URL, and optional viewport fields when specified by module specs.
 - Browser lifecycle is explicit through `start_browser`/`startBrowser` and `close_browser`/`closeBrowser`. Runtime, CLI, FSQ parsing, StepRunner, StepSequenceRunner, and playground entry paths must not auto-inject lifecycle commands or launch a browser as a driver-construction side effect.
 - `startBrowser` is idempotent and reuses the active browser/page when one is already started. `closeBrowser` is idempotent, closes the active browser/page when present, resets driver-owned state, and permits a later `startBrowser` in the same task.
 - Web page-dependent actions, including `navigateTo`, require an active browser/page and must fail clearly when invoked before `startBrowser`; `navigateTo` must not implicitly start the browser.
 - Explicit observation capability: `page_snapshot` with alias `pageSnapshot`; Web must not expose Android `ui_tree`/`uiTree` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using Web page/accessibility snapshot content.
-- First-batch action surface follows Playwright MCP core automation semantics: snapshot-first targets, semantic actions, screenshots as observation/evidence, and unsafe/opt-in capability families deferred to later SPEC-reviewed groups.
+- Current action surface follows Playwright MCP core automation semantics: snapshot-first targets, semantic actions, screenshots as observation/evidence, and no unsafe/opt-in capability families.
 - Harness skill: `web-harness.md`.
 
 Windows platform block:
 
 - Platform id: `windows`.
-- First backend: `pywinauto`.
+- Backend: `pywinauto`.
 - Operator-local values come from environment variables: `FSQ_WINDOWS_APP_PATH`, `FSQ_WINDOWS_BACKEND_KIND`, `FSQ_WINDOWS_WINDOW_TITLE_RE`, and `FSQ_WINDOWS_LAUNCH_ARGS`. YAML owns only stable Windows platform/backend selection. `FSQ_WINDOWS_BACKEND_KIND` selects pywinauto's UI automation mode (`uia` by default, or `win32`) and is not a second FSQ Windows backend.
 - Windows action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `scrollOn`, `dragTo`, `assertVisible`, `uiSnapshot`, and `assertWithAI`.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; Windows must not expose Android `ui_tree`/`uiTree` or Web `page_snapshot`/`pageSnapshot` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot`.
@@ -96,18 +91,13 @@ Windows platform block:
 macOS platform block:
 
 - Platform id: `macos`.
-- First backend: `appium_mac2`.
+- Backend: `appium_mac2`.
 - Runtime maps FSQ names internally to Appium native `platformName: Mac` and `automationName: Mac2`.
 - Operator-local values come from environment variables: `FSQ_MACOS_APPIUM_SERVER_URL`, `FSQ_MACOS_BUNDLE_ID`, and `FSQ_MACOS_APP_PATH`. YAML owns stable macOS defaults such as backend selection, page-source simplification depth, and action timeout seconds.
-- First-batch action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
+- Current action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; macOS must not expose Android `ui_tree`/`uiTree` or Web `page_snapshot`/`pageSnapshot` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot`.
 - Harness skill: `macos-harness.md`.
 - The Appium MCP reference project may guide Mac2 session mechanics and action semantics, but fsq-agent must not wrap or depend on that MCP server as a runtime capability source.
-
-Future platform block:
-
-- New platforms must add their own module SPEC sections before implementation.
-- New platforms must reuse shared capability declaration/registry contracts, provide platform-selected default capability definitions, add platform-specific skill guidance, and keep runner/report/recording behavior metadata-driven.
 
 ## Prompt Context Boundaries
 
@@ -182,6 +172,8 @@ flowchart TD
 - Dynamic-only local helper utilities live as AgentTools in `tools`; recordable CommonTool and PlatformTool capabilities live in `core`, with CommonTool bodies in platform tool providers and backend PlatformTool bodies on concrete drivers. CommonTools and PlatformTools declare executable metadata through `capabilities`. All recordable capabilities must be registered before strict YAML parsing or SDK capability exposure, and platform registries must contain only inherited CommonTools plus the active platform's PlatformTools. AgentTools must not be registered for strict replay.
 - Replay, sensitivity, evidence, and tool-origin behavior must come from capability metadata and normalized `StepRunner` results, not hard-coded tool-name sets.
 - Public interface changes require `SPEC.md` update and user confirmation before implementation.
+- New platforms or capability groups require current-fact SPEC updates before implementation and must reuse shared capability declaration/registry contracts unless the confirmed SPEC changes the shared contract.
+- SPEC content must remain a current factual baseline. Design rationale, historical narrative, future roadmap, implementation plan, and detailed test matrices belong in design docs, reference docs, or tests rather than root or module SPEC files.
 - `CLAUDE.md` and `AGENTS.md` are agent entry points only. They must point to this root `SPEC.md` and must not duplicate project specification content.
 
 ## Python Architecture Rules

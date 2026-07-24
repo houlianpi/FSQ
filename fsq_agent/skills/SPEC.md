@@ -35,13 +35,13 @@ Web runs should configure `web-harness.md` alongside shared automation guidance.
 
 macOS runs should configure `macos-harness.md` alongside shared automation guidance. The macOS harness skill should describe desktop aliases, stable accessibility locators, explicit coordinate fallback, Appium Mac2 lifecycle expectations, `ui_snapshot` usage, deterministic assertions such as `assert_visible` and `assert_elements_order`, visual assertions through `assert_with_ai`, and credential text entry through `textType: runtimeSecret` when supported by active schemas.
 
-Future platform skills must be separate platform-specific Markdown bundles instead of expanding existing platform skill files with unrelated platform rules.
+Additional platform skills must be separate platform-specific Markdown bundles instead of expanding existing platform skill files with unrelated platform rules.
 
-## Design Decisions
+## Current Invariants
 
 - Skills are advisory context, not executable authority.
 - Local Markdown skills are rendered into instructions/context only when successfully loaded.
 - Platform-specific skills should describe scope, AgentTool/CommonTool/PlatformTool selection, argument rules, tool usage error recovery, semantic fidelity rules, and evidence rules. They guide the generic agent for the configured runtime without turning the agent runtime into a platform-specific implementation.
-- Skills do not attach command execution tools. Any future command capability requires its own SPEC update outside the skills module.
+- Skills do not attach command execution tools. Command execution capabilities require their own SPEC update outside the skills module.
 - Skill models remain centralized in `models` so runtime, tools, and configuration share the same serializable contracts.
 - Skill loader diagnostics are operational metadata for logs or runtime events, not prompt content. The LLM should see complete skill instructions or no skill block.

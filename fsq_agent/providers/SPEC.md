@@ -4,7 +4,7 @@
 
 Own shared model provider construction, local provider setup/auth readiness, and provider-backed model call access for fsq-agent. The providers module builds Azure OpenAI and GitHub Copilot OpenAI-compatible clients from validated, resolved settings, owns provider authentication, Copilot request compatibility, and endpoint selection details, exposes OpenAI Agents SDK provider/session construction for the dynamic agent runtime, exposes provider setup/check helpers for the CLI, and exposes direct Responses-style model access for provider-backed AI assertion evaluators.
 
-The module centralizes provider behavior that was previously agent-private so the main agent loop, internal pre-planner, evidence-based verifier, and platform AI assertion evaluators can reuse the same provider configuration, token cache behavior, model selection, and redaction policy.
+The module centralizes provider behavior so the main agent loop, internal pre-planner, evidence-based verifier, and platform AI assertion evaluators reuse the same provider configuration, token cache behavior, model selection, and redaction policy.
 
 ## Dependencies
 
@@ -15,7 +15,7 @@ The providers module must not depend on `agent`, `tools`, `core`, `cli`, `report
 
 ## Public Interface
 
-Target `__init__.py` exports via `__all__` after this change:
+Current `__init__.py` exports via `__all__`:
 
 - `ModelProviderFactory`: Builds provider sessions from resolved `Settings` for OpenAI Agents SDK runs and direct evaluator calls.
 - `ModelProviderSession`: Owns the lifecycle of one configured provider client/session and exposes provider metadata, model name, an Agents SDK provider object factory, and direct Responses-style model invocation for evaluator-style calls.
@@ -25,7 +25,7 @@ Target `__init__.py` exports via `__all__` after this change:
 - `build_model_provider_session(settings: Settings) -> ModelProviderSession`: Convenience factory for runtime construction. For GitHub Copilot, runtime construction must first read the cached Copilot provider token produced by `prepare_model_provider_session(..., interactive_auth=True)`; when the provider token is missing or expired, it may use a valid cached GitHub OAuth token to silently exchange and cache a fresh provider token, but it must not start device-code authentication.
 - `build_ai_assertion_evaluator(settings: Settings) -> AIAssertionEvaluator`: Convenience factory used by entry-layer code when a platform harness needs provider-backed AI assertion. For GitHub Copilot, it follows the same non-interactive provider-token read/refresh rule as `build_model_provider_session`.
 
-Planned signatures:
+Current usage shape:
 
 ```python
 session = build_model_provider_session(settings)
@@ -60,11 +60,11 @@ Non-interactive Copilot readiness checks and runtime construction must not start
 
 Direct evaluator invocation failures should return or raise structured diagnostics that entry-layer code can convert into failed `HarnessActionResult` values. Missing provider credentials for an explicitly authored `assertWithAI` step should produce a configuration failure, not a silent assertion pass or fallback path.
 
-## Design Decisions
+## Current Invariants
 
 - Provider construction belongs in `providers`, not `agent`, because the main runner, pre-planner, verifier, and platform AI assertion evaluator need the same Azure/Copilot behavior.
 - `providers` may depend on `config` because it consumes resolved `Settings`, but `config` must not depend on `providers`.
-- The resolved `openai_agents.provider` and provider model are the first-cycle provider/model source for AI assertions. There is no separate AI assertion model override in this SPEC cycle.
+- The resolved `openai_agents.provider` and provider model are the provider/model source for AI assertions. There is no separate AI assertion model override.
 - All configured providers use the Responses API. GitHub Copilot mode is the default provider path, uses Copilot model `gpt-5.5`, and must keep device-code OAuth, explicit OAuth scopes for Copilot token exchange, token cache under the fsq-agent workspace, short-lived Copilot provider-token caching, dynamic task startup provider-token refresh from cached GitHub OAuth tokens, plan-specific endpoint selection, and Copilot headers. Dynamic task startup refreshes the provider token once from the cached GitHub OAuth token before pre-plan begins. Runtime surfaces including pre-plan, dynamic execution, verification, and provider-backed AI assertion never start device-code authentication; after startup refresh they use the cached provider token.
 - Azure OpenAI remains available when config resolves `azure_openai`, but endpoint, model/deployment name, and API key are supplied by fixed environment variables resolved by `config`: `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_MODEL`, and `AZURE_OPENAI_API_KEY`. Provider diagnostics may name those variables when missing but must never include values.
 - Provider setup readiness is local readiness only. It may perform GitHub/Copilot authentication and token exchange, but it must not call model inference endpoints or prove deployment authorization through a live request.
