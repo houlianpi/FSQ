@@ -191,7 +191,7 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "locator" in schemas["click_on"].params_json_schema["properties"]
     assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
-    assert "target" in schemas["click_on"].params_json_schema["required"]
+    assert "target" not in schemas["click_on"].params_json_schema["required"]
     assert schemas["drag_to"].fsq_action_name == "dragTo"
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
@@ -257,18 +257,15 @@ def test_windows_harness_reports_none_locator() -> None:
     assert driver.calls == [("context", None)]
 
 
-def test_windows_harness_reports_missing_target() -> None:
+def test_windows_harness_allows_missing_target() -> None:
     driver = FakeWindowsDriver()
     harness = WindowsHarness(driver=driver)
 
     result = harness.invoke_action(_step("clickOn", {"locator": {"title": "Login"}}), harness.get_context())
 
-    assert result.status == "failed"
-    assert result.failure_category == "configuration_error"
-    assert result.error_message is not None
-    assert "target: Field required" in result.error_message
-    assert result.metadata["validation_errors"][0]["loc"] == ("target",)
-    assert driver.calls == [("context", None)]
+    assert result.status == "passed"
+    assert result.failure_category is None
+    assert driver.calls == [("context", None), ("click_on", {"locator": {"title": "Login"}})]
 
 
 def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:

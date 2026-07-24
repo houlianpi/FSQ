@@ -6,16 +6,13 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Literal
+from typing import Callable, Literal
 
-from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
-from fsq_agent.cli._task_loader import resolve_case_yaml_path
 from fsq_agent.config import Settings
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     CapabilityRegistrySnapshot,
-    CaseLifecycleSettings,
     ConfigurationError,
     ExecutableStep,
     FsqCase,
@@ -32,6 +29,8 @@ from fsq_agent.report import CoreEvidenceReportGenerator
 
 
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
+ResolveSteps = Callable[[list[ExecutableStep], FsqCase], list[ExecutableStep]]
+CancellationCheck = Callable[[], None]
 logger = logging.getLogger(__name__)
 _PHASE_LABELS = {
     "onCaseStart": "before case",
@@ -40,27 +39,7 @@ _PHASE_LABELS = {
 }
 
 
-def case_has_lifecycle_hooks(case: FsqCase) -> bool:
-    return bool(case.config.on_case_start or case.config.on_case_complete)
-
-
-def lifecycle_settings_have_hooks(case_lifecycle: CaseLifecycleSettings) -> bool:
-    return bool(case_lifecycle.on_case_start or case_lifecycle.on_case_complete)
-
-
-def collect_lifecycle_cases(
-    *,
-    case_path: Path,
-    case: FsqCase,
-    cases_dir: Path | None,
-    case_lifecycle: CaseLifecycleSettings | None = None,
-    loader: FsqCaseLoader | None = None,
-) -> list[tuple[Path, FsqCase]]:
-    collector = _LifecycleCaseCollector(cases_dir=cases_dir, loader=loader or FsqCaseLoader())
-    return collector.collect(case_path.resolve(), case, case_lifecycle=case_lifecycle)
-
-
-def run_strict_fsq_lifecycle_case(
+def run_strict_lifecycle_case(
     *,
     case_path: Path,
     case: FsqCase,
@@ -69,9 +48,19 @@ def run_strict_fsq_lifecycle_case(
     output_dir: Path,
     run_id: str,
     registry: CapabilityRegistry,
-    registry_snapshot: CapabilityRegistrySnapshot | None = None,
+    registry_snapshot: CapabilityRegistrySnapshot,
     post_action_delay_seconds: PostActionDelaySettings | None = None,
+    recorder: EvidenceRecorder | None = None,
+    resolve_steps: ResolveSteps,
+    resolved_steps_by_path: dict[Path, list[ExecutableStep]] | None = None,
+    cases_by_path: dict[Path, FsqCase] | None = None,
+    cancellation_check: CancellationCheck | None = None,
 ) -> ReportArtifact:
+    lifecycle_recorder = recorder or EvidenceRecorder(
+        run_id=run_id,
+        output_dir=output_dir,
+        metadata={"root_case_path": str(case_path.resolve()), "root_case_id": case.id},
+    )
     executor = _StrictLifecycleExecutor(
         case_path=case_path.resolve(),
         case=case,
@@ -80,47 +69,51 @@ def run_strict_fsq_lifecycle_case(
         output_dir=output_dir,
         run_id=run_id,
         registry=registry,
-        registry_snapshot=registry_snapshot or registry.snapshot(),
+        registry_snapshot=registry_snapshot,
         post_action_delay_seconds=post_action_delay_seconds,
+        recorder=lifecycle_recorder,
+        resolve_steps=resolve_steps,
+        resolved_steps_by_path=resolved_steps_by_path or {},
+        cases_by_path=cases_by_path or {case_path.resolve(): case},
+        cancellation_check=cancellation_check or _no_op,
     )
     return executor.run()
 
 
-class _LifecycleCaseCollector:
-    def __init__(self, *, cases_dir: Path | None, loader: FsqCaseLoader) -> None:
-        self.cases_dir = cases_dir
-        self.loader = loader
-        self.cases: list[tuple[Path, FsqCase]] = []
+def collect_strict_lifecycle_cases(
+    *,
+    case_path: Path,
+    case: FsqCase,
+    settings: Settings,
+) -> list[tuple[Path, FsqCase]]:
+    cases: list[tuple[Path, FsqCase]] = []
+    loader = FsqCaseLoader()
 
-    def collect(
-        self,
-        case_path: Path,
-        case: FsqCase,
-        *,
-        case_lifecycle: CaseLifecycleSettings | None = None,
-    ) -> list[tuple[Path, FsqCase]]:
-        self._collect(case_path, case, stack=(), case_lifecycle=case_lifecycle)
-        return list(self.cases)
-
-    def _collect(
-        self,
-        case_path: Path,
-        case: FsqCase,
-        stack: tuple[Path, ...],
-        *,
-        case_lifecycle: CaseLifecycleSettings | None = None,
-    ) -> None:
-        if case_path in stack:
+    def collect(current_path: Path, current_case: FsqCase, stack: tuple[Path, ...], *, include_config: bool) -> None:
+        resolved_path = current_path.resolve()
+        if resolved_path in stack:
             raise ConfigurationError(
                 "Recursive lifecycle hook runCase detected.",
-                context={"case_path": str(case_path), "chain": [str(path) for path in (*stack, case_path)]},
+                context={"case_path": str(resolved_path), "chain": [str(path) for path in (*stack, resolved_path)]},
             )
-        stack = (*stack, case_path)
-        self.cases.append((case_path, case))
-        for action in _iter_lifecycle_run_actions(case, case_lifecycle=case_lifecycle):
-            child_path = resolve_case_yaml_path(action.value, self.cases_dir)
-            child_case = self.loader.load_case(child_path)
-            self._collect(child_path, child_case, stack)
+        stack = (*stack, resolved_path)
+        cases.append((resolved_path, current_case))
+        hooks = [*current_case.config.on_case_start, *current_case.config.on_case_complete]
+        if include_config:
+            hooks = [
+                *settings.case_lifecycle.on_case_start,
+                *hooks,
+                *settings.case_lifecycle.on_case_complete,
+            ]
+        for hook in hooks:
+            for action in hook.actions:
+                if action.action_name != "runCase":
+                    continue
+                child_path = _resolve_case_yaml_path(action.value, settings.cases.dir)
+                collect(child_path, loader.load_case(child_path), stack, include_config=False)
+
+    collect(case_path, case, (), include_config=True)
+    return cases
 
 
 class _StrictLifecycleExecutor:
@@ -136,33 +129,37 @@ class _StrictLifecycleExecutor:
         registry: CapabilityRegistry,
         registry_snapshot: CapabilityRegistrySnapshot,
         post_action_delay_seconds: PostActionDelaySettings | None,
+        recorder: EvidenceRecorder,
+        resolve_steps: ResolveSteps,
+        resolved_steps_by_path: dict[Path, list[ExecutableStep]],
+        cases_by_path: dict[Path, FsqCase],
+        cancellation_check: CancellationCheck,
     ) -> None:
         self.case_path = case_path
         self.case = case
         self.settings = settings
-        self.harness = harness
         self.output_dir = output_dir
         self.run_id = run_id
-        self.registry = registry
         self.registry_snapshot = registry_snapshot
         self.step_runner = StepRunner(
             harness=harness,
             capability_registry=registry,
             post_action_delay_seconds=post_action_delay_seconds,
         )
-        self.recorder = _StrictLifecycleEvidenceRecorder(
-            EvidenceRecorder(
-                run_id=run_id,
-                output_dir=output_dir,
-                metadata={"root_case_path": str(case_path), "root_case_id": case.id},
-            )
-        )
+        self.recorder = _LifecycleRecorder(recorder)
+        self.resolve_steps = resolve_steps
+        self.resolved_steps_by_path = {
+            path.resolve(): list(steps) for path, steps in resolved_steps_by_path.items()
+        }
+        self.cases_by_path = {path.resolve(): loaded_case for path, loaded_case in cases_by_path.items()}
+        self.cancellation_check = cancellation_check
         self.loader = FsqCaseLoader()
         self._shell_step_index = 0
         self._run_case_step_index = 0
         self._logged_phase_starts: set[LifecyclePhase] = set()
 
     def run(self) -> ReportArtifact:
+        self.cancellation_check()
         self._execute_case(self.case_path, self.case, stack=())
         manifest_path = self.recorder.write_manifest()
         return CoreEvidenceReportGenerator().generate_from_manifest(manifest_path)
@@ -174,6 +171,7 @@ class _StrictLifecycleExecutor:
         stack: tuple[Path, ...],
         parent_hook_action: dict[str, object] | None = None,
     ) -> bool:
+        self.cancellation_check()
         if case_path in stack:
             raise ConfigurationError(
                 "Recursive lifecycle hook runCase detected.",
@@ -244,7 +242,18 @@ class _StrictLifecycleExecutor:
         all_passed = True
         for hook_index, hook in enumerate(hooks, start=1):
             for action_index, action in enumerate(hook.actions, start=1):
-                passed = self._execute_hook_action(case_path, case, phase, hook_index, action_index, action, stack, hook_origin)
+                self.cancellation_check()
+                passed = self._execute_hook_action(
+                    case_path,
+                    case,
+                    phase,
+                    hook_index,
+                    action_index,
+                    action,
+                    stack,
+                    hook_origin,
+                )
+                self.cancellation_check()
                 all_passed = all_passed and passed
                 if not passed and not continue_after_failure:
                     return False
@@ -274,15 +283,29 @@ class _StrictLifecycleExecutor:
             "value": action.value,
         }
         if action.action_name == "runCase":
-            child_path = resolve_case_yaml_path(action.value, self.settings.cases.dir)
-            child_case = self.loader.load_case(child_path)
+            self.cancellation_check()
+            child_path, child_case = self._resolve_child_case(action.value)
+            step_id = self._start_run_case_hook(metadata)
             started_at = datetime.now(timezone.utc)
             started = time.perf_counter()
             passed = self._execute_case(child_path, child_case, stack, parent_hook_action=metadata)
             duration_ms = max(0, int((time.perf_counter() - started) * 1000))
-            self._record_run_case_hook(action.value, metadata, passed, started_at, duration_ms)
+            self._finish_run_case_hook(step_id, action.value, metadata, passed, started_at, duration_ms)
             return passed
         return self._execute_shell_hook(action.value, metadata)
+
+    def _resolve_child_case(self, path_text: str) -> tuple[Path, FsqCase]:
+        requested = Path(path_text.strip())
+        candidates = [requested] if requested.is_absolute() else [
+            *(([self.settings.cases.dir / requested] if self.settings.cases.dir is not None else [])),
+            Path.cwd() / requested,
+        ]
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in self.cases_by_path:
+                return resolved, self.cases_by_path[resolved]
+        child_path = _resolve_case_yaml_path(path_text, self.settings.cases.dir)
+        return child_path, self.loader.load_case(child_path)
 
     def _execute_case_commands(
         self,
@@ -292,8 +315,13 @@ class _StrictLifecycleExecutor:
         stack: tuple[Path, ...],
         parent_hook_action: dict[str, object] | None,
     ) -> bool:
-        steps = FsqExecutableStepAdapter(registry_snapshot=self.registry_snapshot).to_executable_steps(case)
-        steps = resolve_strict_replay_steps(steps, self.settings, registry_snapshot=self.registry_snapshot)
+        self.cancellation_check()
+        resolved_path = case_path.resolve()
+        if resolved_path in self.resolved_steps_by_path:
+            steps = list(self.resolved_steps_by_path[resolved_path])
+        else:
+            steps = FsqExecutableStepAdapter(registry_snapshot=self.registry_snapshot).to_executable_steps(case)
+            steps = self.resolve_steps(steps, case)
         steps = [self._annotate_step(step, case_path, case, phase, stack, parent_hook_action) for step in steps]
         if steps:
             self._log_phase_start(_effective_lifecycle_phase(phase, parent_hook_action))
@@ -304,6 +332,7 @@ class _StrictLifecycleExecutor:
             steps=normal_steps,
             teardown_steps=teardown_steps,
         )
+        self.cancellation_check()
         new_steps = self.recorder.build_bundle().steps[step_count_before:]
         return all(step.status == "passed" for step in new_steps)
 
@@ -345,6 +374,7 @@ class _StrictLifecycleExecutor:
         return step.model_copy(update={"metadata": metadata, "source_ref": source_ref})
 
     def _execute_shell_hook(self, command: str, metadata: dict[str, object]) -> bool:
+        self.cancellation_check()
         self._shell_step_index += 1
         step_id = f"{self.case.id}-hook-shell-{self._shell_step_index:03d}"
         started_at = datetime.now(timezone.utc)
@@ -373,28 +403,28 @@ class _StrictLifecycleExecutor:
             "stdout_bytes": stdout_length,
             "stderr_bytes": stderr_length,
         }
-        phase_report = StepPhaseReport(
-            step_id=step_id,
-            phase="invoke",
-            status=status,
-            duration_ms=duration_ms,
-            failure_category=failure_category,
-            error_message=error_message,
-            metadata=phase_metadata,
-        )
-        source_ref = SourceRef(
-            source_type="fsq_hook",
-            source_id=str(metadata["case_path"]),
-            metadata={key: value for key, value in metadata.items() if key != "hook_chain"},
-        )
         result = RunnerStepResult(
             step_id=step_id,
-            source_ref=source_ref,
+            source_ref=SourceRef(
+                source_type="fsq_hook",
+                source_id=str(metadata["case_path"]),
+                metadata={key: value for key, value in metadata.items() if key != "hook_chain"},
+            ),
             status=status,
             started_at=started_at,
             ended_at=ended_at,
             duration_ms=duration_ms,
-            phase_reports=[phase_report],
+            phase_reports=[
+                StepPhaseReport(
+                    step_id=step_id,
+                    phase="invoke",
+                    status=status,
+                    duration_ms=duration_ms,
+                    failure_category=failure_category,
+                    error_message=error_message,
+                    metadata=phase_metadata,
+                )
+            ],
             failure_category=failure_category,
             error_message=error_message,
             metadata=phase_metadata,
@@ -416,51 +446,65 @@ class _StrictLifecycleExecutor:
         self.recorder.record_step_result(result)
         return status == "passed"
 
-    def _record_run_case_hook(
+    def _start_run_case_hook(self, metadata: dict[str, object]) -> str:
+        self._run_case_step_index += 1
+        step_id = f"{self.case.id}-hook-run-case-{self._run_case_step_index:03d}"
+        self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_start", step_id=step_id))
+        self.recorder.record_event(
+            RunnerEvent(run_id=self.run_id, event_type="phase_start", step_id=step_id, phase="invoke")
+        )
+        return step_id
+
+    def _finish_run_case_hook(
         self,
+        step_id: str,
         target: str,
         metadata: dict[str, object],
         passed: bool,
         started_at: datetime,
         duration_ms: int,
     ) -> None:
-        self._run_case_step_index += 1
-        step_id = f"{self.case.id}-hook-run-case-{self._run_case_step_index:03d}"
         status = "passed" if passed else "failed"
         failure_category = None if passed else "action_error"
         error_message = None if passed else f"Hook runCase failed: {target}"
-        phase_metadata = {
-            **metadata,
-            "target": target,
-        }
-        source_ref = SourceRef(
-            source_type="fsq_hook",
-            source_id=str(metadata["case_path"]),
-            metadata={key: value for key, value in phase_metadata.items() if key != "hook_chain"},
-        )
-        phase_report = StepPhaseReport(
-            step_id=step_id,
-            phase="invoke",
-            status=status,
-            duration_ms=duration_ms,
-            failure_category=failure_category,
-            error_message=error_message,
-            metadata=phase_metadata,
-        )
+        phase_metadata = {**metadata, "target": target}
         result = RunnerStepResult(
             step_id=step_id,
-            source_ref=source_ref,
+            source_ref=SourceRef(
+                source_type="fsq_hook",
+                source_id=str(metadata["case_path"]),
+                metadata={key: value for key, value in phase_metadata.items() if key != "hook_chain"},
+            ),
             status=status,
             started_at=started_at,
             ended_at=datetime.now(timezone.utc),
             duration_ms=duration_ms,
-            phase_reports=[phase_report],
+            phase_reports=[
+                StepPhaseReport(
+                    step_id=step_id,
+                    phase="invoke",
+                    status=status,
+                    duration_ms=duration_ms,
+                    failure_category=failure_category,
+                    error_message=error_message,
+                    metadata=phase_metadata,
+                )
+            ],
             failure_category=failure_category,
             error_message=error_message,
             metadata=phase_metadata,
         )
         if status != "passed":
             self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_error", step_id=step_id, phase="invoke"))
+        self.recorder.record_event(
+            RunnerEvent(
+                run_id=self.run_id,
+                event_type="phase_finish",
+                step_id=step_id,
+                phase="invoke",
+                payload={"status": status},
+            )
+        )
         self.recorder.record_event(
             RunnerEvent(run_id=self.run_id, event_type="step_finish", step_id=step_id, payload={"status": status})
         )
@@ -470,10 +514,10 @@ class _StrictLifecycleExecutor:
         if phase in self._logged_phase_starts:
             return
         self._logged_phase_starts.add(phase)
-        logger.info("Strict phase %s: start", _phase_label(phase))
+        logger.info("Strict phase %s: start", _PHASE_LABELS[phase])
 
 
-class _StrictLifecycleEvidenceRecorder:
+class _LifecycleRecorder:
     def __init__(self, recorder: EvidenceRecorder) -> None:
         self.recorder = recorder
 
@@ -483,7 +527,7 @@ class _StrictLifecycleEvidenceRecorder:
     def record_step_result(self, result: RunnerStepResult) -> None:
         self.recorder.record_step_result(result)
         action = _result_action_label(result)
-        phase = _phase_label(_result_lifecycle_phase(result))
+        phase = _PHASE_LABELS[_result_lifecycle_phase(result)]
         suffix = f": {result.error_message}" if result.status != "passed" and result.error_message else ""
         logger.info("Strict %s action %s: %s%s", phase, action, result.status, suffix)
 
@@ -494,18 +538,16 @@ class _StrictLifecycleEvidenceRecorder:
         return self.recorder.write_manifest()
 
 
-def _iter_lifecycle_run_actions(
-    case: FsqCase,
-    *,
-    case_lifecycle: CaseLifecycleSettings | None = None,
-) -> list[FsqCaseHookAction]:
-    actions: list[FsqCaseHookAction] = []
-    if case_lifecycle is not None:
-        for hook in [*case_lifecycle.on_case_start, *case_lifecycle.on_case_complete]:
-            actions.extend(action for action in hook.actions if action.action_name == "runCase")
-    for hook in [*case.config.on_case_start, *case.config.on_case_complete]:
-        actions.extend(action for action in hook.actions if action.action_name == "runCase")
-    return actions
+def _resolve_case_yaml_path(path_text: str, cases_dir: Path | None) -> Path:
+    requested = Path(path_text.strip())
+    candidates = [requested] if requested.is_absolute() else [
+        *(([cases_dir / requested] if cases_dir is not None else [])),
+        Path.cwd() / requested,
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+    raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
 
 def _effective_lifecycle_phase(phase: LifecyclePhase, parent_hook_action: dict[str, object] | None) -> LifecyclePhase:
@@ -528,10 +570,6 @@ def _result_lifecycle_phase(result: RunnerStepResult) -> LifecyclePhase:
     return "case"
 
 
-def _phase_label(phase: LifecyclePhase) -> str:
-    return _PHASE_LABELS[phase]
-
-
 def _result_action_label(result: RunnerStepResult) -> str:
     source_metadata = result.source_ref.metadata if result.source_ref is not None else {}
     hook_action = source_metadata.get("hook_action_name") or result.metadata.get("hook_action_name")
@@ -541,24 +579,13 @@ def _result_action_label(result: RunnerStepResult) -> str:
     if hook_action == "runCase":
         target = result.metadata.get("value") or result.metadata.get("target")
         return f"runCase: {target}" if target else "runCase"
-    replay_alias = _phase_metadata_value(result, "replay", nested_key="alias")
-    if isinstance(replay_alias, str) and replay_alias.strip():
-        return replay_alias
-    capability_name = _phase_metadata_value(result, "capability_name")
-    if isinstance(capability_name, str) and capability_name.strip():
-        return capability_name
     return str(hook_action or "unknown")
 
 
-def _phase_metadata_value(result: RunnerStepResult, key: str, *, nested_key: str | None = None) -> object | None:
+def _phase_metadata_value(result: RunnerStepResult, key: str) -> object | None:
     for phase_report in result.phase_reports:
-        if key not in phase_report.metadata:
-            continue
-        value = phase_report.metadata[key]
-        if nested_key is None:
-            return value
-        if isinstance(value, dict):
-            return value.get(nested_key)
+        if key in phase_report.metadata:
+            return phase_report.metadata[key]
     return None
 
 
@@ -578,3 +605,7 @@ def _split_trailing_teardown_steps(steps: list[ExecutableStep]) -> tuple[list[Ex
     while split_at > 0 and steps[split_at - 1].kind == "teardown":
         split_at -= 1
     return steps[:split_at], steps[split_at:]
+
+
+def _no_op() -> None:
+    return None

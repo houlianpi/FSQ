@@ -21,6 +21,14 @@ from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, start_dynamic_goal_execution
 from fsq_agent.playground._state import BusyError, PlaygroundState
+from fsq_agent.playground._yaml_lifecycle import (
+    YamlLifecycleConflictError,
+    YamlLifecycleValidationError,
+    YamlLifecycleWriteError,
+    lifecycle_display,
+    save_lifecycle,
+    yaml_revision,
+)
 from fsq_agent.report import resolve_report_path
 
 
@@ -291,6 +299,41 @@ class PlaygroundServer:
                 handle.cancel()
             return 200, cancelled
         return 404, {"error": "Not found."}
+
+    def handle_put(self, path: str, body: dict[str, object]) -> tuple[int, object]:
+        if path != "/yaml/input/lifecycle":
+            return 404, {"error": "Not found."}
+        if self.state.current_request_id is not None:
+            return 409, {"available": False, "error": "Cannot save YAML while a task is running."}
+        path_text = body.get("path")
+        revision = body.get("revision")
+        if not isinstance(path_text, str) or not path_text.strip():
+            return 400, {"available": False, "error": "path is required."}
+        if not isinstance(revision, str) or not revision:
+            return 400, {"available": False, "error": "revision is required."}
+        try:
+            resolved_path = self._resolve_yaml_input_path(path_text.strip())
+            save_lifecycle(
+                resolved_path,
+                expected_revision=revision,
+                on_case_start=body.get("onCaseStart"),
+                on_case_complete=body.get("onCaseComplete"),
+                size_limit_bytes=YAML_DISPLAY_SIZE_LIMIT_BYTES,
+            )
+            return self._yaml_input_path_response(path_text.strip(), resolved_path)
+        except YamlLifecycleConflictError as exc:
+            return 409, {"available": False, "error": str(exc)}
+        except YamlLifecycleValidationError as exc:
+            status = 413 if "too large" in str(exc).lower() else 400
+            return status, {"available": False, "error": str(exc)}
+        except YamlLifecycleWriteError as exc:
+            return 500, {"available": False, "error": str(exc)}
+        except IsADirectoryError:
+            return 400, {"available": False, "error": f"Case YAML path is a directory: {path_text}"}
+        except FileNotFoundError:
+            return 404, {"available": False, "error": f"Case YAML not found: {path_text}"}
+        except OSError as exc:
+            return 500, {"available": False, "error": str(exc) or exc.__class__.__name__}
 
     def _load_run_response(self, body: dict[str, object]) -> tuple[int, object]:
         path_value = body.get("path")
@@ -571,22 +614,7 @@ class PlaygroundServer:
             return 400, {"available": False, "error": "path is required."}
         try:
             resolved_path = self._resolve_yaml_input_path(path_text)
-            size_bytes = resolved_path.stat().st_size
-            if size_bytes > YAML_DISPLAY_SIZE_LIMIT_BYTES:
-                return 413, {
-                    "available": False,
-                    "error": f"YAML file is too large to display ({size_bytes} bytes).",
-                    "limitBytes": YAML_DISPLAY_SIZE_LIMIT_BYTES,
-                }
-            content = resolved_path.read_text(encoding="utf-8")
-            return 200, {
-                "kind": "input",
-                "path": path_text,
-                "resolvedPath": str(resolved_path),
-                "sizeBytes": size_bytes,
-                "display": self._yaml_display_model(content, source_path=path_text),
-                "content": content,
-            }
+            return self._yaml_input_path_response(path_text, resolved_path)
         except IsADirectoryError:
             return 400, {"available": False, "error": f"Case YAML path is a directory: {path_text}"}
         except FileNotFoundError:
@@ -597,6 +625,27 @@ class PlaygroundServer:
             return 400, {"available": False, "error": str(exc) or "Unable to parse YAML for display."}
         except OSError as exc:
             return 400, {"available": False, "error": str(exc) or exc.__class__.__name__}
+
+    def _yaml_input_path_response(self, path_text: str, resolved_path: Path) -> tuple[int, object]:
+        content_bytes = resolved_path.read_bytes()
+        size_bytes = len(content_bytes)
+        if size_bytes > YAML_DISPLAY_SIZE_LIMIT_BYTES:
+            return 413, {
+                "available": False,
+                "error": f"YAML file is too large to display ({size_bytes} bytes).",
+                "limitBytes": YAML_DISPLAY_SIZE_LIMIT_BYTES,
+            }
+        content = content_bytes.decode("utf-8")
+        return 200, {
+            "kind": "input",
+            "path": path_text,
+            "resolvedPath": str(resolved_path),
+            "sizeBytes": size_bytes,
+            "revision": yaml_revision(content_bytes),
+            "editable": True,
+            "display": self._yaml_display_model(content, source_path=path_text),
+            "content": content,
+        }
 
     def _resolve_yaml_input_path(self, path_text: str) -> Path:
         requested = Path(path_text.strip())
@@ -670,6 +719,7 @@ class PlaygroundServer:
         artifact_step_ids = self._recorded_artifact_step_ids(run_dir, commands_doc) if run_dir is not None else None
         return {
             "metadata": self._yaml_metadata_display(metadata_doc, source_path=source_path),
+            "lifecycle": lifecycle_display(metadata_doc),
             "steps": [
                 self._yaml_step_display(
                     command,
@@ -1306,6 +1356,14 @@ class PlaygroundServer:
         frames.sort(key=lambda frame: frame.get("timestamp") or 0)
         self._assign_frame_indexes(frames)
         if not frames:
+            if run_dir.is_dir() or self.state.get_task(replay_id) is not None:
+                return 200, {
+                    "available": False,
+                    "requestId": replay_id,
+                    "runId": run_id,
+                    "frames": [],
+                    "message": "No replay frames were captured.",
+                }
             return 404, {"error": "Replay frames not found."}
         return 200, {"requestId": replay_id, "runId": run_id, "frames": frames}
 
@@ -1545,6 +1603,15 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": body})
             return
         status, payload = self.server.playground.handle_post(parsed.path, body)
+        self._send_json(status, payload)
+
+    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler API.
+        parsed = urlparse(self.path)
+        body = self._read_json_body()
+        if isinstance(body, str):
+            self._send_json(400, {"error": body})
+            return
+        status, payload = self.server.playground.handle_put(parsed.path, body)
         self._send_json(status, payload)
 
     def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API.

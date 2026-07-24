@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/playground.css" />
   </head>
   <body>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <main class="shell">
       <section class="panel control-panel">
         <header class="topbar">
@@ -37,6 +38,13 @@
           </div>
           <div id="yaml-input-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-input-tab">
             <p id="yaml-input-status" class="yaml-status">No YAML loaded.</p>
+            <div id="yaml-lifecycle-toolbar" class="yaml-lifecycle-toolbar" hidden>
+              <span id="yaml-lifecycle-dirty" class="yaml-lifecycle-dirty" hidden>Unsaved lifecycle changes</span>
+              <div class="yaml-lifecycle-toolbar-actions">
+                <button id="yaml-lifecycle-save" class="primary" type="button" disabled>Save</button>
+                <button id="yaml-lifecycle-discard" class="secondary-button" type="button" disabled>Discard</button>
+              </div>
+            </div>
             <div id="yaml-input-viewer" class="yaml-viewer" aria-live="polite"></div>
           </div>
           <div id="yaml-recorded-pane" class="yaml-pane" role="tabpanel" aria-labelledby="yaml-recorded-tab" hidden>
@@ -97,6 +105,7 @@
       </section>
     </main>
     <script src="/vendor/ts-ebml.min.js"></script>
+    <script src="/lifecycle-editor-model.js"></script>
     <script src="/playground.js"></script>
   </body>
 </html>
