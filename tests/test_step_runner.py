@@ -230,7 +230,7 @@ def test_step_runner_runs_successful_step_through_three_phases() -> None:
 
 
 def test_step_runner_executes_wait_ms_through_harness_invoke_action() -> None:
-    class CommonHarness(SuccessfulHarness):
+    class CommonHarness(CapturingHarness):
         def invoke_action(self, step: ExecutableStep, context: HarnessContext) -> HarnessActionResult:
             self.calls.append(f"invoke:{step.action_name}:{context.session_id}")
             return HarnessActionResult(
@@ -256,9 +256,13 @@ def test_step_runner_executes_wait_ms_through_harness_invoke_action() -> None:
     assert result.status == "passed"
     assert harness.calls == [
         "get_context",
+        "capture:screenshot:before-action:wait-1:prepare",
+        "capture:ui_snapshot:before-action:wait-1:prepare",
         "before:wait_ms:session-1",
         "invoke:wait_ms:session-1",
         "after:wait_ms:passed",
+        "capture:screenshot:after-action:wait-1:finalize",
+        "capture:ui_snapshot:after-action:wait-1:finalize",
     ]
     assert [phase.phase for phase in result.phase_reports] == ["prepare", "invoke", "finalize"]
     metadata = result.phase_reports[1].metadata
@@ -619,7 +623,7 @@ def test_step_runner_derives_teardown_evidence_from_driver_step_kind() -> None:
     assert not any("after-action:teardown-1" in call for call in harness.calls)
 
 
-def test_step_runner_does_not_capture_common_observation_or_diagnostic_steps() -> None:
+def test_step_runner_captures_common_actions_but_not_observation_or_diagnostic_steps() -> None:
     harness = CapturingHarness()
     registry = CapabilityRegistry.from_definitions(
         [
@@ -630,8 +634,17 @@ def test_step_runner_does_not_capture_common_observation_or_diagnostic_steps() -
     )
     runner = StepRunner(harness=harness, capability_registry=registry)
 
+    common_result = runner.run_step(
+        run_id="run-1",
+        step=ExecutableStep(step_id="common-1", kind="action", action_name="custom_common"),
+    )
+
+    assert common_result.status == "passed"
+    assert [artifact.kind for artifact in common_result.phase_reports[0].artifact_refs] == ["screenshot", "ui_snapshot"]
+    assert common_result.phase_reports[1].artifact_refs == []
+    assert [artifact.kind for artifact in common_result.phase_reports[2].artifact_refs] == ["screenshot", "ui_snapshot"]
+
     for step in (
-        ExecutableStep(step_id="common-1", kind="action", action_name="custom_common"),
         ExecutableStep(step_id="observation-1", kind="observation", action_name="custom_observation"),
         ExecutableStep(step_id="diagnostic-1", kind="diagnostic", action_name="custom_diagnostic"),
     ):
@@ -639,7 +652,10 @@ def test_step_runner_does_not_capture_common_observation_or_diagnostic_steps() -
         assert result.status == "passed"
         assert [phase.artifact_refs for phase in result.phase_reports] == [[], [], []]
 
-    assert not any(call.startswith("capture:") for call in harness.calls)
+    assert "capture:screenshot:before-action:common-1:prepare" in harness.calls
+    assert "capture:ui_snapshot:after-action:common-1:finalize" in harness.calls
+    assert not any(call.startswith("capture:") and "observation-1" in call for call in harness.calls)
+    assert not any(call.startswith("capture:") and "diagnostic-1" in call for call in harness.calls)
 
 
 def test_step_runner_after_capture_includes_failed_action_without_extra_failure_artifacts() -> None:

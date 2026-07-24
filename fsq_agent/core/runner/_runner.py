@@ -87,7 +87,7 @@ class StepRunner:
         step: ExecutableStep,
         capability: CapabilityDefinition | None,
     ) -> EvidencePolicy:
-        if capability is None or capability.executor_kind != "driver":
+        if capability is None:
             return EvidencePolicy(capture_after=False)
         if step.kind == "action":
             capture_before = True
