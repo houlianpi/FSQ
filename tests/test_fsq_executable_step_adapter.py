@@ -64,6 +64,55 @@ def _macos_adapter() -> FsqExecutableStepAdapter:
     return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="macos").snapshot())
 
 
+def _windows_adapter() -> FsqExecutableStepAdapter:
+    return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="windows").snapshot())
+
+
+def test_windows_strict_replay_allows_null_targets(tmp_path: Path) -> None:
+    case_path = tmp_path / "null-targets.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Null targets\n"
+        "platform: windows\n"
+        "---\n"
+        "- typeText:\n"
+        "    target:\n"
+        "    locator:\n"
+        "      title: ''\n"
+        "      control_type: Edit\n"
+        "      automation_id: view_1021\n"
+        "    text: https://www.apple.com\n"
+        "- clickOn:\n"
+        "    target:\n"
+        "    locator:\n"
+        "      title: Done\n",
+        encoding="utf-8",
+    )
+
+    steps = _windows_adapter().to_executable_steps(FsqCaseLoader().load_case(case_path))
+
+    assert "target" not in steps[0].params
+    assert "target" not in steps[1].params
+
+
+def test_windows_strict_replay_allows_missing_target(tmp_path: Path) -> None:
+    case_path = tmp_path / "missing-target.codex.yaml"
+    case_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\n"
+        "name: Missing target\n"
+        "platform: windows\n"
+        "---\n"
+        "- clickOn:\n"
+        "    locator:\n"
+        "      title: Done\n",
+        encoding="utf-8",
+    )
+
+    steps = _windows_adapter().to_executable_steps(FsqCaseLoader().load_case(case_path))
+
+    assert steps[0].params == {"locator": {"title": "Done"}}
+
+
 def test_fsq_executable_step_adapter_preserves_order_and_canonical_action_names(tmp_path: Path) -> None:
     case = _load_case(tmp_path)
 
