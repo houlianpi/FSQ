@@ -1,4 +1,5 @@
 openai_agents:
+  max_turns: 100
   tracing_enabled: true
 
 harness:

@@ -6,6 +6,7 @@
 # platform preset or local config.yaml when experimenting manually.
 
 openai_agents:
+  max_turns: 100
   tracing_enabled: true
 
 harness:
