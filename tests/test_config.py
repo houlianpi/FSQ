@@ -158,6 +158,25 @@ def test_config_example_is_reference_only_and_shows_case_lifecycle() -> None:
     assert "reference" in content.casefold()
 
 
+@pytest.mark.parametrize(
+    ("config_name", "expected_max_turns"),
+    [
+        ("config.android.yaml", 100),
+        ("config.web.yaml", 50),
+        ("config.windows.yaml", 100),
+        ("config.macos.yaml", 50),
+    ],
+)
+def test_committed_platform_presets_define_max_turns(
+    config_name: str, expected_max_turns: int, tmp_path: Path
+) -> None:
+    config_path = Path(__file__).parents[1] / config_name
+
+    settings = load_settings(config_path, workspace=tmp_path / config_path.stem)
+
+    assert settings.openai_agents.max_turns == expected_max_turns
+
+
 def test_load_settings_ignores_config_example_by_default(tmp_path: Path) -> None:
         (tmp_path / "config.example.yaml").write_text(
                 """
