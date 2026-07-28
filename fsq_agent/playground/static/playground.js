@@ -79,6 +79,21 @@ function createRunModeState() {
     yamlRecordedStatusClassName: 'yaml-status yaml-status-neutral',
     yamlRecordedStatusHidden: true,
     yamlRecordedHtml: '',
+    rightActiveTab: 'preview',
+    reportHtml: '',
+    replayRequestId: null,
+    previewToken: null,
+    replayVideoSrc: '',
+    replayVideoHidden: true,
+    replayVideoDisplay: 'none',
+    screenshotSrc: '',
+    screenshotDisplay: 'none',
+    previewEmptyText: '',
+    previewEmptyDisplay: '',
+    stepArtifactPreviewActive: false,
+    stepArtifactStepKey: null,
+    stepArtifactHidden: true,
+    stepArtifactNodes: [],
   };
 }
 
@@ -399,6 +414,21 @@ function saveRunModeState(mode = state.activeRunMode) {
   modeState.yamlRecordedStatusClassName = els.yamlRecordedStatus.className;
   modeState.yamlRecordedStatusHidden = els.yamlRecordedStatus.hidden;
   modeState.yamlRecordedHtml = els.yamlRecordedViewer.innerHTML;
+  modeState.rightActiveTab = els.reportTab.classList.contains('active') ? 'report' : 'preview';
+  modeState.reportHtml = els.reportContent.innerHTML;
+  modeState.replayRequestId = state.replayRequestId;
+  modeState.previewToken = state.previewToken;
+  modeState.replayVideoSrc = els.replayVideo.getAttribute('src') || '';
+  modeState.replayVideoHidden = els.replayVideo.hidden;
+  modeState.replayVideoDisplay = els.replayVideo.style.display;
+  modeState.screenshotSrc = els.screenshot.getAttribute('src') || '';
+  modeState.screenshotDisplay = els.screenshot.style.display;
+  modeState.previewEmptyText = els.previewEmpty.textContent;
+  modeState.previewEmptyDisplay = els.previewEmpty.style.display;
+  modeState.stepArtifactPreviewActive = state.stepArtifactPreviewActive;
+  modeState.stepArtifactStepKey = state.stepArtifactStepKey;
+  modeState.stepArtifactHidden = els.stepArtifactPreview.hidden;
+  modeState.stepArtifactNodes = Array.from(els.stepArtifactPreview.childNodes);
 }
 
 function restoreRunModeState(mode = state.activeRunMode) {
@@ -441,6 +471,31 @@ function restoreRunModeState(mode = state.activeRunMode) {
   clearSelectedProgressRunId();
   clearSelectedProgressItem();
   clearActiveProgressItem();
+  cancelPendingReplayVideoReadyWait();
+  els.replayVideo.pause();
+  els.reportContent.innerHTML = modeState.reportHtml;
+  state.replayRequestId = modeState.replayRequestId;
+  state.previewToken = modeState.previewToken;
+  if (modeState.replayVideoSrc) {
+    els.replayVideo.src = modeState.replayVideoSrc;
+  } else {
+    els.replayVideo.removeAttribute('src');
+  }
+  els.replayVideo.hidden = modeState.replayVideoHidden;
+  els.replayVideo.style.display = modeState.replayVideoDisplay;
+  if (modeState.screenshotSrc) {
+    els.screenshot.src = modeState.screenshotSrc;
+  } else {
+    els.screenshot.removeAttribute('src');
+  }
+  els.screenshot.style.display = modeState.screenshotDisplay;
+  els.previewEmpty.textContent = modeState.previewEmptyText;
+  els.previewEmpty.style.display = modeState.previewEmptyDisplay;
+  state.stepArtifactPreviewActive = modeState.stepArtifactPreviewActive;
+  state.stepArtifactStepKey = modeState.stepArtifactStepKey;
+  els.stepArtifactPreview.hidden = modeState.stepArtifactHidden;
+  els.stepArtifactPreview.replaceChildren(...modeState.stepArtifactNodes);
+  showRightTab(modeState.rightActiveTab);
   updateLifecycleToolbar();
 }
 
@@ -469,6 +524,7 @@ function defaultYamlViewForMode(mode) {
 function switchRunMode() {
   if (state.currentRequestId || state.finishingRun) return;
   if (state.loadedRunId) {
+    saveRunModeState(state.activeRunMode);
     const mode = currentRunMode();
     state.activeRunMode = mode;
     restoreRunModeState(mode);
@@ -1576,7 +1632,7 @@ function handleYamlRegionClick(event) {
 }
 
 function completedRunId() {
-  if (state.loadedRunId) return loadedRunIsActive() ? state.loadedRunId : '';
+  if (loadedRunIsActive()) return state.loadedRunId;
   return !state.currentRequestId && state.replayRequestId ? state.replayRequestId : '';
 }
 

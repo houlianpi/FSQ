@@ -3481,6 +3481,32 @@ def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
     assert start_body.index("restoreRunModeState(state.activeRunMode);") < start_body.index("state.loadedRunId = null;")
 
 
+def test_playground_static_run_modes_preserve_preview_and_report_state() -> None:
+    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script = script_path.read_text(encoding="utf-8")
+    create_body = script[script.index("function createRunModeState()"):script.index("const REPLAY_FAST_SAME_EVENT_DELAY_MS")]
+    save_body = script[script.index("function saveRunModeState("):script.index("function restoreRunModeState(")]
+    restore_body = script[script.index("function restoreRunModeState("):script.index("function stripTransientModeClasses()")]
+    switch_body = script[script.index("function switchRunMode()"):script.index("function updateRunMode(")]
+    completed_run_body = script[script.index("function completedRunId()"):script.index("async function showCompletedRunReplayPreview(")]
+
+    for field in (
+        "rightActiveTab",
+        "reportHtml",
+        "replayRequestId",
+        "previewToken",
+        "replayVideoSrc",
+        "screenshotSrc",
+        "stepArtifactNodes",
+    ):
+        assert field in create_body
+        assert f"modeState.{field}" in save_body
+        assert f"modeState.{field}" in restore_body
+    assert "showRightTab(modeState.rightActiveTab);" in restore_body
+    assert "saveRunModeState(state.activeRunMode);" in switch_body
+    assert "if (loadedRunIsActive()) return state.loadedRunId;" in completed_run_body
+
+
 def test_playground_static_load_run_is_goal_mode_only() -> None:
     script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
