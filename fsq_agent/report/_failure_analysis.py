@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from typing import Any
 
 from fsq_agent.models import StepResult, VerificationResult

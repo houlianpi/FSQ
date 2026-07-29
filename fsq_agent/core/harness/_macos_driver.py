@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from typing import Protocol, runtime_checkable
 
 from fsq_agent.core.harness._interface import DriverObservationInterface

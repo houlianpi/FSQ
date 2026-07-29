@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.core._capabilities import CapabilityRegistry
 from fsq_agent.core._default_capabilities import CapabilityDefinitionFactory
 from fsq_agent.core._platform_tools import CommonPlatformTools

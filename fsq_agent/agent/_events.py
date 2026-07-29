@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 import inspect
 
 from fsq_agent.models import RunEvent, RunEventSink

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from pathlib import Path
 
 from fsq_agent.knowledge import DirectoryKnowledgeProvider, PrivateKnowledgeLoader

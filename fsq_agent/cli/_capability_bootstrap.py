@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent._capability_bootstrap import (
     build_agent_tool_provider,
     build_capability_registry,

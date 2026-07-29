@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any

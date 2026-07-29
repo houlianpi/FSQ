@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.report._core_evidence_report import CoreEvidenceReportGenerator
 from fsq_agent.report._evidence import EvidenceBundler
 from fsq_agent.report._failure_analysis import FailureAnalyzer

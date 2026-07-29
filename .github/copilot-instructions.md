@@ -11,4 +11,11 @@ For non-trivial work, do not jump directly to implementation:
 
 Canonical workflow and architecture guidance lives in `skills/`. Prefer reading those files instead of duplicating rules here.
 
+New Python source files must start with:
+
+```python
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+```
+
 Do not treat this file as a project specification. Keep project and module requirements in `SPEC.md` files.

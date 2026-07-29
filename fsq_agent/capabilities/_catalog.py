@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any

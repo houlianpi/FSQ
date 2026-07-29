@@ -36,9 +36,9 @@ runtime_secrets:
 
 agent_context:
   knowledge:
-    root_dir: ./knowledge
+    root_dir: ./knowledge/project_android_v1
     skills:
-      dir: skills
+      dir: ../skills
       items:
         - name: automation-basics
           description: Semantic action and evidence guidance for local runs.
@@ -46,4 +46,4 @@ agent_context:
           path: automation-basics.md
           required: true
     pre_plan:
-      dir: project_android_v1
+          dir: .

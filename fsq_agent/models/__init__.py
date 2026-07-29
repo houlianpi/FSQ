@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.models._agent_io import (
     AGENT_FINAL_OUTPUT_SCHEMA_VERSION,
     AgentFinalOutput,

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar, get_type_hints

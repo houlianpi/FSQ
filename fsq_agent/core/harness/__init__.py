@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.core.harness._android_driver import AndroidDriverInterface
 from fsq_agent.core.harness._factory import (
     DriverFactory,

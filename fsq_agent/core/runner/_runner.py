@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field

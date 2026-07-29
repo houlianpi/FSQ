@@ -16,3 +16,6 @@ reports/
 screenshots/
 dist/
 *.egg-info/
+knowledge/*
+!knowledge/skills/
+!knowledge/skills/**

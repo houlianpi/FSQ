@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 import inspect
 from collections.abc import Callable
 from typing import Any, get_type_hints
