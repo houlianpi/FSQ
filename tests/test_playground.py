@@ -187,6 +187,32 @@ def test_playground_server_static_path_rejects_traversal(tmp_path: Path) -> None
     assert content_type.startswith("text/html")
 
 
+def test_playground_server_serves_nested_vite_entry_at_root(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    entry = static_dir / "playground" / "index.html"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("vite playground", encoding="utf-8")
+    server = PlaygroundServer(Settings(), PlaygroundServerOptions(static_path=static_dir))
+
+    status, body, content_type = server.static_response("/")
+
+    assert status == 200
+    assert body == b"vite playground"
+    assert content_type.startswith("text/html")
+
+
+def test_playground_server_start_requires_built_frontend(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    server = PlaygroundServer(
+        Settings(),
+        PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False),
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"npm ci.*npm run build"):
+        server.start()
+
+
 def test_playground_server_report_endpoint_returns_content(tmp_path: Path) -> None:
     settings = Settings()
     settings.output.runs_dir = tmp_path / "runs"
@@ -1782,7 +1808,7 @@ def test_playground_server_replay_falls_back_to_event_screenshots(tmp_path: Path
 
 
 def test_playground_static_progress_summarizes_replay_frames() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
 
@@ -1795,7 +1821,7 @@ def test_playground_static_progress_summarizes_replay_frames() -> None:
 
 
 def test_playground_static_run_button_can_cancel() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
 
@@ -3039,7 +3065,7 @@ def test_playground_server_rejects_stale_yaml_lifecycle_over_http(tmp_path: Path
 
 
 def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     html = (static_dir / "index.html").read_text(encoding="utf-8")
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
@@ -3232,7 +3258,8 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "renderStepArtifactScreenshots" in script
     assert "renderStepArtifactTextArtifacts" in script
     assert "typeof artifact.content === 'string' || typeof artifact.error === 'string'" in script
-    assert "artifacts.filter((candidate) => typeof candidate.error === 'string')" in script
+    assert "typeof candidate.error === 'string'" in script
+    assert "uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(candidate.kind)" in script
     assert "error.textContent = artifact.error" in script
     assert "renderUiTreeDiffArtifact" in script
     assert "OBSERVATION_ARTIFACT_KINDS" in script
@@ -3400,8 +3427,26 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "[hidden]" in styles
 
 
+def test_playground_frontend_uses_locked_npm_dependency_without_vendor_bundle() -> None:
+    root = Path(__file__).parents[1]
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    html = (root / "frontend" / "playground" / "index.html").read_text(encoding="utf-8")
+    script = (root / "frontend" / "playground" / "playground.js").read_text(encoding="utf-8")
+
+    assert package["private"] is True
+    assert package["engines"]["node"] == "^20.19.0 || >=22.12.0"
+    assert package["dependencies"]["ts-ebml"] == "3.0.2"
+    assert package["scripts"]["build"] == "vite build"
+    assert "vendor/ts-ebml.min.js" not in html
+    assert '<script type="module" src="./playground.js"></script>' in html
+    assert "import EBML from 'ts-ebml/dist/EBML.js';" in script
+    assert "const { Decoder, Reader, tools: ebmlTools } = EBML;" in script
+    assert "window.EBML" not in script
+    assert not (root / "fsq_agent" / "playground" / "static" / "vendor" / "ts-ebml.min.js").exists()
+
+
 def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     html = (static_dir / "index.html").read_text(encoding="utf-8")
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
@@ -3411,7 +3456,8 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     assert 'id="yaml-lifecycle-discard"' in html
     assert 'id="toast"' in html
     assert 'role="status"' in html
-    assert '<script src="/lifecycle-editor-model.js"></script>' in html
+    assert '<script type="module" src="./playground.js"></script>' in html
+    assert "import LifecycleEditorModel from './lifecycle-editor-model.js';" in script
     assert "renderLifecycleSection('onCaseStart', 'Before case')" in script
     assert "renderLifecycleSection('onCaseComplete', 'After case')" in script
     assert "function renderYamlCaseSteps(steps)" in script
@@ -3467,7 +3513,7 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
 
 
 def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
-    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
     switch_body = script[script.index("function switchRunMode()"):script.index("function updateRunMode(")]
     start_body = script[script.index("async function startExecution(payload)"):script.index("function highlightRunStartSummary()")]
@@ -3485,7 +3531,7 @@ def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
 
 
 def test_playground_static_run_modes_preserve_preview_and_report_state() -> None:
-    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
     create_body = script[script.index("function createRunModeState()"):script.index("const REPLAY_FAST_SAME_EVENT_DELAY_MS")]
     save_body = script[script.index("function saveRunModeState("):script.index("function restoreRunModeState(")]
@@ -3510,8 +3556,29 @@ def test_playground_static_run_modes_preserve_preview_and_report_state() -> None
     assert "if (loadedRunIsActive()) return state.loadedRunId;" in completed_run_body
 
 
+def test_playground_static_oversized_ui_tree_errors_stay_side_by_side() -> None:
+    script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
+    script = script_path.read_text(encoding="utf-8")
+    text_artifacts_body = script[
+        script.index("function renderStepArtifactTextArtifacts("):
+        script.index("const OBSERVATION_ARTIFACT_KINDS")
+    ]
+    comparison_body = script[
+        script.index("function renderUiTreeDiffArtifact("):
+        script.index("function createDiffHeightResizer(")
+    ]
+
+    assert "const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);" in text_artifacts_body
+    assert "uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(candidate.kind)" in text_artifacts_body
+    assert "typeof artifact.content === 'string' || typeof artifact.error === 'string'" in comparison_body
+    assert "label.textContent = hasError ? `${kindLabel} diff`" in comparison_body
+    assert "renderArtifactErrorPane('before', 'Before', before)" in comparison_body
+    assert "renderArtifactErrorPane('after', 'After', after)" in comparison_body
+    assert "artifact.error || 'UI tree is unavailable.'" in comparison_body
+
+
 def test_playground_static_load_run_is_goal_mode_only() -> None:
-    script_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "playground.js"
+    script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
     update_body = script[script.index("function updateRunMode("):script.index("function syncYamlTabOrder(mode)")]
     toggle_body = script[script.index("function toggleLoadRunForm()"):script.index("function resetLoadRunForm(")]
@@ -3528,9 +3595,9 @@ def test_playground_lifecycle_editor_model_behavior() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is required for lifecycle editor model verification.")
-    model_path = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static" / "lifecycle-editor-model.js"
+    model_path = Path(__file__).parents[1] / "frontend" / "playground" / "lifecycle-editor-model.js"
     script = f"""
-const model = require({json.dumps(str(model_path))});
+import model from {json.dumps(model_path.as_uri())};
 const snapshot = model.empty();
 let draft = model.addAction(snapshot, 'onCaseStart', 'runCase');
 const invalidEmpty = model.validationError(draft);
@@ -3548,7 +3615,7 @@ const discarded = model.clone(snapshot);
 console.log(JSON.stringify({{ invalidEmpty, ordered, remaining: model.actions(draft, 'onCaseStart'), valid, discarded }}));
 """
 
-    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    result = subprocess.run([node, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
     payload = json.loads(result.stdout)
 
     assert payload["invalidEmpty"] == "Lifecycle action values cannot be empty."
@@ -3566,7 +3633,7 @@ console.log(JSON.stringify({{ invalidEmpty, ordered, remaining: model.actions(dr
 
 
 def test_playground_static_yaml_section_is_left_side_context() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     html = (static_dir / "index.html").read_text(encoding="utf-8")
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
@@ -3816,7 +3883,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
 
 
 def test_playground_progress_prefers_sse_with_polling_fallback() -> None:
-    static_dir = Path(__file__).parents[1] / "fsq_agent" / "playground" / "static"
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     assert "window.EventSource" in script
     assert "new EventSource(`/task-stream/${encodeURIComponent(requestId)}`)" in script

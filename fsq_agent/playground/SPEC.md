@@ -14,7 +14,7 @@ The playground is an entry-layer convenience surface. It reuses existing FSQ-Age
 - `fsq`: Loads strict FSQ YAML cases and converts them into executable steps for strict mode.
 - `core`: Uses active platform harnesses, platform CommonTool providers, and driver capabilities for session metadata, screenshot capture, and strict-core step execution.
 - `report`: Resolves generated report paths for completed runs.
-- External dependencies: PyYAML is used only by playground HTTP display endpoints to parse YAML into a safe presentation model. `ruamel.yaml` is used only for round-trip mutation of editable Input YAML lifecycle metadata. Presentation parsing and round-trip mutation must not replace `fsq` strict case loading, lifecycle validation, or executable-step conversion.
+- External dependencies: PyYAML is used only by playground HTTP display endpoints to parse YAML into a safe presentation model. `ruamel.yaml` is used only for round-trip mutation of editable Input YAML lifecycle metadata. Presentation parsing and round-trip mutation must not replace `fsq` strict case loading, lifecycle validation, or executable-step conversion. The repository root npm project uses Vite to compile authored browser source from `frontend/playground` and bundles the exact npm `ts-ebml` dependency for browser-side seekable WebM generation.
 The module must not be imported by `models`, `config`, `providers`, `tools`, `observation`, `knowledge`, `skills`, `fsq`, `core`, `agent`, or `report`. `cli` may import `playground` to expose the public command.
 
 The playground module must not import `capabilities` or decorator internals. It consumes public execution APIs, registry-backed strict adapters, and normalized run events in the same way as CLI entry paths.
@@ -107,24 +107,27 @@ macOS playground behavior:
 - `_yaml_lifecycle.py`: Private Input YAML lifecycle editing service. It validates structured hooks through public FSQ models, computes revisions, performs `ruamel.yaml` round-trip first-document mutation, validates temporary complete cases through `FsqCaseLoader`, preserves unrelated documents and formatting where supported, and atomically replaces source files.
 - `_state.py`: In-memory session/task state, one-task lock, progress event buffering with optional sequence-window projection, final result summaries, and request id generation.
 - `_android.py`: ADB discovery, setup schema generation, Android session metadata, and screenshot helper boundaries.
-- `_recording.py`: Playground-owned dynamic post-run recording adapter around the existing strict case recorder, including recording failure normalization.
+- `_recording.py`: Playground-owned dynamic post-run recording adapter around package-private `fsq_agent._strict_case_recording`, including recording failure normalization.
 - `_execution.py`: Dynamic goal/raw-case execution adapter around `FsqAgent.run`, strict YAML execution adapter around core runner contracts, platform-dispatching harness/backend construction, configured post-action delay settings, event capture, result/report shaping, recording, and error normalization.
-- `static/`: Package-owned browser assets.
+- `../../frontend/playground/`: Authored browser HTML, JavaScript, CSS, and lifecycle editor source compiled by the root Vite project. Browser source consumes `ts-ebml` through an ES module import and does not rely on a committed vendor bundle or global EBML object.
+- `static/`: Untracked Vite-generated production assets included as Python package data and served by the Playground HTTP server.
 - `SPEC.md`: Module design.
 
 ## Python Architecture
 
 - Architecture level: Level 3 Layered Application.
 - Public API: `PlaygroundServer`, `PlaygroundServerOptions`, `run_playground`, and the local HTTP endpoints listed in this SPEC.
-- Internal modules: `_server.py`, `_state.py`, `_android.py`, `_recording.py`, `_execution.py`, `_yaml_lifecycle.py`, and package-owned static browser assets.
+- Internal modules: `_server.py`, `_state.py`, `_android.py`, `_recording.py`, `_execution.py`, `_yaml_lifecycle.py`, authored browser source under `frontend/playground`, and generated package assets under `static`.
 - Domain boundaries: playground owns HTTP/UI behavior, Input YAML lifecycle editing, run-artifact display, execution adaptation, and task/session state. Shared models and `fsq` own lifecycle syntax and case validation; the package-private shared strict lifecycle service owns strict lifecycle execution. Existing-run and step-artifact lookup remain read-only presentation concerns.
 - Boundary models: JSON request and response payloads returned by `_server.py`, ordered `FsqCaseHook`/`FsqCaseHookAction` values consumed for lifecycle validation, shared `Settings`, `Task`, `TaskResult`, `RunEvent`, report artifacts, and session/task progress dictionaries.
-- Dependency direction: playground may import public APIs from `models`, `config`, `agent`, `fsq`, `core`, and `report`; those modules must not import playground. Playground must not import `capabilities` or decorator internals.
+- Dependency direction: playground may import public APIs from `models`, `config`, `agent`, `fsq`, `core`, and `report`, plus package-private entry-layer composition from `fsq_agent._strict_case_recording`; those modules must not import playground. Playground must not import CLI-private modules, `capabilities`, or decorator internals. Python runtime code does not depend on Node.js; npm/Vite is a build and frontend-development dependency, and browser code depends only on generated bundles and the documented Playground HTTP contracts.
 - Rationale: playground coordinates a browser UI, HTTP transport, runtime state, execution adapters, screenshots/replay artifacts, reports, and recording summaries, so Level 3 remains appropriate. YAML display is a presentation and safe artifact-resolution concern inside the existing module and does not justify a new package or stronger architecture.
 
 ## Error Handling
 
 The playground returns JSON errors for API failures and does not expose tracebacks by default. Missing goals, missing case YAML paths, unreadable YAML references, ambiguous input bodies, Android-only endpoint use while a non-Android platform is active, ADB discovery errors, missing selected Android device, Web screenshot/runtime construction failures, macOS Appium/runtime construction failures, report resolution failures, and screenshot capture failures must produce concise structured errors. Recording failures must not change the dynamic run status.
+
+Playground startup requires the generated static root and production entry. When either is absent in a source checkout, startup fails before binding the HTTP server with a concise instruction to run `npm ci` and `npm run build`. Installed wheels contain the generated assets and do not require Node.js at runtime. Frontend build failures, including missing or incompatible `ts-ebml` exports, fail during the npm build rather than degrading replay conversion at browser runtime.
 
 YAML display endpoints must return concise structured errors for missing paths, missing files, directory paths, non-UTF-8 reads, display size-limit failures, request ids that cannot resolve to runs, missing run directories, missing `recording.json`, invalid recording metadata, and recorded-case paths that escape the run directory. A skipped or failed recording must be displayed as recording metadata with warnings/errors when available rather than treated as a dynamic run failure. Recorded YAML and loaded-run YAML remain read-only.
 
@@ -142,6 +145,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 
 - Verification covers playground state/session behavior, runtime info, dynamic and strict execution adapters, strict lifecycle execution, Input YAML lifecycle display/save behavior, progress delivery, cancellation, report lookup, recorded YAML display, existing-run loading, replay/video endpoints, and step-artifact preview.
 - Boundary verification ensures all run and artifact endpoints stay read-only where specified, YAML lifecycle saves are atomic and revision-checked, unsafe paths are rejected, secret redaction is preserved, and dynamic raw YAML display remains separate from strict YAML execution.
+- Frontend boundary verification ensures a lock-file install and Vite build produce the package static entry and assets without a committed vendor bundle, Python static serving resolves the generated assets, missing generated output fails with the documented build instruction, Vite development proxying preserves API, SSE, binary replay video, and HTTP range behavior, and a built wheel runs the Playground without Node.js.
 
 ## Current Invariants
 
@@ -150,6 +154,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 - Goal, YAML, and Strict YAML preserve the corresponding CLI execution semantics: dynamic goal task construction, non-strict raw UTF-8 YAML reference material, and registry-backed deterministic strict execution with core evidence reporting.
 - Capability declaration and discovery remain bootstrap concerns. Playground consumes validated registry metadata, public execution APIs, and normalized results rather than decorator internals or platform action catalogs.
 - Completed dynamic runs use post-run recording with `allow_failure=True`; recording failure does not change execution status.
+- Authored browser source and npm dependencies are owned by the repository frontend project. The Python package owns production serving of generated assets; generated bundles are package data rather than authored or tracked source.
 
 ### Progress and Workspace State
 

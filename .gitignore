@@ -19,3 +19,5 @@ dist/
 knowledge/*
 !knowledge/skills/
 !knowledge/skills/**
+node_modules/
+fsq_agent/playground/static/

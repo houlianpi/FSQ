@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from fsq_agent._strict_case_recording import StrictCaseRecording
 from fsq_agent.cli._main import _task_from_goal, _task_from_raw_case_source, main
-from fsq_agent.cli._strict_case_recording import StrictCaseRecording
 from fsq_agent.models import ReportArtifact, Task, TaskResult, VerificationResult
 
 
