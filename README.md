@@ -191,6 +191,30 @@ uv run fsq-agent playground --platform <platform>
 uv run fsq-agent report --platform <platform> --run-id RUN_ID --format markdown
 ```
 
+## Playground Frontend
+
+The Playground browser source is an npm/Vite project and requires Node.js 20.19+ or 22.12+. Build its production assets before starting the Playground from a source checkout:
+
+```powershell
+npm ci
+npm run build
+uv run fsq-agent playground --platform <platform>
+```
+
+The Python server prints its local URL and serves both the generated frontend and Playground APIs. Prebuilt Python wheels already contain the generated assets, so wheel users do not need Node.js.
+
+For frontend development, run the Python API and Vite development server in separate terminals:
+
+```powershell
+# Terminal 1
+uv run fsq-agent playground --platform <platform> --host 127.0.0.1 --port 8878
+
+# Terminal 2
+npm run dev
+```
+
+Open the Vite Playground URL, normally `http://127.0.0.1:5173/playground/`. Vite proxies Playground API and streaming requests to `http://127.0.0.1:8878`. Set `FSQ_PLAYGROUND_API_ORIGIN` before `npm run dev` to use another Python origin.
+
 ## Current Scope
 
 This implementation provides validated models, configuration loading, runtime wiring, harness/driver configuration, common local tooling, descriptive skill loading, evidence manifests, and report generation. Task execution requires authentication for the selected model provider.

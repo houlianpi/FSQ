@@ -1,3 +1,8 @@
+import EBML from 'ts-ebml/dist/EBML.js';
+import LifecycleEditorModel from './lifecycle-editor-model.js';
+
+const { Decoder, Reader, tools: ebmlTools } = EBML;
+
 const state = {
   currentRequestId: null,
   progressTimer: null,
@@ -1971,13 +1976,23 @@ function renderStepArtifactTextArtifacts(artifacts) {
   heading.className = 'step-artifact-section-title';
   heading.textContent = 'UI Tree';
   section.appendChild(heading);
-  for (const artifact of artifacts.filter((candidate) => typeof candidate.error === 'string')) {
+  const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
+  for (const artifact of artifacts.filter((candidate) => (
+    typeof candidate.error === 'string'
+    && !(uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(candidate.kind))
+  ))) {
+    const card = document.createElement('div');
+    card.className = 'step-artifact-text-card';
+    const label = document.createElement('div');
+    label.className = 'step-artifact-text-label';
+    label.textContent = `${artifact.kind || 'artifact'} · ${stepArtifactLabel(artifact)}`;
     const error = document.createElement('div');
     error.className = 'step-artifact-error';
     error.textContent = artifact.error;
-    section.appendChild(error);
+    card.appendChild(label);
+    card.appendChild(error);
+    section.appendChild(card);
   }
-  const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);
   if (uiTreeDiff) section.appendChild(uiTreeDiff);
   for (const artifact of artifacts) {
     if ((uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)) || typeof artifact.error === 'string') continue;
@@ -1999,10 +2014,14 @@ function renderStepArtifactTextArtifacts(artifacts) {
 const OBSERVATION_ARTIFACT_KINDS = ['ui_tree', 'page_snapshot', 'ui_snapshot'];
 
 function renderUiTreeDiffArtifact(artifacts) {
-  const uiTrees = artifacts.filter((artifact) => OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind) && typeof artifact.content === 'string');
+  const uiTrees = artifacts.filter((artifact) => (
+    OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)
+    && (typeof artifact.content === 'string' || typeof artifact.error === 'string')
+  ));
   const before = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'Before');
   const after = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'After');
   if (!before || !after) return null;
+  const hasError = typeof before.error === 'string' || typeof after.error === 'string';
   let diff = diffTextLines(before.content || '', after.content || '');
   const unchanged = diff.length === 0;
   if (unchanged) diff = contextDiffLines(after.content || before.content || '');
@@ -2012,10 +2031,19 @@ function renderUiTreeDiffArtifact(artifacts) {
   const label = document.createElement('div');
   label.className = 'step-artifact-text-label';
   const kindLabel = before.kind || 'ui_tree';
-  label.textContent = unchanged ? `${kindLabel} (no changes)` : `${kindLabel} diff`;
+  label.textContent = hasError ? `${kindLabel} diff` : (unchanged ? `${kindLabel} (no changes)` : `${kindLabel} diff`);
   const body = document.createElement('div');
   body.className = 'step-artifact-diff-body';
-  if (diff.length === 0) {
+  if (hasError) {
+    const wrap = document.createElement('div');
+    wrap.className = 'step-artifact-diff-scroll';
+    const split = document.createElement('div');
+    split.className = 'step-artifact-diff-split';
+    split.appendChild(renderArtifactErrorPane('before', 'Before', before));
+    split.appendChild(renderArtifactErrorPane('after', 'After', after));
+    wrap.appendChild(split);
+    body.appendChild(wrap);
+  } else if (diff.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'step-artifact-diff-empty';
     empty.textContent = 'No UI tree captured.';
@@ -2038,6 +2066,20 @@ function renderUiTreeDiffArtifact(artifacts) {
   card.appendChild(label);
   card.appendChild(body);
   return card;
+}
+
+function renderArtifactErrorPane(side, title, artifact) {
+  const pane = document.createElement('div');
+  pane.className = `step-artifact-diff-pane diff-pane-${side}`;
+  const label = document.createElement('div');
+  label.className = 'step-artifact-diff-row step-artifact-diff-headrow';
+  label.textContent = title;
+  const content = document.createElement('div');
+  content.className = 'step-artifact-error';
+  content.textContent = artifact.error || 'UI tree is unavailable.';
+  pane.appendChild(label);
+  pane.appendChild(content);
+  return pane;
 }
 
 function createDiffHeightResizer(target) {
@@ -3099,14 +3141,10 @@ function cancelPendingReplayVideoReadyWait() {
 }
 
 async function makeReplaySeekable(blob, durationMsOverride = null) {
-  const tsebml = window.EBML || window.tsebml || window.ts_ebml || window.tsEBML;
-  if (!tsebml || !tsebml.Decoder || !tsebml.Reader || !tsebml.tools) {
-    return { ok: false, blob, error: 'ts-ebml is not loaded' };
-  }
   try {
     const buffer = await blob.arrayBuffer();
-    const decoder = new tsebml.Decoder();
-    const reader = new tsebml.Reader();
+    const decoder = new Decoder();
+    const reader = new Reader();
     reader.logging = false;
     reader.drop_default_duration = false;
     const elements = decoder.decode(buffer);
@@ -3125,7 +3163,7 @@ async function makeReplaySeekable(blob, durationMsOverride = null) {
       return { ok: false, blob, error: 'no cluster timestamps were found in the recording' };
     }
     const metadatas = Array.isArray(reader.metadatas) && reader.metadatas.length > 0 ? reader.metadatas : elements;
-    const refined = tsebml.tools.makeMetadataSeekable(metadatas, duration, cues);
+    const refined = ebmlTools.makeMetadataSeekable(metadatas, duration, cues);
     const body = buffer.slice(reader.metadataSize);
     return { ok: true, blob: new Blob([refined, body], { type: blob.type || 'video/webm' }) };
   } catch (error) {

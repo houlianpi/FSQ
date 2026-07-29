@@ -7,8 +7,8 @@ from typing import Any, Literal
 
 import yaml
 
+from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.config import Settings
-from fsq_agent.cli._capability_bootstrap import build_capability_registry
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 

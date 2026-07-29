@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from fsq_agent.cli._strict_case_recording import record_dynamic_run_as_strict_case
+from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 from fsq_agent.config._settings import Settings
 from fsq_agent.models import AndroidHarnessSettings, HarnessSettings, OutputSettings, ReportArtifact, RunEvent, Task, TaskResult, VerificationResult
 

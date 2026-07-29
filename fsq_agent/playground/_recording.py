@@ -42,6 +42,6 @@ def record_dynamic_result(settings: Settings, task: Task, result: TaskResult, *,
 
 
 def _record_dynamic_run_as_strict_case(**kwargs: Any):
-    from fsq_agent.cli._strict_case_recording import record_dynamic_run_as_strict_case
+    from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 
     return record_dynamic_run_as_strict_case(**kwargs)
