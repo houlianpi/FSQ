@@ -16,5 +16,8 @@ reports/
 screenshots/
 dist/
 *.egg-info/
+knowledge/*
+!knowledge/skills/
+!knowledge/skills/**
 node_modules/
 fsq_agent/playground/static/

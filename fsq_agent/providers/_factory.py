@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.config import Settings
 from fsq_agent.providers._ai_assertion import AIAssertionEvaluator
 from fsq_agent.providers._azure_openai import build_azure_openai_client_config

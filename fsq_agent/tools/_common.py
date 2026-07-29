@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 """Backward-compatible AgentTool aliases for legacy CommonTool imports."""
 
 from fsq_agent.tools._agent_tools import (

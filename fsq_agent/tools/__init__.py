@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.tools._agent_tools import (
     AgentToolExecutor,
     AgentToolProvider,

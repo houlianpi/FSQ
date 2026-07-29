@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any, Literal, TypeAlias

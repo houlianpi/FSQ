@@ -12,4 +12,11 @@ For non-trivial work:
 
 Use installed skills when available. For Python architecture decisions, apply `$python-architecture` through the SDD flow.
 
+New Python source files must start with:
+
+```python
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+```
+
 Do not treat this file as a specification. Keep project and module requirements in `SPEC.md` files.

@@ -7,7 +7,7 @@ Status: Draft for user review
 
 Add first-party macOS platform action tools to FSQ-Agent while preserving the existing dynamic and strict execution architecture.
 
-macOS support should use the already-reserved FSQ platform id `macos`, expose recordable PlatformTools through the existing capability registry and decorator discovery path, execute dynamic and strict actions through `StepRunner -> HarnessInterface.invoke_action`, and use Appium Mac2 as the first backend implementation. The existing Appium MCP project at `C:\code\AutoGenesis\appium-mcp-server` is a reference for Mac2 session mechanics and action behavior only; FSQ-Agent should not wrap or delegate to that MCP server at runtime.
+macOS support should use the already-reserved FSQ platform id `macos`, expose recordable PlatformTools through the existing capability registry and decorator discovery path, execute dynamic and strict actions through `StepRunner -> HarnessInterface.invoke_action`, and use Appium Mac2 as the first backend implementation. An external Appium Mac2 reference project may guide session mechanics and action behavior only; FSQ-Agent should not wrap or delegate to that reference project at runtime.
 
 ## Feasibility
 
@@ -449,7 +449,7 @@ The implementation should add dedicated macOS tests and include them in the focu
 - Platform id: use `macos` in FSQ config and cases.
 - Backend id: use `appium_mac2` in FSQ settings and capability metadata.
 - Appium native mapping: translate internally to `platformName: Mac` and `automationName: Mac2`.
-- Reference project role: use `C:\code\AutoGenesis\appium-mcp-server` as an implementation reference, not as a runtime dependency.
+- Reference project role: use an external Appium Mac2 reference project as an implementation reference, not as a runtime dependency.
 - Configuration boundary: YAML is for stable/shareable platform defaults; environment variables are for values users must actually set, user-local paths, machine-specific endpoints, target identifiers, and secrets.
 
 ## User Review Gate

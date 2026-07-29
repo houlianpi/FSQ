@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from pathlib import Path
 
 from fsq_agent.models import AgentFinalOutput, StepResult, Task, VerificationResult

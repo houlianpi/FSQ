@@ -314,7 +314,7 @@ Run:
 python3 -m fsq_agent.cli run-strict-core \
   --config config.example.yaml \
   --workspace ./.fsq-agent-workspace \
-  --task /Users/qunmi/Documents/FSQ_LAB/FSQ-Testcaes_scheme/fsq-testcases/android/bottom_bar/open_new_inprivate_tab_through_overflow_menu.codex.yaml \
+  --task <path-to-case.codex.yaml> \
   --android-serial 145e66aa \
   --run-id cli-strict-core-inprivate-wait-policy
 ```

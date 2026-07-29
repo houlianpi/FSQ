@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.config._loader import (
 	PLATFORM_CONFIG_PATHS,
 	load_platform_settings,

@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
 from fsq_agent.models import CapabilityDefinition, CapabilityRegistrySnapshot, ConfigurationError
 
 
