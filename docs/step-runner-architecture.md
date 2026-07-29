@@ -477,7 +477,7 @@ Planner output / FSQ step
 
   这是最接近 pytest 精髓的方式。
 
-  TODO: 进一步靠近 xUnit/pytest 的异常语义
+  Future consideration: 进一步靠近 xUnit/pytest 的异常语义
 
   当前 StepSequenceRunner 已经按 xUnit 风格处理 normal body 和 teardown：normal step 失败会停止后续业务步骤，但 teardown steps 必须执行。后续还需要评估是否把 Harness 层的失败表达从“返回 failed result”逐步升级为 typed exception。
 
