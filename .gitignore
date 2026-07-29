@@ -16,3 +16,5 @@ reports/
 screenshots/
 dist/
 *.egg-info/
+node_modules/
+fsq_agent/playground/static/

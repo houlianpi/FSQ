@@ -19,7 +19,7 @@ from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._llm_setup import setup_llm_provider
 from fsq_agent.cli._logging import configure_cli_logging
-from fsq_agent.cli._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
+from fsq_agent._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
 from fsq_agent.config import Settings, load_platform_settings, validate_runtime_settings, validate_strict_core_settings

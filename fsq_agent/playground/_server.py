@@ -92,8 +92,11 @@ class PlaygroundServer:
     def start(self) -> None:
         if self._httpd is not None:
             return
-        if not self._static_root.exists():
-            raise FileNotFoundError(f"Playground static assets not found: {self._static_root}")
+        if self._static_entry_path() is None:
+            raise FileNotFoundError(
+                f"Playground frontend build not found under {self._static_root}. "
+                "Run npm ci and npm run build."
+            )
         self._httpd = _PlaygroundHTTPServer((self.options.host, self.options.port), _RequestHandler, self)
         self._thread = Thread(target=self._httpd.serve_forever, name="fsq-playground-server", daemon=True)
         self._thread.start()
@@ -463,16 +466,24 @@ class PlaygroundServer:
         return 404, {"error": "Not found."}
 
     def static_response(self, path: str) -> tuple[int, bytes, str]:
-        relative = "index.html" if path in {"/", "/index.html"} else unquote(path.lstrip("/"))
-        candidate = (self._static_root / relative).resolve()
+        entry = self._static_entry_path()
+        relative = unquote(path.lstrip("/"))
+        candidate = entry if path in {"/", "/index.html"} else (self._static_root / relative).resolve()
         if not candidate.is_file() or not _is_relative_to(candidate, self._static_root):
-            candidate = self._static_root / "index.html"
-        if not candidate.is_file() or not _is_relative_to(candidate.resolve(), self._static_root):
+            candidate = entry
+        if candidate is None or not candidate.is_file() or not _is_relative_to(candidate.resolve(), self._static_root):
             return 404, b"Not found", "text/plain; charset=utf-8"
         content_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
         if content_type.startswith("text/") or candidate.suffix in {".js", ".css", ".html"}:
             content_type = f"{content_type}; charset=utf-8"
         return 200, candidate.read_bytes(), content_type
+
+    def _static_entry_path(self) -> Path | None:
+        for relative in (Path("playground/index.html"), Path("index.html")):
+            candidate = (self._static_root / relative).resolve()
+            if candidate.is_file() and _is_relative_to(candidate, self._static_root):
+                return candidate
+        return None
 
     def _runtime_info(self) -> dict[str, object]:
         if self.settings.harness.platform == "web":

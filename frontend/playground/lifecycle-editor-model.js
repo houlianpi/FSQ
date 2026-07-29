@@ -1,8 +1,3 @@
-(function attachLifecycleEditorModel(root, factory) {
-  const model = factory();
-  if (typeof module === 'object' && module.exports) module.exports = model;
-  if (root) root.LifecycleEditorModel = model;
-}(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   function empty() {
     return { onCaseStart: [], onCaseComplete: [] };
   }
@@ -57,7 +52,7 @@
     return '';
   }
 
-  return {
+  const LifecycleEditorModel = {
     empty,
     clone,
     actions,
@@ -67,4 +62,5 @@
     moveAction,
     validationError,
   };
-}));
+
+  export default LifecycleEditorModel;
