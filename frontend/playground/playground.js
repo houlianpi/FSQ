@@ -123,6 +123,7 @@ const els = {
   panelResizer: document.getElementById('panel-resizer'),
   status: document.getElementById('server-status'),
   refresh: document.getElementById('refresh'),
+  sessionSection: document.getElementById('session-section'),
   deviceSelect: document.getElementById('device-select'),
   sessionMessage: document.getElementById('session-message'),
   goal: document.getElementById('goal'),
@@ -185,8 +186,8 @@ async function refreshAll() {
   await refreshStatus();
   if (platformRequiresSession()) {
     await refreshSetup();
-    await autoCreateSessionIfPossible({ silent: true });
-    await refreshStatus();
+    const sessionReady = await autoCreateSessionIfPossible({ silent: true });
+    if (sessionReady) await refreshStatus();
   }
 }
 
@@ -240,11 +241,9 @@ async function refreshStatus() {
       setRunButtonIdle({ disabled: Boolean(status.busy) });
     }
     setLoadRunControlsDisabled(Boolean(status.busy));
-    if (!platformRequiresSession()) {
-      setNoSessionPlatformMessage();
-    } else if (status.session?.connected) {
+    if (platformRequiresSession() && status.session?.connected) {
       els.sessionMessage.textContent = `Connected to ${status.session.displayName || status.session.deviceId}`;
-    } else {
+    } else if (platformRequiresSession()) {
       els.sessionMessage.textContent = 'No active session.';
     }
   } catch (error) {
@@ -282,9 +281,7 @@ async function refreshRuntime() {
     const runtime = await api('/runtime-info');
     state.platformId = runtime.platformId || null;
     state.platformLabel = runtime.interface?.type || (runtime.platformId ? capitalize(runtime.platformId) : null);
-    if (!platformRequiresSession()) {
-      setNoSessionPlatformMessage();
-    }
+    updateSessionVisibility();
     return runtime;
   } catch (error) {
     setServerStatus(error.message, 'error');
@@ -296,9 +293,9 @@ function platformRequiresSession() {
   return state.platformId === 'android';
 }
 
-function setNoSessionPlatformMessage() {
-  const label = state.platformLabel || (state.platformId ? capitalize(state.platformId) : 'This');
-  els.sessionMessage.textContent = `${label} harness — no device session required.`;
+function updateSessionVisibility() {
+  els.sessionSection.hidden = !platformRequiresSession();
+  if (!platformRequiresSession()) els.sessionMessage.textContent = '';
 }
 
 function capitalize(value) {
@@ -317,9 +314,7 @@ async function autoCreateSessionIfPossible({ silent = false } = {}) {
     }
     return true;
   } catch (error) {
-    if (!silent || error.message.includes('Multiple') || error.message.includes('No online')) {
-      els.sessionMessage.textContent = error.message;
-    }
+    els.sessionMessage.textContent = error.message;
     return false;
   }
 }
@@ -2018,22 +2013,37 @@ function renderUiTreeDiffArtifact(artifacts) {
     OBSERVATION_ARTIFACT_KINDS.includes(artifact.kind)
     && (typeof artifact.content === 'string' || typeof artifact.error === 'string')
   ));
-  const before = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'Before');
-  const after = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'After');
-  if (!before || !after) return null;
+  const beforeArtifact = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'Before');
+  const afterArtifact = uiTrees.find((artifact) => stepArtifactLabel(artifact) === 'After');
+  if (!beforeArtifact && !afterArtifact) return null;
+  const card = document.createElement('div');
+  card.className = 'step-artifact-diff-card';
+  const body = document.createElement('div');
+  body.className = 'step-artifact-diff-body';
+  if (!beforeArtifact || !afterArtifact) {
+    const artifact = beforeArtifact || afterArtifact;
+    const side = beforeArtifact ? 'before' : 'after';
+    const title = beforeArtifact ? 'Before' : 'After';
+    const pane = typeof artifact.error === 'string'
+      ? renderArtifactErrorPane(side, title, artifact)
+      : renderDiffPane(side, title, contextDiffLines(artifact.content || ''));
+    const wrap = document.createElement('div');
+    wrap.className = 'step-artifact-diff-scroll';
+    const split = document.createElement('div');
+    split.className = 'step-artifact-diff-split';
+    split.appendChild(pane);
+    wrap.appendChild(split);
+    body.appendChild(wrap);
+    card.appendChild(body);
+    return card;
+  }
+  const before = beforeArtifact;
+  const after = afterArtifact;
   const hasError = typeof before.error === 'string' || typeof after.error === 'string';
   let diff = diffTextLines(before.content || '', after.content || '');
   const unchanged = diff.length === 0;
   if (unchanged) diff = contextDiffLines(after.content || before.content || '');
   else annotateInlineDiff(diff);
-  const card = document.createElement('div');
-  card.className = 'step-artifact-diff-card';
-  const label = document.createElement('div');
-  label.className = 'step-artifact-text-label';
-  const kindLabel = before.kind || 'ui_tree';
-  label.textContent = hasError ? `${kindLabel} diff` : (unchanged ? `${kindLabel} (no changes)` : `${kindLabel} diff`);
-  const body = document.createElement('div');
-  body.className = 'step-artifact-diff-body';
   if (hasError) {
     const wrap = document.createElement('div');
     wrap.className = 'step-artifact-diff-scroll';
@@ -2063,7 +2073,6 @@ function renderUiTreeDiffArtifact(artifacts) {
     wrap.appendChild(renderDiffOverview(diff, panes));
     body.appendChild(wrap);
   }
-  card.appendChild(label);
   card.appendChild(body);
   return card;
 }
@@ -2071,13 +2080,10 @@ function renderUiTreeDiffArtifact(artifacts) {
 function renderArtifactErrorPane(side, title, artifact) {
   const pane = document.createElement('div');
   pane.className = `step-artifact-diff-pane diff-pane-${side}`;
-  const label = document.createElement('div');
-  label.className = 'step-artifact-diff-row step-artifact-diff-headrow';
-  label.textContent = title;
   const content = document.createElement('div');
   content.className = 'step-artifact-error';
   content.textContent = artifact.error || 'UI tree is unavailable.';
-  pane.appendChild(label);
+  pane.appendChild(renderDiffPaneHeader(title));
   pane.appendChild(content);
   return pane;
 }
@@ -2157,16 +2163,7 @@ function renderDiffPane(side, title, diff) {
   const column = document.createElement('div');
   column.className = 'step-artifact-diff-column';
 
-  const header = document.createElement('div');
-  header.className = 'step-artifact-diff-row step-artifact-diff-headrow';
-  const headerNumber = document.createElement('span');
-  headerNumber.className = 'step-artifact-diff-number';
-  const headerText = document.createElement('span');
-  headerText.className = 'step-artifact-diff-text';
-  headerText.textContent = title;
-  header.appendChild(headerNumber);
-  header.appendChild(headerText);
-  column.appendChild(header);
+  column.appendChild(renderDiffPaneHeader(title));
 
   for (const line of diff) {
     const row = document.createElement('div');
@@ -2188,6 +2185,13 @@ function renderDiffPane(side, title, diff) {
   }
   pane.appendChild(column);
   return pane;
+}
+
+function renderDiffPaneHeader(title) {
+  const header = document.createElement('div');
+  header.className = 'step-artifact-image-label step-artifact-diff-headrow';
+  header.textContent = title;
+  return header;
 }
 
 function appendDiffText(target, value, inlineChange) {
