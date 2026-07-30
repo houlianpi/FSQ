@@ -633,6 +633,24 @@ def test_pre_plan_input_includes_runtime_secret_names_without_values() -> None:
     assert payload["runtime_secret_warnings"] == ["Runtime secret TEST_ACCOUNT_PASSWORD is configured but not set."]
 
 
+def test_pre_plan_input_includes_loaded_skills() -> None:
+    payload = json.loads(
+        build_pre_plan_input(
+            "Open downloads.",
+            KnowledgeBundle(),
+            [SkillBundle(name="automation-basics", description="Use semantic actions.", kind="markdown", instructions="Prefer semantic actions.")],
+        )
+    )
+
+    assert payload["skills"] == [
+        {
+            "name": "automation-basics",
+            "description": "Use semantic actions.",
+            "instructions": "Prefer semantic actions.",
+        }
+    ]
+
+
 def test_runtime_pre_plan_tool_summary_uses_active_platform_registry() -> None:
     settings = Settings(harness={"platform": "android"}, openai_agents=OpenAIAgentsSettings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())

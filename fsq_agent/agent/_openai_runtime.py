@@ -631,14 +631,17 @@ class OpenAIAgentsRuntime:
         return [
             function_tool_cls(
                 name="read_knowledge_index",
-                description="Read the concise page knowledge index. Use this to select or resolve page ids before loading page details.",
+                description=(
+                    "Read available pre-plan knowledge entries, including project.md and the page index when present. "
+                    "Use this to reload project guidance or resolve page ids before loading page details."
+                ),
                 params_json_schema=ReadKnowledgeIndexArgs.model_json_schema(),
                 on_invoke_tool=self._read_knowledge_index_tool,
             ),
             function_tool_cls(
                 name="read_knowledge_page",
                 description=(
-                    "Read one page knowledge node from knowledge/pages by page_id or relative file path. "
+                    "Read one optional page knowledge node from the pre-plan knowledge directory by page_id or relative file path. "
                     "Use this only for pages needed to continue the goal action chain."
                 ),
                 params_json_schema=ReadKnowledgePageArgs.model_json_schema(),
@@ -666,17 +669,26 @@ class OpenAIAgentsRuntime:
         knowledge = self.settings.agent_context.knowledge
         return knowledge.pre_plan.dir or knowledge.root_dir
 
+    def _pre_plan_entry_paths(self) -> list[tuple[str, Path]]:
+        knowledge = self.settings.agent_context.knowledge
+        return [
+            ("project.md", knowledge.root_dir / "project.md"),
+            ("index.md", self._pre_plan_knowledge_dir() / "index.md"),
+        ]
+
     async def _read_knowledge_index_tool(self, _ctx: Any, args: str) -> str:
         ReadKnowledgeIndexArgs.model_validate_json(args or "{}")
-        knowledge_dir = self._pre_plan_knowledge_dir()
-        path = knowledge_dir / "index.md"
-        if not path.exists():
-            return json.dumps({"ok": False, "error": "Knowledge index not found.", "path": "index.md"}, ensure_ascii=False)
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            return json.dumps({"ok": False, "error": str(exc), "path": "index.md"}, ensure_ascii=False)
-        return json.dumps({"ok": True, "path": "index.md", "content": content}, ensure_ascii=False)
+        entries: list[dict[str, str]] = []
+        for entry_path, path in self._pre_plan_entry_paths():
+            if not path.exists():
+                continue
+            try:
+                entries.append({"path": entry_path, "content": path.read_text(encoding="utf-8")})
+            except OSError as exc:
+                return json.dumps({"ok": False, "error": str(exc), "path": entry_path}, ensure_ascii=False)
+        content = "\n\n".join(f"--- {entry['path']} ---\n{entry['content']}" for entry in entries)
+        path = entries[0]["path"] if entries else None
+        return json.dumps({"ok": True, "path": path, "content": content, "entries": entries}, ensure_ascii=False)
 
     async def _read_knowledge_page_tool(self, _ctx: Any, args: str) -> str:
         parsed = ReadKnowledgePageArgs.model_validate_json(args or "{}")

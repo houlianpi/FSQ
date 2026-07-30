@@ -41,6 +41,7 @@ Additional platform skills must be separate platform-specific Markdown bundles i
 
 - Skills are advisory context, not executable authority.
 - Local Markdown skills are rendered into instructions/context only when successfully loaded.
+- Dynamic pre-plan receives configured skills only as complete loaded `SkillBundle` values. Required broken skills fail before pre-plan, and optional broken skills are skipped without warning-only model-facing skill content.
 - Platform-specific skills should describe scope, AgentTool/CommonTool/PlatformTool selection, argument rules, tool usage error recovery, semantic fidelity rules, and evidence rules. They guide the generic agent for the configured runtime without turning the agent runtime into a platform-specific implementation.
 - Skills do not attach command execution tools. Command execution capabilities require their own SPEC update outside the skills module.
 - Skill models remain centralized in `models` so runtime, tools, and configuration share the same serializable contracts.

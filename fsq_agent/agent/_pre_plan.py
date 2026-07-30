@@ -13,7 +13,7 @@ from fsq_agent.models import GoalPrePlan, KnowledgeBundle, SkillBundle
 
 PRE_PLAN_AGENT_INSTRUCTIONS = """
 You are fsq-agent's goal pre-planner.
-Convert one planning reference into an ordered list of key actions and one final verification goal using the loaded page knowledge graph.
+Convert one planning reference into an ordered list of key actions and one final verification goal using the loaded planning context.
 
 The input contains reference_type and reference_text. For reference_type="goal", treat reference_text as the
 natural-language goal. For reference_type="raw_case", treat the complete raw case text as advisory source material,
@@ -28,10 +28,11 @@ This is planning only. Do not execute UI actions, do not call UI automation tool
 The input contains available_platform_tools from the active CommonTool/PlatformTool capability registry. Use this as
 the current executable action surface when choosing key actions and final verification wording. Tool names are SDK
 function names; aliases are authored FSQ action names when available.
-Your initial context contains the knowledge index only. Use read_knowledge_page to load concrete page nodes as needed.
-When a loaded page operation points to another page_id, read that page if it is needed to continue the action chain.
-You may call read_knowledge_index again if you need to resolve a page id or recover from an uncertain route.
-Use page identifiers, elements, reference locators, and element operation results to infer a concise action path.
+Your initial context contains configured skills that loaded successfully, project.md when present, and index.md when
+present. Use read_knowledge_index to reload the available project and page-index entries if needed. Use
+read_knowledge_page only to load concrete page nodes needed to continue the goal action chain. When a loaded page
+operation points to another page_id, read that page if it is needed to continue the action chain. Use project guidance,
+page identifiers, elements, reference locators, and element operation results to infer a concise action path.
 Treat reference locators as helpful hints, not authoritative truth.
 
 Return only the structured GoalPrePlan output. Key actions should be actionable, ordered, and page-aware.
@@ -39,20 +40,21 @@ verification_goal must be exactly one concise string describing the final user-v
 Do not turn intermediate operations into final verification requirements. Do not add unrelated product, account,
 network, performance, visual-regression, or accessibility checks unless explicitly requested by the input.
 Use result.to_page_id values from page element operations when describing navigation between pages.
-If the knowledge is incomplete, still return the best concise contiguous plan and add warnings. You may skip at most
-one consecutive missing key action when page or element knowledge is unavailable for goal references. For raw_case
-references, use raw steps as a reference path, not brittle truth. If you cannot form a useful action chain or cannot
-summarize a reliable verification goal, return empty key_actions or an empty verification_goal and explain why in warnings.
+If optional project or page knowledge is incomplete or absent, still return the best concise contiguous plan and add
+warnings only when missing knowledge materially affects planning confidence. You may skip at most one consecutive
+missing key action when page or element knowledge is unavailable for goal references. For raw_case references, use raw
+steps as a reference path, not brittle truth. If you cannot form a useful action chain or cannot summarize a reliable
+verification goal, return empty key_actions or an empty verification_goal and explain why in warnings.
 """.strip()
 
 
 class ReadKnowledgeIndexArgs(BaseModel):
-    reason: str | None = Field(default=None, description="Short reason for rereading the knowledge index.")
+    reason: str | None = Field(default=None, description="Short reason for rereading available project and page-index knowledge.")
 
 
 class ReadKnowledgePageArgs(BaseModel):
     page_id: str | None = Field(default=None, description="Page id to load, such as edge_android_new_tab_page.")
-    file: str | None = Field(default=None, description="Optional relative page file path from the knowledge index.")
+    file: str | None = Field(default=None, description="Optional relative page file path from the page index or pre-plan knowledge directory.")
     reason: str | None = Field(default=None, description="Short reason this page is needed for planning.")
 
 

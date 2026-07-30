@@ -153,17 +153,18 @@ class FsqAgent:
             )
             raise
 
-    def _load_page_knowledge_index(self) -> KnowledgeBundle:
+    def _load_pre_plan_knowledge(self) -> KnowledgeBundle:
         items: dict[str, str] = {}
-        warnings: list[str] = []
         knowledge = self.settings.agent_context.knowledge
-        knowledge_dir = knowledge.pre_plan.dir or knowledge.root_dir
-        index_path = knowledge_dir / "index.md"
+        project_path = knowledge.root_dir / "project.md"
+        if project_path.exists():
+            items["project.md"] = project_path.read_text(encoding="utf-8")
+
+        pre_plan_dir = knowledge.pre_plan.dir or knowledge.root_dir
+        index_path = pre_plan_dir / "index.md"
         if index_path.exists():
             items["index.md"] = index_path.read_text(encoding="utf-8")
-        else:
-            warnings.append("Knowledge index not found: index.md")
-        return KnowledgeBundle(items=items, warnings=warnings)
+        return KnowledgeBundle(items=items)
 
     async def _augment_goal_only_task_with_pre_plan(
         self,
@@ -235,7 +236,7 @@ class FsqAgent:
         run_id: str,
         emitter: RunEventEmitter,
     ):
-        knowledge = self._load_page_knowledge_index()
+        knowledge = self._load_pre_plan_knowledge()
         signature = inspect.signature(self.runtime.run_pre_plan)
         accepts_reference_type = "reference_type" in signature.parameters or any(
             parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()

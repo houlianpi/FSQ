@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import asyncio
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from fsq_agent import FsqAgent, Task
 from fsq_agent.agent import Verifier
 from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime, _RecentToolOutputInputFilter
 from fsq_agent.config import Settings
-from fsq_agent.models import ConfigurationError, GoalPrePlan, KnowledgeBundle, ReportArtifact, RunEvent, StepResult
+from fsq_agent.models import ConfigurationError, GoalPrePlan, KnowledgeBundle, ReportArtifact, RunEvent, SkillBundle, StepResult
 from fsq_agent.observation import ExecutionLogger
 
 
@@ -60,6 +61,14 @@ class _SkillLoader:
         return []
 
 
+class _ConfiguredSkillLoader:
+    def __init__(self, bundles: list[SkillBundle]) -> None:
+        self.bundles = bundles
+
+    def load(self, skills: list[object]) -> list[object]:
+        return list(self.bundles)
+
+
 def _settings_with_knowledge(knowledge_dir: Path, pre_plan_dir: Path | None = None) -> Settings:
     knowledge: dict[str, object] = {"root_dir": knowledge_dir}
     if pre_plan_dir is not None:
@@ -95,6 +104,8 @@ class _GoalRunRuntime(_Runtime):
         super().__init__()
         self.pre_plan_goal: str | None = None
         self.pre_plan_reference_type: str | None = None
+        self.pre_plan_knowledge: KnowledgeBundle | None = None
+        self.pre_plan_skills: list[object] | None = None
 
     async def run_pre_plan(
         self,
@@ -107,6 +118,8 @@ class _GoalRunRuntime(_Runtime):
     ) -> GoalPrePlan:
         self.pre_plan_goal = reference_text
         self.pre_plan_reference_type = reference_type
+        self.pre_plan_knowledge = knowledge
+        self.pre_plan_skills = skills
         return GoalPrePlan(
             goal=reference_text,
             verification_goal=f"Verify planned outcome for {reference_type}: {reference_text.splitlines()[0]}",
@@ -377,7 +390,7 @@ async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path
     _stub_provider_refresh(monkeypatch)
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(parents=True)
-    (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")
+    (knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
     runtime = _GoalRunRuntime()
     events: list[RunEvent] = []
     agent = FsqAgent(
@@ -401,6 +414,10 @@ async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path
     assert result.status == "success"
     assert runtime.pre_plan_goal == "Access Downloads"
     assert runtime.pre_plan_reference_type == "unknown"
+    assert runtime.pre_plan_knowledge is not None
+    assert runtime.pre_plan_knowledge.items == {"project.md": "# Project Knowledge"}
+    assert runtime.pre_plan_knowledge.warnings == []
+    assert runtime.pre_plan_skills == []
     assert runtime.last_task is not None
     assert runtime.last_task.key_actions == [
         "Key action 1: Open the overflow menu.",
@@ -414,7 +431,7 @@ async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path
 async def test_agent_run_refreshes_provider_before_pre_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(parents=True)
-    (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")
+    (knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
     runtime = _GoalRunRuntime()
     calls: list[str] = []
 
@@ -456,11 +473,44 @@ async def test_agent_run_refreshes_provider_before_pre_plan(tmp_path: Path, monk
 
 
 @pytest.mark.asyncio
+async def test_agent_pre_plan_receives_loaded_configured_skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_provider_refresh(monkeypatch)
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    runtime = _GoalRunRuntime()
+    skill = SkillBundle(
+        name="automation-basics",
+        description="Semantic action guidance.",
+        kind="markdown",
+        instructions="Prefer semantic actions.",
+    )
+    agent = FsqAgent(
+        _settings_with_knowledge(knowledge_dir),
+        verifier=Verifier(),
+        reporter=_Reporter(),  # type: ignore[arg-type]
+        knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
+        skill_loader=_ConfiguredSkillLoader([skill]),  # type: ignore[arg-type]
+        runtime=runtime,  # type: ignore[arg-type]
+    )
+    task = Task(
+        id="downloads",
+        name="Access Downloads",
+        description="Access Downloads through the overflow menu.",
+        verification_goal="Goal completed: Access Downloads",
+    )
+
+    result = await agent.run(task)
+
+    assert result.status == "success"
+    assert runtime.pre_plan_skills == [skill]
+
+
+@pytest.mark.asyncio
 async def test_agent_pre_plan_uses_explicit_raw_case_planning_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_provider_refresh(monkeypatch)
     knowledge_dir = tmp_path / "knowledge"
     knowledge_dir.mkdir(parents=True)
-    (knowledge_dir / "index.md").write_text("# Page Knowledge", encoding="utf-8")
+    (knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
     runtime = _GoalRunRuntime()
     agent = FsqAgent(
         _settings_with_knowledge(knowledge_dir),
@@ -542,6 +592,7 @@ async def test_pre_plan_runtime_reads_from_pre_plan_knowledge_dir(tmp_path: Path
     private_knowledge_dir = tmp_path / "knowledge"
     page_knowledge_dir = tmp_path / "knowledge" / "project_android_v1"
     private_knowledge_dir.mkdir(parents=True)
+    (private_knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
     pages_dir = page_knowledge_dir / "pages"
     pages_dir.mkdir(parents=True)
     (page_knowledge_dir / "index.md").write_text("# Page Graph Index", encoding="utf-8")
@@ -554,5 +605,54 @@ async def test_pre_plan_runtime_reads_from_pre_plan_knowledge_dir(tmp_path: Path
     index_output = await runtime._read_knowledge_index_tool(None, "{}")
     page_output = await runtime._read_knowledge_page_tool(None, '{"file":"pages/edge_android_new_tab_page.md"}')
 
+    assert "# Project Knowledge" in index_output
     assert "# Page Graph Index" in index_output
     assert "# New Tab Page" in page_output
+
+
+@pytest.mark.asyncio
+async def test_pre_plan_runtime_reads_project_knowledge_without_index(tmp_path: Path) -> None:
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    (knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
+    runtime = OpenAIAgentsRuntime(_settings_with_knowledge(knowledge_dir), object())  # type: ignore[arg-type]
+
+    payload = json.loads(await runtime._read_knowledge_index_tool(None, "{}"))
+
+    assert payload["ok"] is True
+    assert payload["entries"] == [{"path": "project.md", "content": "# Project Knowledge"}]
+    assert "Knowledge index not found" not in payload["content"]
+
+
+@pytest.mark.asyncio
+async def test_pre_plan_runtime_returns_structured_page_read_failures(tmp_path: Path) -> None:
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    runtime = OpenAIAgentsRuntime(_settings_with_knowledge(knowledge_dir), object())  # type: ignore[arg-type]
+
+    missing_payload = json.loads(await runtime._read_knowledge_page_tool(None, '{"page_id":"missing_page"}'))
+    unsafe_payload = json.loads(await runtime._read_knowledge_page_tool(None, '{"file":"../secret.md"}'))
+
+    assert missing_payload == {
+        "ok": False,
+        "error": "Knowledge page not found.",
+        "page_id": "missing_page",
+        "path": "pages/missing_page.md",
+    }
+    assert unsafe_payload == {
+        "ok": False,
+        "error": "A safe page_id or relative page file is required.",
+        "page_id": None,
+        "file": "../secret.md",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pre_plan_runtime_returns_empty_knowledge_when_no_project_or_index(tmp_path: Path) -> None:
+    knowledge_dir = tmp_path / "knowledge"
+    knowledge_dir.mkdir(parents=True)
+    runtime = OpenAIAgentsRuntime(_settings_with_knowledge(knowledge_dir), object())  # type: ignore[arg-type]
+
+    payload = json.loads(await runtime._read_knowledge_index_tool(None, "{}"))
+
+    assert payload == {"ok": True, "path": None, "content": "", "entries": []}

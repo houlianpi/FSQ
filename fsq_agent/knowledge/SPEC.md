@@ -32,8 +32,8 @@ Missing optional knowledge references are recorded as operational diagnostics. I
 - Knowledge is advisory context, not executable authority.
 - Loader diagnostics are not advisory knowledge and should not be sent to LLM prompts.
 - Knowledge loading is provider-based. `PrivateKnowledgeLoader` aggregates one or more `KnowledgeProvider` implementations so alternate upstreams can supply plain files, generated indexes, image manifests, databases, or service-backed knowledge without changing the agent runtime.
-- The default `DirectoryKnowledgeProvider` reads `project.md` automatically when present. `project.md` is the concise tested-project-specific guidance for normal goal-driven task execution, and it is included for every task under the key `project.md`.
-- `index.md` is reserved for the page-knowledge graph index consumed by internal dynamic goal planning. It is not automatically loaded into normal task execution by `DirectoryKnowledgeProvider`.
+- The default `DirectoryKnowledgeProvider` reads `project.md` automatically when present. `project.md` is the concise tested-project-specific guidance for normal goal-driven task execution, is included for every task under the key `project.md` when present, and may also be included in internal dynamic pre-plan context when present.
+- `index.md` is reserved for the optional page-knowledge graph index consumed by internal dynamic goal planning. It is loaded only when present under the resolved pre-plan knowledge directory and is not automatically loaded into normal task execution by `DirectoryKnowledgeProvider`.
 - Task-specific `Task.knowledge_refs` remain supported and are resolved relative to the configured knowledge directory.
 - Plain text and Markdown are loaded as strings. JSON and YAML are parsed into structured values. Image files are discovered as assets, but this implementation does not attach image pixels to the model prompt.
 - Knowledge storage stays outside the package under top-level `knowledge/` so teams can version app-specific data separately from code.
