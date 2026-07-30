@@ -1339,7 +1339,7 @@ def test_playground_server_step_artifacts_endpoint_returns_manifest_artifacts(tm
     assert payload["artifacts"][0]["contentBase64"] == base64.b64encode(b"before").decode("ascii")
     assert payload["artifacts"][1]["contentBase64"] == base64.b64encode(b"after").decode("ascii")
     assert payload["artifacts"][2]["mimeType"] == "application/xml"
-    assert payload["artifacts"][2]["content"] == '<hierarchy><node text="Login" /></hierarchy>'
+    assert payload["artifacts"][2]["content"] == '<hierarchy>\n  <node text="Login" />\n</hierarchy>'
 
 
 def test_playground_server_step_artifacts_endpoint_returns_no_artifacts(tmp_path: Path) -> None:
@@ -1452,7 +1452,45 @@ def test_playground_server_step_artifacts_endpoint_resolves_by_artifact_step_id(
     assert artifact["reason"] == "output"
     assert isinstance(artifact["timestamp"], int)
     assert artifact["mimeType"] == "application/xml"
-    assert artifact["content"] == '<hierarchy><node text="Recorded" /></hierarchy>'
+    assert artifact["content"] == '<hierarchy>\n  <node text="Recorded" />\n</hierarchy>'
+
+
+def test_playground_server_step_artifacts_extracts_xml_from_ui_snapshot(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    snapshot_path = run_dir / "artifacts" / "ui-snapshots" / "before.json"
+    snapshot_path.parent.mkdir(parents=True)
+    snapshot_path.write_text(
+        json.dumps({"xml": '<hierarchy><node text="Before" /></hierarchy>'}),
+        encoding="utf-8",
+    )
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "kind": "ui_snapshot",
+                        "step_id": "agent-click-1",
+                        "path": "artifacts/ui-snapshots/before.json",
+                        "phase": "prepare",
+                        "reason": "before-action",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/step-artifacts/run-1/agent-click-1", {})
+
+    assert status == 200
+    assert payload["available"] is True
+    artifact = payload["artifacts"][0]
+    assert artifact["kind"] == "ui_snapshot"
+    assert artifact["mimeType"] == "application/xml"
+    assert artifact["content"] == '<hierarchy>\n  <node text="Before" />\n</hierarchy>'
 
 
 def test_playground_server_step_artifacts_endpoint_reports_missing_run(tmp_path: Path) -> None:
@@ -3075,7 +3113,7 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert 'class="section progress-section"' not in html
     assert html.index('id="yaml-input-tab"') < html.index('id="yaml-recorded-tab"') < html.index('id="yaml-progress-tab"')
     assert html.index('id="preview-tab"') < html.index('id="report-tab"')
-    assert html.index('id="progress-pane"') < html.index('<section class="section">')
+    assert html.index('id="progress-pane"') < html.index('id="session-section"')
     assert "FSQ-Agent Playground" in html
     assert "status-pill status-connecting" in html
     assert "preview-tab" in html
@@ -3445,6 +3483,32 @@ def test_playground_frontend_uses_locked_npm_dependency_without_vendor_bundle() 
     assert not (root / "fsq_agent" / "playground" / "static" / "vendor" / "ts-ebml.min.js").exists()
 
 
+def test_playground_static_hides_session_section_for_non_android_platforms() -> None:
+    static_dir = Path(__file__).parents[1] / "frontend" / "playground"
+    html = (static_dir / "index.html").read_text(encoding="utf-8")
+    script = (static_dir / "playground.js").read_text(encoding="utf-8")
+
+    assert 'id="session-section"' in html
+    assert "sessionSection: document.getElementById('session-section')" in script
+    assert "function updateSessionVisibility()" in script
+    assert "els.sessionSection.hidden = !platformRequiresSession();" in script
+
+
+def test_playground_static_preserves_android_auto_session_error() -> None:
+    script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
+    script = script_path.read_text(encoding="utf-8")
+    refresh_body = script[script.index("async function refreshAll()"):script.index("function clearPage()")]
+    auto_body = script[
+        script.index("async function autoCreateSessionIfPossible("):
+        script.index("async function ensureSession()")
+    ]
+
+    assert "const sessionReady = await autoCreateSessionIfPossible({ silent: true });" in refresh_body
+    assert "if (sessionReady) await refreshStatus();" in refresh_body
+    assert "els.sessionMessage.textContent = error.message;" in auto_body
+    assert "error.message.includes('Multiple')" not in auto_body
+
+
 def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     static_dir = Path(__file__).parents[1] / "frontend" / "playground"
     html = (static_dir / "index.html").read_text(encoding="utf-8")
@@ -3571,10 +3635,22 @@ def test_playground_static_oversized_ui_tree_errors_stay_side_by_side() -> None:
     assert "const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);" in text_artifacts_body
     assert "uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(candidate.kind)" in text_artifacts_body
     assert "typeof artifact.content === 'string' || typeof artifact.error === 'string'" in comparison_body
-    assert "label.textContent = hasError ? `${kindLabel} diff`" in comparison_body
+    assert "UI Tree diff" not in comparison_body
+    assert "UI Tree (no changes)" not in comparison_body
+    assert "card.appendChild(label);" not in comparison_body
+    assert "if (!beforeArtifact && !afterArtifact) return null;" in comparison_body
+    assert "if (!beforeArtifact || !afterArtifact)" in comparison_body
+    assert "const side = beforeArtifact ? 'before' : 'after';" in comparison_body
+    assert "const title = beforeArtifact ? 'Before' : 'After';" in comparison_body
+    assert "split.appendChild(pane);" in comparison_body
+    assert "fallbackKind" not in comparison_body
     assert "renderArtifactErrorPane('before', 'Before', before)" in comparison_body
     assert "renderArtifactErrorPane('after', 'After', after)" in comparison_body
     assert "artifact.error || 'UI tree is unavailable.'" in comparison_body
+    assert "pane.appendChild(renderDiffPaneHeader(title));" in comparison_body
+    assert "function renderDiffPaneHeader(title)" in script
+    assert "header.className = 'step-artifact-image-label step-artifact-diff-headrow';" in script
+    assert "headerNumber" not in comparison_body
 
 
 def test_playground_static_load_run_is_goal_mode_only() -> None:
@@ -3639,7 +3715,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
     run_start = html.index('class="section run-section"')
     run_section = html[run_start:html.index("</section>", run_start)]
-    execution_section = html[html.index('id="execution-section"'):html.index('</section>\n\n        <section class="section">')]
+    execution_section = html[html.index('id="execution-section"'):html.index('id="session-section"')]
 
     assert html.index('id="execution-section"') < html.index("<h2>Session</h2>")
     assert "<h2>Execution</h2>" in execution_section

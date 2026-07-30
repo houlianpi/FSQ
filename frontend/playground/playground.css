@@ -1371,8 +1371,9 @@ body.step-artifact-resizing {
   border-bottom: 1px solid #edf0f5;
   background: #eef6ff;
   color: #334155;
+  font-family: "Segoe UI", Arial, sans-serif;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .step-artifact-image-card img {
@@ -1530,10 +1531,6 @@ body.step-artifact-resizing {
   position: sticky;
   top: 0;
   z-index: 1;
-  border-bottom: 1px solid #d8dee8;
-  background: #eef2f7;
-  color: #334155;
-  font-weight: 700;
 }
 
 .step-artifact-diff-number {

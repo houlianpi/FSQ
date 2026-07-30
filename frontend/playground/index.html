@@ -57,7 +57,7 @@
           </section>
         </section>
 
-        <section class="section">
+        <section id="session-section" class="section" hidden>
           <h2>Session</h2>
           <div class="session-row">
             <select id="device-select" aria-label="ADB device"></select>
@@ -73,7 +73,7 @@
             <label><input type="radio" name="run-mode" value="strict-yaml" /> Strict YAML</label>
           </div>
           <div class="run-input-row">
-            <textarea id="goal" rows="5" placeholder="Describe the Android task to run..."></textarea>
+            <textarea id="goal" rows="5" placeholder="Describe the task to run..."></textarea>
             <div id="yaml-path-row" class="yaml-path-row" hidden>
               <input id="case-yaml" type="text" placeholder="Path to .codex.yaml..." />
             </div>
