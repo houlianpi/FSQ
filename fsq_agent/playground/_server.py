@@ -16,6 +16,7 @@ import time
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
+import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -1251,14 +1252,15 @@ class PlaygroundServer:
             size_bytes = len(inline_content.encode("utf-8"))
             if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
                 raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
+            content, content_mime_type = self._normalize_step_text_artifact_content(inline_content)
             return {
                 "kind": kind,
                 "path": str(ref.get("path") or ""),
                 "phase": ref.get("phase"),
                 "reason": ref.get("reason"),
                 "timestamp": ref.get("timestamp") or self._artifact_timestamp(ref),
-                "mimeType": ref.get("mime_type") or ref.get("mimeType"),
-                "content": inline_content,
+                "mimeType": content_mime_type or ref.get("mime_type") or ref.get("mimeType"),
+                "content": content,
             }
         artifact_path, relative_path = self._safe_run_artifact_path(run_dir, ref.get("path"))
         if not artifact_path.exists() or not artifact_path.is_file():
@@ -1277,23 +1279,36 @@ class PlaygroundServer:
         size_bytes = artifact_path.stat().st_size
         if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
             raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
-        content, content_mime_type = self._step_text_artifact_content(kind, artifact_path)
+        content, content_mime_type = self._step_text_artifact_content(artifact_path)
         payload["content"] = content
         if content_mime_type is not None:
             payload["mimeType"] = content_mime_type
         return payload
 
-    def _step_text_artifact_content(self, kind: str, artifact_path: Path) -> tuple[str, str | None]:
+    def _step_text_artifact_content(self, artifact_path: Path) -> tuple[str, str | None]:
         content = artifact_path.read_text(encoding="utf-8")
+        return self._normalize_step_text_artifact_content(content)
+
+    def _normalize_step_text_artifact_content(self, content: str) -> tuple[str, str | None]:
+        if content.lstrip().startswith("<"):
+            return self._format_xml_for_display(content), "application/xml"
         try:
             payload = json.loads(content)
         except json.JSONDecodeError:
             return content, None
-        if kind == "ui_tree" and isinstance(payload, dict):
+        if isinstance(payload, dict):
             xml = payload.get("xml")
             if isinstance(xml, str) and xml.strip():
-                return xml, "application/xml"
+                return self._format_xml_for_display(xml), "application/xml"
         return json.dumps(payload, indent=2, ensure_ascii=False), "application/json"
+
+    def _format_xml_for_display(self, xml: str) -> str:
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            return xml
+        ET.indent(root, space="  ")
+        return ET.tostring(root, encoding="unicode", short_empty_elements=True)
 
     def _safe_run_artifact_path(self, run_dir: Path, path_value: object) -> tuple[Path, str]:
         if not isinstance(path_value, str) or not path_value.strip():
