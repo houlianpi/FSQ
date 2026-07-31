@@ -44,7 +44,22 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
 @pytest.fixture(autouse=True)
 def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
+    for name in (
+        "FSQ_LLM_PROVIDER",
+        "AZURE_OPENAI_BASE_URL",
+        "AZURE_OPENAI_MODEL",
+        "AZURE_OPENAI_API_KEY",
+        "FSQ_ANDROID_APP_ID",
+        "FSQ_ANDROID_SERIAL",
+        "FSQ_WEB_BROWSER_EXECUTABLE_PATH",
+        "FSQ_WINDOWS_APP_PATH",
+        "FSQ_WINDOWS_BACKEND_KIND",
+        "FSQ_WINDOWS_WINDOW_TITLE_RE",
+        "FSQ_WINDOWS_LAUNCH_ARGS",
+        "FSQ_MACOS_APPIUM_SERVER_URL",
+        "FSQ_MACOS_BUNDLE_ID",
+        "FSQ_MACOS_APP_PATH",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
