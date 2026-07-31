@@ -3,22 +3,16 @@
 
 from __future__ import annotations
 
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
-from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core.harness._android import AndroidHarness
-from fsq_agent.core.harness._android_driver import AndroidDriverInterface
 from fsq_agent.core.harness._appium_mac2_driver import AppiumMac2Driver
-from fsq_agent.core.harness._interface import AIAssertionEvaluatorProtocol, HarnessInterface
 from fsq_agent.core.harness._macos import MacOSHarness
-from fsq_agent.core.harness._macos_driver import MacOSDriverInterface
 from fsq_agent.core.harness._playwright_driver import PlaywrightWebDriver
 from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
 from fsq_agent.core.harness._web import WebHarness
-from fsq_agent.core.harness._web_driver import WebDriverInterface
 from fsq_agent.core.harness._windows import WindowsHarness
-from fsq_agent.core.harness._windows_driver import WindowsDriverInterface
 from fsq_agent.models import (
     AndroidHarnessSettings,
     ConfigurationError,
@@ -30,16 +24,23 @@ from fsq_agent.models import (
     WindowsHarnessSettings,
 )
 
+if TYPE_CHECKING:
+    from fsq_agent.core.evidence import ArtifactStore
+    from fsq_agent.core.harness._android_driver import AndroidDriverInterface
+    from fsq_agent.core.harness._interface import AIAssertionEvaluatorProtocol, HarnessInterface
+    from fsq_agent.core.harness._macos_driver import MacOSDriverInterface
+    from fsq_agent.core.harness._web_driver import WebDriverInterface
+    from fsq_agent.core.harness._windows_driver import WindowsDriverInterface
 
 _ANDROID_BACKENDS = ("uiautomator2",)
 _WEB_BACKENDS = ("playwright",)
 _WINDOWS_BACKENDS = ("pywinauto",)
 _MACOS_BACKENDS = ("appium_mac2",)
 _CAPABILITY_DRIVER_CLASSES: dict[HarnessPlatform, dict[str, type[object]]] = {
-    "android": {"uiautomator2": cast(type[object], UiAutomator2AndroidDriver)},
-    "web": {"playwright": cast(type[object], PlaywrightWebDriver)},
-    "windows": {"pywinauto": cast(type[object], PywinautoWindowsDriver)},
-    "macos": {"appium_mac2": cast(type[object], AppiumMac2Driver)},
+    "android": {"uiautomator2": cast("type[object]", UiAutomator2AndroidDriver)},
+    "web": {"playwright": cast("type[object]", PlaywrightWebDriver)},
+    "windows": {"pywinauto": cast("type[object]", PywinautoWindowsDriver)},
+    "macos": {"appium_mac2": cast("type[object]", AppiumMac2Driver)},
 }
 
 
@@ -50,17 +51,13 @@ class _DriverFactoryProtocol(Protocol):
         *,
         app_id: str | None = None,
         serial: str | None = None,
-    ) -> AndroidDriverInterface:
-        ...
+    ) -> AndroidDriverInterface: ...
 
-    def create_web_driver(self, settings: WebHarnessSettings) -> WebDriverInterface:
-        ...
+    def create_web_driver(self, settings: WebHarnessSettings) -> WebDriverInterface: ...
 
-    def create_windows_driver(self, settings: WindowsHarnessSettings) -> WindowsDriverInterface:
-        ...
+    def create_windows_driver(self, settings: WindowsHarnessSettings) -> WindowsDriverInterface: ...
 
-    def create_macos_driver(self, settings: MacOSHarnessSettings) -> MacOSDriverInterface:
-        ...
+    def create_macos_driver(self, settings: MacOSHarnessSettings) -> MacOSDriverInterface: ...
 
 
 class _HarnessFactoryProtocol(Protocol):
@@ -74,8 +71,7 @@ class _HarnessFactoryProtocol(Protocol):
         runtime_secret_settings: RuntimeSecretSettings | None = None,
         app_id: str | None = None,
         serial: str | None = None,
-    ) -> HarnessInterface:
-        ...
+    ) -> HarnessInterface: ...
 
 
 class DriverFactory:

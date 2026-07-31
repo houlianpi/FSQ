@@ -15,9 +15,7 @@ class ModelProviderFactory:
     def build_session(self, *, interactive_auth: bool = False) -> ModelProviderSession:
         provider = self.settings.openai_agents.provider
         if provider == "github_copilot":
-            return ModelProviderSession(
-                build_github_copilot_client_config(self.settings, interactive_auth=interactive_auth)
-            )
+            return ModelProviderSession(build_github_copilot_client_config(self.settings, interactive_auth=interactive_auth))
         return ModelProviderSession(build_azure_openai_client_config(self.settings))
 
     def refresh_session(self) -> ModelProviderSession:

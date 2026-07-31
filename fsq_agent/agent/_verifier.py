@@ -3,9 +3,8 @@
 
 from pathlib import Path
 
-from fsq_agent.models import AgentFinalOutput, StepResult, Task, VerificationResult
-
 from fsq_agent.agent._structured_output import coerce_agent_final_output
+from fsq_agent.models import AgentFinalOutput, StepResult, Task, VerificationResult
 
 
 class Verifier:

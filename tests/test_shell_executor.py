@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import fsq_agent.tools as tools
+from fsq_agent import tools
 
 
 def test_tools_package_does_not_export_shell_executor() -> None:

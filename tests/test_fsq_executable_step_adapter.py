@@ -9,7 +9,6 @@ from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError
 
-
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
 name: Fundamental Test bing.com website
@@ -101,13 +100,7 @@ def test_windows_strict_replay_allows_null_targets(tmp_path: Path) -> None:
 def test_windows_strict_replay_allows_missing_target(tmp_path: Path) -> None:
     case_path = tmp_path / "missing-target.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Missing target\n"
-        "platform: windows\n"
-        "---\n"
-        "- clickOn:\n"
-        "    locator:\n"
-        "      title: Done\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Missing target\nplatform: windows\n---\n- clickOn:\n    locator:\n      title: Done\n",
         encoding="utf-8",
     )
 
@@ -322,9 +315,9 @@ platform: android
 
 
 def test_fsq_executable_step_adapter_ignores_lifecycle_hooks(tmp_path: Path) -> None:
-        case_path = tmp_path / "hooked.codex.yaml"
-        case_path.write_text(
-                """
+    case_path = tmp_path / "hooked.codex.yaml"
+    case_path.write_text(
+        """
 schemaVersion: fsq.ai-test/v1
 name: Hooked Case
 platform: android
@@ -335,14 +328,14 @@ onCaseComplete:
 ---
 - launchApp
 """,
-                encoding="utf-8",
-        )
-        case = FsqCaseLoader().load_case(case_path)
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
 
-        steps = _adapter().to_executable_steps(case)
+    steps = _adapter().to_executable_steps(case)
 
-        assert [step.action_name for step in steps] == ["launch_app"]
-        assert steps[0].metadata["raw_command"] == "launchApp"
+    assert [step.action_name for step in steps] == ["launch_app"]
+    assert steps[0].metadata["raw_command"] == "launchApp"
 
 
 def test_fsq_executable_step_adapter_resolves_web_aliases_from_web_registry(tmp_path: Path) -> None:

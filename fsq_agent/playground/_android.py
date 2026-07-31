@@ -3,14 +3,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import base64
 import subprocess
 import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from fsq_agent.config import Settings
 from fsq_agent.core import DriverFactory
 from fsq_agent.playground._state import PlaygroundSession
+
+if TYPE_CHECKING:
+    from fsq_agent.config import Settings
 
 
 @dataclass(frozen=True)
@@ -68,8 +71,9 @@ def parse_adb_devices(output: str) -> list[AndroidTarget]:
 
 def discover_adb_targets(timeout_seconds: float = 5.0) -> tuple[list[AndroidTarget], str | None]:
     try:
+        # The Android platform utility and all arguments are fixed device-discovery inputs.
         completed = subprocess.run(
-            ["adb", "devices", "-l"],
+            ["adb", "devices", "-l"],  # noqa: S607
             check=False,
             capture_output=True,
             text=True,
@@ -102,10 +106,7 @@ def build_android_setup_schema(settings: Settings) -> dict[str, object]:
                 "label": "ADB device",
                 "type": "select",
                 "required": True,
-                "options": [
-                    {"label": target.label, "value": target.id, "description": target.description}
-                    for target in targets
-                ],
+                "options": [{"label": target.label, "value": target.id, "description": target.description} for target in targets],
                 "defaultValue": default_device_id,
                 "placeholder": "Select a connected Android device",
             }

@@ -4,12 +4,13 @@
 import asyncio
 import json
 import logging
-from pathlib import Path
 import re
 import time
+from pathlib import Path
 
 import click
 
+from fsq_agent._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.agent import FsqAgent
 from fsq_agent.cli._capability_bootstrap import build_capability_registry
 from fsq_agent.cli._case_lifecycle import (
@@ -22,15 +23,14 @@ from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._llm_setup import setup_llm_provider
 from fsq_agent.cli._logging import configure_cli_logging
-from fsq_agent._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
 from fsq_agent.config import Settings, load_platform_settings, validate_runtime_settings, validate_strict_core_settings
-from fsq_agent.core import RuntimeSecretStore
 from fsq_agent.core import (
     ArtifactStore,
     HarnessFactory,
     HarnessInterface,
+    RuntimeSecretStore,
 )
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task
@@ -38,10 +38,13 @@ from fsq_agent.playground import PlaygroundServerOptions, run_playground
 from fsq_agent.providers import build_ai_assertion_evaluator
 from fsq_agent.report import resolve_report_path
 
-
 logger = logging.getLogger(__name__)
 PLATFORM_CHOICE = click.Choice(["android", "web", "windows", "macos"])
 LLM_PROVIDER_CHOICE = click.Choice(["github_copilot", "azure_openai"])
+
+
+def _log_cli_error(message: str, *args: object) -> None:
+    logger.error(message, *args)
 
 
 @click.group()
@@ -63,10 +66,10 @@ def init(platform: str, provider: str | None) -> None:
         _log_readiness("Strict-core run", lambda: validate_strict_core_settings(settings))
         _log_readiness("AI assertion", lambda: validate_strict_core_settings(settings, requires_ai_assertion=True))
     except FsqAgentError as exc:
-        logger.error("Error: %s", exc)
+        _log_cli_error("Error: %s", exc)
         raise click.Abort() from exc
     except OSError as exc:
-        logger.error("Error: %s", exc)
+        _log_cli_error("Error: %s", exc)
         raise click.Abort() from exc
 
 
@@ -119,9 +122,9 @@ def run(
             record_on_failure=record_on_failure,
         )
     except FsqAgentError as exc:
-        logger.error("Error: %s", exc)
+        _log_cli_error("Error: %s", exc)
         if exc.context:
-            logger.error("Details: %s", exc.context)
+            _log_cli_error("Details: %s", exc.context)
         raise click.Abort() from exc
 
 
@@ -135,7 +138,7 @@ def report(platform: str, run_id: str, report_format: str) -> None:
         path = resolve_report_path(Path(settings.output.runs_dir), run_id, report_format)  # type: ignore[arg-type]
         click.echo(path.read_text(encoding="utf-8"), nl=False)
     except FsqAgentError as exc:
-        logger.error("Error: %s", exc)
+        _log_cli_error("Error: %s", exc)
         raise click.Abort() from exc
 
 
@@ -157,10 +160,10 @@ def playground(
             PlaygroundServerOptions(host=host, port=port, open_browser=open_browser),
         )
     except FsqAgentError as exc:
-        logger.error("Error: %s", exc)
+        _log_cli_error("Error: %s", exc)
         raise click.Abort() from exc
     except OSError as exc:
-        logger.error("Playground startup failed: %s", exc)
+        _log_cli_error("Playground startup failed: %s", exc)
         raise click.Abort() from exc
 
 
@@ -255,9 +258,10 @@ async def _run_dynamic_case_tasks(
                     "recorded_case_path": str(recording.recorded_case_path) if recording and recording.recorded_case_path else None,
                 }
             )
-        except Exception as exc:
+        # A directory run must record one failed case and continue with the remaining tasks.
+        except Exception as exc:  # noqa: BLE001
             summaries.append({"task_id": task.id, "status": "failed", "report_path": None, "error": str(exc)})
-            logger.error("Dynamic case failed: %s: %s", task.id, exc)
+            _log_cli_error("Dynamic case failed: %s: %s", task.id, exc)
     _log_dynamic_case_summary(summaries)
 
 
@@ -396,7 +400,7 @@ def _record_dynamic_result(
             recording_path.parent.mkdir(parents=True, exist_ok=True)
             recording_path.write_text(json.dumps(recording.to_json(), indent=2, ensure_ascii=False), encoding="utf-8")
         except OSError:
-            logger.error("Unable to write recording failure manifest: %s", recording_path)
+            _log_cli_error("Unable to write recording failure manifest: %s", recording_path)
         return recording
 
 
@@ -439,7 +443,8 @@ def _run_strict_case_batch(settings: Settings, cases: list[tuple[Path, FsqCase]]
                 logger.info("Strict core case passed: %s", case_path)
             else:
                 logger.error("Strict core case failed: %s: %s", case_path, case_error)
-        except Exception as exc:
+        # Strict directory execution must summarize a failed case and continue the batch.
+        except Exception as exc:  # noqa: BLE001
             case_summaries.append(
                 {
                     "case_path": str(case_path),
@@ -450,7 +455,7 @@ def _run_strict_case_batch(settings: Settings, cases: list[tuple[Path, FsqCase]]
                     "error": str(exc),
                 }
             )
-            logger.error("Strict core case failed: %s: %s", case_path, exc)
+            _log_cli_error("Strict core case failed: %s: %s", case_path, exc)
     summary = _strict_core_batch_summary(batch_id, batch_dir, case_summaries)
     summary_json_path = batch_dir / "strict-core-batch-summary.json"
     summary_md_path = batch_dir / "strict-core-batch-summary.md"
@@ -481,10 +486,7 @@ def _build_strict_harness(
 
 def _case_requires_ai_assertion(settings: Settings, case: FsqCase, registry_snapshot=None) -> bool:
     registry_snapshot = registry_snapshot or build_capability_registry(platform=settings.harness.platform).snapshot()
-    return any(
-        step.action_name == "assert_with_ai"
-        for step in FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case)
-    )
+    return any(step.action_name == "assert_with_ai" for step in FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case))
 
 
 def _strict_case_app_id(settings: Settings, case: FsqCase) -> str:
@@ -562,13 +564,7 @@ def _task_from_raw_case_source(source_path: Path, content: str) -> Task:
 
 
 def _raw_case_planning_reference(source_path: Path, content: str) -> str:
-    return (
-        f"Source path: {source_path}\n\n"
-        "Raw case content:\n"
-        "```yaml\n"
-        f"{content}\n"
-        "```"
-    )
+    return f"Source path: {source_path}\n\nRaw case content:\n```yaml\n{content}\n```"
 
 
 def _goal_task_id(goal: str) -> str:

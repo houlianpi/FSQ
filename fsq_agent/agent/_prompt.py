@@ -9,7 +9,6 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError
 
 from fsq_agent.models import AgentTaskInput, ConfigurationError, KnowledgeBundle, OpenAIAgentPromptConfig, SkillBundle, Task
 
-
 _DEFAULT_TEMPLATE_DIR = Path(__file__).parent / "templates"
 _DEFAULT_AGENT_TEMPLATE = _DEFAULT_TEMPLATE_DIR / "agent_instructions.j2"
 _DEFAULT_TASK_TEMPLATE = _DEFAULT_TEMPLATE_DIR / "task_input.j2"
@@ -114,7 +113,8 @@ class PromptRenderer:
         environment = Environment(
             loader=FileSystemLoader(str(template_path.parent)),
             undefined=StrictUndefined,
-            autoescape=False,
+            # Prompt templates render model input text, not HTML or other executable markup.
+            autoescape=False,  # noqa: S701
             trim_blocks=True,
             lstrip_blocks=True,
             keep_trailing_newline=True,

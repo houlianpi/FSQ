@@ -27,9 +27,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry().snapshot()).to_executable_steps(
-        FsqCaseLoader().load_case(case_path)
-    )
+    return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry().snapshot()).to_executable_steps(FsqCaseLoader().load_case(case_path))
 
 
 def test_resolve_strict_replay_steps_preserves_runtime_secret_ref_for_core_resolution(
@@ -69,9 +67,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    steps = FsqExecutableStepAdapter(registry_snapshot=build_capability_registry().snapshot()).to_executable_steps(
-        FsqCaseLoader().load_case(case_path)
-    )
+    steps = FsqExecutableStepAdapter(registry_snapshot=build_capability_registry().snapshot()).to_executable_steps(FsqCaseLoader().load_case(case_path))
 
     resolved = resolve_strict_replay_steps(steps, Settings())
 

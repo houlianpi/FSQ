@@ -7,12 +7,7 @@ from fsq_agent.core.evidence import EvidenceRecorder
 from fsq_agent.core.runner._runner import StepRunner
 from fsq_agent.models import EvidenceBundle, ExecutableStep
 
-
 _STOP_STATUSES = {"failed", "cancelled", "skipped"}
-
-
-class _StepSequenceFailure(Exception):
-    pass
 
 
 class StepSequenceRunner:
@@ -30,24 +25,14 @@ class StepSequenceRunner:
         steps: Sequence[ExecutableStep],
         teardown_steps: Sequence[ExecutableStep] = (),
     ) -> EvidenceBundle:
-        ran_step = False
-
-        def run_next(step: ExecutableStep):
-            nonlocal ran_step
-            result = self._run_and_record(run_id, step)
-            ran_step = True
-            return result
-
         try:
             for step in steps:
-                result = run_next(step)
+                result = self._run_and_record(run_id, step)
                 if result.status in _STOP_STATUSES:
-                    raise _StepSequenceFailure
-        except _StepSequenceFailure:
-            pass
+                    break
         finally:
             for step in teardown_steps:
-                run_next(step)
+                self._run_and_record(run_id, step)
         return self.evidence_recorder.build_bundle()
 
     def _run_and_record(self, run_id: str, step: ExecutableStep):

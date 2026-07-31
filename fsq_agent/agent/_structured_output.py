@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from fsq_agent.models import AgentFinalOutput
 
-
 JSON_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
 
 

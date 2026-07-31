@@ -1,10 +1,12 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from typing import ClassVar
+
 from pydantic import BaseModel, ValidationError
 
-from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core._platform_tools import CommonPlatformTools
+from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core.harness._driver_tools import _capability_matches, _discover_driver_capability_definitions, _schema_from_capability_definition, _with_driver_metadata
 from fsq_agent.core.harness._interface import AIAssertionEvaluatorProtocol
 from fsq_agent.core.harness._macos_driver import MacOSDriverInterface
@@ -25,8 +27,8 @@ from fsq_agent.models import (
 
 
 class MacOSHarness:
-    _RUNNER_STATUSES = {"passed", "failed", "skipped", "cancelled"}
-    _FAILURE_CATEGORIES = {
+    _RUNNER_STATUSES: ClassVar[set[str]] = {"passed", "failed", "skipped", "cancelled"}
+    _FAILURE_CATEGORIES: ClassVar[set[str]] = {
         "configuration_error",
         "context_error",
         "target_resolution_error",
@@ -236,7 +238,8 @@ class MacOSHarness:
     def _session_not_started(self) -> bool:
         try:
             context = self.driver.context()
-        except Exception:
+        # Optional Appium clients expose backend-specific exception classes outside the core contract.
+        except Exception:  # noqa: BLE001
             return False
         return self._optional_str(context.get("session_id")) is None
 
@@ -269,11 +272,7 @@ class MacOSHarness:
         status_value = output.get("status")
         status = status_value if isinstance(status_value, str) and status_value in self._RUNNER_STATUSES else "passed"
         failure_category_value = output.get("failure_category")
-        failure_category = (
-            failure_category_value
-            if isinstance(failure_category_value, str) and failure_category_value in self._FAILURE_CATEGORIES
-            else None
-        )
+        failure_category = failure_category_value if isinstance(failure_category_value, str) and failure_category_value in self._FAILURE_CATEGORIES else None
         error_message_value = output.get("error_message")
         metadata_value = output.get("metadata")
         artifact_refs_value = output.get("artifact_refs")

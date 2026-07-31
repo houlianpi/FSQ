@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 from fsq_agent.models import AIAssertionRequest, FailureCategory, HarnessArtifactRef, HarnessContext, HarnessPlatform, StepPhase
-
 
 CaptureArtifact = Callable[[str, str, HarnessContext, str, StepPhase], HarnessArtifactRef]
 
@@ -84,7 +84,8 @@ class AIAssertionBackendToolMixin:
                 invocation.step_id,
                 "invoke",
             )
-        except Exception as exc:
+        # Injected artifact stores and optional backend drivers do not share a stable exception hierarchy.
+        except Exception as exc:  # noqa: BLE001
             return self._failed_ai_assertion_tool("artifact_error", str(exc) or exc.__class__.__name__)
 
         request = AIAssertionRequest(

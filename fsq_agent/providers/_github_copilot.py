@@ -7,20 +7,24 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
-from fsq_agent.config import Settings
 from fsq_agent.models import ConfigurationError
 from fsq_agent.providers._azure_openai import ProviderClientConfig
 
+if TYPE_CHECKING:
+    from fsq_agent.config import Settings
 
 DEVICE_CODE_URL = "https://github.com/login/device/code"
-ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
+# This is a public OAuth endpoint URL, not a credential or secret token.
+ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"  # noqa: S105
 CLIENT_ID = "Iv1.b507a08c87ecfe98"
 GITHUB_OAUTH_SCOPE = "read:user"
 GITHUB_API_VERSION = "2022-11-28"
-COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
+# This is a public Copilot service endpoint URL, not a credential or secret token.
+COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"  # noqa: S105
 COPILOT_USER_URL = "https://api.github.com/copilot_internal/user"
 TOKEN_CACHE_RELATIVE_PATH = Path("auth") / "github-copilot-token.json"
 PROVIDER_TOKEN_CACHE_RELATIVE_PATH = Path("auth") / "github-copilot-provider-token.json"

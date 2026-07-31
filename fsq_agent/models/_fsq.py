@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
-
 FsqPlatform = Literal["android", "ios", "macos", "windows", "web"]
 FsqCaseHookActionName = Literal["runCase", "runShell"]
 
@@ -110,7 +109,8 @@ def _normalize_lifecycle_hook_field(value: Any) -> Any:
     elif isinstance(value, dict):
         hooks = [value]
     else:
-        raise ValueError("hook field must be a mapping or list of mappings")
+        # Pydantic field validators require ValueError for normalized validation failures.
+        raise ValueError("hook field must be a mapping or list of mappings")  # noqa: TRY004
     for hook in hooks:
         if isinstance(hook, dict) and "actions" in hook:
             raise ValueError("unsupported hook action: actions")

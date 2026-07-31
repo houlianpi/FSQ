@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from fsq_agent.models import (
     AgentContextSettings,
     AgentSettings,
-    CaseSettings,
     CaseLifecycleSettings,
+    CaseSettings,
     ExecutionSettings,
     HarnessSettings,
     OpenAIAgentsSettings,

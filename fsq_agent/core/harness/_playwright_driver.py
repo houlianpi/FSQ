@@ -13,12 +13,12 @@ from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixi
 from fsq_agent.core.harness._driver_tools import _web_driver_tool
 from fsq_agent.models import (
     ConfigurationError,
-    WebAssertWithAIParams,
     WebAssertNotVisibleParams,
     WebAssertTextParams,
     WebAssertVisibleParams,
-    WebCloseBrowserParams,
+    WebAssertWithAIParams,
     WebClickOnParams,
+    WebCloseBrowserParams,
     WebHoverOnParams,
     WebNavigateBackParams,
     WebNavigateToParams,
@@ -30,7 +30,6 @@ from fsq_agent.models import (
     WebTypeTextParams,
     WebWaitForParams,
 )
-
 
 DEFAULT_WEB_WAIT_TIMEOUT_MS = 10000
 _BROWSER_NOT_STARTED_MESSAGE = "Browser is not started. Call startBrowser before Web page actions."
@@ -453,9 +452,11 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
     def _wait_for_locator(self, locator: object, *, state: str, timeout: int = DEFAULT_WEB_WAIT_TIMEOUT_MS) -> bool:
         try:
             locator.wait_for(state=state, timeout=timeout)
-            return True
-        except Exception:
+        # Playwright locator failures use optional-backend exception classes outside the core contract.
+        except Exception:  # noqa: BLE001
             return False
+        else:
+            return True
 
     def _page_url(self) -> str | None:
         url = getattr(self.page, "url", None)
@@ -479,7 +480,8 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             return None
         try:
             value = title()
-        except Exception:
+        # Playwright page probes must tolerate closed pages and optional-backend errors.
+        except Exception:  # noqa: BLE001
             return None
         return value if isinstance(value, str) else None
 
@@ -490,7 +492,8 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             if not callable(inner_text):
                 return None
             return inner_text(timeout=1000)
-        except Exception:
+        # Playwright page probes must tolerate closed pages and optional-backend errors.
+        except Exception:  # noqa: BLE001
             return None
 
     def _target_missing(self, params: BaseModel) -> dict[str, object]:

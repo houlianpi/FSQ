@@ -60,6 +60,7 @@ class HarnessToolAdapter:
     def _discover_schemas(self) -> list[HarnessFunctionSchema]:
         try:
             schemas = self.harness.action_space()
+        # Harness plugins may raise backend-specific exceptions that must become configuration errors.
         except Exception as exc:
             raise ConfigurationError("Harness action-space discovery failed.", context={"error": str(exc)}) from exc
         names: set[str] = set()
@@ -98,7 +99,8 @@ class HarnessToolAdapter:
                 )
                 result = self.runner.run_step(run_id=self.run_id, step=step)
                 return self._format_runner_result(schema, step, result, int((time.perf_counter() - started) * 1000))
-            except Exception as exc:
+            # SDK tool transport must convert arbitrary capability failures into structured results.
+            except Exception as exc:  # noqa: BLE001
                 return self._format_failure(schema, exc, int((time.perf_counter() - started) * 1000))
 
         return invoke
@@ -108,7 +110,7 @@ class HarnessToolAdapter:
             return {}
         payload = json.loads(args)
         if not isinstance(payload, dict):
-            raise ValueError("Harness tool arguments must be a JSON object.")
+            raise TypeError("Harness tool arguments must be a JSON object.")
         return payload
 
     def _capability_name(self, schema: HarnessFunctionSchema) -> str:

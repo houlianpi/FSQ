@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -16,4 +16,4 @@ class ReportArtifact(BaseModel):
     format: Literal["markdown", "json", "html"] = "markdown"
     evidence_manifest_path: Path | None = None
     evidence_bundle_path: Path | None = None
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

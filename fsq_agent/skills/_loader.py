@@ -6,7 +6,6 @@ from pathlib import Path
 
 from fsq_agent.models import FsqAgentError, SkillBundle, SkillConfig
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -73,4 +72,3 @@ class SkillLoader:
     def _skip_optional(self, config: SkillConfig, reason: str, path: Path | None = None) -> None:
         context = f" path={path}" if path is not None else ""
         logger.warning("Skipping optional skill %s: %s%s", config.name, reason, context)
-        return None

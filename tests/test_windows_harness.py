@@ -22,8 +22,8 @@ from fsq_agent.models import (
     AIAssertionResult,
     ExecutableStep,
     HarnessContext,
-    WindowsAssertWithAIParams,
     WindowsAssertVisibleParams,
+    WindowsAssertWithAIParams,
     WindowsClickOnParams,
     WindowsDoubleClickOnParams,
     WindowsDragToParams,
@@ -292,7 +292,7 @@ def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
                 "destination": {"point": {"x": 3, "y": 4}},
             }
         )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
         WindowsDragToParams.model_validate(
             {
                 "target": "Move item",
@@ -309,9 +309,7 @@ def test_windows_mouse_parameter_models_validate_modes_and_distances() -> None:
             }
         )
     with pytest.raises(ValueError, match="non-zero wheel_dist"):
-        WindowsScrollOnParams.model_validate(
-            {"target": "Scroll results", "locator": {"title": "Results"}, "wheel_dist": 0}
-        )
+        WindowsScrollOnParams.model_validate({"target": "Scroll results", "locator": {"title": "Results"}, "wheel_dist": 0})
 
 
 def test_windows_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp_path) -> None:
@@ -502,7 +500,7 @@ def test_windows_harness_classifies_main_window_timeout() -> None:
     assert category == "timeout_error"
 
 
-def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> None:
+def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
     from fsq_agent.models import WindowsLaunchAppParams
 
@@ -546,7 +544,7 @@ def test_pywinauto_driver_launch_app_uses_launch_args_and_window_title_re() -> N
         window_title_re=".*Microsoft.*Edge Beta",
         launch_args=["--no-first-run", "--window-size=1280,920"],
     )
-    driver._application_cls = lambda: (lambda backend: fake_app)  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_application_cls", lambda: lambda backend: fake_app)
 
     result = driver.launch_app(WindowsLaunchAppParams(extra_args=["--incognito"]))
 
@@ -566,7 +564,7 @@ def test_pywinauto_driver_main_window_timeout_includes_resolution_context(monkey
             raise LookupError("window not found")
 
     driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
-    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_application_cls", lambda: lambda backend: FailingApp())
     monotonic_values = iter([100.0, 131.0])
     monkeypatch.setattr("fsq_agent.core.harness._pywinauto_driver.time.monotonic", lambda: next(monotonic_values))
 
@@ -580,7 +578,7 @@ def test_pywinauto_driver_main_window_timeout_includes_resolution_context(monkey
     assert "window not found" in str(error.value)
 
 
-def test_pywinauto_driver_main_window_immediate_failure_includes_resolution_context() -> None:
+def test_pywinauto_driver_main_window_immediate_failure_includes_resolution_context(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class FailingApp:
@@ -588,7 +586,7 @@ def test_pywinauto_driver_main_window_immediate_failure_includes_resolution_cont
             raise LookupError("window not found")
 
     driver = PywinautoWindowsDriver(window_title_re=".*Edge Beta")
-    driver._application_cls = lambda: (lambda backend: FailingApp())  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_application_cls", lambda: lambda backend: FailingApp())
 
     with pytest.raises(
         RuntimeError,
@@ -720,7 +718,7 @@ def test_pywinauto_driver_control_raises_without_title_match() -> None:
     assert window.calls == [{"auto_id": "15", "found_index": 0}]
 
 
-def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
+def test_pywinauto_driver_hover_and_scroll_use_control_center(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class Rectangle:
@@ -743,13 +741,11 @@ def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
 
     mouse = FakeMouse()
     driver = PywinautoWindowsDriver()
-    driver._control = lambda params: Wrapper()  # type: ignore[attr-defined]
-    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_control", lambda params: Wrapper())
+    monkeypatch.setattr(driver, "_mouse_module", lambda: mouse)
 
     hover_result = driver.hover_on(WindowsHoverOnParams(target="Hover Save", locator={"title": "Save"}))
-    scroll_result = driver.scroll_on(
-        WindowsScrollOnParams(target="Scroll results", locator={"title": "Results"}, wheel_dist=-5)
-    )
+    scroll_result = driver.scroll_on(WindowsScrollOnParams(target="Scroll results", locator={"title": "Results"}, wheel_dist=-5))
 
     assert hover_result["status"] == "passed"
     assert scroll_result["status"] == "passed"
@@ -759,7 +755,7 @@ def test_pywinauto_driver_hover_and_scroll_use_control_center() -> None:
     ]
 
 
-def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup() -> None:
+def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class Rectangle:
@@ -784,18 +780,16 @@ def test_pywinauto_driver_mouse_target_does_not_participate_in_lookup() -> None:
         queries.append(locator)
         return Wrapper()
 
-    driver._control_from_kwargs = resolve  # type: ignore[attr-defined]
-    driver._mouse_module = lambda: FakeMouse()  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_control_from_kwargs", resolve)
+    monkeypatch.setattr(driver, "_mouse_module", FakeMouse)
 
     driver.hover_on(WindowsHoverOnParams(target="Do not search this text", locator={"automation_id": "Save"}))
-    driver.scroll_on(
-        WindowsScrollOnParams(target="Also not a query", locator={"control_type": "List"}, wheel_dist=-1)
-    )
+    driver.scroll_on(WindowsScrollOnParams(target="Also not a query", locator={"control_type": "List"}, wheel_dist=-1))
 
     assert queries == [{"automation_id": "Save"}, {"control_type": "List"}]
 
 
-def test_pywinauto_driver_drag_to_offset_moves_and_releases() -> None:
+def test_pywinauto_driver_drag_to_offset_moves_and_releases(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class FakeMouse:
@@ -813,7 +807,7 @@ def test_pywinauto_driver_drag_to_offset_moves_and_releases() -> None:
 
     mouse = FakeMouse()
     driver = PywinautoWindowsDriver()
-    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_mouse_module", lambda: mouse)
 
     result = driver.drag_to(
         WindowsDragToParams(
@@ -844,6 +838,7 @@ def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
     destination: dict[str, object],
     expected_start: tuple[int, int],
     expected_end: tuple[int, int],
+    monkeypatch,
 ) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
@@ -878,8 +873,8 @@ def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
     wrappers = {"Source": Wrapper((10, 20)), "Target": Wrapper((70, 80))}
     mouse = FakeMouse()
     driver = PywinautoWindowsDriver()
-    driver._control_from_kwargs = lambda locator: wrappers[locator["automation_id"]]  # type: ignore[attr-defined]
-    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_control_from_kwargs", lambda locator: wrappers[locator["automation_id"]])
+    monkeypatch.setattr(driver, "_mouse_module", lambda: mouse)
 
     result = driver.drag_to(WindowsDragToParams(target="Move item", source=source, destination=destination))
 
@@ -888,7 +883,7 @@ def test_pywinauto_driver_drag_supports_locator_and_point_endpoints(
     assert mouse.release_point == expected_end
 
 
-def test_pywinauto_driver_drag_releases_mouse_after_move_failure() -> None:
+def test_pywinauto_driver_drag_releases_mouse_after_move_failure(monkeypatch) -> None:
     from fsq_agent.core.harness._pywinauto_driver import PywinautoWindowsDriver
 
     class FailingMouse:
@@ -903,10 +898,11 @@ def test_pywinauto_driver_drag_releases_mouse_after_move_failure() -> None:
 
         def release(self, *, coords: tuple[int, int], button: str) -> None:
             self.releases.append((coords, button))
+            raise RuntimeError("release failed")
 
     mouse = FailingMouse()
     driver = PywinautoWindowsDriver()
-    driver._mouse_module = lambda: mouse  # type: ignore[attr-defined]
+    monkeypatch.setattr(driver, "_mouse_module", lambda: mouse)
 
     with pytest.raises(RuntimeError, match="move failed"):
         driver.drag_to(

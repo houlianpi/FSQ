@@ -9,8 +9,8 @@ from xml.etree import ElementTree
 import pytest
 
 from fsq_agent.core import AndroidDriverInterface
-from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
 from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
+from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
 from fsq_agent.models import AndroidAssertWithAIParams, ConfigurationError, ReplayPolicy
 
 
@@ -109,7 +109,8 @@ class FakeDevice:
     def swipe(self, sx: int, sy: int, ex: int, ey: int, duration: float) -> None:
         self.calls.append(("swipe", sx, sy, ex, ey, duration))
 
-    def screenshot(self, format: str = "raw") -> bytes:
+    # Match uiautomator2's public keyword exactly so the fake verifies call compatibility.
+    def screenshot(self, format: str = "raw") -> bytes:  # noqa: A002
         self.calls.append(("screenshot", format))
         return FakeImage()
 
@@ -131,7 +132,8 @@ class FakeCompressedDevice(FakeDevice):
 
 
 class FakeImage:
-    def save(self, output: BytesIO, format: str) -> None:
+    # Match Pillow's public keyword exactly so the fake verifies call compatibility.
+    def save(self, output: BytesIO, format: str) -> None:  # noqa: A002
         output.write(f"fake-{format.lower()}".encode())
 
 
@@ -351,7 +353,8 @@ def test_uiautomator2_driver_compacts_android_ui_snapshot_xml() -> None:
 
     result = driver.ui_snapshot({})
 
-    root = ElementTree.fromstring(str(result["xml"]))
+    # The XML comes from the in-process fake device and is trusted test data.
+    root = ElementTree.fromstring(str(result["xml"]))  # noqa: S314
     nodes = list(root)
     assert [node.attrib for node in nodes] == [
         {

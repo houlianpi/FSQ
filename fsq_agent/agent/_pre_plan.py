@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from fsq_agent.models import GoalPrePlan, KnowledgeBundle, SkillBundle
 
-
 PRE_PLAN_AGENT_INSTRUCTIONS = """
 You are fsq-agent's goal pre-planner.
 Convert one planning reference into an ordered list of key actions and one final verification goal using the loaded planning context.

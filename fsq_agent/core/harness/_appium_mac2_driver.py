@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -30,7 +31,6 @@ from fsq_agent.models import (
     MacOSUiSnapshotParams,
 )
 
-
 DEFAULT_APPIUM_MAC2_SERVER_URL = "http://127.0.0.1:4723"
 DEFAULT_MACOS_PAGE_SOURCE_MAX_DEPTH = 12
 DEFAULT_MACOS_ACTION_TIMEOUT_SECONDS = 10
@@ -51,6 +51,14 @@ DEFAULT_MACOS_SNAPSHOT_ATTRIBUTE_KEYS = frozenset(
         "height",
     }
 )
+
+
+def _parse_xml_safely(source: str) -> ElementTree.Element:
+    normalized = source.upper()
+    if "<!DOCTYPE" in normalized or "<!ENTITY" in normalized:
+        raise ElementTree.ParseError("DTD and entity declarations are not allowed.")
+    # DTD and entity declarations are rejected above, preventing attacker-controlled entity expansion.
+    return ElementTree.fromstring(source)  # noqa: S314
 
 
 class AppiumMac2Driver(AIAssertionBackendToolMixin):
@@ -402,7 +410,8 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
             return None
         try:
             return find_element(strategy, locator)
-        except Exception:
+        # Appium and Selenium locator failures use optional-backend exception classes outside the core contract.
+        except Exception:  # noqa: BLE001
             return None
 
     def _click_count(self, params: BaseModel, *, count: int) -> dict[str, object]:
@@ -490,7 +499,8 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         if callable(displayed):
             try:
                 return bool(displayed())
-            except Exception:
+            # Appium element state probes must treat any optional-backend lookup failure as not displayed.
+            except Exception:  # noqa: BLE001
                 return False
         return True
 
@@ -527,13 +537,13 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         if any(index not in coordinates_by_index for index in expected_order):
             return False
         expected_coordinates = [coordinates_by_index[index] for index in expected_order]
-        return all(left <= right + tolerance for left, right in zip(expected_coordinates, expected_coordinates[1:]))
+        return all(left <= right + tolerance for left, right in pairwise(expected_coordinates))
 
     def _simplify_page_source(self, source: str, *, max_depth: int, include_attributes: bool) -> dict[str, object]:
         if not source.strip():
             return {"format": "xml", "root": None, "source_length": 0}
         try:
-            root = ElementTree.fromstring(source)
+            root = _parse_xml_safely(source)
         except ElementTree.ParseError as exc:
             preview = source[:DEFAULT_MACOS_SNAPSHOT_SOURCE_PREVIEW_CHARS]
             return {
@@ -610,7 +620,8 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
             return None
         try:
             size = get_window_size()
-        except Exception:
+        # Appium window probes use optional-backend exception classes outside the core contract.
+        except Exception:  # noqa: BLE001
             return None
         if not isinstance(size, dict):
             return None
@@ -625,7 +636,8 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
             return None
         try:
             return getattr(obj, name, None)
-        except Exception:
+        # WebDriver properties may execute remote calls and raise optional-backend exception classes.
+        except Exception:  # noqa: BLE001
             return None
 
     def _xpath_literal(self, value: str) -> str:
@@ -634,7 +646,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         if '"' not in value:
             return f'"{value}"'
         parts = value.split("'")
-        return "concat(" + ", \"'\", ".join(f"'{part}'" for part in parts) + ")"
+        return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
 
     def _target_missing(self, params: BaseModel) -> dict[str, object]:
         return self._failed(

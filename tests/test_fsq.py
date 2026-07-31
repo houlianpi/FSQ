@@ -9,7 +9,6 @@ from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_f
 from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import ConfigurationError
 
-
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
 name: Fundamental Test bing.com website
@@ -199,7 +198,7 @@ def test_resolve_case_yaml_path_uses_cases_dir_and_requires_suffix(tmp_path: Pat
     legacy_path.write_text("name: legacy\n", encoding="utf-8")
 
     assert resolve_case_yaml_path("case.codex.yaml", cases_dir) == case_path.resolve()
-    with pytest.raises(ConfigurationError, match=".codex.yaml"):
+    with pytest.raises(ConfigurationError, match=r"\.codex\.yaml"):
         resolve_case_yaml_path("legacy.yaml", cases_dir)
 
 
@@ -214,7 +213,7 @@ def test_discover_case_yaml_paths_prefers_recursive_fsq_cases(tmp_path: Path) ->
 
 
 def test_discover_case_yaml_paths_rejects_empty_directory(tmp_path: Path) -> None:
-    with pytest.raises(ConfigurationError, match="No .codex.yaml"):
+    with pytest.raises(ConfigurationError, match=r"No \.codex\.yaml"):
         discover_case_yaml_paths(tmp_path)
 
 

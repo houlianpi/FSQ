@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ class ExecutionLogger:
     def write_event(self, run_id: str, event: str, payload: dict[str, Any]) -> None:
         path = self.log_root / f"{run_id}.jsonl"
         record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "run_id": run_id,
             "event": event,
             "payload": payload,

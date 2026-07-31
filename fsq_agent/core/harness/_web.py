@@ -1,10 +1,12 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from typing import ClassVar
+
 from pydantic import BaseModel, ValidationError
 
-from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core._platform_tools import CommonPlatformTools
+from fsq_agent.core.evidence import ArtifactStore
 from fsq_agent.core.harness._driver_tools import _capability_matches, _discover_driver_capability_definitions, _schema_from_capability_definition, _with_driver_metadata
 from fsq_agent.core.harness._interface import AIAssertionEvaluatorProtocol
 from fsq_agent.core.harness._web_driver import WebDriverInterface
@@ -23,8 +25,8 @@ from fsq_agent.models import (
 
 
 class WebHarness:
-    _RUNNER_STATUSES = {"passed", "failed", "skipped", "cancelled"}
-    _FAILURE_CATEGORIES = {
+    _RUNNER_STATUSES: ClassVar[set[str]] = {"passed", "failed", "skipped", "cancelled"}
+    _FAILURE_CATEGORIES: ClassVar[set[str]] = {
         "configuration_error",
         "context_error",
         "target_resolution_error",
@@ -248,11 +250,7 @@ class WebHarness:
         status_value = output.get("status")
         status = status_value if isinstance(status_value, str) and status_value in self._RUNNER_STATUSES else "passed"
         failure_category_value = output.get("failure_category")
-        failure_category = (
-            failure_category_value
-            if isinstance(failure_category_value, str) and failure_category_value in self._FAILURE_CATEGORIES
-            else None
-        )
+        failure_category = failure_category_value if isinstance(failure_category_value, str) and failure_category_value in self._FAILURE_CATEGORIES else None
         error_message_value = output.get("error_message")
         metadata_value = output.get("metadata")
         artifact_refs_value = output.get("artifact_refs")

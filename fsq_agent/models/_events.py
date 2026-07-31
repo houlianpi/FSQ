@@ -2,11 +2,10 @@
 # Licensed under the MIT License.
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 RunEventType: TypeAlias = Literal[
     "run_started",
@@ -32,7 +31,7 @@ class RunEvent(BaseModel):
     type: RunEventType
     title: str
     sequence: int = Field(default=0, ge=0)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     message: str = ""
     tool_name: str | None = None
     tool_call_id: str | None = None

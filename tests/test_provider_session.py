@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 import asyncio
-from typing import Any
+from typing import Any, ClassVar
 
 from fsq_agent.providers import ModelProviderSession
 from fsq_agent.providers._azure_openai import ProviderClientConfig
@@ -19,7 +19,7 @@ class _LoopBoundResponses:
 
 
 class _LoopBoundAsyncOpenAI:
-    instances: list["_LoopBoundAsyncOpenAI"] = []
+    instances: ClassVar[list["_LoopBoundAsyncOpenAI"]] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -58,9 +58,7 @@ async def test_invoke_responses_sync_from_running_loop_does_not_reuse_closed_loo
     assert len(_LoopBoundAsyncOpenAI.instances) == 1
     client = _LoopBoundAsyncOpenAI.instances[0]
     assert client.closed is True
-    assert client.payloads == [
-        {"model": "test-model", "input": [{"role": "user", "content": "check"}]}
-    ]
+    assert client.payloads == [{"model": "test-model", "input": [{"role": "user", "content": "check"}]}]
 
 
 async def test_invoke_responses_async_reuses_session_client_until_close() -> None:

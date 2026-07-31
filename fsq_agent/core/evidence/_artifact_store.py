@@ -8,7 +8,6 @@ from typing import Any
 
 from fsq_agent.models import EvidenceArtifactKind, EvidenceArtifactRef, StepPhase
 
-
 _ARTIFACT_DIRS: dict[EvidenceArtifactKind, str] = {
     "screenshot": "screenshots",
     "ui_tree": "ui-trees",

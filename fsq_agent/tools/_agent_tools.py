@@ -18,7 +18,6 @@ from fsq_agent.models import (
 from fsq_agent.tools._file_ops import FileOps
 from fsq_agent.tools._tool_artifacts import ToolArtifactStore
 
-
 _AGENT_TOOL_ORDER = (
     "read_file",
     "write_file",
@@ -60,11 +59,9 @@ _AGENT_TOOL_MODELS: dict[str, tuple[str, type[BaseModel]]] = {
 
 @runtime_checkable
 class AgentToolProvider(Protocol):
-    def list_capabilities(self) -> list[AgentToolDefinition]:
-        ...
+    def list_capabilities(self) -> list[AgentToolDefinition]: ...
 
-    async def invoke(self, call: AgentToolCall) -> AgentToolResult:
-        ...
+    async def invoke(self, call: AgentToolCall) -> AgentToolResult: ...
 
 
 class AgentToolRegistry:

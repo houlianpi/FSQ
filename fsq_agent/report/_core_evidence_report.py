@@ -7,7 +7,6 @@ from typing import Any
 
 from fsq_agent.models import EvidenceBundle, ReportArtifact
 
-
 _LIFECYCLE_PHASES = ("onCaseStart", "case", "onCaseComplete")
 _LIFECYCLE_LABELS = {
     "onCaseStart": "Before case",
@@ -92,20 +91,12 @@ class CoreEvidenceReportGenerator:
                     "|---|---:|---|---|",
                 ]
             )
-            for step in report["steps"]:
-                lines.append(
-                    f"| `{step['step_id']}` | `{step['status']}` | "
-                    f"`{step.get('failure_category') or ''}` | {step.get('error_message') or ''} |"
-                )
+            lines.extend(f"| `{step['step_id']}` | `{step['status']}` | `{step.get('failure_category') or ''}` | {step.get('error_message') or ''} |" for step in report["steps"])
 
         failed_steps = [step for step in report["steps"] if step["status"] != "passed"]
         if failed_steps:
             lines.extend(["", "## Failures", ""])
-            for step in failed_steps:
-                lines.append(
-                    f"- `{step['step_id']}` failed with `{step.get('failure_category') or 'unknown'}`: "
-                    f"{step.get('error_message') or 'No error message.'}"
-                )
+            lines.extend(f"- `{step['step_id']}` failed with `{step.get('failure_category') or 'unknown'}`: {step.get('error_message') or 'No error message.'}" for step in failed_steps)
 
         ai_assertions = self._ai_assertions(report)
         if ai_assertions:
@@ -116,13 +107,10 @@ class CoreEvidenceReportGenerator:
                 model = assertion.get("model") or "unknown model"
                 prompt = assertion.get("prompt") or ""
                 explanation = assertion.get("explanation") or assertion.get("error") or "No explanation."
-                lines.append(
-                    f"- `{assertion['step_id']}` `{verdict}` via `{provider}`/`{model}`: {explanation}"
-                )
+                lines.append(f"- `{assertion['step_id']}` `{verdict}` via `{provider}`/`{model}`: {explanation}")
                 if prompt:
                     lines.append(f"  Prompt: {prompt}")
-                for artifact_path in assertion.get("artifact_paths", []):
-                    lines.append(f"  Artifact: `{artifact_path}`")
+                lines.extend(f"  Artifact: `{artifact_path}`" for artifact_path in assertion.get("artifact_paths", []))
 
         lines.extend(["", "## Events", ""])
         for event in report["events"]:
@@ -132,8 +120,7 @@ class CoreEvidenceReportGenerator:
 
         lines.extend(["", "## Artifacts", ""])
         if report["artifacts"]:
-            for artifact in report["artifacts"]:
-                lines.append(f"- `{artifact['kind']}` `{artifact['path']}`")
+            lines.extend(f"- `{artifact['kind']}` `{artifact['path']}`" for artifact in report["artifacts"])
         else:
             lines.append("No artifacts recorded.")
         lines.append("")
@@ -167,18 +154,18 @@ class CoreEvidenceReportGenerator:
             "| Phase | Source | Action | Step | Status | Failure Category | Error |",
             "|---|---|---|---|---:|---|---|",
         ]
-        for step in steps:
-            lines.append(
-                "| {phase} | {source} | `{action}` | `{step_id}` | `{status}` | `{failure}` | {error} |".format(
-                    phase=step["phase_label"],
-                    source=self._escape_markdown_table(str(step["source"])),
-                    action=self._escape_backticks(str(step["action"])),
-                    step_id=step["step_id"],
-                    status=step["status"],
-                    failure=step.get("failure_category") or "",
-                    error=self._escape_markdown_table(str(step.get("error_message") or "")),
-                )
+        lines.extend(
+            "| {phase} | {source} | `{action}` | `{step_id}` | `{status}` | `{failure}` | {error} |".format(
+                phase=step["phase_label"],
+                source=self._escape_markdown_table(str(step["source"])),
+                action=self._escape_backticks(str(step["action"])),
+                step_id=step["step_id"],
+                status=step["status"],
+                failure=step.get("failure_category") or "",
+                error=self._escape_markdown_table(str(step.get("error_message") or "")),
             )
+            for step in steps
+        )
         lines.append("")
         return lines
 

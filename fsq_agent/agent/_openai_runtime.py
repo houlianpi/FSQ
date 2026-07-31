@@ -2,29 +2,17 @@
 # Licensed under the MIT License.
 
 import asyncio
+import inspect
 import json
 import os
-from pathlib import Path
 import threading
 import time
-import inspect
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.config import Settings, validate_runtime_settings
-from fsq_agent.core import (
-    ArtifactStore,
-    HarnessFactory,
-    HarnessInterface,
-    RuntimeSecretStore,
-)
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
-from fsq_agent.models import AgentFinalOutput, ConfigurationError, GoalPrePlan, KnowledgeBundle, PlanningError, RunEvent, RunEventSink, SkillBundle, StepResult, Task
-from fsq_agent.providers import build_ai_assertion_evaluator, build_model_provider_session
-from fsq_agent.tools import AgentToolAdapter, ToolArtifactStore
-
-from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
 from fsq_agent.agent._pre_plan import (
     PRE_PLAN_AGENT_INSTRUCTIONS,
     ReadKnowledgeIndexArgs,
@@ -33,9 +21,19 @@ from fsq_agent.agent._pre_plan import (
     page_file_from_index,
     safe_page_relative_path,
 )
+from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
 from fsq_agent.agent._structured_output import coerce_agent_final_output, coerce_string_list, serialize_agent_final_output
 from fsq_agent.agent._verification_task import VERIFICATION_AGENT_INSTRUCTIONS, VerificationEvidenceBuilder
-
+from fsq_agent.config import Settings, validate_runtime_settings
+from fsq_agent.core import (
+    ArtifactStore,
+    HarnessFactory,
+    HarnessInterface,
+    RuntimeSecretStore,
+)
+from fsq_agent.models import AgentFinalOutput, ConfigurationError, GoalPrePlan, KnowledgeBundle, PlanningError, RunEvent, RunEventSink, SkillBundle, StepResult, Task
+from fsq_agent.providers import build_ai_assertion_evaluator, build_model_provider_session
+from fsq_agent.tools import AgentToolAdapter, ToolArtifactStore
 
 _RUNTIME_TOOL_NAMES = {
     "read_knowledge_index",
@@ -361,7 +359,8 @@ class OpenAIAgentsRuntime:
                     run_event = self._map_stream_event(event, run_id, task.id)
                     if run_event:
                         await self._emit(event_sink, run_event)
-            except Exception as exc:
+            # SDK and provider packages raise implementation-specific exceptions that become failed steps.
+            except Exception as exc:  # noqa: BLE001
                 duration_ms = int((time.perf_counter() - started) * 1000)
                 failure_metadata = _sdk_failure_metadata(exc)
                 error_message = self._replace_secret_values(str(exc), self._runtime_secret_values())
@@ -388,7 +387,8 @@ class OpenAIAgentsRuntime:
                         tool_output=failure_metadata,
                     )
                 ]
-        except Exception as exc:
+        # Runtime startup dependencies may fail with package-specific exceptions that become failed steps.
+        except Exception as exc:  # noqa: BLE001
             duration_ms = int((time.perf_counter() - started) * 1000)
             failure_metadata = _sdk_failure_metadata(exc)
             error_message = self._replace_secret_values(str(exc), self._runtime_secret_values())
@@ -445,7 +445,7 @@ class OpenAIAgentsRuntime:
                 duration_ms=duration_ms,
                 tool_name="openai_agents.runner",
                 tool_output=final_output.model_dump(mode="json") if isinstance(final_output, AgentFinalOutput) else serialized_final_output,
-            )
+            ),
         ]
 
     async def _build_harness_with_timeout(self, run_id: str) -> HarnessInterface:
@@ -465,7 +465,8 @@ class OpenAIAgentsRuntime:
         def build_harness() -> None:
             try:
                 harness = self._build_harness(run_id)
-            except Exception as exc:
+            # Backend construction failures must be forwarded from the worker thread to the event loop.
+            except Exception as exc:  # noqa: BLE001
                 try:
                     loop.call_soon_threadsafe(set_exception, exc)
                 except RuntimeError:
@@ -641,8 +642,7 @@ class OpenAIAgentsRuntime:
             function_tool_cls(
                 name="read_knowledge_page",
                 description=(
-                    "Read one optional page knowledge node from the pre-plan knowledge directory by page_id or relative file path. "
-                    "Use this only for pages needed to continue the goal action chain."
+                    "Read one optional page knowledge node from the pre-plan knowledge directory by page_id or relative file path. Use this only for pages needed to continue the goal action chain."
                 ),
                 params_json_schema=ReadKnowledgePageArgs.model_json_schema(),
                 on_invoke_tool=self._read_knowledge_page_tool,
@@ -651,19 +651,17 @@ class OpenAIAgentsRuntime:
 
     def _pre_plan_tool_summary(self) -> list[dict[str, Any]]:
         registry = build_capability_registry(platform=self.settings.harness.platform)
-        tools: list[dict[str, Any]] = []
-        for capability in registry.snapshot().capabilities:
-            tools.append(
-                {
-                    "name": capability.name,
-                    "alias": capability.replay.alias if capability.replay else None,
-                    "description": capability.description,
-                    "executor_kind": capability.executor_kind,
-                    "step_kind": capability.step_kind,
-                    "platform": capability.platform,
-                }
-            )
-        return tools
+        return [
+            {
+                "name": capability.name,
+                "alias": capability.replay.alias if capability.replay else None,
+                "description": capability.description,
+                "executor_kind": capability.executor_kind,
+                "step_kind": capability.step_kind,
+                "platform": capability.platform,
+            }
+            for capability in registry.snapshot().capabilities
+        ]
 
     def _pre_plan_knowledge_dir(self) -> Path:
         knowledge = self.settings.agent_context.knowledge
@@ -782,7 +780,8 @@ class OpenAIAgentsRuntime:
                 run_event = self._map_stream_event(event, run_id, task.id)
                 if run_event:
                     await self._emit(event_sink, run_event)
-        except Exception as exc:
+        # Verifier SDK/provider failures must become reportable verification step failures.
+        except Exception as exc:  # noqa: BLE001
             duration_ms = int((time.perf_counter() - started) * 1000)
             return [
                 StepResult(
@@ -831,11 +830,7 @@ class OpenAIAgentsRuntime:
         input_filter = None
         if trimming.enabled:
             trimmable_tools = set(trimming.trimmable_tools) if trimming.trimmable_tools else None
-            artifact_store = (
-                ToolArtifactStore(self.settings.output.runs_dir, run_id, local_output)
-                if run_id and local_output.artifact_enabled
-                else None
-            )
+            artifact_store = ToolArtifactStore(self.settings.output.runs_dir, run_id, local_output) if run_id and local_output.artifact_enabled else None
             sdk_filter = tool_output_trimmer_cls(
                 recent_turns=trimming.recent_turns,
                 max_output_chars=trimming.max_tool_output_chars,
@@ -1088,10 +1083,7 @@ class OpenAIAgentsRuntime:
         sensitive = ("token", "key", "secret", "password", "authorization", "cookie")
         secret_values = self._runtime_secret_values()
         if isinstance(value, dict):
-            return {
-                key: "***" if any(part in str(key).lower() for part in sensitive) else self._redact(item)
-                for key, item in value.items()
-            }
+            return {key: "***" if any(part in str(key).lower() for part in sensitive) else self._redact(item) for key, item in value.items()}
         if isinstance(value, list):
             return [self._redact(item) for item in value]
         if isinstance(value, str):
@@ -1183,7 +1175,8 @@ class OpenAIAgentsRuntime:
             return None
         try:
             payload = json.loads(text)
-        except Exception:
+        # Arbitrary malformed SDK tool output is treated as having no artifact reference.
+        except json.JSONDecodeError:
             return None
         if not isinstance(payload, dict):
             return None
@@ -1267,5 +1260,6 @@ class OpenAIAgentsRuntime:
             return None
         try:
             return json.loads(text)
-        except Exception:
+        # Arbitrary malformed SDK tool output is treated as an absent JSON payload.
+        except json.JSONDecodeError:
             return None
