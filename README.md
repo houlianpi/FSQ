@@ -221,32 +221,13 @@ FSQ_MACOS_BUNDLE_ID=com.example.app
 
 ## How It Works
 
-```
-                         FSQ Dual Loop
-    ┌────────────────────────────────────────────────┐
-    │                                                │
-    │   ┌───────────┐          ┌───────────┐        │
-    │   │  Dynamic  │ generates│   Strict  │        │
-    │   │   (AI)    │────────▶│  (Replay)  │        │
-    │   └─────┬─────┘          └─────┬─────┘        │
-    │         │                      │               │
-    │         ▼                      ▼               │
-    │   ┌─────────────────────────────────────┐      │
-    │   │       Shared Harness Core           │      │
-    │   │   Web · Android · Windows · macOS   │      │
-    │   └──────────────────┬──────────────────┘      │
-    │                      │                         │
-    │                      ▼                         │
-    │   ┌─────────────────────────────────────┐      │
-    │   │         Evidence Layer              │      │
-    │   │  screenshots · UI snapshots · traces│      │
-    │   │  verification · action results      │      │
-    │   └─────────────────────────────────────┘      │
-    └────────────────────────────────────────────────┘
+<p align="center">
+  <img src="docs/assets/fsq-agent-architecture-v2.png" alt="FSQ Architecture: Dual Loop, Shared Harness, Knowledge System, and Debug System" width="720">
+</p>
 
-    Dynamic → LLM agent explores → evidence captured → YAML generated
-    Strict  → replays YAML (no LLM) → evidence captured → pass/fail
-```
+**The Dual Loop in a nutshell:**
+- **Dynamic (AI)** → LLM agent explores → evidence captured at every step → replayable YAML generated
+- **Strict (Replay)** → replays YAML deterministically (no LLM) → evidence captured → pass/fail
 
 ---
 
