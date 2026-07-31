@@ -241,10 +241,7 @@ def test_report_generator_classifies_provider_content_filter(tmp_path: Path) -> 
             step_id=1,
             status="failed",
             actual_outcome="OpenAI Agents SDK run ended with an incomplete provider response due to content filtering.",
-            error=(
-                "Responses stream ended with terminal event `response.incomplete`. "
-                "status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter')."
-            ),
+            error=("Responses stream ended with terminal event `response.incomplete`. status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter')."),
             tool_name="openai_agents.runner",
             tool_output={"failure_category": "provider_content_filter", "failure_reason": "content_filter"},
         )
@@ -275,7 +272,7 @@ def test_report_generator_summarizes_common_tool_calls_without_call_id(tmp_path:
                         "timestamp": "2026-05-09T00:00:00Z",
                         "tool_name": "search_artifact",
                         "tool_arguments": {"query": "Settings"},
-                            "payload": {"tool_origin": "common"},
+                        "payload": {"tool_origin": "common"},
                     }
                 ),
                 json.dumps(
@@ -285,7 +282,7 @@ def test_report_generator_summarizes_common_tool_calls_without_call_id(tmp_path:
                         "timestamp": "2026-05-09T00:00:01Z",
                         "tool_name": "search_artifact",
                         "tool_output_preview": "match",
-                            "payload": {"tool_origin": "common", "artifact_path": "output/runs/run/artifacts/tools/a.json"},
+                        "payload": {"tool_origin": "common", "artifact_path": "output/runs/run/artifacts/tools/a.json"},
                     }
                 ),
             ]

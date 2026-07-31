@@ -31,7 +31,6 @@ from fsq_agent.models import (
     WindowsUiSnapshotParams,
 )
 
-
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -198,10 +197,7 @@ def _discover_driver_function_schemas(
     platform: HarnessPlatform,
     metadata: dict[str, object] | None = None,
 ) -> list[HarnessFunctionSchema]:
-    return [
-        _schema_from_capability_definition(definition, platform=platform)
-        for definition in _discover_driver_capability_definitions(driver, platform=platform, metadata=metadata)
-    ]
+    return [_schema_from_capability_definition(definition, platform=platform) for definition in _discover_driver_capability_definitions(driver, platform=platform, metadata=metadata)]
 
 
 def _discover_driver_capability_definitions(

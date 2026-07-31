@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from pathlib import Path
-
+import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
@@ -38,9 +38,7 @@ async def test_agent_tool_file_ops_are_scoped(tmp_path: Path) -> None:
     provider = _provider(tmp_path)
     executor = AgentToolExecutor(_registry(provider))
 
-    result = await executor.execute(
-        AgentToolCall(tool_name="write_file", arguments={"path": "nested/out.txt", "content": "hello"})
-    )
+    result = await executor.execute(AgentToolCall(tool_name="write_file", arguments={"path": "nested/out.txt", "content": "hello"}))
 
     assert result.status == "success"
     assert (tmp_path / "nested" / "out.txt").read_text(encoding="utf-8") == "hello"
@@ -90,10 +88,7 @@ async def test_agent_tool_adapter_emits_agent_tool_origin_without_replay(tmp_pat
     (tmp_path / "file.txt").write_text("hello", encoding="utf-8")
     events: list[RunEvent] = []
     adapter = AgentToolAdapter(_registry(_provider(tmp_path)))
-    read_tool = next(
-        tool for tool in adapter.build_tools(_FakeFunctionTool, run_id="run-1", task_id="task-1", event_sink=events.append)
-        if tool.name == "read_file"
-    )
+    read_tool = next(tool for tool in adapter.build_tools(_FakeFunctionTool, run_id="run-1", task_id="task-1", event_sink=events.append) if tool.name == "read_file")
 
     output = await read_tool.on_invoke_tool(None, json.dumps({"path": "file.txt"}))
 
@@ -122,7 +117,8 @@ async def test_agent_tool_writes_full_output_artifact_and_returns_inline(tmp_pat
 
     payload = json.loads(output)
     artifact_path = Path(payload["artifact"]["path"])
-    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact_text = await asyncio.to_thread(artifact_path.read_text, encoding="utf-8")
+    artifact = json.loads(artifact_text)
     assert payload["model_output"] == "full"
     assert payload["result"]["output"]["output"] == "hello"
     assert artifact["metadata"] == {"path": "file.txt"}

@@ -9,6 +9,6 @@ __all__ = [
     "CapabilityActionCatalog",
     "CapabilityActionDefinition",
     "capability",
-    "platform_driver_capability",
     "discover_capability_definitions",
+    "platform_driver_capability",
 ]

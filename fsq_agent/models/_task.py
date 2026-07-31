@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fsq_agent.models._report import ReportArtifact
 
-
 StepStatus = Literal["success", "failed", "skipped", "adjusted"]
 VerificationStatus = Literal["success", "failed", "inconclusive"]
 PlanningReferenceKind = Literal["goal", "raw_case", "unknown"]

@@ -14,8 +14,9 @@ from fsq_agent.models import (
     SourceRef,
 )
 
-
 _OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording"}
+
+
 class FsqExecutableStepAdapter:
     def __init__(self, registry_snapshot: CapabilityRegistrySnapshot) -> None:
         self.registry_snapshot = registry_snapshot

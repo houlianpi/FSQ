@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import os
 from dataclasses import dataclass, field
 from typing import Any
-import os
 
 from fsq_agent.config import Settings
 from fsq_agent.models import ConfigurationError

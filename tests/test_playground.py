@@ -1,15 +1,15 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import base64
 import asyncio
+import base64
 import json
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import Request
-from urllib.request import urlopen
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import pytest
 import yaml
@@ -18,9 +18,37 @@ from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
-from fsq_agent.playground._execution import PlaygroundExecutionHandle, _PlaygroundEvidenceRecorder, _event_sink, _run_dynamic_task, task_from_case_yaml, task_from_goal
+from fsq_agent.playground._execution import PlaygroundExecutionHandle, _event_sink, _PlaygroundEvidenceRecorder, _run_dynamic_task, task_from_case_yaml, task_from_goal
 from fsq_agent.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
 from fsq_agent.playground._state import BusyError, PlaygroundState
+
+
+def _require_loopback(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        raise ValueError("Test HTTP requests must target an in-process loopback server")
+
+
+def _open_loopback(request: str | Request):
+    url = request.full_url if isinstance(request, Request) else request
+    _require_loopback(url)
+    # The URL is restricted above to an HTTP loopback host owned by the test.
+    return urlopen(request, timeout=5)  # noqa: S310
+
+
+def _loopback_json_put_request(url: str, payload: dict[str, object]) -> Request:
+    _require_loopback(url)
+    # The URL is restricted above to an HTTP loopback host owned by the test.
+    return Request(  # noqa: S310
+        url,
+        method="PUT",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(payload).encode("utf-8"),
+    )
+
+
+def _preview_token(run_id: str, step_id: str) -> str:
+    return f"{run_id}:{step_id}"
 
 
 def test_parse_adb_devices_discovers_default_device() -> None:
@@ -146,12 +174,8 @@ def test_playground_state_locks_concurrent_tasks(tmp_path: Path) -> None:
     state.create_session("device-1")
     request_id = state.start_task("Do it")
 
-    try:
+    with pytest.raises(BusyError, match="already running"):
         state.start_task("Do something else")
-    except BusyError as exc:
-        assert "already running" in str(exc)
-    else:
-        raise AssertionError("Expected BusyError")
 
     result = TaskResult(
         task_id="task",
@@ -226,6 +250,7 @@ def test_playground_server_report_endpoint_returns_content(tmp_path: Path) -> No
     assert status == 200
     assert payload["runId"] == "run-1"
     assert payload["content"] == "# report"
+
 
 def test_playground_server_load_run_accepts_id_relative_and_absolute_paths(tmp_path: Path) -> None:
     settings = Settings()
@@ -410,9 +435,7 @@ def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -
         {"key": "description", "label": "Description", "value": "Open sample"},
         {"key": "path", "label": "Path", "value": "sample.codex.yaml"},
     ]
-    assert payload["display"]["steps"] == [
-        {"index": 1, "displayIndex": 1, "artifactStepId": None, "action": "launchApp", "kind": "setup", "badges": [], "params": []}
-    ]
+    assert payload["display"]["steps"] == [{"index": 1, "displayIndex": 1, "artifactStepId": None, "action": "launchApp", "kind": "setup", "badges": [], "params": []}]
 
 
 def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_revision(tmp_path: Path) -> None:
@@ -445,9 +468,7 @@ def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_rev
             {"index": 1, "action": "runShell", "value": "echo first"},
             {"index": 2, "action": "runCase", "value": "hooks/login.codex.yaml"},
         ],
-        "onCaseComplete": [
-            {"index": 1, "action": "runShell", "value": "echo complete"}
-        ],
+        "onCaseComplete": [{"index": 1, "action": "runShell", "value": "echo complete"}],
     }
 
 
@@ -521,12 +542,7 @@ def test_playground_server_lifecycle_save_preserves_leading_separator_quotes_and
     settings.cases.dir.mkdir()
     case_path = settings.cases.dir / "roundtrip.codex.yaml"
     case_path.write_text(
-        "---\n"
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: \"Quoted case\"\n"
-        "platform: android\n"
-        "---\n"
-        "- launchApp: {}\n",
+        '---\nschemaVersion: fsq.ai-test/v1\nname: "Quoted case"\nplatform: android\n---\n- launchApp: {}\n',
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
@@ -590,15 +606,9 @@ def test_playground_server_lifecycle_save_reports_path_and_size_errors(tmp_path:
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
     body = {"revision": "sha256:none", "onCaseStart": [], "onCaseComplete": []}
 
-    missing_status, _missing_payload = server.handle_put(
-        "/yaml/input/lifecycle", {"path": "missing.codex.yaml", **body}
-    )
-    directory_status, _directory_payload = server.handle_put(
-        "/yaml/input/lifecycle", {"path": "folder.codex.yaml", **body}
-    )
-    oversized_status, _oversized_payload = server.handle_put(
-        "/yaml/input/lifecycle", {"path": "large-save.codex.yaml", **body}
-    )
+    missing_status, _missing_payload = server.handle_put("/yaml/input/lifecycle", {"path": "missing.codex.yaml", **body})
+    directory_status, _directory_payload = server.handle_put("/yaml/input/lifecycle", {"path": "folder.codex.yaml", **body})
+    oversized_status, _oversized_payload = server.handle_put("/yaml/input/lifecycle", {"path": "large-save.codex.yaml", **body})
 
     assert missing_status == 404
     assert directory_status == 400
@@ -686,7 +696,7 @@ def test_playground_server_lifecycle_serialization_failure_returns_400(tmp_path:
         def dump_all(self, documents: object, output: object) -> None:
             raise ValueError("serialize failed")
 
-    monkeypatch.setattr("fsq_agent.playground._yaml_lifecycle._round_trip_yaml", lambda: FailingYaml())
+    monkeypatch.setattr("fsq_agent.playground._yaml_lifecycle._round_trip_yaml", FailingYaml)
 
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
@@ -718,9 +728,7 @@ def test_playground_server_lifecycle_result_size_limit_preserves_source(tmp_path
         {
             "path": "result-large.codex.yaml",
             "revision": loaded["revision"],
-            "onCaseStart": [
-                {"action": "runShell", "value": "x" * YAML_DISPLAY_SIZE_LIMIT_BYTES}
-            ],
+            "onCaseStart": [{"action": "runShell", "value": "x" * YAML_DISPLAY_SIZE_LIMIT_BYTES}],
             "onCaseComplete": [],
         },
     )
@@ -960,8 +968,8 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
     assert {field["key"]: field["value"] for field in payload["display"]["metadata"]["fields"]}["path"] == str(recorded_path)
     assert payload["display"]["steps"][0]["action"] == "inputText"
     assert payload["display"]["steps"][0]["params"] == [
-            {"key": "text", "value": "TEST_PASSWORD", "kind": "scalar"},
-            {"key": "textType", "value": "runtimeSecret", "kind": "scalar"},
+        {"key": "text", "value": "TEST_PASSWORD", "kind": "scalar"},
+        {"key": "textType", "value": "runtimeSecret", "kind": "scalar"},
         {"key": "target", "value": "Password", "kind": "scalar"},
         {
             "key": "locator",
@@ -982,8 +990,7 @@ def _recorded_run_with_events(tmp_path: Path, *, events: list[dict], commands: s
     run_dir.mkdir(parents=True)
     recorded_path = run_dir / "recorded.codex.yaml"
     recorded_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n"
-        + (commands or "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n"),
+        "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n" + (commands or "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n"),
         encoding="utf-8",
     )
     (run_dir / "recording.json").write_text(
@@ -1427,9 +1434,7 @@ def test_playground_server_step_artifacts_endpoint_resolves_by_artifact_step_id(
                     "phase_reports": [
                         {
                             "phase": "invoke",
-                            "metadata": {
-                                "harness_output": {"xml": '<hierarchy><node text="Recorded" /></hierarchy>'}
-                            },
+                            "metadata": {"harness_output": {"xml": '<hierarchy><node text="Recorded" /></hierarchy>'}},
                         }
                     ],
                 },
@@ -1491,6 +1496,41 @@ def test_playground_server_step_artifacts_extracts_xml_from_ui_snapshot(tmp_path
     assert artifact["kind"] == "ui_snapshot"
     assert artifact["mimeType"] == "application/xml"
     assert artifact["content"] == '<hierarchy>\n  <node text="Before" />\n</hierarchy>'
+
+
+def test_playground_server_step_artifacts_does_not_expand_xml_entities(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    snapshot_path = run_dir / "artifacts" / "ui-snapshots" / "before.json"
+    snapshot_path.parent.mkdir(parents=True)
+    xml = '<!DOCTYPE hierarchy [<!ENTITY injected "expanded">]><hierarchy><node text="&injected;" /></hierarchy>'
+    snapshot_path.write_text(json.dumps({"xml": xml}), encoding="utf-8")
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "kind": "ui_snapshot",
+                        "step_id": "agent-click-1",
+                        "path": "artifacts/ui-snapshots/before.json",
+                        "phase": "prepare",
+                        "reason": "before-action",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/step-artifacts/run-1/agent-click-1", {})
+
+    assert status == 200
+    artifact = payload["artifacts"][0]
+    assert artifact["mimeType"] == "application/xml"
+    assert artifact["content"] == xml
+    assert "expanded" in artifact["content"]
 
 
 def test_playground_server_step_artifacts_endpoint_reports_missing_run(tmp_path: Path) -> None:
@@ -1883,20 +1923,21 @@ def test_playground_server_preview_endpoint_returns_latest_screenshot(tmp_path: 
     screenshot_path.write_bytes(b"preview")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
     request_id = server.state.start_task("Strict")
+    preview_token = _preview_token("run-1", "step-1")
     server.state.set_preview(
         request_id,
         {
             "runId": "run-1",
             "path": "artifacts/screenshots/step-1.png",
             "timestamp": "2026-06-17T10:49:07+00:00",
-            "token": "run-1:step-1",
+            "token": preview_token,
         },
     )
 
     status, payload = server.handle_get(f"/preview/{request_id}", {})
 
     assert status == 200
-    assert payload["token"] == "run-1:step-1"
+    assert payload["token"] == preview_token
     assert base64.b64decode(payload["screenshot"]) == b"preview"
 
 
@@ -2040,6 +2081,7 @@ def test_playground_web_platform_session_endpoints_are_unavailable() -> None:
     assert runtime_payload["metadata"]["browserExecutableConfigured"] is True
     assert runtime_payload["metadata"]["headless"] is False
     assert runtime_payload["metadata"]["baseUrlPresent"] is True
+
 
 def test_playground_windows_platform_does_not_require_android_session(monkeypatch) -> None:
     settings = Settings(harness={"platform": "windows", "windows": {"app_path": "C:/App/app.exe"}})
@@ -2574,10 +2616,14 @@ def test_playground_strict_preflight_failure_runs_no_hooks_or_harness(tmp_path: 
     )
     shell_calls: list[str] = []
     harness_builds: list[bool] = []
-    monkeypatch.setattr("fsq_agent._strict_lifecycle._run_shell_command", lambda command: shell_calls.append(command))
+
+    def record_harness_build(*_args: object, **_kwargs: object) -> None:
+        harness_builds.append(True)
+
+    monkeypatch.setattr("fsq_agent._strict_lifecycle._run_shell_command", shell_calls.append)
     monkeypatch.setattr(
         "fsq_agent.playground._execution._build_strict_harness",
-        lambda *args, **kwargs: harness_builds.append(True),
+        record_harness_build,
     )
     state = PlaygroundState()
     request_id = state.start_task("Preflight")
@@ -2609,12 +2655,7 @@ def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Pat
     settings.cases.dir.mkdir()
     case_path = settings.cases.dir / "no-hooks.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: No Hooks\n"
-        "platform: android\n"
-        "appId: com.example\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: No Hooks\nplatform: android\nappId: com.example\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     calls: list[str] = []
@@ -2625,9 +2666,7 @@ def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Pat
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "core-report.md"
         report_path.write_text("report", encoding="utf-8")
-        report_path.with_suffix(".json").write_text(
-            '{"summary":{"status":"passed","failed_steps":0}}', encoding="utf-8"
-        )
+        report_path.with_suffix(".json").write_text('{"summary":{"status":"passed","failed_steps":0}}', encoding="utf-8")
         manifest_path = output_dir / "evidence-manifest.json"
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
@@ -2659,24 +2698,12 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
     settings.cases.dir.mkdir()
     child_path = settings.cases.dir / "child.codex.yaml"
     child_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Child\n"
-        "platform: android\n"
-        "---\n"
-        "- tapOn:\n"
-        "    target: Child\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
     root_path = settings.cases.dir / "root-child.codex.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Root Child\n"
-        "platform: android\n"
-        "appId: com.example\n"
-        "onCaseStart:\n"
-        "- runCase: child.codex.yaml\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Root Child\nplatform: android\nappId: com.example\nonCaseStart:\n- runCase: child.codex.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     actions: list[str] = []
@@ -3012,7 +3039,7 @@ def test_playground_server_serves_status_over_http(tmp_path: Path) -> None:
     server = PlaygroundServer(Settings(), PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
     server.start()
     try:
-        with urlopen(f"{server.url}/status", timeout=5) as response:
+        with _open_loopback(f"{server.url}/status") as response:
             payload = json.loads(response.read().decode("utf-8"))
     finally:
         server.stop()
@@ -3036,29 +3063,23 @@ def test_playground_server_saves_yaml_lifecycle_over_http(tmp_path: Path) -> Non
     server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
     server.start()
     try:
-        with urlopen(f"{server.url}/yaml/input?path=http.codex.yaml", timeout=5) as response:
+        with _open_loopback(f"{server.url}/yaml/input?path=http.codex.yaml") as response:
             loaded = json.loads(response.read().decode("utf-8"))
-        request = Request(
+        request = _loopback_json_put_request(
             f"{server.url}/yaml/input/lifecycle",
-            method="PUT",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(
-                {
-                    "path": "http.codex.yaml",
-                    "revision": loaded["revision"],
-                    "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
-                    "onCaseComplete": [],
-                }
-            ).encode("utf-8"),
+            {
+                "path": "http.codex.yaml",
+                "revision": loaded["revision"],
+                "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
+                "onCaseComplete": [],
+            },
         )
-        with urlopen(request, timeout=5) as response:
+        with _open_loopback(request) as response:
             payload = json.loads(response.read().decode("utf-8"))
     finally:
         server.stop()
 
-    assert payload["display"]["lifecycle"]["onCaseStart"] == [
-        {"index": 1, "action": "runShell", "value": "echo setup"}
-    ]
+    assert payload["display"]["lifecycle"]["onCaseStart"] == [{"index": 1, "action": "runShell", "value": "echo setup"}]
 
 
 def test_playground_server_rejects_stale_yaml_lifecycle_over_http(tmp_path: Path) -> None:
@@ -3075,24 +3096,20 @@ def test_playground_server_rejects_stale_yaml_lifecycle_over_http(tmp_path: Path
     server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
     server.start()
     try:
-        with urlopen(f"{server.url}/yaml/input?path=http-conflict.codex.yaml", timeout=5) as response:
+        with _open_loopback(f"{server.url}/yaml/input?path=http-conflict.codex.yaml") as response:
             loaded = json.loads(response.read().decode("utf-8"))
         case_path.write_text(external, encoding="utf-8")
-        request = Request(
+        request = _loopback_json_put_request(
             f"{server.url}/yaml/input/lifecycle",
-            method="PUT",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(
-                {
-                    "path": "http-conflict.codex.yaml",
-                    "revision": loaded["revision"],
-                    "onCaseStart": [{"action": "runShell", "value": "echo draft"}],
-                    "onCaseComplete": [],
-                }
-            ).encode("utf-8"),
+            {
+                "path": "http-conflict.codex.yaml",
+                "revision": loaded["revision"],
+                "onCaseStart": [{"action": "runShell", "value": "echo draft"}],
+                "onCaseComplete": [],
+            },
         )
         with pytest.raises(HTTPError) as error:
-            urlopen(request, timeout=5)
+            _open_loopback(request)
         payload = json.loads(error.value.read().decode("utf-8"))
     finally:
         server.stop()
@@ -3107,8 +3124,8 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     html = (static_dir / "index.html").read_text(encoding="utf-8")
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
-    clear_page_body = script[script.index("function clearPage()"):script.index("async function refreshStatus()")]
-    start_execution_body = script[script.index("async function startExecution(payload)"):script.index("async function cancelExecution()")]
+    clear_page_body = script[script.index("function clearPage()") : script.index("async function refreshStatus()")]
+    start_execution_body = script[script.index("async function startExecution(payload)") : script.index("async function cancelExecution()")]
 
     assert 'class="section progress-section"' not in html
     assert html.index('id="yaml-input-tab"') < html.index('id="yaml-recorded-tab"') < html.index('id="yaml-progress-tab"')
@@ -3125,8 +3142,8 @@ def test_playground_static_progress_is_right_side_tab_and_numbered() -> None:
     assert "step-artifact-preview" in html
     assert "progress-pane" in html
     assert "panel-resizer" in html
-    assert "role=\"separator\"" in html
-    assert "aria-orientation=\"vertical\"" in html
+    assert 'role="separator"' in html
+    assert 'aria-orientation="vertical"' in html
     assert "replay-screenshots" not in html
     assert 'id="replay-video" controls' in html
     assert 'id="replay-video-play"' not in html
@@ -3497,11 +3514,8 @@ def test_playground_static_hides_session_section_for_non_android_platforms() -> 
 def test_playground_static_preserves_android_auto_session_error() -> None:
     script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
-    refresh_body = script[script.index("async function refreshAll()"):script.index("function clearPage()")]
-    auto_body = script[
-        script.index("async function autoCreateSessionIfPossible("):
-        script.index("async function ensureSession()")
-    ]
+    refresh_body = script[script.index("async function refreshAll()") : script.index("function clearPage()")]
+    auto_body = script[script.index("async function autoCreateSessionIfPossible(") : script.index("async function ensureSession()")]
 
     assert "const sessionReady = await autoCreateSessionIfPossible({ silent: true });" in refresh_body
     assert "if (sessionReady) await refreshStatus();" in refresh_body
@@ -3536,8 +3550,8 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     assert "Discard unsaved lifecycle changes and reload YAML?" in script
     assert "function lifecycleValidationError()" in script
     assert "Lifecycle action values cannot be empty." in lifecycle_model
-    update_toolbar_body = script[script.index("function updateLifecycleToolbar()"):script.index("async function saveLifecycleDraft()")]
-    save_body = script[script.index("async function saveLifecycleDraft()"):script.index("function discardLifecycleDraft()")]
+    update_toolbar_body = script[script.index("function updateLifecycleToolbar()") : script.index("async function saveLifecycleDraft()")]
+    save_body = script[script.index("async function saveLifecycleDraft()") : script.index("function discardLifecycleDraft()")]
     assert "setYamlInputStatus(invalid, 'error')" not in update_toolbar_body
     assert "Boolean(invalid)" not in update_toolbar_body
     assert "setYamlInputStatus(validationError, 'error')" in save_body
@@ -3547,7 +3561,7 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     assert "'.yaml-lifecycle-section select, .yaml-lifecycle-section input, .yaml-lifecycle-section button'" in script
     assert "const editorDisabled = Boolean(state.currentRequestId || state.finishingRun || state.yamlLifecycleSaving)" in script
     assert "if (!Object.hasOwn(control.dataset, 'lifecycleWasDisabled'))" in script
-    finishing_block = script[script.index("state.finishingRun = true;"):script.index("scheduleClearActiveYamlStepCard();")]
+    finishing_block = script[script.index("state.finishingRun = true;") : script.index("scheduleClearActiveYamlStepCard();")]
     assert "updateLifecycleToolbar();" in finishing_block
     assert "showToast('Lifecycle hooks saved.')" in script
     assert "function showToast(message, durationMs = 2000)" in script
@@ -3556,7 +3570,7 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
     assert "function discardLifecycleDraft()" in script
     assert "state.yamlLifecycleSnapshot = cloneLifecycle(payload.display?.lifecycle" in script
     assert "setYamlInputStatus(error.message, 'error')" in script
-    catch_body = save_body[save_body.index("} catch (error) {"):save_body.index("} finally {")]
+    catch_body = save_body[save_body.index("} catch (error) {") : save_body.index("} finally {")]
     assert "state.yamlLifecycleDraft =" not in catch_body
     assert "state.yamlLifecycleSnapshot =" not in catch_body
     assert "renderYamlDisplay(els.yamlRecordedViewer, state.yamlRecordedDisplay" in script
@@ -3579,9 +3593,9 @@ def test_playground_static_input_yaml_lifecycle_editor_contract() -> None:
 def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
     script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
-    switch_body = script[script.index("function switchRunMode()"):script.index("function updateRunMode(")]
-    start_body = script[script.index("async function startExecution(payload)"):script.index("function highlightRunStartSummary()")]
-    load_body = script[script.index("async function activateLoadedRun(runId, availability)"):script.index("async function loadExistingRunProgress(runId)")]
+    switch_body = script[script.index("function switchRunMode()") : script.index("function updateRunMode(")]
+    start_body = script[script.index("async function startExecution(payload)") : script.index("function highlightRunStartSummary()")]
+    load_body = script[script.index("async function activateLoadedRun(runId, availability)") : script.index("async function loadExistingRunProgress(runId)")]
 
     assert "saveRunModeState(state.activeRunMode);" in load_body
     assert "restoreRunModeState(mode);" in switch_body
@@ -3597,11 +3611,11 @@ def test_playground_static_loaded_run_preserves_run_mode_yaml_state() -> None:
 def test_playground_static_run_modes_preserve_preview_and_report_state() -> None:
     script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
-    create_body = script[script.index("function createRunModeState()"):script.index("const REPLAY_FAST_SAME_EVENT_DELAY_MS")]
-    save_body = script[script.index("function saveRunModeState("):script.index("function restoreRunModeState(")]
-    restore_body = script[script.index("function restoreRunModeState("):script.index("function stripTransientModeClasses()")]
-    switch_body = script[script.index("function switchRunMode()"):script.index("function updateRunMode(")]
-    completed_run_body = script[script.index("function completedRunId()"):script.index("async function showCompletedRunReplayPreview(")]
+    create_body = script[script.index("function createRunModeState()") : script.index("const REPLAY_FAST_SAME_EVENT_DELAY_MS")]
+    save_body = script[script.index("function saveRunModeState(") : script.index("function restoreRunModeState(")]
+    restore_body = script[script.index("function restoreRunModeState(") : script.index("function stripTransientModeClasses()")]
+    switch_body = script[script.index("function switchRunMode()") : script.index("function updateRunMode(")]
+    completed_run_body = script[script.index("function completedRunId()") : script.index("async function showCompletedRunReplayPreview(")]
 
     for field in (
         "rightActiveTab",
@@ -3623,14 +3637,8 @@ def test_playground_static_run_modes_preserve_preview_and_report_state() -> None
 def test_playground_static_oversized_ui_tree_errors_stay_side_by_side() -> None:
     script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
-    text_artifacts_body = script[
-        script.index("function renderStepArtifactTextArtifacts("):
-        script.index("const OBSERVATION_ARTIFACT_KINDS")
-    ]
-    comparison_body = script[
-        script.index("function renderUiTreeDiffArtifact("):
-        script.index("function createDiffHeightResizer(")
-    ]
+    text_artifacts_body = script[script.index("function renderStepArtifactTextArtifacts(") : script.index("const OBSERVATION_ARTIFACT_KINDS")]
+    comparison_body = script[script.index("function renderUiTreeDiffArtifact(") : script.index("function createDiffHeightResizer(")]
 
     assert "const uiTreeDiff = renderUiTreeDiffArtifact(artifacts);" in text_artifacts_body
     assert "uiTreeDiff && OBSERVATION_ARTIFACT_KINDS.includes(candidate.kind)" in text_artifacts_body
@@ -3656,9 +3664,9 @@ def test_playground_static_oversized_ui_tree_errors_stay_side_by_side() -> None:
 def test_playground_static_load_run_is_goal_mode_only() -> None:
     script_path = Path(__file__).parents[1] / "frontend" / "playground" / "playground.js"
     script = script_path.read_text(encoding="utf-8")
-    update_body = script[script.index("function updateRunMode("):script.index("function syncYamlTabOrder(mode)")]
-    toggle_body = script[script.index("function toggleLoadRunForm()"):script.index("function resetLoadRunForm(")]
-    load_body = script[script.index("async function loadExistingRun()"):script.index("async function activateLoadedRun(")]
+    update_body = script[script.index("function updateRunMode(") : script.index("function syncYamlTabOrder(mode)")]
+    toggle_body = script[script.index("function toggleLoadRunForm()") : script.index("function resetLoadRunForm(")]
+    load_body = script[script.index("async function loadExistingRun()") : script.index("async function activateLoadedRun(")]
 
     assert "const loadRunAvailable = mode === 'goal';" in update_body
     assert "els.loadRunToggle.hidden = !loadRunAvailable;" in update_body
@@ -3691,7 +3699,8 @@ const discarded = model.clone(snapshot);
 console.log(JSON.stringify({{ invalidEmpty, ordered, remaining: model.actions(draft, 'onCaseStart'), valid, discarded }}));
 """
 
-    result = subprocess.run([node, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
+    # The executable comes from shutil.which and every argument is fixed test data.
+    result = subprocess.run([node, "--input-type=module", "-e", script], check=True, capture_output=True, text=True)  # noqa: S603
     payload = json.loads(result.stdout)
 
     assert payload["invalidEmpty"] == "Lifecycle action values cannot be empty."
@@ -3714,8 +3723,8 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     script = (static_dir / "playground.js").read_text(encoding="utf-8")
     styles = (static_dir / "playground.css").read_text(encoding="utf-8")
     run_start = html.index('class="section run-section"')
-    run_section = html[run_start:html.index("</section>", run_start)]
-    execution_section = html[html.index('id="execution-section"'):html.index('id="session-section"')]
+    run_section = html[run_start : html.index("</section>", run_start)]
+    execution_section = html[html.index('id="execution-section"') : html.index('id="session-section"')]
 
     assert html.index('id="execution-section"') < html.index("<h2>Session</h2>")
     assert "<h2>Execution</h2>" in execution_section
@@ -3732,12 +3741,12 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert 'id="load-run-cancel"' in execution_section
     assert 'id="load-run-status"' in execution_section
     assert "yaml-input-tab" in html
-    assert '>Source YAML</button>' in html
-    assert '>Input YAML</button>' not in html
-    assert '>Input</button>' not in html
+    assert ">Source YAML</button>" in html
+    assert ">Input YAML</button>" not in html
+    assert ">Input</button>" not in html
     assert "yaml-recorded-tab" in html
-    assert '>Generated YAML</button>' in html
-    assert '>Recorded</button>' not in html
+    assert ">Generated YAML</button>" in html
+    assert ">Recorded</button>" not in html
     assert "No generated YAML yet." in html
     assert "Loading generated YAML..." in script
     assert "Generated YAML is empty." in script
@@ -3748,7 +3757,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "yaml-copy" not in html
     assert "yaml-input-viewer" in html
     assert "yaml-recorded-viewer" in html
-    yaml_title_style = styles[styles.index(".yaml-case-title {"):styles.index("}", styles.index(".yaml-case-title {"))]
+    yaml_title_style = styles[styles.index(".yaml-case-title {") : styles.index("}", styles.index(".yaml-case-title {"))]
     assert "line-clamp: 2" in yaml_title_style
     assert "line-clamp: 3" not in yaml_title_style
     assert "yaml-placeholder" not in html

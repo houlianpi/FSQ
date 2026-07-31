@@ -146,8 +146,7 @@ class _GoalRunRuntime(_Runtime):
                 step_id=1,
                 status="success",
                 actual_outcome=(
-                    '{"status":"success","summary":"Goal done","pre_plan":[],"plan_updates":[],'
-                    f'"satisfied_criteria":["{satisfied}"],"unmet_criteria":[],"evidence":["Goal observed"],"errors":[]}}'
+                    f'{{"status":"success","summary":"Goal done","pre_plan":[],"plan_updates":[],"satisfied_criteria":["{satisfied}"],"unmet_criteria":[],"evidence":["Goal observed"],"errors":[]}}'
                 ),
                 tool_name="openai_agents.runner",
             )
@@ -378,9 +377,9 @@ async def test_agent_run_persists_run_failed_for_cancellation(tmp_path: Path, mo
     assert [event.type for event in events] == ["run_started", "agent_started", "run_failed"]
     assert events[-1].message == "CancelledError"
     assert events[-1].payload["exception_type"] == "CancelledError"
-    timeline_paths = list(tmp_path.glob("smoke-*/events.jsonl"))
+    timeline_paths = await asyncio.to_thread(lambda: list(tmp_path.glob("smoke-*/events.jsonl")))
     assert len(timeline_paths) == 1
-    timeline = timeline_paths[0].read_text(encoding="utf-8")
+    timeline = await asyncio.to_thread(timeline_paths[0].read_text, encoding="utf-8")
     assert "run_failed" in timeline
     assert "CancelledError" in timeline
 
@@ -556,7 +555,7 @@ async def test_pre_plan_runtime_reads_page_by_index_page_id(tmp_path: Path) -> N
     pages_dir = knowledge_dir / "pages"
     pages_dir.mkdir(parents=True)
     (knowledge_dir / "index.md").write_text(
-    """
+        """
 # Knowledge Index
 
 ```json

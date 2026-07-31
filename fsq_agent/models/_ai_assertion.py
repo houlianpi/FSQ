@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fsq_agent.models._core import HarnessArtifactRef, HarnessPlatform
 
-
 AIAssertionStatus = Literal["passed", "failed", "error"]
 
 

@@ -2,13 +2,13 @@
 # Licensed under the MIT License.
 
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, _run_shell_command, run_strict_lifecycle_case
+from fsq_agent._strict_lifecycle import _run_shell_command, collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.config import Settings
 from fsq_agent.core import EvidenceRecorder
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
@@ -70,12 +70,7 @@ class LifecycleHarness:
 def test_shared_lifecycle_runs_config_case_child_main_and_after_in_one_manifest(tmp_path: Path) -> None:
     child_path = tmp_path / "child.codex.yaml"
     child_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Child\n"
-        "platform: android\n"
-        "---\n"
-        "- tapOn:\n"
-        "    target: Child target\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Child\nplatform: android\n---\n- tapOn:\n    target: Child target\n",
         encoding="utf-8",
     )
     root_path = tmp_path / "root.codex.yaml"
@@ -155,16 +150,7 @@ def test_shared_lifecycle_uses_powershell_on_windows(monkeypatch) -> None:
 def test_shared_lifecycle_before_failure_skips_main_but_runs_after(tmp_path: Path, monkeypatch) -> None:
     case_path = tmp_path / "failure.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Failure\n"
-        "platform: android\n"
-        "appId: com.example\n"
-        "onCaseStart:\n"
-        "- runShell: fail-before\n"
-        "onCaseComplete:\n"
-        "- runShell: pass-after\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Failure\nplatform: android\nappId: com.example\nonCaseStart:\n- runShell: fail-before\nonCaseComplete:\n- runShell: pass-after\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -199,19 +185,13 @@ def test_shared_lifecycle_before_failure_skips_main_but_runs_after(tmp_path: Pat
 def test_shared_lifecycle_propagates_cancellation_before_actions(tmp_path: Path, monkeypatch) -> None:
     case_path = tmp_path / "cancel.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Cancel\n"
-        "platform: android\n"
-        "onCaseStart:\n"
-        "- runShell: should-not-run\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Cancel\nplatform: android\nonCaseStart:\n- runShell: should-not-run\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     shell_calls: list[str] = []
     monkeypatch.setattr(
         "fsq_agent._strict_lifecycle._run_shell_command",
-        lambda command: shell_calls.append(command),
+        shell_calls.append,
     )
     settings = Settings(cases={"dir": tmp_path})
     case = FsqCaseLoader().load_case(case_path)
@@ -237,13 +217,7 @@ def test_shared_lifecycle_propagates_cancellation_before_actions(tmp_path: Path,
 def test_shared_lifecycle_preflight_rejects_recursive_run_case(tmp_path: Path) -> None:
     case_path = tmp_path / "recursive.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Recursive\n"
-        "platform: android\n"
-        "onCaseStart:\n"
-        "- runCase: recursive.codex.yaml\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Recursive\nplatform: android\nonCaseStart:\n- runCase: recursive.codex.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -256,14 +230,7 @@ def test_shared_lifecycle_preflight_rejects_recursive_run_case(tmp_path: Path) -
 def test_shared_lifecycle_preserves_repeated_shell_order_and_continues_after_failures(tmp_path: Path, monkeypatch) -> None:
     case_path = tmp_path / "repeated.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Repeated\n"
-        "platform: android\n"
-        "onCaseComplete:\n"
-        "- runShell: first\n"
-        "- runShell: second\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Repeated\nplatform: android\nonCaseComplete:\n- runShell: first\n- runShell: second\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     calls: list[str] = []
@@ -313,13 +280,7 @@ def test_shared_lifecycle_uses_system_shell_off_windows(monkeypatch) -> None:
 def test_shared_lifecycle_records_shell_startup_failure(tmp_path: Path, monkeypatch) -> None:
     case_path = tmp_path / "startup-failure.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Startup Failure\n"
-        "platform: android\n"
-        "onCaseStart:\n"
-        "- runShell: broken\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Startup Failure\nplatform: android\nonCaseStart:\n- runShell: broken\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -351,11 +312,7 @@ def test_shared_lifecycle_records_shell_startup_failure(tmp_path: Path, monkeypa
 def test_shared_lifecycle_uses_pre_resolved_steps_without_lazy_resolution(tmp_path: Path) -> None:
     case_path = tmp_path / "resolved.codex.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\n"
-        "name: Resolved\n"
-        "platform: android\n"
-        "---\n"
-        "- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Resolved\nplatform: android\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -383,14 +340,12 @@ def test_shared_lifecycle_uses_pre_resolved_steps_without_lazy_resolution(tmp_pa
 def test_shared_lifecycle_uses_preloaded_child_snapshot_and_encloses_child_events(tmp_path: Path) -> None:
     child_path = tmp_path / "snapshot-child.codex.yaml"
     child_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Child\nplatform: android\n---\n"
-        "- tapOn:\n    target: Child\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
     root_path = tmp_path / "snapshot-root.codex.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Root\nplatform: android\n"
-        "onCaseStart:\n- runCase: snapshot-child.codex.yaml\n---\n- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Root\nplatform: android\nonCaseStart:\n- runCase: snapshot-child.codex.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -444,15 +399,13 @@ def test_shared_lifecycle_uses_preloaded_child_snapshot_and_encloses_child_event
 def test_shared_lifecycle_cancels_at_child_and_main_boundaries(tmp_path: Path, cancel_boundary: str) -> None:
     child_path = tmp_path / "cancel-child.codex.yaml"
     child_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Cancel Child\nplatform: android\n---\n"
-        "- tapOn:\n    target: Child\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Cancel Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
     root_path = tmp_path / "cancel-root.codex.yaml"
     before = "onCaseStart:\n- runCase: cancel-child.codex.yaml\n" if cancel_boundary == "child" else ""
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Cancel Root\nplatform: android\n"
-        f"{before}---\n- launchApp: {{}}\n",
+        f"schemaVersion: fsq.ai-test/v1\nname: Cancel Root\nplatform: android\n{before}---\n- launchApp: {{}}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})

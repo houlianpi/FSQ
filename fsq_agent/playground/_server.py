@@ -4,24 +4,24 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
 import json
 import mimetypes
-from pathlib import Path
 import re
 import shutil
-from threading import Thread
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import time
-from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Thread
+from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
-from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader
+from fsq_agent.models import ConfigurationError
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, start_dynamic_goal_execution
 from fsq_agent.playground._state import BusyError, PlaygroundState
@@ -35,6 +35,8 @@ from fsq_agent.playground._yaml_lifecycle import (
 )
 from fsq_agent.report import resolve_report_path
 
+if TYPE_CHECKING:
+    from fsq_agent.config import Settings
 
 YAML_DISPLAY_SIZE_LIMIT_BYTES = 512 * 1024
 STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES = 512 * 1024
@@ -56,11 +58,19 @@ _RUN_RESULT_MARKERS = {
 }
 
 
-class _StepArtifactTextTooLarge(Exception):
+class _StepArtifactTextTooLargeError(Exception):
     def __init__(self, *, size_bytes: int, limit_bytes: int) -> None:
         super().__init__(f"Step artifact text is too large to display ({size_bytes} bytes).")
         self.size_bytes = size_bytes
         self.limit_bytes = limit_bytes
+
+
+def _parse_xml_safely(source: str) -> ET.Element:
+    normalized = source.upper()
+    if "<!DOCTYPE" in normalized or "<!ENTITY" in normalized:
+        raise ET.ParseError("DTD and entity declarations are not allowed.")
+    # DTD and entity declarations are rejected above, preventing attacker-controlled entity expansion.
+    return ET.fromstring(source)  # noqa: S314
 
 
 @dataclass(frozen=True)
@@ -97,10 +107,7 @@ class PlaygroundServer:
         if self._httpd is not None:
             return
         if self._static_entry_path() is None:
-            raise FileNotFoundError(
-                f"Playground frontend build not found under {self._static_root}. "
-                "Run npm ci and npm run build."
-            )
+            raise FileNotFoundError(f"Playground frontend build not found under {self._static_root}. Run npm ci and npm run build.")
         self._httpd = _PlaygroundHTTPServer((self.options.host, self.options.port), _RequestHandler, self)
         self._thread = Thread(target=self._httpd.serve_forever, name="fsq-playground-server", daemon=True)
         self._thread.start()
@@ -155,9 +162,10 @@ class PlaygroundServer:
                 payload = capture_android_screenshot(self.settings, self.state.session.device_id)
                 if payload.get("available") is True and self.state.current_request_id:
                     self._record_replay_frame(self.state.current_request_id, payload)
-                return 200, payload
             except Exception as exc:  # noqa: BLE001 - API returns structured errors.
                 return 500, {"available": False, "error": str(exc) or exc.__class__.__name__}
+            else:
+                return 200, payload
         if path.startswith("/replay/"):
             request_id = unquote(path.removeprefix("/replay/")).strip()
             return self._replay_response(request_id)
@@ -418,9 +426,7 @@ class PlaygroundServer:
         return {
             "report": any((run_dir / name).is_file() for name in ("report.md", "report.json", "core-report.md", "core-report.json")),
             "recordedYaml": (run_dir / "recording.json").is_file() or (run_dir / "recorded.codex.yaml").is_file(),
-            "replay": (replay_dir / "replay-manifest.json").is_file()
-            or (replay_dir / "replay.webm").is_file()
-            or self._run_has_screenshot_replay_sources(run_dir),
+            "replay": (replay_dir / "replay-manifest.json").is_file() or (replay_dir / "replay.webm").is_file() or self._run_has_screenshot_replay_sources(run_dir),
             "stepArtifacts": (run_dir / "evidence-manifest.json").is_file() or (run_dir / "events.jsonl").is_file(),
         }
 
@@ -432,9 +438,7 @@ class PlaygroundServer:
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 manifest = None
             artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
-            if isinstance(artifacts, list) and any(
-                isinstance(ref, dict) and self._is_screenshot_artifact_ref(ref) for ref in artifacts
-            ):
+            if isinstance(artifacts, list) and any(isinstance(ref, dict) and self._is_screenshot_artifact_ref(ref) for ref in artifacts):
                 return True
         events_path = run_dir / "events.jsonl"
         if not events_path.is_file():
@@ -560,7 +564,6 @@ class PlaygroundServer:
             },
         }
 
-
     def _android_unavailable(self, message: str) -> dict[str, object]:
         return {
             "available": False,
@@ -608,9 +611,10 @@ class PlaygroundServer:
                 "timestamp": int(time.time() * 1000),
             }
             self._record_replay_frame(request_id, payload)
-            return 200, payload
         except Exception as exc:  # noqa: BLE001 - API returns structured errors.
             return 500, {"available": False, "platform": self.settings.harness.platform, "error": str(exc) or exc.__class__.__name__}
+        else:
+            return 200, payload
 
     def _report_response(self, path: str, query: dict[str, list[str]]) -> tuple[int, object]:
         run_id = unquote(path.removeprefix("/reports/")).strip()
@@ -636,7 +640,7 @@ class PlaygroundServer:
             return 404, {"available": False, "error": f"Case YAML not found: {path_text}"}
         except UnicodeDecodeError:
             return 400, {"available": False, "error": f"Case YAML must be UTF-8 text: {path_text}"}
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             return 400, {"available": False, "error": str(exc) or "Unable to parse YAML for display."}
         except OSError as exc:
             return 400, {"available": False, "error": str(exc) or exc.__class__.__name__}
@@ -701,7 +705,7 @@ class PlaygroundServer:
             return 400, {"available": False, "error": str(exc) or exc.__class__.__name__, "runId": run_id}
         try:
             display = self._yaml_display_model(content, source_path=str(recorded_case_path), run_dir=run_dir) if content is not None else None
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             return 400, {"available": False, "error": str(exc) or "Unable to parse recorded YAML for display.", "runId": run_id}
         return 200, {
             "kind": "recorded",
@@ -730,7 +734,7 @@ class PlaygroundServer:
         if commands_doc is None:
             commands_doc = []
         if not isinstance(commands_doc, list):
-            raise ValueError("FSQ command document must be a YAML list.")
+            raise TypeError("FSQ command document must be a YAML list.")
         artifact_step_ids = self._recorded_artifact_step_ids(run_dir, commands_doc) if run_dir is not None else None
         return {
             "metadata": self._yaml_metadata_display(metadata_doc, source_path=source_path),
@@ -791,10 +795,7 @@ class PlaygroundServer:
         command_index = 0
         event_index = 0
         while command_index < len(command_actions) and event_index < len(event_actions):
-            if (
-                command_actions[command_index] == event_actions[event_index]
-                and match_counts[command_index][event_index] == 1 + match_counts[command_index + 1][event_index + 1]
-            ):
+            if command_actions[command_index] == event_actions[event_index] and match_counts[command_index][event_index] == 1 + match_counts[command_index + 1][event_index + 1]:
                 step_ids[command_index] = replay_events[event_index][1]
                 command_index += 1
                 event_index += 1
@@ -888,10 +889,7 @@ class PlaygroundServer:
         if payload in (None, {}, []):
             return []
         if isinstance(payload, dict):
-            return [
-                {"key": str(key), **self._yaml_display_value(value)}
-                for key, value in payload.items()
-            ]
+            return [{"key": str(key), **self._yaml_display_value(value)} for key, value in payload.items()]
         return [{"key": "value", **self._yaml_display_value(payload)}]
 
     def _yaml_display_value(self, value: object) -> dict[str, object]:
@@ -899,19 +897,13 @@ class PlaygroundServer:
             return {
                 "value": "",
                 "kind": "object",
-                "fields": [
-                    {"key": str(key), **self._yaml_display_value(child_value)}
-                    for key, child_value in value.items()
-                ],
+                "fields": [{"key": str(key), **self._yaml_display_value(child_value)} for key, child_value in value.items()],
             }
         if isinstance(value, list):
             return {
                 "value": "",
                 "kind": "list",
-                "fields": [
-                    {"key": str(index + 1), **self._yaml_display_value(child_value)}
-                    for index, child_value in enumerate(value)
-                ],
+                "fields": [{"key": str(index + 1), **self._yaml_display_value(child_value)} for index, child_value in enumerate(value)],
             }
         if isinstance(value, bool):
             return {"value": "true" if value else "false", "kind": "boolean"}
@@ -1227,7 +1219,7 @@ class PlaygroundServer:
         for ref in refs:
             try:
                 payload = self._step_artifact_payload(run_dir, ref)
-            except _StepArtifactTextTooLarge as exc:
+            except _StepArtifactTextTooLargeError as exc:
                 payload = {
                     "kind": str(ref.get("kind") or ""),
                     "path": str(ref.get("path") or ""),
@@ -1251,7 +1243,7 @@ class PlaygroundServer:
         if isinstance(inline_content, str):
             size_bytes = len(inline_content.encode("utf-8"))
             if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
-                raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
+                raise _StepArtifactTextTooLargeError(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
             content, content_mime_type = self._normalize_step_text_artifact_content(inline_content)
             return {
                 "kind": kind,
@@ -1278,7 +1270,7 @@ class PlaygroundServer:
             return payload
         size_bytes = artifact_path.stat().st_size
         if size_bytes > STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES:
-            raise _StepArtifactTextTooLarge(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
+            raise _StepArtifactTextTooLargeError(size_bytes=size_bytes, limit_bytes=STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES)
         content, content_mime_type = self._step_text_artifact_content(artifact_path)
         payload["content"] = content
         if content_mime_type is not None:
@@ -1304,7 +1296,7 @@ class PlaygroundServer:
 
     def _format_xml_for_display(self, xml: str) -> str:
         try:
-            root = ET.fromstring(xml)
+            root = _parse_xml_safely(xml)
         except ET.ParseError:
             return xml
         ET.indent(root, space="  ")
@@ -1583,7 +1575,7 @@ class PlaygroundServer:
     def _strict_case_run_id(self, path_text: str) -> str | None:
         try:
             return FsqCaseLoader().load_case(self._resolve_case_yaml_path(path_text)).id
-        except Exception:
+        except (ConfigurationError, OSError, UnicodeDecodeError):
             return None
 
     def _resolve_case_yaml_path(self, path_text: str) -> Path:
@@ -1604,16 +1596,14 @@ class _PlaygroundHTTPServer(ThreadingHTTPServer):
 class _RequestHandler(BaseHTTPRequestHandler):
     server: _PlaygroundHTTPServer
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API.
+    def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path.startswith("/task-stream/"):
             request_id = unquote(parsed.path.removeprefix("/task-stream/")).strip()
             self._stream_task_progress(request_id, parse_qs(parsed.query))
             return
         if parsed.path.startswith("/replay-video-file/"):
-            status, payload, content_type, extra_headers = self.server.playground.handle_replay_video_file(
-                parsed.path, self.headers.get("Range")
-            )
+            status, payload, content_type, extra_headers = self.server.playground.handle_replay_video_file(parsed.path, self.headers.get("Range"))
             self._send_bytes(status, payload, content_type, extra_headers)
             return
         if _is_api_path(parsed.path):
@@ -1623,7 +1613,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         status, payload, content_type = self.server.playground.static_response(parsed.path)
         self._send_bytes(status, payload, content_type)
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API.
+    def do_POST(self) -> None:
         parsed = urlparse(self.path)
         body = self._read_json_body()
         if isinstance(body, str):
@@ -1632,7 +1622,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         status, payload = self.server.playground.handle_post(parsed.path, body)
         self._send_json(status, payload)
 
-    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler API.
+    def do_PUT(self) -> None:
         parsed = urlparse(self.path)
         body = self._read_json_body()
         if isinstance(body, str):
@@ -1641,7 +1631,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         status, payload = self.server.playground.handle_put(parsed.path, body)
         self._send_json(status, payload)
 
-    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API.
+    def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         status, payload = self.server.playground.handle_delete(parsed.path)
         self._send_json(status, payload)
@@ -1673,9 +1663,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             status = str(first[1].get("status"))
             revision = 0
             while status == "running":
-                payload, revision = self.server.playground.state.wait_for_update(
-                    request_id, last_sequence, revision, timeout=15.0
-                )
+                payload, revision = self.server.playground.state.wait_for_update(request_id, last_sequence, revision, timeout=15.0)
                 if not isinstance(payload, dict):
                     break
                 last_sequence = self._write_sse_progress(payload, last_sequence)
@@ -1744,9 +1732,10 @@ def _is_api_path(path: str) -> bool:
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
-        return True
     except ValueError:
         return False
+    else:
+        return True
 
 
 def _step_index_from_step_id(value: str) -> int | None:
@@ -1762,7 +1751,7 @@ def _parse_byte_range(range_header: str | None, total_size: int) -> tuple[int, i
     raw = range_header.strip()
     if not raw.lower().startswith("bytes="):
         return None
-    spec = raw[len("bytes="):].split(",", 1)[0].strip()
+    spec = raw[len("bytes=") :].split(",", 1)[0].strip()
     if not spec or "-" not in spec:
         return None
     start_text, end_text = spec.split("-", 1)

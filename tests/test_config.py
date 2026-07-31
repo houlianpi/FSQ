@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
 
@@ -44,7 +44,22 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
 @pytest.fixture(autouse=True)
 def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
+    for name in (
+        "FSQ_LLM_PROVIDER",
+        "AZURE_OPENAI_BASE_URL",
+        "AZURE_OPENAI_MODEL",
+        "AZURE_OPENAI_API_KEY",
+        "FSQ_ANDROID_APP_ID",
+        "FSQ_ANDROID_SERIAL",
+        "FSQ_WEB_BROWSER_EXECUTABLE_PATH",
+        "FSQ_WINDOWS_APP_PATH",
+        "FSQ_WINDOWS_BACKEND_KIND",
+        "FSQ_WINDOWS_WINDOW_TITLE_RE",
+        "FSQ_WINDOWS_LAUNCH_ARGS",
+        "FSQ_MACOS_APPIUM_SERVER_URL",
+        "FSQ_MACOS_BUNDLE_ID",
+        "FSQ_MACOS_APP_PATH",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -140,7 +155,7 @@ def test_load_settings_rejects_invalid_case_lifecycle_hooks(tmp_path: Path, hook
             tmp_path,
             f"""
 caseLifecycle:
-  {hook_yaml.replace(chr(10), chr(10) + '  ')}
+  {hook_yaml.replace(chr(10), chr(10) + "  ")}
 """,
         ),
         encoding="utf-8",
@@ -170,9 +185,7 @@ def test_config_example_is_reference_only_and_shows_case_lifecycle() -> None:
         ("config.macos.yaml", 50),
     ],
 )
-def test_committed_platform_presets_define_max_turns(
-    config_name: str, expected_max_turns: int, tmp_path: Path
-) -> None:
+def test_committed_platform_presets_define_max_turns(config_name: str, expected_max_turns: int, tmp_path: Path) -> None:
     config_path = Path(__file__).parents[1] / config_name
 
     settings = load_settings(config_path, workspace=tmp_path / config_path.stem)
@@ -181,21 +194,21 @@ def test_committed_platform_presets_define_max_turns(
 
 
 def test_load_settings_ignores_config_example_by_default(tmp_path: Path) -> None:
-        (tmp_path / "config.example.yaml").write_text(
-                """
+    (tmp_path / "config.example.yaml").write_text(
+        """
 harness:
     platform: web
 caseLifecycle:
     onCaseStart:
         runShell: echo should-not-load
 """,
-                encoding="utf-8",
-        )
+        encoding="utf-8",
+    )
 
-        settings = load_settings()
+    settings = load_settings()
 
-        assert settings.harness.platform == "android"
-        assert settings.case_lifecycle.on_case_start == []
+    assert settings.harness.platform == "android"
+    assert settings.case_lifecycle.on_case_start == []
 
 
 def test_load_platform_settings_loads_committed_platform_preset(tmp_path: Path) -> None:
@@ -367,9 +380,7 @@ harness:
     assert settings.harness.web.browser_executable_path == chrome_path
 
 
-def test_load_settings_accepts_windows_env_backed_adapter_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_settings_accepts_windows_env_backed_adapter_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_path = _windows_executable(tmp_path)
     monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
     monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "win32")
@@ -413,9 +424,7 @@ harness:
     ]
 
 
-def test_load_settings_rejects_invalid_windows_backend_kind_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_settings_rejects_invalid_windows_backend_kind_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_path = _windows_executable(tmp_path)
     monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
     monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "uia2")
@@ -437,9 +446,7 @@ harness:
         load_settings(config_path)
 
 
-def test_load_settings_rejects_invalid_windows_launch_args_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_settings_rejects_invalid_windows_launch_args_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_path = _windows_executable(tmp_path)
     monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
     monkeypatch.setenv("FSQ_WINDOWS_LAUNCH_ARGS", '"unterminated')
@@ -481,9 +488,7 @@ harness:
         validate_runtime_settings(settings)
 
 
-def test_load_settings_accepts_macos_harness_settings_and_env_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_settings_accepts_macos_harness_settings_and_env_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_path = tmp_path / "Example.app"
     app_path.mkdir()
     monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
@@ -539,9 +544,7 @@ harness:
         load_settings(config_path)
 
 
-def test_validate_runtime_settings_rejects_missing_macos_env_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_validate_runtime_settings_rejects_missing_macos_env_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FSQ_MACOS_APPIUM_SERVER_URL", raising=False)
     monkeypatch.delenv("FSQ_MACOS_BUNDLE_ID", raising=False)
     monkeypatch.delenv("FSQ_MACOS_APP_PATH", raising=False)
@@ -634,9 +637,7 @@ harness:
         validate_runtime_settings(settings)
 
 
-def test_validate_runtime_settings_rejects_web_browser_path_that_does_not_match_channel(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_validate_runtime_settings_rejects_web_browser_path_that_does_not_match_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     firefox_path = tmp_path / "firefox.exe"
     firefox_path.write_text("", encoding="utf-8")
     monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(firefox_path))
@@ -1268,9 +1269,7 @@ openai_agents:
         encoding="utf-8",
     )
     (tmp_path / ".env").write_text(
-        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\n"
-        "AZURE_OPENAI_MODEL=gpt-5.4\n"
-        "AZURE_OPENAI_API_KEY=from-dotenv\n",
+        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=from-dotenv\n",
         encoding="utf-8",
     )
 
@@ -1308,7 +1307,7 @@ def test_load_settings_rejects_invalid_dotenv_line(tmp_path: Path) -> None:
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     (tmp_path / ".env").write_text("not-a-key-value-line\n", encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match="Invalid .env line"):
+    with pytest.raises(ConfigurationError, match=r"Invalid \.env line"):
         load_settings(config_path)
 
 
@@ -1328,9 +1327,7 @@ openai_agents:
         encoding="utf-8",
     )
     (tmp_path / ".env").write_text(
-        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\n"
-        "AZURE_OPENAI_MODEL=gpt-5.4\n"
-        "AZURE_OPENAI_API_KEY=replace-with-your-azure-openai-api-key\n",
+        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=replace-with-your-azure-openai-api-key\n",
         encoding="utf-8",
     )
     settings = load_settings(config_path)

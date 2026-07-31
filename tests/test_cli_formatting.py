@@ -199,9 +199,7 @@ def test_log_run_event_concise_surfaces_failed_tool_payload_as_error(captured_fo
         )
     )
 
-    assert _messages(captured_format_logs) == [
-        "[EXECUTION #14] tool failed: tap_on failure_category=tool_usage_error error=Target Downloads was not found."
-    ]
+    assert _messages(captured_format_logs) == ["[EXECUTION #14] tool failed: tap_on failure_category=tool_usage_error error=Target Downloads was not found."]
     assert captured_format_logs[0].levelno == logging.ERROR
 
 
@@ -250,15 +248,13 @@ def test_log_run_event_concise_summarizes_structured_agent_messages(captured_for
             sequence=102,
             message=(
                 "ResponseOutputMessage(id='abc', content=[ResponseOutputText(annotations=[], "
-                "text='{\"schema_version\":\"task_run_v1\",\"status\":\"success\","
-                "\"summary\":\"The verification goal is satisfied.\",\"pre_plan\":[]}', type='output_text')])"
+                'text=\'{"schema_version":"task_run_v1","status":"success",'
+                '"summary":"The verification goal is satisfied.","pre_plan":[]}\', type=\'output_text\')])'
             ),
         )
     )
 
-    assert _messages(captured_format_logs) == [
-        "[VERIFICATION #102] update: agent message schema=task_run_v1 status=success summary=The verification goal is satisfied."
-    ]
+    assert _messages(captured_format_logs) == ["[VERIFICATION #102] update: agent message schema=task_run_v1 status=success summary=The verification goal is satisfied."]
 
 
 def test_log_run_event_concise_surfaces_existing_report_path_hint(captured_format_logs: list[logging.LogRecord]) -> None:
@@ -274,9 +270,7 @@ def test_log_run_event_concise_surfaces_existing_report_path_hint(captured_forma
         )
     )
 
-    assert _messages(captured_format_logs) == [
-        "[REPORT #20] completed: Run completed duration=1200ms report=runs/run-1/report.md"
-    ]
+    assert _messages(captured_format_logs) == ["[REPORT #20] completed: Run completed duration=1200ms report=runs/run-1/report.md"]
 
 
 def test_log_run_event_jsonl_preserves_raw_event_json(captured_format_logs: list[logging.LogRecord]) -> None:

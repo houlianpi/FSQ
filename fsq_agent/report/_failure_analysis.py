@@ -5,7 +5,6 @@ from typing import Any
 
 from fsq_agent.models import StepResult, VerificationResult
 
-
 _TOOL_USAGE_MARKERS = (
     "invalid argument",
     "invalid parameter",

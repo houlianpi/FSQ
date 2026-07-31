@@ -3,8 +3,20 @@
 
 import pytest
 
-import fsq_agent.models as models
-from fsq_agent.models import AgentFinalOutput, AgentTaskInput, ExecutionStep, GoalPrePlan, HarnessSettings, LocalToolOutputSettings, OpenAIAgentsSettings, PageKnowledgeIndex, PageKnowledgePage, SkillConfig, Task
+from fsq_agent import models
+from fsq_agent.models import (
+    AgentFinalOutput,
+    AgentTaskInput,
+    ExecutionStep,
+    GoalPrePlan,
+    HarnessSettings,
+    LocalToolOutputSettings,
+    OpenAIAgentsSettings,
+    PageKnowledgeIndex,
+    PageKnowledgePage,
+    SkillConfig,
+    Task,
+)
 
 
 def test_task_defaults() -> None:

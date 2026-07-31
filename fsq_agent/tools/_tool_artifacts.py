@@ -99,4 +99,3 @@ class ToolArtifactStore:
         if not path.exists() or not path.is_file():
             raise ToolExecutionError(f"Artifact not found: {artifact_path}")
         return path
-

@@ -16,7 +16,6 @@ from fsq_agent.models import (
     ReplayPolicy,
 )
 
-
 F = TypeVar("F", bound=Callable[..., Any])
 CAPABILITY_DECLARATION_ATTR = "__fsq_capability_declaration__"
 _SAFE_METADATA_SCALARS = (str, int, float, bool, type(None))
@@ -95,7 +94,6 @@ def platform_driver_capability(
         post_action_delay_seconds: float | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Callable[[F], F]:
-        action_definition = _action_definition(catalog, action_name)
         return capability(
             executor_kind="driver",
             owner="driver",
@@ -156,11 +154,7 @@ def _declaration_from_args(
         if step_kind == "action":
             step_kind = action_definition.step_kind
         replay = replay or action_definition.replay
-        resolved_post_action_delay_seconds = (
-            action_definition.post_action_delay_seconds
-            if post_action_delay_seconds is None
-            else post_action_delay_seconds
-        )
+        resolved_post_action_delay_seconds = action_definition.post_action_delay_seconds if post_action_delay_seconds is None else post_action_delay_seconds
         required_method_name = action_definition.method_name
         safe_metadata = {**action_definition.metadata, **safe_metadata}
         _validate_safe_metadata(safe_metadata)

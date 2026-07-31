@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fsq_agent.models._task import StepStatus, Task, VerificationStatus
 
-
 AGENT_FINAL_OUTPUT_SCHEMA_VERSION = "task_run_v1"
 AGENT_TASK_INPUT_SCHEMA_VERSION = "task_input_v1"
 

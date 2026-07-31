@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 from fsq_agent.models import ConfigurationError, RuntimeSecretSettings
 
@@ -15,18 +18,14 @@ class RuntimeSecretStore:
         self._allowed = set(self._allowed_names)
         source_values = values if values is not None else os.environ
         self._values = {name: str(source_values.get(name) or "") for name in self._allowed_names}
-        self._warnings = tuple(
-            f"Runtime secret {name} is configured but not set."
-            for name in self._allowed_names
-            if not self._values.get(name)
-        )
+        self._warnings = tuple(f"Runtime secret {name} is configured but not set." for name in self._allowed_names if not self._values.get(name))
 
     @classmethod
-    def from_settings(cls, settings: RuntimeSecretSettings) -> "RuntimeSecretStore":
+    def from_settings(cls, settings: RuntimeSecretSettings) -> RuntimeSecretStore:
         return cls(settings.allowed_env_names)
 
     @classmethod
-    def empty(cls) -> "RuntimeSecretStore":
+    def empty(cls) -> RuntimeSecretStore:
         return cls(())
 
     def available_names(self) -> tuple[str, ...]:

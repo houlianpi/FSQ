@@ -7,9 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from fsq_agent.models import AgentFinalOutput, StepResult, Task, ToolCallRecord
-
 from fsq_agent.agent._structured_output import coerce_agent_final_output
+from fsq_agent.models import AgentFinalOutput, StepResult, Task, ToolCallRecord
 
 
 class VerificationEvidenceBundle(BaseModel):

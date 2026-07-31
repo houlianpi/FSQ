@@ -1,14 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import time
-import os
 import inspect
+import os
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fsq_agent.agent._events import RunEventEmitter
+from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime
+from fsq_agent.agent._verifier import Verifier
 from fsq_agent.config import Settings, load_settings
 from fsq_agent.knowledge import PrivateKnowledgeLoader
 from fsq_agent.models import KnowledgeBundle, PlanningError, RunEvent, RunEventSink, Task, TaskResult
@@ -17,10 +20,6 @@ from fsq_agent.providers import refresh_model_provider_session
 from fsq_agent.report import ReportGenerator
 from fsq_agent.skills import SkillLoader
 from fsq_agent.tools import AgentToolAdapter, AgentToolRegistry, DefaultAgentToolProvider, FileOps
-
-from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime
-from fsq_agent.agent._events import RunEventEmitter
-from fsq_agent.agent._verifier import Verifier
 
 
 class FsqAgent:
@@ -90,9 +89,7 @@ class FsqAgent:
         started = time.perf_counter()
         run_id = f"{task.id}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         emitter = RunEventEmitter(self.event_logger, event_sink)
-        await emitter.emit(
-            RunEvent(run_id=run_id, task_id=task.id, type="run_started", title="Run started", message=task.name)
-        )
+        await emitter.emit(RunEvent(run_id=run_id, task_id=task.id, type="run_started", title="Run started", message=task.name))
         try:
             knowledge = self.knowledge_loader.load_for_task(task)
             skills = self.skill_loader.load(self.settings.skills)
@@ -136,7 +133,6 @@ class FsqAgent:
                     payload={"status": verification.status, "report_path": str(report.path)},
                 )
             )
-            return result
         except BaseException as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             message = str(exc) or exc.__class__.__name__
@@ -152,6 +148,8 @@ class FsqAgent:
                 )
             )
             raise
+        else:
+            return result
 
     def _load_pre_plan_knowledge(self) -> KnowledgeBundle:
         items: dict[str, str] = {}
@@ -178,11 +176,7 @@ class FsqAgent:
 
         reference_type, reference_text = self._planning_reference_for_task(task)
         pre_plan = await self._run_pre_plan(reference_type, reference_text, skills, run_id, emitter)
-        generated_key_actions = [
-            f"Key action {index}: {action.action.strip()}"
-            for index, action in enumerate(pre_plan.key_actions, start=1)
-            if action.action.strip()
-        ]
+        generated_key_actions = [f"Key action {index}: {action.action.strip()}" for index, action in enumerate(pre_plan.key_actions, start=1) if action.action.strip()]
         key_actions = list(task.key_actions) or generated_key_actions
         verification_goal = pre_plan.verification_goal.strip()
         payload = {
@@ -238,9 +232,7 @@ class FsqAgent:
     ):
         knowledge = self._load_pre_plan_knowledge()
         signature = inspect.signature(self.runtime.run_pre_plan)
-        accepts_reference_type = "reference_type" in signature.parameters or any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
-        )
+        accepts_reference_type = "reference_type" in signature.parameters or any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values())
         if accepts_reference_type:
             return await self.runtime.run_pre_plan(
                 reference_text,

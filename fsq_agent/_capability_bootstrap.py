@@ -3,17 +3,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fsq_agent.core import (
-    CapabilityRegistry,
     CapabilityDefinitionFactory,
+    CapabilityRegistry,
     CommonPlatformTools,
 )
-from fsq_agent.models import CapabilityDefinition, HarnessPlatform
 from fsq_agent.tools import DefaultAgentToolProvider, FileOps
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fsq_agent.models import CapabilityDefinition, HarnessPlatform
 
 _CAPABILITY_DEFINITION_FACTORY = CapabilityDefinitionFactory()
 

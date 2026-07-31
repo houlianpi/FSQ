@@ -6,9 +6,9 @@ from typing import Any
 import pytest
 
 from fsq_agent.core import ArtifactStore, HarnessInterface
+from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._android import AndroidHarness
 from fsq_agent.core.harness._uiautomator2_driver import UiAutomator2AndroidDriver
-from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.models import AIAssertionRequest, AIAssertionResult, ExecutableStep, HarnessContext
 
 
@@ -75,10 +75,6 @@ class FakeAndroidDriver(AIAssertionBackendToolMixin):
         self.calls.append(("screenshot", None))
         return b"fake-png"
 
-    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
-        self.calls.append(("ui_snapshot", None))
-        return {"nodes": [{"text": "Login"}]}
-
     def ui_snapshot(self, params: dict[str, object]) -> dict[str, object]:
         if hasattr(params, "model_dump"):
             recorded = params.model_dump(mode="json", exclude_none=True)
@@ -129,9 +125,7 @@ def test_android_harness_dispatches_fsq_action_names_to_driver() -> None:
         current_activity="MainActivity",
         screen_size=(1080, 2400),
     )
-    assert driver.calls == [("context", None)] + [
-        (method_name, params) for _action_name, params, method_name in cases
-    ]
+    assert driver.calls == [("context", None)] + [(method_name, params) for _action_name, params, method_name in cases]
 
 
 def test_android_harness_accepts_structured_press_key_params() -> None:

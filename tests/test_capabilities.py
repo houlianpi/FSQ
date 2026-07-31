@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.capabilities import (
     CapabilityActionDefinition,
     capability,
     discover_capability_definitions,
     platform_driver_capability,
 )
-from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.core import CapabilityRegistry, CommonPlatformTools
 from fsq_agent.core.harness._appium_mac2_driver import AppiumMac2Driver
 from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
@@ -128,6 +128,7 @@ def test_platform_driver_capability_validates_catalog_method_name() -> None:
     )
 
     with pytest.raises(ConfigurationError, match="method"):
+
         class BadDriver:
             @driver_action("tapOn", description="Tap.")
             def wrong_name(self, params: ExampleParams) -> dict[str, object]:
@@ -179,6 +180,7 @@ def test_platform_driver_capability_inherits_and_overrides_catalog_delay() -> No
 
 def test_capability_rejects_negative_post_action_delay() -> None:
     with pytest.raises(ConfigurationError, match="post_action_delay_seconds"):
+
         class BadProvider:
             @capability(
                 name="bad_delay",
@@ -210,6 +212,7 @@ def test_platform_driver_capability_validates_catalog_params_model() -> None:
     )
 
     with pytest.raises(ConfigurationError, match="parameter model"):
+
         class BadDriver:
             @driver_action("tapOn", description="Tap.")
             def tap_on(self, params: OtherParams) -> dict[str, object]:
@@ -358,9 +361,4 @@ def test_capabilities_imports_only_models_across_project_modules() -> None:
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imports.add(node.module)
 
-    assert not {
-        module
-        for module in imports
-        for forbidden_module in forbidden
-        if module == forbidden_module or module.startswith(f"{forbidden_module}.")
-    }
+    assert not {module for module in imports for forbidden_module in forbidden if module == forbidden_module or module.startswith(f"{forbidden_module}.")}

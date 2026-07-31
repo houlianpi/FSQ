@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from hashlib import sha256
 from io import StringIO
-import os
 from pathlib import Path
-import tempfile
-from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -98,10 +97,9 @@ def save_lifecycle(
             handle.flush()
             os.fsync(handle.fileno())
         FsqCaseLoader().load_case(temporary_path)
-        if yaml_revision(path.read_bytes()) != expected_revision:
-            raise YamlLifecycleConflictError("Case YAML changed on disk. Reload before saving.")
+        _ensure_source_revision(path, expected_revision)
         try:
-            os.replace(temporary_path, path)
+            temporary_path.replace(path)
         except OSError as exc:
             raise YamlLifecycleWriteError(str(exc) or "Unable to replace case YAML.") from exc
         temporary_path = None
@@ -135,29 +133,31 @@ def _display_hooks(value: object) -> list[dict[str, object]]:
     entries = value if isinstance(value, list) else [value]
     hooks = [FsqCaseHook.model_validate(entry) for entry in entries]
     actions = [action for hook in hooks for action in hook.actions]
-    return [
-        {"index": index, "action": action.action_name, "value": action.value}
-        for index, action in enumerate(actions, start=1)
-    ]
+    return [{"index": index, "action": action.action_name, "value": action.value} for index, action in enumerate(actions, start=1)]
 
 
 def _request_hooks(value: object) -> list[FsqCaseHook]:
     if not isinstance(value, list):
         raise YamlLifecycleValidationError("Lifecycle hook fields must be lists.")
-    hooks: list[FsqCaseHook] = []
     try:
-        for action in value:
-            if not isinstance(action, dict):
-                raise YamlLifecycleValidationError("Lifecycle actions must be objects.")
-            validated = FsqCaseHookAction.model_validate(
-                {"action_name": action.get("action"), "value": action.get("value")}
-            )
-            hooks.append(FsqCaseHook(actions=[validated]))
+        hooks = [_request_hook(action) for action in value]
     except YamlLifecycleValidationError:
         raise
     except Exception as exc:
         raise YamlLifecycleValidationError(str(exc) or "Invalid lifecycle hook data.") from exc
     return hooks
+
+
+def _request_hook(action: object) -> FsqCaseHook:
+    if not isinstance(action, dict):
+        raise YamlLifecycleValidationError("Lifecycle actions must be objects.")
+    validated = FsqCaseHookAction.model_validate({"action_name": action.get("action"), "value": action.get("value")})
+    return FsqCaseHook(actions=[validated])
+
+
+def _ensure_source_revision(path: Path, expected_revision: str) -> None:
+    if yaml_revision(path.read_bytes()) != expected_revision:
+        raise YamlLifecycleConflictError("Case YAML changed on disk. Reload before saving.")
 
 
 def _replace_lifecycle(metadata: CommentedMap, key: str, hooks: list[FsqCaseHook]) -> None:

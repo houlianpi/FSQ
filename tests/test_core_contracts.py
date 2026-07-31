@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from datetime import datetime, timezone
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -31,8 +31,8 @@ from fsq_agent.models import (
     RunnerStepResult,
     SourceRef,
     StepPhaseReport,
-    WebCloseBrowserParams,
     WebClickOnParams,
+    WebCloseBrowserParams,
     WebPageSnapshotParams,
     WebStartBrowserParams,
     WebTypeTextParams,
@@ -47,8 +47,8 @@ def test_core_exports_harness_interface() -> None:
 
 
 def test_core_public_exports_follow_strict_boundary() -> None:
-    import fsq_agent.core as core
-    import fsq_agent.core.harness as harness
+    from fsq_agent import core
+    from fsq_agent.core import harness
 
     expected_core_public_names = {
         "CapabilityDefinitionFactory",
@@ -157,12 +157,12 @@ def test_non_core_package_code_does_not_import_core_private_modules() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module_name = node.module or ""
-                if module_name.startswith("fsq_agent.core._") or module_name.startswith("fsq_agent.core.harness._"):
+                if module_name.startswith(("fsq_agent.core._", "fsq_agent.core.harness._")):
                     violations.append(f"{path}:{node.lineno}: from {module_name} import ...")
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     module_name = alias.name
-                    if module_name.startswith("fsq_agent.core._") or module_name.startswith("fsq_agent.core.harness._"):
+                    if module_name.startswith(("fsq_agent.core._", "fsq_agent.core.harness._")):
                         violations.append(f"{path}:{node.lineno}: import {module_name}")
 
     assert violations == []
@@ -257,9 +257,7 @@ def test_harness_function_schema_is_serializable_contract() -> None:
 
 def test_android_parameter_models_produce_canonical_dumps_and_reject_extra_fields() -> None:
     tap = AndroidTapOnParams.model_validate({"target": "Login"})
-    tap_at = AndroidTapAtParams.model_validate(
-        {"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}}
-    )
+    tap_at = AndroidTapAtParams.model_validate({"point": {"x": 100, "y": 200}, "reference_screen_size": {"width": 1080, "height": 2400}})
     swipe = AndroidSwipeParams.model_validate(
         {
             "start": {"x": 800, "y": 1900},
@@ -403,7 +401,7 @@ def test_runner_event_requires_known_event_type() -> None:
 
 
 def test_evidence_bundle_serializes_artifact_refs_without_binary_payloads() -> None:
-    created_at = datetime.now(timezone.utc)
+    created_at = datetime.now(UTC)
     artifact = EvidenceArtifactRef(
         artifact_id="artifact-1",
         kind="screenshot",

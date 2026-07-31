@@ -3,9 +3,9 @@
 
 import json
 import logging
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,17 +16,16 @@ from fsq_agent.cli._core_execution import run_fsq_core_case, run_strict_fsq_core
 from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import (
+    ConfigurationError,
     EvidenceBundle,
     ExecutableStep,
     FailureCategory,
-    ConfigurationError,
     HarnessActionResult,
     HarnessArtifactRef,
     HarnessContext,
     PostActionDelaySettings,
     StepPhase,
 )
-
 
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
@@ -362,9 +361,9 @@ onCaseStart:
 
 
 def test_run_strict_fsq_lifecycle_case_logs_phase_and_action_status(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        case_path = tmp_path / "root_logs.codex.yaml"
-        case_path.write_text(
-                f"""
+    case_path = tmp_path / "root_logs.codex.yaml"
+    case_path.write_text(
+        f"""
 schemaVersion: fsq.ai-test/v1
 name: Root Logs Case
 platform: android
@@ -376,30 +375,30 @@ onCaseComplete:
 ---
 - launchApp
 """,
-                encoding="utf-8",
-        )
-        case = FsqCaseLoader().load_case(case_path)
-        logging.getLogger("fsq_agent").propagate = True
-        caplog.set_level("INFO", logger="fsq_agent.cli._case_lifecycle")
+        encoding="utf-8",
+    )
+    case = FsqCaseLoader().load_case(case_path)
+    logging.getLogger("fsq_agent").propagate = True
+    caplog.set_level("INFO", logger="fsq_agent.cli._case_lifecycle")
 
-        run_strict_fsq_lifecycle_case(
-                case_path=case_path,
-                case=case,
-                settings=Settings(cases={"dir": tmp_path}),
-                harness=CliCoreHarness(),
-                output_dir=tmp_path / "runs" / "root-logs",
-                run_id="root-logs",
-                registry=build_capability_registry(),
-                post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
-        )
+    run_strict_fsq_lifecycle_case(
+        case_path=case_path,
+        case=case,
+        settings=Settings(cases={"dir": tmp_path}),
+        harness=CliCoreHarness(),
+        output_dir=tmp_path / "runs" / "root-logs",
+        run_id="root-logs",
+        registry=build_capability_registry(),
+        post_action_delay_seconds=PostActionDelaySettings(platform=0, common=0),
+    )
 
-        messages = [record.getMessage() for record in caplog.records]
-        assert any("Strict phase before case: start" in message for message in messages)
-        assert any("Strict before case action runShell" in message and "passed" in message for message in messages)
-        assert any("Strict phase main case: start" in message for message in messages)
-        assert any("Strict main case action launchApp" in message and "passed" in message for message in messages)
-        assert any("Strict phase after case: start" in message for message in messages)
-        assert any("Strict after case action runShell" in message and "passed" in message for message in messages)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Strict phase before case: start" in message for message in messages)
+    assert any("Strict before case action runShell" in message and "passed" in message for message in messages)
+    assert any("Strict phase main case: start" in message for message in messages)
+    assert any("Strict main case action launchApp" in message and "passed" in message for message in messages)
+    assert any("Strict phase after case: start" in message for message in messages)
+    assert any("Strict after case action runShell" in message and "passed" in message for message in messages)
 
 
 def test_run_strict_fsq_lifecycle_case_runs_config_hooks_around_case_hooks(tmp_path: Path) -> None:

@@ -3,18 +3,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
-from pathlib import Path
-from typing import Any, Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.config import Settings
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fsq_agent.config import Settings
 
 RecordingStatus = Literal["recorded", "skipped", "failed"]
 

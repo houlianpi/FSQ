@@ -2,8 +2,8 @@
 # Licensed under the MIT License.
 
 import asyncio
-import itertools
 import inspect
+import itertools
 import json
 import time
 from collections.abc import Callable
@@ -20,7 +20,6 @@ from fsq_agent.models import (
     RunnerStepResult,
 )
 from fsq_agent.tools._agent_tools import AgentToolExecutor, AgentToolRegistry, DefaultAgentToolProvider
-
 
 RunnerInvoker = Callable[
     [str, ExecutableStep],
@@ -80,7 +79,8 @@ class AgentToolAdapter:
                     result = await self._execute_through_runner(tool_name, arguments)
                 else:
                     result = await self.executor.execute(AgentToolCall(tool_name=tool_name, arguments=arguments))
-            except Exception as exc:
+            # The SDK callback boundary normalizes all tool failures into structured results.
+            except Exception as exc:  # noqa: BLE001
                 result = AgentToolResult(
                     tool_name=tool_name,
                     status="failed",
@@ -147,11 +147,7 @@ class AgentToolAdapter:
                 metadata["replay"] = capability_result.replay.model_dump(mode="json")
             if capability_result.safe_replay_params:
                 metadata["safe_replay_params"] = dict(capability_result.safe_replay_params)
-        sensitive = bool(
-            (capability_result.sensitivity if capability_result is not None else False)
-            or invoke_metadata.get("sensitivity")
-            or invoke_metadata.get("sensitive")
-        )
+        sensitive = bool((capability_result.sensitivity if capability_result is not None else False) or invoke_metadata.get("sensitivity") or invoke_metadata.get("sensitive"))
         metadata["runner_step_id"] = runner_result.step_id
         metadata["runner_result"] = runner_result.model_dump(mode="json")
         return AgentToolResult(
@@ -217,7 +213,7 @@ class AgentToolAdapter:
             return {}
         payload = json.loads(args)
         if not isinstance(payload, dict):
-            raise ValueError("AgentTool arguments must be a JSON object.")
+            raise TypeError("AgentTool arguments must be a JSON object.")
         return payload
 
     def _format_tool_response(self, result: AgentToolResult) -> str:
@@ -281,7 +277,7 @@ class AgentToolAdapter:
 
     def _response_metadata(self, result: AgentToolResult) -> dict[str, Any]:
         payload: dict[str, Any] = {}
-        for key in {
+        for key in (
             "capability_name",
             "executor_kind",
             "replay",
@@ -290,7 +286,7 @@ class AgentToolAdapter:
             "runner_step_id",
             "runner_result",
             "duration_ms",
-        }:
+        ):
             if key in result.metadata:
                 payload[key] = result.metadata[key]
         payload.setdefault("status", "passed" if result.status == "success" else result.status)

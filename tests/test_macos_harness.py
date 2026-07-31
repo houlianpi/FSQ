@@ -8,8 +8,8 @@ import pytest
 from fsq_agent.core import ArtifactStore, HarnessInterface
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._appium_mac2_driver import AppiumMac2Driver
-from fsq_agent.core.harness._macos import MacOSHarness
 from fsq_agent.core.harness._driver_tools import _macos_driver_tool
+from fsq_agent.core.harness._macos import MacOSHarness
 from fsq_agent.models import (
     AIAssertionRequest,
     AIAssertionResult,
@@ -343,9 +343,7 @@ def test_appium_mac2_driver_assert_elements_order_returns_structured_pass_output
         )
     )
 
-    result = driver.assert_elements_order(
-        MacOSAssertElementsOrderParams.model_validate({"elements": [{"target": "First"}, {"target": "Second"}]})
-    )
+    result = driver.assert_elements_order(MacOSAssertElementsOrderParams.model_validate({"elements": [{"target": "First"}, {"target": "Second"}]}))
 
     assert result["status"] == "passed"
     assert result["output"] == {
@@ -371,11 +369,7 @@ def test_appium_mac2_driver_assert_elements_order_fails_on_wrong_order() -> None
         )
     )
 
-    result = driver.assert_elements_order(
-        MacOSAssertElementsOrderParams.model_validate(
-            {"elements": [{"target": "First"}, {"target": "Second"}], "direction": "horizontal", "expected_order": [1, 0]}
-        )
-    )
+    result = driver.assert_elements_order(MacOSAssertElementsOrderParams.model_validate({"elements": [{"target": "First"}, {"target": "Second"}], "direction": "horizontal", "expected_order": [1, 0]}))
 
     assert result["status"] == "failed"
     assert result["failure_category"] == "assertion_error"
@@ -387,9 +381,7 @@ def test_appium_mac2_driver_assert_elements_order_fails_on_wrong_order() -> None
 def test_appium_mac2_driver_assert_elements_order_reports_missing_required_elements() -> None:
     driver = AppiumMac2Driver(session=FakeMacSession({"First": FakeMacElement(x=10, y=10)}))
 
-    result = driver.assert_elements_order(
-        MacOSAssertElementsOrderParams.model_validate({"elements": [{"target": "First"}, {"target": "Missing"}]})
-    )
+    result = driver.assert_elements_order(MacOSAssertElementsOrderParams.model_validate({"elements": [{"target": "First"}, {"target": "Missing"}]}))
 
     assert result["status"] == "failed"
     assert result["failure_category"] == "target_resolution_error"
@@ -402,12 +394,7 @@ def test_appium_mac2_driver_ui_snapshot_simplifies_page_source_to_max_depth() ->
     driver = AppiumMac2Driver(
         session=FakeMacSession(
             {},
-            page_source=(
-                '<AppiumAUT name="Root">'
-                '<Window name="Main"><Group name="Toolbar"><Button name="Save" custom="hidden" /></Group></Window>'
-                '<Window name="Other" />'
-                '</AppiumAUT>'
-            ),
+            page_source=('<AppiumAUT name="Root"><Window name="Main"><Group name="Toolbar"><Button name="Save" custom="hidden" /></Group></Window><Window name="Other" /></AppiumAUT>'),
         ),
         page_source_max_depth=2,
     )

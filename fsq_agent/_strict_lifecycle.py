@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
-from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Callable, Literal
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
-from fsq_agent.config import Settings
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
@@ -30,6 +30,8 @@ from fsq_agent.models import (
 )
 from fsq_agent.report import CoreEvidenceReportGenerator
 
+if TYPE_CHECKING:
+    from fsq_agent.config import Settings
 
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
 ResolveSteps = Callable[[list[ExecutableStep], FsqCase], list[ExecutableStep]]
@@ -155,9 +157,7 @@ class _StrictLifecycleExecutor:
         )
         self.recorder = _LifecycleRecorder(recorder)
         self.resolve_steps = resolve_steps
-        self.resolved_steps_by_path = {
-            path.resolve(): list(steps) for path, steps in resolved_steps_by_path.items()
-        }
+        self.resolved_steps_by_path = {path.resolve(): list(steps) for path, steps in resolved_steps_by_path.items()}
         self.cases_by_path = {path.resolve(): loaded_case for path, loaded_case in cases_by_path.items()}
         self.cancellation_check = cancellation_check
         self.loader = FsqCaseLoader()
@@ -293,7 +293,7 @@ class _StrictLifecycleExecutor:
             self.cancellation_check()
             child_path, child_case = self._resolve_child_case(action.value)
             step_id = self._start_run_case_hook(metadata)
-            started_at = datetime.now(timezone.utc)
+            started_at = datetime.now(UTC)
             started = time.perf_counter()
             passed = self._execute_case(child_path, child_case, stack, parent_hook_action=metadata)
             duration_ms = max(0, int((time.perf_counter() - started) * 1000))
@@ -303,10 +303,14 @@ class _StrictLifecycleExecutor:
 
     def _resolve_child_case(self, path_text: str) -> tuple[Path, FsqCase]:
         requested = Path(path_text.strip())
-        candidates = [requested] if requested.is_absolute() else [
-            *(([self.settings.cases.dir / requested] if self.settings.cases.dir is not None else [])),
-            Path.cwd() / requested,
-        ]
+        candidates = (
+            [requested]
+            if requested.is_absolute()
+            else [
+                *([self.settings.cases.dir / requested] if self.settings.cases.dir is not None else []),
+                Path.cwd() / requested,
+            ]
+        )
         for candidate in candidates:
             resolved = candidate.resolve()
             if resolved in self.cases_by_path:
@@ -384,7 +388,7 @@ class _StrictLifecycleExecutor:
         self.cancellation_check()
         self._shell_step_index += 1
         step_id = f"{self.case.id}-hook-shell-{self._shell_step_index:03d}"
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started = time.perf_counter()
         self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_start", step_id=step_id))
         self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="phase_start", step_id=step_id, phase="invoke"))
@@ -399,7 +403,7 @@ class _StrictLifecycleExecutor:
             stdout_length = 0
             stderr_length = 0
             error_message = f"Shell hook failed to start: {exc}"
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         duration_ms = max(0, int((time.perf_counter() - started) * 1000))
         status = "passed" if error_message is None else "failed"
         failure_category = None if status == "passed" else "action_error"
@@ -447,9 +451,7 @@ class _StrictLifecycleExecutor:
         )
         if status != "passed":
             self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_error", step_id=step_id, phase="invoke"))
-        self.recorder.record_event(
-            RunnerEvent(run_id=self.run_id, event_type="step_finish", step_id=step_id, payload={"status": status})
-        )
+        self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_finish", step_id=step_id, payload={"status": status}))
         self.recorder.record_step_result(result)
         return status == "passed"
 
@@ -457,9 +459,7 @@ class _StrictLifecycleExecutor:
         self._run_case_step_index += 1
         step_id = f"{self.case.id}-hook-run-case-{self._run_case_step_index:03d}"
         self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_start", step_id=step_id))
-        self.recorder.record_event(
-            RunnerEvent(run_id=self.run_id, event_type="phase_start", step_id=step_id, phase="invoke")
-        )
+        self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="phase_start", step_id=step_id, phase="invoke"))
         return step_id
 
     def _finish_run_case_hook(
@@ -484,7 +484,7 @@ class _StrictLifecycleExecutor:
             ),
             status=status,
             started_at=started_at,
-            ended_at=datetime.now(timezone.utc),
+            ended_at=datetime.now(UTC),
             duration_ms=duration_ms,
             phase_reports=[
                 StepPhaseReport(
@@ -512,9 +512,7 @@ class _StrictLifecycleExecutor:
                 payload={"status": status},
             )
         )
-        self.recorder.record_event(
-            RunnerEvent(run_id=self.run_id, event_type="step_finish", step_id=step_id, payload={"status": status})
-        )
+        self.recorder.record_event(RunnerEvent(run_id=self.run_id, event_type="step_finish", step_id=step_id, payload={"status": status}))
         self.recorder.record_step_result(result)
 
     def _log_phase_start(self, phase: LifecyclePhase) -> None:
@@ -547,10 +545,14 @@ class _LifecycleRecorder:
 
 def _resolve_case_yaml_path(path_text: str, cases_dir: Path | None) -> Path:
     requested = Path(path_text.strip())
-    candidates = [requested] if requested.is_absolute() else [
-        *(([cases_dir / requested] if cases_dir is not None else [])),
-        Path.cwd() / requested,
-    ]
+    candidates = (
+        [requested]
+        if requested.is_absolute()
+        else [
+            *([cases_dir / requested] if cases_dir is not None else []),
+            Path.cwd() / requested,
+        ]
+    )
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():
             return candidate.resolve()
@@ -598,13 +600,15 @@ def _phase_metadata_value(result: RunnerStepResult, key: str) -> object | None:
 
 def _run_shell_command(command: str) -> subprocess.CompletedProcess[str]:
     if sys.platform == "win32":
-        return subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+        # PowerShell is a fixed platform executable; only trusted, operator-authored command text is dynamic.
+        return subprocess.run(  # noqa: S603
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],  # noqa: S607
             capture_output=True,
             text=True,
             check=False,
         )
-    return subprocess.run(command, shell=True, capture_output=True, text=True, check=False)
+    # Strict lifecycle commands are trusted, operator-authored configuration.
+    return subprocess.run(command, shell=True, capture_output=True, text=True, check=False)  # noqa: S602
 
 
 def _split_trailing_teardown_steps(steps: list[ExecutableStep]) -> tuple[list[ExecutableStep], list[ExecutableStep]]:

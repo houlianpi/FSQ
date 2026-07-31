@@ -10,7 +10,6 @@ from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.core import CapabilityRegistry, RuntimeSecretStore, StepRunner
 from fsq_agent.models import (
     CapabilityDefinition,
-    CapabilityExecutionResult,
     ExecutableStep,
     FailureCategory,
     HarnessActionResult,
@@ -406,10 +405,8 @@ def test_step_runner_adds_reference_screen_size_for_point_based_swipe_replay() -
 
 def test_step_runner_uses_common_delay_and_skips_zero_sleep(monkeypatch) -> None:
     sleep_calls: list[float] = []
-    monkeypatch.setattr("fsq_agent.core.runner._runner.time.sleep", lambda seconds: sleep_calls.append(seconds))
-    registry = CapabilityRegistry.from_definitions(
-        [CapabilityDefinition(name="custom_common", executor_kind="common", params_model=NoParams)]
-    )
+    monkeypatch.setattr("fsq_agent.core.runner._runner.time.sleep", sleep_calls.append)
+    registry = CapabilityRegistry.from_definitions([CapabilityDefinition(name="custom_common", executor_kind="common", params_model=NoParams)])
     runner = StepRunner(
         harness=SuccessfulHarness(),
         capability_registry=registry,
@@ -423,9 +420,7 @@ def test_step_runner_uses_common_delay_and_skips_zero_sleep(monkeypatch) -> None
     assert result.phase_reports[1].metadata["post_action_delay_seconds"] == 0.1
 
     sleep_calls.clear()
-    zero_delay_registry = CapabilityRegistry.from_definitions(
-        [CapabilityDefinition(name="zero_common", executor_kind="common", params_model=NoParams, post_action_delay_seconds=0)]
-    )
+    zero_delay_registry = CapabilityRegistry.from_definitions([CapabilityDefinition(name="zero_common", executor_kind="common", params_model=NoParams, post_action_delay_seconds=0)])
     zero_delay_runner = StepRunner(
         harness=SuccessfulHarness(),
         capability_registry=zero_delay_registry,

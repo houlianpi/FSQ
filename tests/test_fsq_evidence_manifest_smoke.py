@@ -17,7 +17,6 @@ from fsq_agent.models import (
     StepPhase,
 )
 
-
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
 name: Manifest Smoke Case

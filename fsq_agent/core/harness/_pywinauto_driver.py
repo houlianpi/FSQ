@@ -1,13 +1,14 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 import json
-from math import ceil, hypot
-from pathlib import Path
 import subprocess
 import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
+from math import ceil, hypot
+from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -16,8 +17,8 @@ from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixi
 from fsq_agent.core.harness._driver_tools import _windows_driver_tool
 from fsq_agent.models import (
     ConfigurationError,
-    WindowsAssertWithAIParams,
     WindowsAssertVisibleParams,
+    WindowsAssertWithAIParams,
     WindowsClickOnParams,
     WindowsDoubleClickOnParams,
     WindowsDragToParams,
@@ -30,7 +31,6 @@ from fsq_agent.models import (
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
-
 
 DEFAULT_WINDOWS_WAIT_TIMEOUT_SECONDS = 10.0
 WINDOW_READY_TIMEOUT_SECONDS = 30.0
@@ -107,21 +107,16 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
                     connected = application_cls(backend=self.backend_kind).connect(active_only=True)
                     window = connected.top_window()
                 window.wait(wait_for, timeout=2 if wait else 0)
-                self._app = connected
-                return window
-            except Exception as exc:  # noqa: BLE001 - retry until the window appears or timeout.
-                details = (
-                    f"title_re={self.window_title_re!r}, wait_for={wait_for!r}, "
-                    f"backend={self.backend_kind!r}; last error: {exc}"
-                )
+            except Exception as exc:
+                details = f"title_re={self.window_title_re!r}, wait_for={wait_for!r}, backend={self.backend_kind!r}; last error: {exc}"
                 if deadline is None:
                     raise RuntimeError(f"Failed to resolve Windows main window ({details})") from exc
                 if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        f"Timed out after {WINDOW_READY_TIMEOUT_SECONDS:.1f} seconds resolving Windows main window "
-                        f"({details})"
-                    ) from exc
+                    raise TimeoutError(f"Timed out after {WINDOW_READY_TIMEOUT_SECONDS:.1f} seconds resolving Windows main window ({details})") from exc
                 time.sleep(1.0)
+            else:
+                self._app = connected
+                return window
 
     @_windows_driver_tool("killApp", description="Stop the launched Windows desktop application.")
     def kill_app(self, params: WindowsKillAppParams) -> dict[str, object]:
@@ -223,10 +218,9 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             pressed = False
         finally:
             if pressed:
-                try:
+                # Best-effort mouse cleanup crosses pywinauto and injected fake backends with no shared error type.
+                with suppress(Exception):
                     mouse.release(coords=end, button=params.mouse_button)
-                except Exception:
-                    pass
         return self._passed()
 
     @_windows_driver_tool("assertVisible", description="Assert that a Windows control is visible.")
@@ -307,7 +301,8 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
             return None
         try:
             return func()
-        except Exception:
+        # Snapshot probes call heterogeneous pywinauto wrappers whose exception hierarchy is not stable.
+        except Exception:  # noqa: BLE001
             return None
 
     def _element_attr(self, element: Any, name: str) -> str | None:

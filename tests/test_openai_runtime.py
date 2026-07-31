@@ -3,17 +3,17 @@
 
 import asyncio
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
 from fsq_agent.agent import OpenAIAgentsRuntime
 from fsq_agent.agent._harness_tools import HarnessToolAdapter
-from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
 from fsq_agent.agent._pre_plan import build_pre_plan_input
+from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
 from fsq_agent.agent._verification_task import VerificationEvidenceBuilder
 from fsq_agent.config import Settings
 from fsq_agent.models import (
@@ -183,7 +183,7 @@ class _FakeProviderSession:
 
 
 class _FakeAgent:
-    instances: list["_FakeAgent"] = []
+    instances: ClassVar[list["_FakeAgent"]] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -220,6 +220,7 @@ class _FakeRunner:
 def _patch_runtime_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     import agents
     import agents.extensions
+
     import fsq_agent.agent._openai_runtime as runtime_module
 
     _FakeAgent.instances = []
@@ -382,10 +383,7 @@ async def test_runtime_classifies_sdk_content_filter_incomplete(monkeypatch: pyt
 
     class _ContentFilterRunResult:
         async def stream_events(self) -> Any:
-            raise RuntimeError(
-                "Responses stream ended with terminal event `response.incomplete`. "
-                "status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter')."
-            )
+            raise RuntimeError("Responses stream ended with terminal event `response.incomplete`. status=incomplete; incomplete_details=IncompleteDetails(reason='content_filter').")
             yield None
 
     class _ContentFilterRunner:
@@ -687,14 +685,11 @@ def test_runtime_instructions_use_configured_prompt_templates(tmp_path: Path) ->
     agent_template = tmp_path / "agent.j2"
     task_template = tmp_path / "task.j2"
     agent_template.write_text(
-        "Configured base instruction.\n"
-        "Configured knowledge:\n"
-        "{% for item in private_knowledge %}- {{ item.key }}={{ item.value }}\n{% endfor %}",
+        "Configured base instruction.\nConfigured knowledge:\n{% for item in private_knowledge %}- {{ item.key }}={{ item.value }}\n{% endfor %}",
         encoding="utf-8",
     )
     task_template.write_text(
-        "Task {{ task.id }}: {{ task.description }}\n"
-        "{% if task.acceptance_criteria %}{{ task.acceptance_criteria | join(', ') }}{% else %}Configured no criteria text.{% endif %}\n",
+        "Task {{ task.id }}: {{ task.description }}\n{% if task.acceptance_criteria %}{{ task.acceptance_criteria | join(', ') }}{% else %}Configured no criteria text.{% endif %}\n",
         encoding="utf-8",
     )
     settings = Settings(
@@ -751,10 +746,10 @@ def test_prompt_model_builder_and_renderer_use_templates() -> None:
 def test_openai_agents_settings_rejects_obsolete_custom_instruction_fields(tmp_path: Path) -> None:
     custom_instructions = tmp_path / "custom-instructions.md"
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="custom_instructions"):
         OpenAIAgentsSettings(prompt={"custom_instructions": ["Custom."]})
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="custom_instructions_path"):
         OpenAIAgentsSettings(prompt={"custom_instructions_path": custom_instructions})
 
 
@@ -1095,9 +1090,7 @@ def test_runtime_stream_message_output_uses_text_not_sdk_object_repr() -> None:
     event = SimpleNamespace(
         type="run_item_stream_event",
         name="message_output_created",
-        item=SimpleNamespace(
-            raw_item=SimpleNamespace(content=[SimpleNamespace(text='{"schema_version":"task_run_v1","status":"success"}')])
-        ),
+        item=SimpleNamespace(raw_item=SimpleNamespace(content=[SimpleNamespace(text='{"schema_version":"task_run_v1","status":"success"}')])),
     )
 
     run_event = runtime._map_stream_event(event, "run-1", "task")
@@ -1341,9 +1334,7 @@ def test_runtime_tool_count_filter_writes_artifact_for_trimmed_history(tmp_path:
     output_settings.runs_dir = tmp_path / "runs"
     settings = Settings(openai_agents=openai_settings, output=output_settings)
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
-    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
-        "call_model_input_filter"
-    ]
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs["call_model_input_filter"]
     data = SimpleNamespace(
         model_data=ModelInputData(
             input=[
@@ -1380,14 +1371,12 @@ def test_runtime_input_filter_trims_recent_large_ui_snapshot_to_artifact(tmp_pat
     output_settings.runs_dir = tmp_path / "runs"
     settings = Settings(openai_agents=OpenAIAgentsSettings(), output=output_settings)
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
-    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
-        "call_model_input_filter"
-    ]
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs["call_model_input_filter"]
     snapshot_output = json.dumps(
         {
             "tool_name": "ui_snapshot",
             "status": "passed",
-            "result": {"output": {"xml": "<node password=\"false\">" + ("visible text " * 5000) + "</node>"}},
+            "result": {"output": {"xml": '<node password="false">' + ("visible text " * 5000) + "</node>"}},
         }
     )
     data = SimpleNamespace(
@@ -1497,9 +1486,7 @@ def test_runtime_input_filter_leaves_plain_screenshot_outputs_text_only(tmp_path
     output_settings.runs_dir = output_root / "runs"
     settings = Settings(openai_agents=OpenAIAgentsSettings(), output=output_settings)
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
-    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
-        "call_model_input_filter"
-    ]
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs["call_model_input_filter"]
     data = SimpleNamespace(
         model_data=ModelInputData(
             input=[
@@ -1544,9 +1531,7 @@ def test_runtime_input_filter_does_not_attach_submitted_visual_assertion_image(t
     output_settings.runs_dir = output_root / "runs"
     settings = Settings(openai_agents=OpenAIAgentsSettings(), output=output_settings)
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
-    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
-        "call_model_input_filter"
-    ]
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs["call_model_input_filter"]
     output = json.dumps(
         {
             "type": "visual_assertion_submission",
@@ -1597,9 +1582,7 @@ def test_runtime_input_filter_rejects_screenshot_images_outside_output_root(tmp_
     output_settings.runs_dir = output_root / "runs"
     settings = Settings(openai_agents=OpenAIAgentsSettings(), output=output_settings)
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
-    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs[
-        "call_model_input_filter"
-    ]
+    input_filter = runtime._build_run_config(_RunConfig, _ToolOutputTrimmer, provider="provider", run_id="run-1").kwargs["call_model_input_filter"]
     data = SimpleNamespace(
         model_data=ModelInputData(
             input=[

@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import os
 from pathlib import Path
 from typing import Any
-import os
 
 import yaml
 from pydantic import ValidationError
@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from fsq_agent.config._paths import resolve_runtime_paths
 from fsq_agent.config._settings import Settings
 from fsq_agent.models import ConfigurationError
-
 
 DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
 PLATFORM_CONFIG_PATHS = {
@@ -225,7 +224,7 @@ def _apply_environment_settings(settings: Settings) -> None:
         base_url = base_url.split("/openai/responses", 1)[0] + "/openai/v1/"
     elif "/openai/v1" in base_url:
         base_url = base_url.split("/openai/v1", 1)[0] + "/openai/v1/"
-    elif base_url.endswith(".openai.azure.com") or base_url.endswith(".cognitiveservices.azure.com"):
+    elif base_url.endswith((".openai.azure.com", ".cognitiveservices.azure.com")):
         base_url = base_url.rstrip("/") + "/openai/v1/"
     settings.openai_agents.base_url = base_url
 
@@ -343,11 +342,7 @@ def _validate_openai_provider_settings(settings: Settings) -> None:
             "Azure OpenAI API key environment variable is not set.",
             context={"api_key_env": AZURE_OPENAI_API_KEY_ENV},
         )
-    if (
-        settings.openai_agents.provider == "azure_openai"
-        and api_key
-        and api_key.lower().startswith("replace-with")
-    ):
+    if settings.openai_agents.provider == "azure_openai" and api_key and api_key.lower().startswith("replace-with"):
         raise ConfigurationError(
             "Azure OpenAI API key environment variable still contains a placeholder value.",
             context={"api_key_env": AZURE_OPENAI_API_KEY_ENV},

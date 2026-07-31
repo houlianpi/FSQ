@@ -10,10 +10,10 @@ from pydantic import BaseModel
 from fsq_agent.core.harness._ai_assertion_tool import AIAssertionBackendToolMixin
 from fsq_agent.core.harness._driver_tools import _android_driver_tool
 from fsq_agent.models import (
-    AndroidAssertWithAIParams,
     AndroidAssertNotVisibleParams,
     AndroidAssertStateParams,
     AndroidAssertVisibleParams,
+    AndroidAssertWithAIParams,
     AndroidInputTextParams,
     AndroidKillAppParams,
     AndroidLaunchAppParams,
@@ -27,17 +27,12 @@ from fsq_agent.models import (
     ConfigurationError,
 )
 
-
 DEFAULT_ELEMENT_WAIT_TIMEOUT_SECONDS = 10.0
 ANDROID_STATE_ASSERTION_FIELDS = ("enabled", "checked", "selected", "clickable", "focused")
 ANDROID_LOCATOR_FIELDS = ("resourceId", "accessibilityId", "text", "className", "xpath")
 ANDROID_UI_SNAPSHOT_TEXT_LIMIT_CHARS = 50
-ANDROID_UI_SNAPSHOT_TEXT_ATTRIBUTES = frozenset(
-    {"text", "content-desc", "contentDescription", "hint", "label", "name", "value"}
-)
-ANDROID_UI_SNAPSHOT_LOCATOR_ATTRIBUTES = frozenset(
-    {"id", "resource-id", "resourceId", "accessibility-id", "content-desc", "contentDescription"}
-)
+ANDROID_UI_SNAPSHOT_TEXT_ATTRIBUTES = frozenset({"text", "content-desc", "contentDescription", "hint", "label", "name", "value"})
+ANDROID_UI_SNAPSHOT_LOCATOR_ATTRIBUTES = frozenset({"id", "resource-id", "resourceId", "accessibility-id", "content-desc", "contentDescription"})
 ANDROID_UI_SNAPSHOT_STRUCTURAL_ATTRIBUTES = frozenset({"class", "className", "bounds"})
 ANDROID_UI_SNAPSHOT_TRUE_STATE_ATTRIBUTES = frozenset(
     {
@@ -61,6 +56,14 @@ ANDROID_UI_SNAPSHOT_ALLOWED_ATTRIBUTES = (
     | ANDROID_UI_SNAPSHOT_TRUE_STATE_ATTRIBUTES
     | ANDROID_UI_SNAPSHOT_NEGATIVE_STATE_ATTRIBUTES
 )
+
+
+def _parse_xml_safely(source: str) -> ElementTree.Element:
+    normalized = source.upper()
+    if "<!DOCTYPE" in normalized or "<!ENTITY" in normalized:
+        raise ElementTree.ParseError("DTD and entity declarations are not allowed.")
+    # DTD and entity declarations are rejected above, preventing attacker-controlled entity expansion.
+    return ElementTree.fromstring(source)  # noqa: S314
 
 
 class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
@@ -239,28 +242,32 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         source_xml = self._dump_hierarchy_xml()
         try:
             compact_xml = self._compact_ui_snapshot_xml(source_xml)
-        except Exception:
+        # Snapshot compaction must fall back for any local or optional-backend failure by contract.
+        except Exception:  # noqa: BLE001
             compact_xml = self._raw_hierarchy_xml_or(source_xml)
         return {"xml": compact_xml}
 
     def _dump_hierarchy_xml(self) -> str:
         try:
             return str(self.device.dump_hierarchy(compressed=True))
-        except Exception as compressed_error:
+        # uiautomator2 versions and injected devices expose no shared hierarchy-dump exception type.
+        except Exception as compressed_error:  # noqa: BLE001
             try:
                 return str(self.device.dump_hierarchy())
-            except Exception:
-                raise compressed_error
+            # Preserve the preferred compressed-call failure while retaining fallback failure context.
+            except Exception as fallback_error:
+                raise compressed_error from fallback_error
 
     def _raw_hierarchy_xml_or(self, fallback_xml: str) -> str:
         try:
             return str(self.device.dump_hierarchy())
-        except Exception:
+        # Raw hierarchy fallback must preserve the already captured XML across optional-backend failures.
+        except Exception:  # noqa: BLE001
             return fallback_xml
 
     def _compact_ui_snapshot_xml(self, source_xml: str) -> str:
         try:
-            source_root = ElementTree.fromstring(source_xml)
+            source_root = _parse_xml_safely(source_xml)
         except ElementTree.ParseError:
             return source_xml
 
@@ -330,7 +337,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         fallback = params.get("target")
         if isinstance(fallback, str) and fallback.strip():
             return self.device(text=fallback.strip())
-        return self.device(**{})
+        return self.device()
 
     def _selector_query(self, locator: dict[str, object]) -> dict[str, object]:
         query: dict[str, object] = {}

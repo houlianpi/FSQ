@@ -11,7 +11,6 @@ from fsq_agent._strict_case_recording import StrictCaseRecording
 from fsq_agent.cli._main import _task_from_goal, _task_from_raw_case_source, main
 from fsq_agent.models import ReportArtifact, Task, TaskResult, VerificationResult
 
-
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
 name: Strict CLI Case
@@ -205,10 +204,7 @@ def test_init_provider_azure_prompts_writes_env_and_does_not_echo_secret(
     assert result.exit_code == 0, result.output
     assert "secret-key" not in result.output
     assert (tmp_path / ".env").read_text(encoding="utf-8") == (
-        "FSQ_LLM_PROVIDER=azure_openai\n"
-        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com\n"
-        "AZURE_OPENAI_MODEL=gpt-5.4\n"
-        "AZURE_OPENAI_API_KEY=secret-key\n"
+        "FSQ_LLM_PROVIDER=azure_openai\nAZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=secret-key\n"
     )
     assert captured == {
         "provider": "azure_openai",
@@ -358,7 +354,7 @@ def test_run_strict_case_builds_android_harness_from_env_and_reports_paths(tmp_p
     monkeypatch.setenv("FSQ_ANDROID_SERIAL", "device-1")
     _config(
         tmp_path,
-                """
+        """
 harness:
     platform: android
     android:
@@ -565,7 +561,7 @@ harness:
     viewport_width: 1280
     viewport_height: 720
 """,
-    platform="web",
+        platform="web",
     )
     case_path = tmp_path / "cases" / "strict_web.codex.yaml"
     case_path.write_text(WEB_FSQ_CASE, encoding="utf-8")
@@ -600,9 +596,7 @@ harness:
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
 
-def test_run_strict_macos_case_builds_macos_harness_from_env_without_android_app_id(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_strict_macos_case_builds_macos_harness_from_env_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
     monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
     _config(
@@ -615,7 +609,7 @@ harness:
     page_source_max_depth: 7
     action_timeout_seconds: 11
 """,
-    platform="macos",
+        platform="macos",
     )
     case_path = tmp_path / "cases" / "strict_macos.codex.yaml"
     case_path.write_text(MACOS_FSQ_CASE, encoding="utf-8")
@@ -654,9 +648,7 @@ harness:
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
 
-def test_run_strict_windows_case_builds_windows_harness_from_env_without_android_app_id(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_strict_windows_case_builds_windows_harness_from_env_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
     app_path = tmp_path / "windows-app.exe"
     app_path.write_text("", encoding="utf-8")
     monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
@@ -671,7 +663,7 @@ harness:
   windows:
     backend: pywinauto
 """,
-    platform="windows",
+        platform="windows",
     )
     case_path = tmp_path / "cases" / "strict_windows.codex.yaml"
     case_path.write_text(WINDOWS_FSQ_CASE, encoding="utf-8")
@@ -711,7 +703,7 @@ def test_run_strict_rejects_case_platform_mismatch_before_driver_construction(tm
 harness:
   platform: web
 """,
-    platform="web",
+        platform="web",
     )
     case_path = tmp_path / "cases" / "android_case.codex.yaml"
     case_path.write_text(FSQ_CASE, encoding="utf-8")

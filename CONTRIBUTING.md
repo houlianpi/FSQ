@@ -23,19 +23,80 @@ Documentation-only, repository metadata, and open-source readiness changes do no
 
 ## Development
 
-Install dependencies:
+Choose the platform you are working on and install its dependencies with the development tools:
 
 ```powershell
-uv sync --extra dev
+$platform = "windows" # android, web, windows, or macos
+uv sync --frozen --extra dev --extra $platform
 ```
 
-Run tests:
+### Python Quality
 
 ```powershell
-uv run python -m pytest
+# Validate.
+uv run --frozen --extra dev ruff check .
+uv run --frozen --extra dev ruff format --check .
+
+# Apply safe lint fixes and formatting.
+uv run --frozen --extra dev ruff check . --fix
+uv run --frozen --extra dev ruff format .
 ```
 
-Use focused tests for the area you changed when possible.
+### Tests
+
+Run the test file or matching test names for the area you changed:
+
+```powershell
+uv run --frozen --extra dev --extra windows python -m pytest tests/test_windows_harness.py
+uv run --frozen --extra dev --extra windows python -m pytest tests/test_windows_harness.py -k launch
+```
+
+Maintainers can run the complete repository suite with all locked platform dependencies:
+
+```powershell
+uv run --frozen --all-extras python -m pytest
+```
+
+### CLI And Playground
+
+Use the selected platform extra when running the CLI from a source checkout:
+
+```powershell
+uv run --frozen --extra dev --extra $platform fsq-agent --help
+uv run --frozen --extra dev --extra $platform fsq-agent init --platform $platform
+uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --goal "Describe the task"
+uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --strict --case-yaml "path/to/case.codex.yaml"
+uv run --frozen --extra dev --extra $platform fsq-agent report --platform $platform --run-id "run-id" --format markdown
+uv run --frozen --extra dev --extra $platform fsq-agent playground --platform $platform
+```
+
+Build the browser Playground assets before starting the normal Python-served Playground from a source checkout:
+
+```powershell
+npm ci
+npm run build
+```
+
+For live frontend development, run the Python API and Vite in separate terminals after installing npm dependencies:
+
+```powershell
+# Terminal 1: Vite proxies API requests to port 8878.
+uv run --frozen --extra dev --extra $platform fsq-agent playground --platform $platform --port 8878 --no-open-browser
+
+# Terminal 2
+npm run dev
+```
+
+### Dependency Changes
+
+Regenerate and verify the Python lock file after changing `pyproject.toml`:
+
+```powershell
+uv lock
+uv lock --check
+```
+
+Commit `package-lock.json` whenever npm dependencies change.
 
 ## Security Issues
 

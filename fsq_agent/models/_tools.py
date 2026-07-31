@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fsq_agent.models._core import ExecutableStepKind, FailureCategory, HarnessArtifactRef, HarnessPlatform, RunnerStatus
 
-
 AgentToolStatus = Literal["success", "failed", "skipped"]
 CommonToolStatus = AgentToolStatus
 CapabilityExecutorKind = Literal["common", "driver"]

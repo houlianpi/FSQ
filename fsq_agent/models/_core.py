@@ -2,12 +2,11 @@
 # Licensed under the MIT License.
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
-
 
 StepPhase: TypeAlias = Literal["prepare", "invoke", "finalize"]
 RunnerStatus: TypeAlias = Literal["pending", "running", "passed", "failed", "skipped", "cancelled"]
@@ -96,7 +95,7 @@ class HarnessArtifactRef(BaseModel):
     kind: EvidenceArtifactKind
     path: Path
     mime_type: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_serializer("path", when_used="json")
@@ -146,10 +145,11 @@ class HarnessFunctionSchema(BaseModel):
 class AndroidLocator(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    resourceId: str | None = None
-    accessibilityId: str | None = None
+    # Names mirror the authored Android locator payload contract.
+    resourceId: str | None = None  # noqa: N815
+    accessibilityId: str | None = None  # noqa: N815
     text: str | None = None
-    className: str | None = None
+    className: str | None = None  # noqa: N815
     xpath: str | None = None
 
     def has_value(self) -> bool:
@@ -224,7 +224,8 @@ class AndroidLongPressOnParams(_AndroidTargetParams):
 
 class AndroidInputTextParams(_AndroidTargetParams):
     text: str
-    textType: TextSourceType = "literal"
+    # Name mirrors the authored text-entry payload contract.
+    textType: TextSourceType = "literal"  # noqa: N815
 
 
 class AndroidPressKeyParams(BaseModel):
@@ -296,10 +297,7 @@ class AndroidElementState(AndroidLocator):
     focused: bool | None = None
 
     def has_state_assertion(self) -> bool:
-        return any(
-            value is not None
-            for value in [self.enabled, self.checked, self.selected, self.clickable, self.focused]
-        )
+        return any(value is not None for value in [self.enabled, self.checked, self.selected, self.clickable, self.focused])
 
 
 class AndroidAssertStateParams(BaseModel):
@@ -339,10 +337,11 @@ class WebLocator(BaseModel):
     text: str | None = None
     label: str | None = None
     placeholder: str | None = None
-    testId: str | None = None
+    # Names mirror the authored Web locator payload contract.
+    testId: str | None = None  # noqa: N815
     css: str | None = None
     xpath: str | None = None
-    altText: str | None = None
+    altText: str | None = None  # noqa: N815
     title: str | None = None
 
     def has_value(self) -> bool:
@@ -379,7 +378,8 @@ class WebNavigateToParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str
-    waitUntil: WebWaitUntil | None = None
+    # Name mirrors the authored Playwright navigation payload contract.
+    waitUntil: WebWaitUntil | None = None  # noqa: N815
 
     @model_validator(mode="after")
     def _require_url(self) -> "WebNavigateToParams":
@@ -391,7 +391,8 @@ class WebNavigateToParams(BaseModel):
 class WebNavigateBackParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    waitUntil: WebWaitUntil | None = None
+    # Name mirrors the authored Playwright navigation payload contract.
+    waitUntil: WebWaitUntil | None = None  # noqa: N815
 
 
 class WebClickOnParams(_WebTargetParams):
@@ -401,7 +402,8 @@ class WebClickOnParams(_WebTargetParams):
 
 class WebTypeTextParams(_WebTargetParams):
     text: str
-    textType: TextSourceType = "literal"
+    # Name mirrors the authored text-entry payload contract.
+    textType: TextSourceType = "literal"  # noqa: N815
     clear: bool | None = None
 
     @model_validator(mode="after")
@@ -471,8 +473,9 @@ class WebWaitForParams(BaseModel):
 class WebTakeScreenshotParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fullPage: bool | None = None
-    omitBackground: bool | None = None
+    # Names mirror the authored Playwright screenshot payload contract.
+    fullPage: bool | None = None  # noqa: N815
+    omitBackground: bool | None = None  # noqa: N815
 
 
 class WebPageSnapshotParams(BaseModel):
@@ -543,9 +546,7 @@ ANDROID_ACTION_DEFINITIONS: tuple[AndroidActionDefinition, ...] = (
     AndroidActionDefinition("uiTree", "ui_snapshot", AndroidUiTreeParams, "observation"),
     AndroidActionDefinition("assertWithAI", "assert_with_ai", AndroidAssertWithAIParams, "assertion"),
 )
-ANDROID_ACTION_DEFINITIONS_BY_NAME: dict[str, AndroidActionDefinition] = {
-    definition.fsq_action_name: definition for definition in ANDROID_ACTION_DEFINITIONS
-}
+ANDROID_ACTION_DEFINITIONS_BY_NAME: dict[str, AndroidActionDefinition] = {definition.fsq_action_name: definition for definition in ANDROID_ACTION_DEFINITIONS}
 
 
 @dataclass(frozen=True)
@@ -575,9 +576,7 @@ WEB_ACTION_DEFINITIONS: tuple[WebActionDefinition, ...] = (
     WebActionDefinition("assertText", "assert_text", WebAssertTextParams, "assertion"),
     WebActionDefinition("assertWithAI", "assert_with_ai", WebAssertWithAIParams, "assertion"),
 )
-WEB_ACTION_DEFINITIONS_BY_NAME: dict[str, WebActionDefinition] = {
-    definition.fsq_action_name: definition for definition in WEB_ACTION_DEFINITIONS
-}
+WEB_ACTION_DEFINITIONS_BY_NAME: dict[str, WebActionDefinition] = {definition.fsq_action_name: definition for definition in WEB_ACTION_DEFINITIONS}
 
 
 class WindowsLocator(BaseModel):
@@ -593,10 +592,7 @@ class WindowsLocator(BaseModel):
     parent_automation_id: str | None = None
 
     def has_value(self) -> bool:
-        return any(
-            isinstance(value, str) and value.strip()
-            for value in (self.title, self.control_type, self.automation_id, self.class_name)
-        )
+        return any(isinstance(value, str) and value.strip() for value in (self.title, self.control_type, self.automation_id, self.class_name))
 
 
 class _WindowsTargetParams(BaseModel):
@@ -688,7 +684,8 @@ class WindowsRightClickOnParams(_WindowsTargetParams):
 
 class WindowsTypeTextParams(_WindowsTargetParams):
     text: str
-    textType: TextSourceType = "literal"
+    # Name mirrors the authored text-entry payload contract.
+    textType: TextSourceType = "literal"  # noqa: N815
     clear: bool | None = None
 
     @model_validator(mode="after")
@@ -770,13 +767,14 @@ class MacOSPoint(BaseModel):
 class MacOSLocator(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    accessibilityId: str | None = None
+    # Names mirror the authored macOS locator payload contract.
+    accessibilityId: str | None = None  # noqa: N815
     name: str | None = None
     label: str | None = None
     value: str | None = None
     role: str | None = None
-    controlType: str | None = None
-    className: str | None = None
+    controlType: str | None = None  # noqa: N815
+    className: str | None = None  # noqa: N815
     xpath: str | None = None
     predicate: str | None = None
     point: MacOSPoint | None = None
@@ -872,7 +870,8 @@ class MacOSTypeTextParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
-    textType: TextSourceType = "literal"
+    # Name mirrors the authored text-entry payload contract.
+    textType: TextSourceType = "literal"  # noqa: N815
     target: str | None = None
     locator: MacOSLocator | None = None
     point: MacOSPoint | None = None
@@ -986,9 +985,7 @@ MACOS_ACTION_DEFINITIONS: tuple[MacOSActionDefinition, ...] = (
     MacOSActionDefinition("assertElementsOrder", "assert_elements_order", MacOSAssertElementsOrderParams, "assertion"),
     MacOSActionDefinition("assertWithAI", "assert_with_ai", MacOSAssertWithAIParams, "assertion"),
 )
-MACOS_ACTION_DEFINITIONS_BY_NAME: dict[str, MacOSActionDefinition] = {
-    definition.fsq_action_name: definition for definition in MACOS_ACTION_DEFINITIONS
-}
+MACOS_ACTION_DEFINITIONS_BY_NAME: dict[str, MacOSActionDefinition] = {definition.fsq_action_name: definition for definition in MACOS_ACTION_DEFINITIONS}
 
 
 class StepCallInfo(BaseModel):
@@ -1012,7 +1009,7 @@ class EvidenceArtifactRef(BaseModel):
     kind: EvidenceArtifactKind
     path: Path
     mime_type: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     step_id: str | None = None
     phase: StepPhase | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -1062,7 +1059,7 @@ class RunnerEvent(BaseModel):
     run_id: str
     step_id: str | None = None
     phase: StepPhase | None = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1071,7 +1068,7 @@ class EvidenceBundle(BaseModel):
 
     bundle_id: str
     run_id: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     schema_version: str = "1.0"
     manifest_path: Path | None = None
     events: list[RunnerEvent] = Field(default_factory=list)
@@ -1084,4 +1081,3 @@ class EvidenceManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     bundle: EvidenceBundle
-

@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
+import fsq_agent.core.runner._runner as runner_module
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.core import EvidenceRecorder, StepRunner, StepSequenceRunner
-import fsq_agent.core.runner._runner as runner_module
 from fsq_agent.models import (
     ExecutableStep,
     FailureCategory,

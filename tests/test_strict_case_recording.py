@@ -186,9 +186,7 @@ def test_record_dynamic_run_does_not_infer_replay_from_fsq_action_name(tmp_path:
 
     assert recording.status == "failed"
     assert not (run_dir / "recorded.codex.yaml").exists()
-    assert recording.skipped_tool_calls == [
-        {"tool_name": "tap_on", "reason": "platform tool did not include fsq_command replay metadata"}
-    ]
+    assert recording.skipped_tool_calls == [{"tool_name": "tap_on", "reason": "platform tool did not include fsq_command replay metadata"}]
 
 
 def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> None:

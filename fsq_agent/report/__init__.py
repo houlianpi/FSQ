@@ -8,9 +8,9 @@ from fsq_agent.report._generator import ReportGenerator
 from fsq_agent.report._resolver import resolve_report_path
 
 __all__ = [
-    "ReportGenerator",
+    "CoreEvidenceReportGenerator",
     "EvidenceBundler",
     "FailureAnalyzer",
-    "CoreEvidenceReportGenerator",
+    "ReportGenerator",
     "resolve_report_path",
 ]

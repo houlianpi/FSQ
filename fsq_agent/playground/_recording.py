@@ -5,10 +5,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fsq_agent.config import Settings
-from fsq_agent.models import Task, TaskResult
+if TYPE_CHECKING:
+    from fsq_agent.config import Settings
+    from fsq_agent.models import Task, TaskResult
 
 
 def record_dynamic_result(settings: Settings, task: Task, result: TaskResult, *, allow_failure: bool) -> dict[str, object]:

@@ -8,7 +8,6 @@ from typing import Any
 
 from fsq_agent.models import RunEvent, TaskResult
 
-
 logger = logging.getLogger(__name__)
 
 _GENERIC_REASONING_SUMMARY = "The model produced a reasoning summary."

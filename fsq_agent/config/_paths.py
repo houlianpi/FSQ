@@ -24,8 +24,9 @@ def _set_hidden_best_effort(path: Path) -> None:
     if platform.system() != "Windows":
         return
     try:
-        subprocess.run(
-            ["attrib", "+h", str(path)],
+        # The Windows utility and flags are fixed; only the workspace marker path varies.
+        subprocess.run(  # noqa: S603
+            ["attrib", "+h", str(path)],  # noqa: S607
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -93,4 +94,3 @@ def resolve_runtime_paths(settings: Settings, base_dir: Path | None = None) -> N
         prompt.agent_template_path = _resolve_path(prompt.agent_template_path, config_base)
     if prompt.task_template_path is not None:
         prompt.task_template_path = _resolve_path(prompt.task_template_path, config_base)
-

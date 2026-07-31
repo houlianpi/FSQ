@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 PAGE_KNOWLEDGE_INDEX_SCHEMA_VERSION = "page_knowledge_index_v1"
 PAGE_KNOWLEDGE_PAGE_SCHEMA_VERSION = "page_knowledge_page_v1"
 GOAL_PRE_PLAN_SCHEMA_VERSION = "goal_pre_plan_v1"
