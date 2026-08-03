@@ -42,7 +42,7 @@ body:
         - CLI
         - Playground
         - Providers
-        - Harness / new platform
+        - Harness SDK / existing drivers
         - Documentation / build / tooling
         - Other
     validations:

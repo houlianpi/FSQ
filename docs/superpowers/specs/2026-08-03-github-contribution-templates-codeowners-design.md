@@ -27,13 +27,14 @@ Add these repository metadata files:
 ├── ISSUE_TEMPLATE/
 │   ├── bug_report.yml
 │   ├── config.yml
-│   └── feature_request.yml
+│   ├── feature_request.yml
+│   └── new_platform.yml
 └── PULL_REQUEST_TEMPLATE.md
 ```
 
 The change includes:
 
-- Structured Bug and Feature Issue Forms in English.
+- Structured Bug, Feature, and New Platform/Driver Issue Forms in English.
 - An Issue chooser that disables blank Issues for normal contributors and directs security reports to the repository Security Policy.
 - One English pull request template with SDD, verification, documentation, evidence, and sensitive-data checks.
 - One global CODEOWNERS rule naming all three maintainers.
@@ -43,7 +44,7 @@ The change includes:
 
 - CI, release automation, bots, or automated enforcement of pull request template fields.
 - New labels, automatic assignees, milestones, or project-board routing.
-- Separate Issue Forms for documentation, questions, or new-platform proposals.
+- Separate Issue Forms for documentation or questions.
 - Per-directory or per-module code ownership.
 - Changes to `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, Python source, frontend source, or SPEC files.
 - Direct-push bypass to the default branch.
@@ -52,7 +53,7 @@ The change includes:
 
 ### Structured Issue Forms, One PR Template, Global Ownership
 
-Use YAML Issue Forms for validated inputs, one Markdown pull request template, and one global CODEOWNERS rule. This provides consistent Issue data without adding unnecessary PR categories or ownership mappings. This is the selected approach.
+Use YAML Issue Forms for validated inputs, including a dedicated New Platform/Driver proposal, one Markdown pull request template, and one global CODEOWNERS rule. This provides consistent Issue data without adding unnecessary PR categories or ownership mappings. This is the selected approach.
 
 ### Markdown Issue Templates
 
@@ -98,21 +99,33 @@ The form will not require the latest FSQ version because reports against pinned 
 - Use the name `Feature request` and title prefix `[Feature]: `.
 - Apply the existing `enhancement` label.
 - Require the problem or use case, desired outcome, and one or more affected areas.
-- Offer affected-area choices for agent runtime, strict replay/FSQ DSL, Android, Web, Windows, macOS, CLI, Playground, providers, Harness/new platform, documentation/build/tooling, and Other.
+- Offer affected-area choices for agent runtime, strict replay/FSQ DSL, Android, Web, Windows, macOS, CLI, Playground, providers, Harness SDK/existing drivers, documentation/build/tooling, and Other.
 - Provide optional fields for alternatives, compatibility or rollout risks, additional context, and willingness to contribute.
 - Require confirmation that the requester searched existing Issues.
 
-New-platform and Driver proposals use this Feature form and select `Harness / new platform`; they do not receive a separate form in this scope.
+Improvements to the Harness SDK or existing drivers remain Feature requests. New platform, Driver, or backend proposals use the dedicated form below.
+
+### New Platform/Driver Form
+
+`.github/ISSUE_TEMPLATE/new_platform.yml` will:
+
+- Use the name `New platform or driver proposal` and title prefix `[Platform]: `.
+- Apply the existing `enhancement` label.
+- Require the target platform, proposed Driver/backend, user need and use cases, initial capability scope, evidence and strict replay approach, and maintenance commitment.
+- Provide optional fields for dependencies and constraints and for prior art or references.
+- Require confirmation that the requester searched for an equivalent platform or Driver proposal.
+- Require acknowledgement that implementation cannot begin until the required design document and relevant SPEC changes are confirmed.
+- Direct improvements to an existing implementation to the general Feature form.
 
 ### Issue Chooser
 
 `.github/ISSUE_TEMPLATE/config.yml` will:
 
 - Set `blank_issues_enabled: false`.
-- Expose only the Bug and Feature forms as public Issue creation paths for contributors with Read or Triage access. GitHub still shows a `Maintainers only` blank Issue option to users with Write, Maintain, or Admin access.
+- Expose only the Bug, Feature, and New Platform/Driver forms as public Issue creation paths for contributors with Read or Triage access. GitHub still shows a `Maintainers only` blank Issue option to users with Write, Maintain, or Admin access.
 - Add a `Security vulnerability` contact link to `https://github.com/microsoft/FSQ/security/policy`.
 
-Questions do not receive a separate contact route because GitHub Discussions is not enabled and the confirmed scope contains only Bug and Feature intake.
+Questions do not receive a separate contact route because GitHub Discussions is not enabled and the confirmed scope contains only Bug, Feature, and New Platform/Driver intake.
 
 ## Pull Request Design
 
@@ -170,9 +183,9 @@ CODEOWNERS alone does not enforce approval. Until the ruleset is active, the fil
 ### Issue Creation
 
 1. A contributor opens the New Issue chooser.
-2. GitHub offers Bug, Feature, and the private Security Policy link. Normal contributors receive no blank Issue option; users with Write or higher access may use GitHub's `Maintainers only` blank option.
+2. GitHub offers Bug, Feature, New Platform/Driver, and the private Security Policy link. Normal contributors receive no blank Issue option; users with Write or higher access may use GitHub's `Maintainers only` blank option.
 3. GitHub validates required form fields and checklist confirmations.
-4. A submitted Bug or Feature receives its existing repository label.
+4. A submitted Bug, Feature, or New Platform/Driver proposal receives its existing repository label.
 5. Maintainers triage the structured Issue normally.
 
 ### Pull Request Creation and Review
@@ -204,7 +217,7 @@ No root or module SPEC is expected to change. This design changes GitHub contrib
 
 ## Resolved Questions
 
-- Issue scope: Bug and Feature only; new-platform proposals use Feature.
+- Issue scope: Bug, Feature, and a dedicated New Platform/Driver proposal.
 - Blank Issues: disabled for normal contributors; GitHub's built-in maintainer-only blank option remains available to users with Write or higher access.
 - Language: English.
 - Issue format: YAML Issue Forms rather than Markdown Issue templates.
@@ -218,7 +231,7 @@ No root or module SPEC is expected to change. This design changes GitHub contrib
 
 ### Before Merge
 
-- Parse all three YAML files successfully.
+- Parse all four YAML files successfully.
 - Validate Issue Form top-level keys, unique field IDs, required fields, dropdown options, checkbox requirements, and existing label names.
 - Confirm `config.yml` disables blank Issues and uses the expected absolute Security Policy URL.
 - Confirm the PR template contains Related issue, Design document, SPEC updates, Changes, Verification, Evidence, and every SDD attestation.
@@ -228,7 +241,7 @@ No root or module SPEC is expected to change. This design changes GitHub contrib
 
 ### After Merge to the Default Branch
 
-- As a non-maintainer, open the New Issue chooser and verify only Bug and Feature forms plus the Security Policy link are available. A maintainer may additionally see GitHub's `Maintainers only` blank option.
+- As a non-maintainer, open the New Issue chooser and verify only Bug, Feature, and New Platform/Driver forms plus the Security Policy link are available. A maintainer may additionally see GitHub's `Maintainers only` blank option.
 - Open each form and verify required-field behavior, platform/area options, sensitive-data guidance, and automatic `bug` or `enhancement` labeling.
 - Open a draft pull request and verify the complete PR template is inserted.
 - Confirm GitHub recognizes all three CODEOWNER handles and requests ownership review for a changed file.
