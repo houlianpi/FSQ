@@ -1,0 +1,108 @@
+name: Bug report
+description: Report a reproducible problem with FSQ.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve FSQ.
+
+        Do not report security vulnerabilities here. Follow the [Security Policy](https://github.com/microsoft/FSQ/security/policy) instead. Remove credentials, tokens, account data, personal data, and other sensitive values from everything you submit.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+      placeholder: Tell us what you observed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable sequence that reproduces the problem.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: input
+    id: fsq-version
+    attributes:
+      label: FSQ version or source revision
+      description: Provide the installed version or Git commit SHA.
+      placeholder: "For example: 0.1.0 or abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Select the active FSQ platform for this problem.
+      options:
+        - Android
+        - Web
+        - Windows
+        - macOS
+        - Cross-platform
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      description: Provide the operating system name and version.
+      placeholder: "For example: Windows 11 24H2"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "For example: 3.12.8"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs-evidence
+    attributes:
+      label: Sanitized logs and evidence
+      description: Add relevant sanitized logs, screenshots, or report excerpts. You can attach files by dragging them here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context that may help diagnose the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: submission-checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed credentials, tokens, account data, personal data, and other sensitive values from this report.
+          required: true

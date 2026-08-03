@@ -1,0 +1,89 @@
+name: Feature request
+description: Propose an improvement or new capability for FSQ.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Describe the user problem and desired outcome before implementation details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem are you trying to solve, and who experiences it?
+      placeholder: Describe the current limitation and a concrete use case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: Desired outcome
+      description: What should become possible or work differently?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-areas
+    attributes:
+      label: Affected areas
+      description: Select every area relevant to this request.
+      multiple: true
+      options:
+        - Agent runtime
+        - Strict replay / FSQ DSL
+        - Android
+        - Web
+        - Windows
+        - macOS
+        - CLI
+        - Playground
+        - Providers
+        - Harness / new platform
+        - Documentation / build / tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or alternative approaches you considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: compatibility-risks
+    attributes:
+      label: Compatibility and rollout risks
+      description: Note any compatibility concerns, migrations, or rollout risks you foresee.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, links, mockups, or other supporting context.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to help implement this feature.
+          required: false
+
+  - type: checkboxes
+    id: submission-checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
