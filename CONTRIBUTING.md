@@ -21,6 +21,22 @@ This project follows the [Microsoft Open Source Code of Conduct](https://opensou
 
 Documentation-only, repository metadata, and open-source readiness changes do not require the spec-driven development workflow. Code changes that affect supported behavior, public interfaces, or project requirements should follow the repository `SPEC.md` guidance.
 
+## Contributor Growth Path
+
+Contribution is open to everyone, and no one needs repository permissions to participate. FSQ recognizes the following paths as contributors take on broader responsibility:
+
+| Role | Typical contributions | Responsibility and access |
+|---|---|---|
+| Contributor | Issues, documentation, tests, code, examples, or reviews | No repository access required |
+| Regular Contributor | Sustained, high-quality contributions and community support | Recognition; no automatic permission change |
+| Area Reviewer or Triager | Issue triage and reviews in a demonstrated area of expertise | Triage or review responsibilities may be granted |
+| Harness Author | Ownership of a platform or backend contribution | Maintains compatibility, tests, evidence behavior, and documentation for that area |
+| Maintainer | Cross-project technical and community stewardship | Repository, release, roadmap, and governance responsibilities |
+
+Progression is based on demonstrated stewardship rather than a fixed pull request count. Maintainers consider contribution quality, technical judgment, respect for the spec-driven workflow, constructive collaboration, sustained ownership, and support for other contributors.
+
+An existing maintainer may nominate a contributor for additional responsibility. Active maintainers review the nomination under [GOVERNANCE.md](GOVERNANCE.md), and a repository administrator applies any resulting permission change. Contributors may decline a role or continue contributing without pursuing additional access.
+
 ## Development
 
 Choose the platform you are working on and install its dependencies with the development tools:

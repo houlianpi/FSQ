@@ -17,7 +17,7 @@
 | **社区基建** | LICENSE / CONTRIBUTING / CODE_OF_CONDUCT / SECURITY 齐全；Issue/PR 模板、CODEOWNERS 与 `main` Ruleset 已上线验证 | ★★★★☆ 建设中 |
 | **GitHub 社区** | 9 stars, 0 forks, 0 issues, 0 watchers | ★☆☆☆☆ 刚起步 |
 | **CI/CD** | 无 GitHub Actions workflows | ★☆☆☆☆ 缺失 |
-| **Issue/PR Templates** | Bug/Feature Issue Forms、SDD PR 模板、全局 CODEOWNERS、权限与 `main` Ruleset 已上线验证；独立 New Platform/Driver 表单已补充 | ★★★★☆ 建设中 |
+| **Issue/PR Templates** | Bug/Feature/New Platform or Driver Issue Forms、SDD PR 模板、全局 CODEOWNERS、权限与 `main` Ruleset 已上线验证 | ★★★★★ 已完成 |
 | **项目定位描述** | "goal-driven automated testing agent" — 过于狭窄 | ★★☆☆☆ 需要重塑 |
 
 ### 1.2 核心竞争力分析
@@ -690,7 +690,7 @@ async with FSQ(platform="web") as fsq:
      当前 README.md:1 偏环境配置。缺少“FSQ 是什么、为什么比 Playwright/Appium/Midscene 更值得用、5 分钟 strict run、5 分钟 AI run、如何贡献一个 harness”的叙事。
 
   5. 文档资产不少，但没有信息架构
-     docs/ 里有架构文档和历史设计，但缺少稳定的 public docs：DSL reference、capability reference、harness authoring guide、evidence manifest spec、plugin guide、roadmap。
+      docs/ 里有架构文档和历史设计，ROADMAP.md、GOVERNANCE.md 与贡献者成长路径已补充，但仍缺少稳定的 public docs：DSL reference、capability reference、harness authoring guide、evidence manifest spec、plugin guide。
 
   6. SPEC 与代码存在小的同步风险
      例如 fsq_agent/core/SPEC.md:42 提到 fsq_agent.core.registry 子包导出，但实际没有 fsq_agent/core/registry.py 或 core/registry/。这类问题对 SDD 项目尤其要严肃处理。
@@ -814,9 +814,9 @@ async with FSQ(platform="web") as fsq:
 
  A. 社区协作基础设施缺失（最紧急）
  - ❌ 没有任何 CI/CD（.github/workflows 为空）—— 社区 PR 无法自动验证，这是致命伤
- - 🟡 Bug/Feature、PR 模板、CODEOWNERS、账号权限和 `main` Ruleset 已上线验证；独立 New Platform/Driver 表单已补充
+ - ✅ Bug/Feature/New Platform or Driver、PR 模板、CODEOWNERS、账号权限和 `main` Ruleset 已上线验证
  - ❌ 没有发布到 PyPI（version = 0.1.0，用户只能源码安装）
- - ❌ 没有 ROADMAP.md、GOVERNANCE.md、贡献者成长路径
+ - ✅ ROADMAP.md、GOVERNANCE.md 与 CONTRIBUTING.md 贡献者成长路径已补充
 
  B. "Harness 库"定位没有被产品化
  - Harness 是最大卖点，但目前深埋在 core 内部，无法被外部作为独立库/插件使用
@@ -844,7 +844,7 @@ async with FSQ(platform="web") as fsq:
      - ci.yml：矩阵测试（Python 3.11/3.12 × macOS/Ubuntu/Windows）+ ruff check + pytest
      - frontend.yml：npm ci && npm run build 验证
      - 加 mypy（渐进式，先 models/capabilities 严格模式）
- 2. 社区模板：Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单已补充；ROADMAP.md 待创建
+ 2. 社区模板：Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单、ROADMAP.md、GOVERNANCE.md 与贡献者成长路径已补充
  3. README 重写：顶部一句话价值主张 + 演示 GIF + badges + 5 分钟 quickstart，把架构细节移到 docs/
  4. 发布 PyPI：release.yml（tag 触发，build wheel 含 frontend 资产 → publish），让用户 pip install fsq-agent
  5. 测试覆盖率可见：pytest-cov + Codecov badge
@@ -896,6 +896,6 @@ async with FSQ(platform="web") as fsq:
  阶段一投入产出比最高，且能立刻让社区参与成为可能。我可以现在就为你生成阶段一的全部落地文件：
 
  - .github/workflows/ci.yml + release.yml + frontend.yml
- - Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单已补充；ROADMAP.md 待创建
+ - Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单、ROADMAP.md、GOVERNANCE.md 与贡献者成长路径已补充
  - 重写后的 README（含 quickstart 骨架）
  - pytest-cov 配置
