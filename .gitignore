@@ -1,5 +1,6 @@
 .venv/
 .DS_Store
+**/.DS_Store
 .vscode/launch.json
 .vscode/settings.json
 __pycache__/
@@ -23,7 +24,13 @@ knowledge/*
 node_modules/
 fsq_agent/playground/static/
 
-# Local planning documents
-/docs/superpowers/specs/2026-08-03-github-actions-ci-design.md
-/docs/superpowers/specs/2026-08-03-github-contribution-templates-codeowners-design.md
-/docs/fsq-opensource-strategy.md
+
+# Private/local planning material. Do not commit.
+docs/fsq-opensource-strategy.md
+docs/fsq-benchmark-metrics.md
+docs/README-draft.md
+docs/superpowers/
+private/
+docs/private/
+*.internal.md
+*.private.md
