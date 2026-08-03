@@ -14,10 +14,10 @@
 | **Harness 抽象** | `HarnessInterface` + `DriverInterface` 双层协议，4 平台实现 (Android/Web/Windows/macOS) | ★★★★★ 核心竞争力 |
 | **测试覆盖** | 36 个测试文件、600KB+ 测试代码 | ★★★★☆ 扎实 |
 | **内部文档** | 15 个 SPEC.md + 39 个设计文档 + README | ★★★★☆ 内部充分 |
-| **社区基建** | LICENSE / CONTRIBUTING / CODE_OF_CONDUCT / SECURITY 齐全 | ★★★☆☆ 基本合格 |
+| **社区基建** | LICENSE / CONTRIBUTING / CODE_OF_CONDUCT / SECURITY 齐全；Issue/PR 模板、CODEOWNERS 与 `main` Ruleset 已上线验证 | ★★★★☆ 建设中 |
 | **GitHub 社区** | 9 stars, 0 forks, 0 issues, 0 watchers | ★☆☆☆☆ 刚起步 |
 | **CI/CD** | 无 GitHub Actions workflows | ★☆☆☆☆ 缺失 |
-| **Issue/PR Templates** | 无 | ★☆☆☆☆ 缺失 |
+| **Issue/PR Templates** | Bug/Feature Issue Forms、SDD PR 模板、全局 CODEOWNERS、权限与 `main` Ruleset 已上线验证；独立 New Platform/Driver 表单已补充 | ★★★★☆ 建设中 |
 | **项目定位描述** | "goal-driven automated testing agent" — 过于狭窄 | ★★☆☆☆ 需要重塑 |
 
 ### 1.2 核心竞争力分析
@@ -54,7 +54,7 @@ FSQ 的真正差异化在于以下三点：
 | 短板 | 影响 | 严重度 |
 |---|---|---|
 | 品牌定位过窄 — 描述为 "testing agent" | 限制了潜在用户群，Harness 能力远超测试场景 | 🔴 高 |
-| 社区参与基础设施缺失 — 无 CI、无模板 | 外部开发者无法有效贡献 | 🔴 高 |
+| 社区参与基础设施尚未闭环 — 模板与审批已上线，但无 CI | 外部贡献入口和强制审批已生效，自动验证仍缺失 | 🔴 高 |
 | 可扩展性不够开放 | 添加新平台/Driver 的路径对外部贡献者不透明 | 🔴 高 |
 | 缺少 "即开即用" 体验 | 新用户需要配置大量环境变量，上手门槛高 | 🟡 中 |
 | LLM Provider 局限 — 只支持 Copilot + Azure OpenAI | 排除了大量潜在用户 | 🟡 中 |
@@ -150,6 +150,8 @@ CI 应包含：
 - 多 Python 版本矩阵 (3.11, 3.12, 3.13)
 
 #### 1.2 Issue & PR Templates
+
+**状态 (2026-08-03)：Bug/Feature、PR 模板、CODEOWNERS、权限和 Ruleset 已上线验证；独立 New Platform/Driver 表单已补充。**
 
 ```
 .github/ISSUE_TEMPLATE/
@@ -439,7 +441,7 @@ async with FSQ(platform="web") as fsq:
 ```
 2026 Q3 (立即开始)      Phase 1: 社区基础设施 ──────────────┐
   │  CI/CD Pipeline                                        │
-  │  Issue/PR Templates                                    │
+  │  Issue/PR Templates（平台表单已补充）                  │
   │  README 重写 + 品牌定位                                │
   │  CONTRIBUTING 增强                                     │
   └────────────────────────────────────────────────────────┘
@@ -707,9 +709,9 @@ async with FSQ(platform="web") as fsq:
       - 平台 extras 分开做 optional smoke，避免普通 PR 被 Android/Appium/Windows 环境阻塞。
 
   3. 整理 GitHub 社区入口
-      - issue templates：bug、feature、new harness/backend、docs、good first issue。
-      - PR template：SPEC impact、tests run、platform touched、screenshots/artifacts。
-      - CODEOWNERS：core/models/capabilities/cli/playground/platform backend 分 owner。
+      - issue templates：bug、feature（已上线）；new platform/driver/backend（已补充）；docs、good first issue（待办）。
+      - PR template：已上线。
+      - CODEOWNERS：全局规则已上线，按模块拆分待团队扩大后评估。
       - label 体系：area:harness, area:dsl, area:playground, good first issue, needs-design, platform:web 等。
 
   4. 重写 README 第一屏
@@ -812,7 +814,7 @@ async with FSQ(platform="web") as fsq:
 
  A. 社区协作基础设施缺失（最紧急）
  - ❌ 没有任何 CI/CD（.github/workflows 为空）—— 社区 PR 无法自动验证，这是致命伤
- - ❌ 没有 Issue 模板、PR 模板、CODEOWNERS
+ - 🟡 Bug/Feature、PR 模板、CODEOWNERS、账号权限和 `main` Ruleset 已上线验证；独立 New Platform/Driver 表单已补充
  - ❌ 没有发布到 PyPI（version = 0.1.0，用户只能源码安装）
  - ❌ 没有 ROADMAP.md、GOVERNANCE.md、贡献者成长路径
 
@@ -842,7 +844,7 @@ async with FSQ(platform="web") as fsq:
      - ci.yml：矩阵测试（Python 3.11/3.12 × macOS/Ubuntu/Windows）+ ruff check + pytest
      - frontend.yml：npm ci && npm run build 验证
      - 加 mypy（渐进式，先 models/capabilities 严格模式）
- 2. 社区模板：Issue 模板（bug/feature/new-platform）、PR 模板、CODEOWNERS、ROADMAP.md
+ 2. 社区模板：Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单已补充；ROADMAP.md 待创建
  3. README 重写：顶部一句话价值主张 + 演示 GIF + badges + 5 分钟 quickstart，把架构细节移到 docs/
  4. 发布 PyPI：release.yml（tag 触发，build wheel 含 frontend 资产 → publish），让用户 pip install fsq-agent
  5. 测试覆盖率可见：pytest-cov + Codecov badge
@@ -894,6 +896,6 @@ async with FSQ(platform="web") as fsq:
  阶段一投入产出比最高，且能立刻让社区参与成为可能。我可以现在就为你生成阶段一的全部落地文件：
 
  - .github/workflows/ci.yml + release.yml + frontend.yml
- - Issue/PR 模板、CODEOWNERS、ROADMAP.md
+ - Issue/PR 模板与 CODEOWNERS 已上线；独立 New Platform/Driver 表单已补充；ROADMAP.md 待创建
  - 重写后的 README（含 quickstart 骨架）
  - pytest-cov 配置

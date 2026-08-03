@@ -1,0 +1,98 @@
+name: New platform or driver proposal
+description: Propose support for a new automation platform, driver, or backend.
+title: "[Platform]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a new platform, driver, or backend proposal. For improvements to an existing implementation, use the Feature request form.
+
+        An accepted proposal does not authorize implementation. New platform and capability work must complete the repository requirements-to-design and SPEC confirmation gates before implementation begins.
+
+  - type: input
+    id: target-platform
+    attributes:
+      label: Target platform
+      description: Name the operating system, runtime, device family, or application platform to support.
+      placeholder: "For example: iOS, Linux desktop, Electron, or Flutter"
+    validations:
+      required: true
+
+  - type: input
+    id: driver-backend
+    attributes:
+      label: Proposed driver or backend
+      description: Identify the automation technology or backend you propose to use.
+      placeholder: "For example: XCUITest, Appium, AT-SPI2, or Playwright CDP"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: User need and use cases
+      description: Explain who needs this support and which automation scenarios it enables.
+    validations:
+      required: true
+
+  - type: textarea
+    id: capability-scope
+    attributes:
+      label: Initial capability scope
+      description: List the setup, action, assertion, observation, and teardown capabilities needed for a useful first version.
+      placeholder: |
+        - Session or application lifecycle
+        - Input and navigation actions
+        - UI snapshot and screenshot evidence
+        - Deterministic assertions
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence-replay
+    attributes:
+      label: Evidence and strict replay approach
+      description: Describe how the backend can produce screenshots or UI snapshots and support deterministic replay.
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies-constraints
+    attributes:
+      label: Dependencies and constraints
+      description: Note licenses, services, devices, operating-system requirements, or other integration constraints.
+    validations:
+      required: false
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Prior art or references
+      description: Link relevant SDKs, automation frameworks, prototypes, or comparable implementations.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: maintenance
+    attributes:
+      label: Maintenance commitment
+      description: Tell us how you expect to participate after the initial contribution.
+      options:
+        - I can implement and help maintain it
+        - I can implement the initial version
+        - I can test or review an implementation
+        - I am proposing the need only
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: submission-checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and did not find an equivalent platform or driver proposal.
+          required: true
+        - label: I understand that implementation must not begin until the required design document and relevant SPEC changes are confirmed.
+          required: true
