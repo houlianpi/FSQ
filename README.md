@@ -252,6 +252,8 @@ FSQ_MACOS_BUNDLE_ID=com.example.app
 | [Platform Setup](docs/) | Detailed per-platform configuration |
 | [FSQ YAML Reference](docs/) | DSL syntax, lifecycle hooks, replay semantics |
 | [Harness Development Guide](docs/) | Build a new platform harness |
+| [Roadmap](ROADMAP.md) | Product direction and planned phases |
+| [Governance](GOVERNANCE.md) | Roles, decisions, and maintainer responsibilities |
 
 <!-- TODO: Set up docs site (mkdocs-material + GitHub Pages) -->
 
@@ -278,7 +280,7 @@ uv run python -m pytest
 | 🔌 Build a new platform harness | Platform experts |
 | ⚡ Improve agent / verification | AI engineers |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide and contributor growth path. Project decisions and role progression follow [GOVERNANCE.md](GOVERNANCE.md).
 
 <!-- TODO: Add "good first issue" link once issues are created -->
 

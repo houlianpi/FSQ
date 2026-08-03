@@ -4,6 +4,7 @@
 import asyncio
 import base64
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -260,7 +261,7 @@ def test_playground_server_load_run_accepts_id_relative_and_absolute_paths(tmp_p
     (run_dir / "report.md").write_text("# Report", encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    for path_value in ("run-1", ".\\run-1", str(run_dir.resolve())):
+    for path_value in ("run-1", os.path.join(".", "run-1"), str(run_dir.resolve())):
         status, payload = server.handle_post("/runs/load", {"path": path_value})
 
         assert status == 200
