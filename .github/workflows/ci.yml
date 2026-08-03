@@ -1,0 +1,211 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install quality dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run Ruff lint
+        run: uv run --frozen --extra dev ruff check .
+
+      - name: Run Ruff format check
+        run: uv run --frozen --extra dev ruff format --check .
+
+  tests:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install test dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run test suite
+        run: uv run --frozen --all-extras python -m pytest
+
+  frontend:
+    name: Frontend (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - "20"
+          - "22"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Verify packaged Playground assets
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"Expected exactly one wheel, found {len(wheels)}")
+
+          with ZipFile(wheels[0]) as archive:
+              names = set(archive.namelist())
+
+          entry = "fsq_agent/playground/static/playground/index.html"
+          asset_prefix = "fsq_agent/playground/static/assets/"
+          if entry not in names:
+              raise SystemExit(f"Wheel is missing {entry}")
+          if not any(name.startswith(asset_prefix) and not name.endswith("/") for name in names):
+              raise SystemExit(f"Wheel has no generated files under {asset_prefix}")
+
+      - name: Install wheel in isolation
+        shell: bash
+        run: |
+          uv venv --python 3.11 "$RUNNER_TEMP/fsq-wheel-smoke"
+          uv pip install --python "$RUNNER_TEMP/fsq-wheel-smoke/bin/python" dist/*.whl
+
+      - name: Smoke test installed wheel
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/fsq-wheel-smoke/bin/python" -c "import fsq_agent"
+          "$RUNNER_TEMP/fsq-wheel-smoke/bin/fsq-agent" --help
+
+  required:
+    name: Required
+    if: ${{ always() }}
+    needs:
+      - quality
+      - tests
+      - frontend
+      - package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required jobs
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+        run: |
+          printf 'Quality: %s\nTests: %s\nFrontend: %s\nPackage: %s\n' \
+            "$QUALITY_RESULT" "$TESTS_RESULT" "$FRONTEND_RESULT" "$PACKAGE_RESULT"
+          for result in "$QUALITY_RESULT" "$TESTS_RESULT" "$FRONTEND_RESULT" "$PACKAGE_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              exit 1
+            fi
+          done
