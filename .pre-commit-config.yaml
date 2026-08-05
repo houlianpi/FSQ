@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run --frozen --extra dev ruff check .
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format-check
+        name: Ruff format check
+        entry: uv run --frozen --extra dev ruff format --check .
+        language: system
+        pass_filenames: false
+        always_run: true

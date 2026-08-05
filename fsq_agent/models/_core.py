@@ -917,9 +917,7 @@ class MacOSTypeTextParams(BaseModel):
 class MacOSPressKeyParams(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one character or named key in macOS, optionally with modifiers."})
 
-    key: str = Field(
-        description="Character or named key to press. Named keys include Enter, Return, Escape, Tab, Space, Delete, Backspace, and arrow/navigation keys."
-    )
+    key: str = Field(description="Character or named key to press. Named keys include Enter, Return, Escape, Tab, Space, Delete, Backspace, and arrow/navigation keys.")
     modifiers: list[str] | None = Field(
         default=None,
         description="Modifiers applied only to this key. Supported values: COMMAND, CONTROL, OPTION or ALT, SHIFT, CAPS_LOCK, and FUNCTION.",
