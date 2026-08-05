@@ -115,6 +115,7 @@ class DriverFactory:
             app_path=settings.app_path,
             page_source_max_depth=settings.page_source_max_depth,
             action_timeout_seconds=settings.action_timeout_seconds,
+            new_command_timeout_seconds=settings.new_command_timeout_seconds,
         )
 
 

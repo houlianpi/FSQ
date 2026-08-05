@@ -482,6 +482,7 @@ def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch
                 "backend": "appium_mac2",
                 "page_source_max_depth": 7,
                 "action_timeout_seconds": 11,
+                "new_command_timeout_seconds": 420,
             },
         },
         output={"root_dir": tmp_path / "output"},
@@ -502,6 +503,7 @@ def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch
         "app_path": None,
         "page_source_max_depth": 7,
         "action_timeout_seconds": 11,
+        "new_command_timeout_seconds": 420,
     }
     assert payload == {
         "platform": "macos",
@@ -511,6 +513,7 @@ def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch
         "bundle_id_configured": True,
         "app_path_configured": False,
         "action_timeout_seconds": 11,
+        "new_command_timeout_seconds": 420,
         "configured_skill_names": [],
     }
     assert completed_payload["harness_class"] == "MacOSHarness"
@@ -883,6 +886,29 @@ def test_harness_tool_adapter_uses_default_strict_schema_for_capability_tools() 
 
     assert tools[0].name == "perform_actions"
     assert tools[0].strict_json_schema is True
+
+
+def test_harness_tool_adapter_builds_macos_tools_with_real_strict_schema() -> None:
+    from agents import FunctionTool
+
+    from fsq_agent.core.harness._appium_mac2_driver import AppiumMac2Driver
+    from fsq_agent.core.harness._macos import MacOSHarness
+
+    class SchemaOnlyEvaluator:
+        def evaluate(self, request: Any) -> Any:
+            raise AssertionError(f"Schema construction must not invoke the evaluator: {request!r}")
+
+    harness = MacOSHarness(
+        driver=AppiumMac2Driver(bundle_id="com.microsoft.edgemac"),
+        ai_assertion_evaluator=SchemaOnlyEvaluator(),
+    )
+    adapter = HarnessToolAdapter(harness, run_id="macos-schema-run", platform="macos")
+
+    tools = adapter.build_tools(FunctionTool)
+
+    assert {tool.name for tool in tools} == {schema.name for schema in adapter.schemas}
+    assert "assert_with_ai" in {tool.name for tool in tools}
+    assert all(tool.strict_json_schema for tool in tools)
 
 
 def test_harness_tool_adapter_preserves_capability_parameter_schema() -> None:

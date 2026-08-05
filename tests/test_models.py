@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import pytest
+from agents.strict_schema import ensure_strict_json_schema
 
 from fsq_agent import models
 from fsq_agent.models import (
@@ -14,6 +15,9 @@ from fsq_agent.models import (
     HarnessSettings,
     LocalToolOutputSettings,
     MacOSClickOnParams,
+    MacOSKillAppParams,
+    MacOSLaunchAppParams,
+    MacOSPressKeyParams,
     OpenAIAgentsSettings,
     PageKnowledgeIndex,
     PageKnowledgePage,
@@ -137,6 +141,9 @@ def test_capability_parameter_schemas_include_llm_facing_guidance() -> None:
     web_wait_schema = WebWaitForParams.model_json_schema()
     windows_click_schema = WindowsClickOnParams.model_json_schema()
     macos_click_schema = MacOSClickOnParams.model_json_schema()
+    macos_launch_schema = MacOSLaunchAppParams.model_json_schema()
+    macos_kill_schema = MacOSKillAppParams.model_json_schema()
+    macos_press_key_schema = MacOSPressKeyParams.model_json_schema()
 
     assert "Wait without touching platform state" in wait_schema["description"]
     assert "milliseconds" in wait_schema["properties"]["duration_ms"]["description"]
@@ -159,6 +166,20 @@ def test_capability_parameter_schemas_include_llm_facing_guidance() -> None:
 
     assert "target, non-empty locator, or point" in macos_click_schema["description"]
     assert "macOS screen point" in macos_click_schema["properties"]["point"]["description"]
+
+    assert MacOSLaunchAppParams().new_session is False
+    assert macos_launch_schema["properties"]["new_session"]["default"] is False
+    assert "existing Mac2 session" in macos_launch_schema["properties"]["new_session"]["description"]
+    assert "session creation" in macos_launch_schema["properties"]["arguments"]["description"]
+    assert "configured bundle id" in macos_launch_schema["properties"]["bundle_id"]["description"]
+    assert "environment" not in macos_launch_schema["properties"]
+    assert ensure_strict_json_schema(macos_launch_schema)
+    assert "retain" in macos_kill_schema["properties"]["close_session"]["description"]
+    assert "Enter" in macos_press_key_schema["properties"]["key"]["description"]
+    assert "COMMAND" in macos_press_key_schema["properties"]["modifiers"]["description"]
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        MacOSLaunchAppParams(environment={"APP_MODE": "test"})
 
 
 def test_local_tool_output_rejects_artifact_subdir_escape() -> None:

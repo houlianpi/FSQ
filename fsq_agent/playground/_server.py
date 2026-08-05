@@ -545,6 +545,7 @@ class PlaygroundServer:
                     "bundleIdPresent": macos.bundle_id is not None,
                     "appPathConfigured": macos.app_path is not None,
                     "actionTimeoutSeconds": macos.action_timeout_seconds,
+                    "newCommandTimeoutSeconds": macos.new_command_timeout_seconds,
                     "busy": self.state.current_request_id is not None,
                     "lastRun": self.state.last_run,
                 },

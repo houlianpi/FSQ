@@ -25,6 +25,7 @@ from fsq_agent.models import (
     MacOSHoverOnParams,
     MacOSKillAppParams,
     MacOSLaunchAppParams,
+    MacOSPoint,
     MacOSPressKeyParams,
     MacOSRightClickOnParams,
     MacOSTakeScreenshotParams,
@@ -320,6 +321,7 @@ def test_macos_harness_rejects_unknown_action() -> None:
 
 class FakeMacElement:
     def __init__(self, *, x: int, y: int, width: int = 10, height: int = 10) -> None:
+        self.id = f"element-{x}-{y}"
         self.rect = {"x": x, "y": y, "width": width, "height": height}
 
 
@@ -328,11 +330,313 @@ class FakeMacSession:
         self.elements = elements
         self.page_source = page_source
         self.session_id = session_id
+        self.lifecycle_calls: list[tuple[str, str | None]] = []
+        self.script_calls: list[tuple[str, dict[str, object]]] = []
 
     def find_element(self, strategy: str, locator: str) -> FakeMacElement:
         if strategy == "accessibility id" and locator in self.elements:
             return self.elements[locator]
         raise RuntimeError("not found")
+
+    def activate_app(self, bundle_id: str) -> None:
+        self.lifecycle_calls.append(("activate_app", bundle_id))
+
+    def terminate_app(self, bundle_id: str) -> None:
+        self.lifecycle_calls.append(("terminate_app", bundle_id))
+
+    def execute_script(self, script: str, arguments: dict[str, object]) -> None:
+        self.script_calls.append((script, arguments))
+
+    def quit(self) -> None:
+        self.lifecycle_calls.append(("quit", None))
+
+
+class FakeTypingElement(FakeMacElement):
+    def __init__(self) -> None:
+        super().__init__(x=0, y=0)
+        self.typed: list[str] = []
+        self.clicks = 0
+        self.clears = 0
+
+    def click(self) -> None:
+        self.clicks += 1
+
+    def clear(self) -> None:
+        self.clears += 1
+
+    def send_keys(self, text: str) -> None:
+        self.typed.append(text)
+
+
+class FakeSwitchTo:
+    def __init__(self, active_element: FakeTypingElement) -> None:
+        self.active_element = active_element
+
+
+def test_appium_mac2_driver_uses_independent_new_command_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    from appium import webdriver
+
+    captured_capabilities: dict[str, object] = {}
+
+    def create_remote(server_url: str, *, options: object) -> FakeMacSession:
+        assert server_url == "http://127.0.0.1:4723"
+        captured_capabilities.update(options.to_capabilities())
+        return FakeMacSession({})
+
+    monkeypatch.setattr(webdriver, "Remote", create_remote)
+    driver = AppiumMac2Driver(
+        bundle_id="com.example.App",
+        action_timeout_seconds=10,
+        new_command_timeout_seconds=300,
+    )
+
+    driver.launch_app(MacOSLaunchAppParams())
+
+    assert captured_capabilities["appium:newCommandTimeout"] == 300
+
+
+def test_appium_mac2_driver_launch_activates_bundle_in_existing_session() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(bundle_id="com.example.Configured", session=session)
+
+    result = driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.Override"))
+
+    assert result["status"] == "passed"
+    assert result["output"]["session_id"] == "mac2:session"
+    assert result["output"]["bundle_id"] == "com.example.Override"
+    assert session.lifecycle_calls == [("activate_app", "com.example.Override")]
+
+
+def test_appium_mac2_driver_launch_supports_cross_app_activation_sequence() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(session=session)
+
+    driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.AppA"))
+    driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.AppB"))
+    driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.AppA"))
+
+    assert session.lifecycle_calls == [
+        ("activate_app", "com.example.AppA"),
+        ("activate_app", "com.example.AppB"),
+        ("activate_app", "com.example.AppA"),
+    ]
+
+
+def test_appium_mac2_driver_launch_reuse_rejects_session_creation_inputs() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(bundle_id="com.example.App", session=session)
+
+    with pytest.raises(ConfigurationError, match="new_session=true"):
+        driver.launch_app(MacOSLaunchAppParams(arguments=["--fresh"]))
+
+    assert session.lifecycle_calls == []
+
+
+def test_appium_mac2_driver_launch_reuse_requires_bundle_id() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(app_path="/Applications/Example.app", session=session)
+
+    with pytest.raises(ConfigurationError, match="bundle_id"):
+        driver.launch_app(MacOSLaunchAppParams())
+
+    assert session.lifecycle_calls == []
+
+
+def test_appium_mac2_driver_launch_new_session_replaces_existing_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    old_session = FakeMacSession({}, session_id="mac2:old")
+    new_session = FakeMacSession({}, session_id="mac2:new")
+    driver = AppiumMac2Driver(session=old_session)
+
+    def create_session(params: MacOSLaunchAppParams) -> object:
+        assert driver.context()["session_id"] is None
+        assert params.arguments == ["--fresh"]
+        driver._session = new_session
+        return new_session
+
+    monkeypatch.setattr(driver, "_create_session", create_session)
+
+    result = driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.App", arguments=["--fresh"], new_session=True))
+
+    assert result["output"]["session_id"] == "mac2:new"
+    assert old_session.lifecycle_calls == [("quit", None)]
+    assert driver.context()["session_id"] == "mac2:new"
+
+
+def test_appium_mac2_driver_launch_new_session_validates_identity_before_quit() -> None:
+    old_session = FakeMacSession({}, session_id="mac2:old")
+    driver = AppiumMac2Driver(session=old_session)
+
+    with pytest.raises(ConfigurationError, match="bundle_id or app_path"):
+        driver.launch_app(MacOSLaunchAppParams(new_session=True))
+
+    assert old_session.lifecycle_calls == []
+    assert driver.context()["session_id"] == "mac2:old"
+
+
+def test_appium_mac2_driver_failed_session_replacement_clears_old_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    old_session = FakeMacSession({}, session_id="mac2:old")
+    driver = AppiumMac2Driver(session=old_session)
+
+    def fail_creation(params: MacOSLaunchAppParams) -> object:
+        assert params.bundle_id == "com.example.App"
+        assert driver.context()["session_id"] is None
+        raise RuntimeError("replacement failed")
+
+    monkeypatch.setattr(driver, "_create_session", fail_creation)
+
+    with pytest.raises(RuntimeError, match="replacement failed"):
+        driver.launch_app(MacOSLaunchAppParams(bundle_id="com.example.App", new_session=True))
+
+    assert old_session.lifecycle_calls == [("quit", None)]
+    assert driver.context()["session_id"] is None
+
+
+def test_appium_mac2_driver_kill_retains_session_by_default() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(bundle_id="com.example.App", session=session)
+
+    result = driver.kill_app(MacOSKillAppParams())
+
+    assert result["status"] == "passed"
+    assert session.lifecycle_calls == [("terminate_app", "com.example.App")]
+    assert driver.context()["session_id"] == "mac2:session"
+
+
+def test_appium_mac2_driver_kill_without_bundle_id_requires_identity() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(session=session)
+
+    with pytest.raises(ConfigurationError, match="bundle_id"):
+        driver.kill_app(MacOSKillAppParams())
+
+    assert session.lifecycle_calls == []
+
+
+def test_appium_mac2_driver_kill_can_close_session_without_bundle_id() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.kill_app(MacOSKillAppParams(close_session=True))
+
+    assert result["status"] == "passed"
+    assert session.lifecycle_calls == [("quit", None)]
+    assert driver.context()["session_id"] is None
+
+
+def test_appium_mac2_driver_kill_closes_session_without_unsupported_termination() -> None:
+    class TerminationUnsupportedSession(FakeMacSession):
+        def terminate_app(self, bundle_id: str) -> None:
+            raise AssertionError(f"terminate_app must not be called for {bundle_id}")
+
+    session = TerminationUnsupportedSession({})
+    driver = AppiumMac2Driver(bundle_id="com.example.App", session=session)
+
+    result = driver.kill_app(MacOSKillAppParams(close_session=True))
+
+    assert result["status"] == "passed"
+    assert session.lifecycle_calls == [("quit", None)]
+    assert driver.context()["session_id"] is None
+
+
+def test_appium_mac2_driver_type_text_uses_unmodified_keys_and_clears() -> None:
+    element = FakeTypingElement()
+    session = FakeMacSession({"Search": element})
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.type_text(MacOSTypeTextParams(text="www.bing.com\n", target="Search", clear=True))
+
+    assert result["status"] == "passed"
+    assert session.script_calls == [
+        (
+            "macos: keys",
+            {
+                "keys": ["w", "w", "w", ".", "b", "i", "n", "g", ".", "c", "o", "m", "XCUIKeyboardKeyReturn"],
+                "elementId": "element-0-0",
+            },
+        )
+    ]
+    assert element.typed == []
+    assert element.clicks == 0
+    assert element.clears == 1
+
+
+def test_appium_mac2_driver_type_text_uses_active_element_without_target() -> None:
+    active_element = FakeTypingElement()
+    session = FakeMacSession({})
+    session.switch_to = FakeSwitchTo(active_element)
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.type_text(MacOSTypeTextParams(text="focused text"))
+
+    assert result["status"] == "passed"
+    assert active_element.typed == []
+    assert session.script_calls == [("macos: keys", {"keys": list("focused text")})]
+
+
+def test_appium_mac2_driver_type_text_preserves_authored_characters() -> None:
+    active_element = FakeTypingElement()
+    session = FakeMacSession({})
+    session.switch_to = FakeSwitchTo(active_element)
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.type_text(MacOSTypeTextParams(text="Microsoft"))
+
+    assert result["status"] == "passed"
+    assert active_element.typed == []
+    assert session.script_calls == [("macos: keys", {"keys": list("Microsoft")})]
+
+
+def test_appium_mac2_driver_type_text_clicks_point_then_uses_active_element(monkeypatch: pytest.MonkeyPatch) -> None:
+    active_element = FakeTypingElement()
+    session = FakeMacSession({})
+    session.switch_to = FakeSwitchTo(active_element)
+    driver = AppiumMac2Driver(session=session)
+    clicked: list[MacOSPoint] = []
+
+    def record_click(point: MacOSPoint) -> None:
+        clicked.append(point)
+
+    monkeypatch.setattr(driver, "_perform_pointer_click", record_click)
+
+    result = driver.type_text(MacOSTypeTextParams(text="point text", point=MacOSPoint(x=12, y=34)))
+
+    assert result["status"] == "passed"
+    assert clicked == [MacOSPoint(x=12, y=34)]
+    assert active_element.typed == []
+    assert session.script_calls == [("macos: keys", {"keys": list("point text")})]
+
+
+def test_appium_mac2_driver_type_text_does_not_fall_back_when_target_is_missing() -> None:
+    active_element = FakeTypingElement()
+    session = FakeMacSession({})
+    session.switch_to = FakeSwitchTo(active_element)
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.type_text(MacOSTypeTextParams(text="must not leak", target="Missing"))
+
+    assert result["status"] == "failed"
+    assert result["failure_category"] == "target_resolution_error"
+    assert active_element.typed == []
+
+
+def test_appium_mac2_driver_press_key_uses_explicit_command_modifier() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.press_key(MacOSPressKeyParams(key="l", modifiers=["COMMAND"]))
+
+    assert result["status"] == "passed"
+    assert session.script_calls == [("macos: keys", {"keys": [{"key": "l", "modifierFlags": 1 << 4}]})]
+
+
+def test_appium_mac2_driver_press_key_maps_enter_without_modifier() -> None:
+    session = FakeMacSession({})
+    driver = AppiumMac2Driver(session=session)
+
+    result = driver.press_key(MacOSPressKeyParams(key="Enter"))
+
+    assert result["status"] == "passed"
+    assert session.script_calls == [("macos: keys", {"keys": ["XCUIKeyboardKeyReturn"]})]
 
 
 def test_appium_mac2_driver_assert_elements_order_returns_structured_pass_output() -> None:

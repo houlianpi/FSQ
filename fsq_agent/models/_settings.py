@@ -162,6 +162,7 @@ class MacOSHarnessSettings(BaseModel):
     backend: Literal["appium_mac2"] = "appium_mac2"
     page_source_max_depth: int = Field(default=12, ge=1)
     action_timeout_seconds: int = Field(default=10, ge=1)
+    new_command_timeout_seconds: int = Field(default=300, ge=1)
     _appium_server_url: str | None = PrivateAttr(default=None)
     _bundle_id: str | None = PrivateAttr(default=None)
     _app_path: Path | None = PrivateAttr(default=None)

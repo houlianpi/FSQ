@@ -8,6 +8,7 @@ harness:
     backend: appium_mac2
     page_source_max_depth: 12
     action_timeout_seconds: 10
+    new_command_timeout_seconds: 300
 
 execution:
   post_action_delay_seconds:

@@ -531,6 +531,7 @@ class OpenAIAgentsRuntime:
                     "bundle_id_configured": macos.bundle_id is not None,
                     "app_path_configured": macos.app_path is not None,
                     "action_timeout_seconds": macos.action_timeout_seconds,
+                    "new_command_timeout_seconds": macos.new_command_timeout_seconds,
                     "configured_skill_names": [skill.name for skill in self.settings.skills],
                 }
             )

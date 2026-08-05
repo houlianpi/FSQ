@@ -853,19 +853,28 @@ class _MacOSElementRef(BaseModel):
 
 
 class MacOSLaunchAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Launch the configured macOS application or supplied app identity."})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Launch a macOS application. Reuse an existing Mac2 session by bundle id, or set new_session to replace it."},
+    )
 
-    bundle_id: str | None = Field(default=None, description="Optional macOS bundle id. Omit to use configured app identity.")
-    app_path: str | None = Field(default=None, description="Optional local app path. Omit to use configured app identity.")
-    arguments: list[str] | None = Field(default=None, description="Optional launch arguments.")
-    environment: dict[str, str] | None = Field(default=None, description="Optional safe launch environment values.")
+    bundle_id: str | None = Field(default=None, description="macOS bundle id to create or activate. Omit to use the configured bundle id.")
+    app_path: str | None = Field(default=None, description="Local app path for session creation. Omit to use the configured app path.")
+    arguments: list[str] | None = Field(default=None, description="Application arguments used only during session creation.")
+    new_session: bool = Field(
+        default=False,
+        description="When true, close any existing Mac2 session and create a new one. When false, activate the bundle id in the existing session.",
+    )
 
 
 class MacOSKillAppParams(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Stop the active macOS application or close the Appium session."})
 
-    bundle_id: str | None = Field(default=None, description="Optional macOS bundle id. Omit to use configured app identity.")
-    close_session: bool | None = Field(default=None, description="When true, close the active Appium session as part of teardown.")
+    bundle_id: str | None = Field(default=None, description="macOS bundle id to terminate. Omit to use the configured bundle id.")
+    close_session: bool | None = Field(
+        default=None,
+        description="When true, close the Mac2 session directly; otherwise terminate the bundle id and retain the session.",
+    )
 
 
 class MacOSClickOnParams(_MacOSTargetParams):
@@ -906,10 +915,15 @@ class MacOSTypeTextParams(BaseModel):
 
 
 class MacOSPressKeyParams(BaseModel):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one key or key sequence in macOS."})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one character or named key in macOS, optionally with modifiers."})
 
-    key: str = Field(description="Non-empty key or key sequence supported by the macOS backend.")
-    modifiers: list[str] | None = Field(default=None, description="Optional keyboard modifiers to hold while pressing the key.")
+    key: str = Field(
+        description="Character or named key to press. Named keys include Enter, Return, Escape, Tab, Space, Delete, Backspace, and arrow/navigation keys."
+    )
+    modifiers: list[str] | None = Field(
+        default=None,
+        description="Modifiers applied only to this key. Supported values: COMMAND, CONTROL, OPTION or ALT, SHIFT, CAPS_LOCK, and FUNCTION.",
+    )
 
     @model_validator(mode="after")
     def _require_key(self) -> "MacOSPressKeyParams":

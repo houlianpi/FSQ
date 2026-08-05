@@ -2,6 +2,12 @@
 
 Use when `harness.platform` is macOS. This skill contains macOS-specific stability guidance; the active tool schema already defines callable names and arguments.
 
+## Case Lifecycle
+
+- Start each macOS case with `launch_app` and set `new_session` to true so the case uses a fresh Mac2 session.
+- End each macOS case with `kill_app` and set `close_session` to true so the Mac2 session is closed.
+- When the case temporarily switches to another application and must switch back, call `launch_app` with the desired `bundle_id` and keep `new_session` false. This activates the application in the current Mac2 session without replacing it.
+
 ## Snapshot-First Rules
 
 - Start app-owned workflows with `launch_app`; do not assume a Mac2 session exists before lifecycle setup.
@@ -29,8 +35,39 @@ Use when `harness.platform` is macOS. This skill contains macOS-specific stabili
 ## Argument Rules
 
 - Treat `launch_app` and `kill_app` as lifecycle actions. Do not report them as satisfying a business key action unless the case explicitly tests app lifecycle.
+- Use `new_session=true` on the case-opening `launch_app`; this closes any stale active session and creates the case session from the provided or configured `bundle_id` or `app_path`.
+- During the case, omit `new_session` or set it to false when activating another application or switching back by `bundle_id`. Do not pass `app_path` or `arguments` when reusing the session.
+- Reserve another `new_session=true` call for an explicit session reset. It replaces the current session and should not be used for ordinary application switching.
+- Use `close_session=true` on the case-ending `kill_app`. This closes and clears the Mac2 session directly because Mac2 does not implement the separate application termination endpoint.
 
 ## Correct Key Examples
+
+### Case-opening `launchApp` with a fresh session
+
+```json
+{
+  "bundle_id": "com.example.TargetApp",
+  "new_session": true
+}
+```
+
+### In-case `launchApp` when switching back
+
+```json
+{
+  "bundle_id": "com.example.TargetApp",
+  "new_session": false
+}
+```
+
+### Case-ending `killApp` with session closure
+
+```json
+{
+  "bundle_id": "com.example.TargetApp",
+  "close_session": true
+}
+```
 
 ### `clickOn` with an accessibility id
 
