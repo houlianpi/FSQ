@@ -184,6 +184,8 @@ def test_macos_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert schemas["click_on"].metadata["backend"] == "fake-appium-mac2"
     assert schemas["click_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "clickOn"}
     assert "target" in schemas["click_on"].params_json_schema["properties"]
+    assert "target, non-empty locator, or point" in schemas["click_on"].params_json_schema["description"]
+    assert "macOS screen point" in schemas["click_on"].params_json_schema["properties"]["point"]["description"]
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
     assert schemas["assert_elements_order"].fsq_action_name == "assertElementsOrder"

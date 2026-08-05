@@ -195,6 +195,8 @@ def test_windows_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "locator" in schemas["click_on"].params_json_schema["required"]
     assert "target" in schemas["click_on"].params_json_schema["properties"]
     assert "target" not in schemas["click_on"].params_json_schema["required"]
+    assert "non-empty locator" in schemas["click_on"].params_json_schema["description"]
+    assert "descriptive" in schemas["click_on"].params_json_schema["properties"]["target"]["description"]
     assert schemas["drag_to"].fsq_action_name == "dragTo"
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"

@@ -46,6 +46,12 @@ WebWaitForState: TypeAlias = Literal["visible", "hidden", "attached", "detached"
 WindowsMouseButton: TypeAlias = Literal["left", "right", "middle"]
 MacOSOrderDirection: TypeAlias = Literal["vertical", "horizontal"]
 
+TEXT_TYPE_DESCRIPTION = "Use literal for plain text; use runtimeSecret when text names an allowlisted runtime secret."
+ANDROID_TARGET_SCHEMA_DESCRIPTION = "Provide target or non-empty locator. Prefer a semantic target from the current Android UI snapshot; use locator when target text is unavailable."
+WEB_TARGET_SCHEMA_DESCRIPTION = "Provide target or non-empty locator. Prefer an exact snapshot target from the current Web page snapshot; use locator when target text is unavailable."
+WINDOWS_TARGET_SCHEMA_DESCRIPTION = "Provide a non-empty locator. The target field is descriptive only and is not used for Windows control lookup."
+MACOS_TARGET_SCHEMA_DESCRIPTION = "Provide target, non-empty locator, or point. Prefer target or locator for UI elements and point only for coordinate-based actions."
+
 
 class SourceRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -143,45 +149,48 @@ class HarnessFunctionSchema(BaseModel):
 
 
 class AndroidLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Structured Android locator. Provide at least one populated locator field."},
+    )
 
     # Names mirror the authored Android locator payload contract.
-    resourceId: str | None = None  # noqa: N815
-    accessibilityId: str | None = None  # noqa: N815
-    text: str | None = None
-    className: str | None = None  # noqa: N815
-    xpath: str | None = None
+    resourceId: str | None = Field(default=None, description="Android resource id to match.")  # noqa: N815
+    accessibilityId: str | None = Field(default=None, description="Android accessibility id or content description to match.")  # noqa: N815
+    text: str | None = Field(default=None, description="Visible Android text to match.")
+    className: str | None = Field(default=None, description="Android class name to match.")  # noqa: N815
+    xpath: str | None = Field(default=None, description="XPath expression for Android UI hierarchy lookup.")
 
     def has_value(self) -> bool:
         return any(isinstance(value, str) and value.strip() for value in self.model_dump().values())
 
 
 class WaitMsParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Wait without touching platform state."})
 
-    duration_ms: int = Field(ge=1, le=60000)
-    reason: str | None = None
+    duration_ms: int = Field(ge=1, le=60000, description="Wait duration in milliseconds, from 1 to 60000.")
+    reason: str | None = Field(default=None, description="Optional short reason for the wait.")
 
 
 class AndroidPoint(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Android screen point in absolute pixels."})
 
-    x: int
-    y: int
+    x: int = Field(description="Horizontal Android screen coordinate in pixels.")
+    y: int = Field(description="Vertical Android screen coordinate in pixels.")
 
 
 class AndroidScreenSize(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Android screen size used as a coordinate reference."})
 
-    width: int = Field(ge=1)
-    height: int = Field(ge=1)
+    width: int = Field(ge=1, description="Reference screen width in pixels.")
+    height: int = Field(ge=1, description="Reference screen height in pixels.")
 
 
 class _AndroidTargetParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": ANDROID_TARGET_SCHEMA_DESCRIPTION})
 
-    target: str | None = None
-    locator: AndroidLocator | None = None
+    target: str | None = Field(default=None, description="Android semantic target from the current UI snapshot.")
+    locator: AndroidLocator | None = Field(default=None, description="Optional structured Android locator. Provide at least one populated locator field.")
 
     @model_validator(mode="after")
     def _require_target(self) -> "_AndroidTargetParams":
@@ -196,15 +205,15 @@ class _AndroidTargetParams(BaseModel):
 
 
 class AndroidLaunchAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Launch the configured Android app or a supplied package id."})
 
-    app_id: str | None = None
+    app_id: str | None = Field(default=None, description="Optional Android package id. Omit to use the configured app id.")
 
 
 class AndroidKillAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Stop the configured Android app or a supplied package id."})
 
-    app_id: str | None = None
+    app_id: str | None = Field(default=None, description="Optional Android package id. Omit to use the configured app id.")
 
 
 class AndroidTapOnParams(_AndroidTargetParams):
@@ -212,10 +221,10 @@ class AndroidTapOnParams(_AndroidTargetParams):
 
 
 class AndroidTapAtParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Tap Android screen coordinates."})
 
-    point: AndroidPoint
-    reference_screen_size: AndroidScreenSize | None = None
+    point: AndroidPoint = Field(description="Android screen point to tap.")
+    reference_screen_size: AndroidScreenSize | None = Field(default=None, description="Original screen size for proportional replay of recorded coordinates.")
 
 
 class AndroidLongPressOnParams(_AndroidTargetParams):
@@ -223,15 +232,15 @@ class AndroidLongPressOnParams(_AndroidTargetParams):
 
 
 class AndroidInputTextParams(_AndroidTargetParams):
-    text: str
+    text: str = Field(description="Literal text to enter, or a runtime secret name when textType is runtimeSecret.")
     # Name mirrors the authored text-entry payload contract.
-    textType: TextSourceType = "literal"  # noqa: N815
+    textType: TextSourceType = Field(default="literal", description=TEXT_TYPE_DESCRIPTION)  # noqa: N815
 
 
 class AndroidPressKeyParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one Android key."})
 
-    key: str
+    key: str = Field(description="Non-empty Android key name such as Back, Home, Enter, or a backend-supported key string.")
 
     @model_validator(mode="after")
     def _require_key(self) -> "AndroidPressKeyParams":
@@ -241,13 +250,13 @@ class AndroidPressKeyParams(BaseModel):
 
 
 class AndroidSwipeParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Swipe by direction or both start and end Android screen points."})
 
-    direction: AndroidSwipeDirection | None = None
-    start: AndroidPoint | None = None
-    end: AndroidPoint | None = None
-    reference_screen_size: AndroidScreenSize | None = None
-    duration: int | None = Field(default=None, ge=1)
+    direction: AndroidSwipeDirection | None = Field(default=None, description="Swipe direction to use instead of explicit start and end points.")
+    start: AndroidPoint | None = Field(default=None, description="Start point for a coordinate swipe. Requires end when used.")
+    end: AndroidPoint | None = Field(default=None, description="End point for a coordinate swipe. Requires start when used.")
+    reference_screen_size: AndroidScreenSize | None = Field(default=None, description="Original screen size for proportional replay of recorded swipe coordinates.")
+    duration: int | None = Field(default=None, ge=1, description="Optional swipe duration in milliseconds.")
 
     @model_validator(mode="after")
     def _require_direction_or_points(self) -> "AndroidSwipeParams":
@@ -259,28 +268,28 @@ class AndroidSwipeParams(BaseModel):
 
 
 class AndroidUiTreeParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Read the current compact Android UI hierarchy. No parameters are accepted."})
 
 
 class AndroidPerformActionsParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "W3C action payload for non-exposed Android driver actions."})
 
-    actions: list[dict[str, Any]]
+    actions: list[dict[str, Any]] = Field(description="W3C actions array.")
 
 
 class AndroidAssertVisibleParams(_AndroidTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat a missing target as an optional assertion outcome.")
 
 
 class AndroidAssertNotVisibleParams(_AndroidTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class AndroidTextAssertion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Android text assertion. Provide contains or equals."})
 
-    contains: str | None = None
-    equals: str | None = None
+    contains: str | None = Field(default=None, description="Expected substring in visible Android text.")
+    equals: str | None = Field(default=None, description="Expected exact visible Android text.")
 
     @model_validator(mode="after")
     def _require_text_assertion(self) -> "AndroidTextAssertion":
@@ -290,22 +299,22 @@ class AndroidTextAssertion(BaseModel):
 
 
 class AndroidElementState(AndroidLocator):
-    enabled: bool | None = None
-    checked: bool | None = None
-    selected: bool | None = None
-    clickable: bool | None = None
-    focused: bool | None = None
+    enabled: bool | None = Field(default=None, description="Expected enabled state.")
+    checked: bool | None = Field(default=None, description="Expected checked state.")
+    selected: bool | None = Field(default=None, description="Expected selected state.")
+    clickable: bool | None = Field(default=None, description="Expected clickable state.")
+    focused: bool | None = Field(default=None, description="Expected focused state.")
 
     def has_state_assertion(self) -> bool:
         return any(value is not None for value in [self.enabled, self.checked, self.selected, self.clickable, self.focused])
 
 
 class AndroidAssertStateParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Assert Android text or element locator/state. Provide text or element."})
 
-    element: AndroidElementState | None = None
-    text: AndroidTextAssertion | None = None
-    optional: bool | None = None
+    element: AndroidElementState | None = Field(default=None, description="Android locator plus optional expected state values.")
+    text: AndroidTextAssertion | None = Field(default=None, description="Visible text assertion.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
     @model_validator(mode="after")
     def _require_assertion(self) -> "AndroidAssertStateParams":
@@ -317,10 +326,10 @@ class AndroidAssertStateParams(BaseModel):
 
 
 class AndroidAssertWithAIParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Evaluate an explicit Android visual assertion with AI."})
 
-    prompt: str
-    optional: bool | None = None
+    prompt: str = Field(description="Non-empty visual assertion prompt to evaluate against current evidence.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
     @model_validator(mode="after")
     def _require_prompt(self) -> "AndroidAssertWithAIParams":
@@ -330,29 +339,32 @@ class AndroidAssertWithAIParams(BaseModel):
 
 
 class WebLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Structured Web locator. Provide at least one populated locator field."},
+    )
 
-    role: str | None = None
-    name: str | None = None
-    text: str | None = None
-    label: str | None = None
-    placeholder: str | None = None
+    role: str | None = Field(default=None, description="ARIA role to match.")
+    name: str | None = Field(default=None, description="Accessible name to match.")
+    text: str | None = Field(default=None, description="Visible text to match.")
+    label: str | None = Field(default=None, description="Associated label text to match.")
+    placeholder: str | None = Field(default=None, description="Input placeholder text to match.")
     # Names mirror the authored Web locator payload contract.
-    testId: str | None = None  # noqa: N815
-    css: str | None = None
-    xpath: str | None = None
-    altText: str | None = None  # noqa: N815
-    title: str | None = None
+    testId: str | None = Field(default=None, description="Test id attribute to match.")  # noqa: N815
+    css: str | None = Field(default=None, description="CSS selector to match.")
+    xpath: str | None = Field(default=None, description="XPath expression to match.")
+    altText: str | None = Field(default=None, description="Image alt text to match.")  # noqa: N815
+    title: str | None = Field(default=None, description="Element title attribute to match.")
 
     def has_value(self) -> bool:
         return any(isinstance(value, str) and value.strip() for value in self.model_dump().values())
 
 
 class _WebTargetParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": WEB_TARGET_SCHEMA_DESCRIPTION})
 
-    target: str | None = None
-    locator: WebLocator | None = None
+    target: str | None = Field(default=None, description="Web exact snapshot target from the current page snapshot.")
+    locator: WebLocator | None = Field(default=None, description="Optional structured Web locator. Provide at least one populated locator field.")
 
     @model_validator(mode="after")
     def _require_target(self) -> "_WebTargetParams":
@@ -367,19 +379,19 @@ class _WebTargetParams(BaseModel):
 
 
 class WebStartBrowserParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Start or reuse the configured Web browser. No parameters are accepted."})
 
 
 class WebCloseBrowserParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Close the active Web browser if present. No parameters are accepted."})
 
 
 class WebNavigateToParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Navigate the active Web page to a non-empty URL."})
 
-    url: str
+    url: str = Field(description="Non-empty absolute or application-relative URL to navigate to.")
     # Name mirrors the authored Playwright navigation payload contract.
-    waitUntil: WebWaitUntil | None = None  # noqa: N815
+    waitUntil: WebWaitUntil | None = Field(default=None, description="Optional page lifecycle state to wait for after navigation.")  # noqa: N815
 
     @model_validator(mode="after")
     def _require_url(self) -> "WebNavigateToParams":
@@ -389,22 +401,22 @@ class WebNavigateToParams(BaseModel):
 
 
 class WebNavigateBackParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Navigate the active Web page back in browser history."})
 
     # Name mirrors the authored Playwright navigation payload contract.
-    waitUntil: WebWaitUntil | None = None  # noqa: N815
+    waitUntil: WebWaitUntil | None = Field(default=None, description="Optional page lifecycle state to wait for after back navigation.")  # noqa: N815
 
 
 class WebClickOnParams(_WebTargetParams):
-    button: WebMouseButton | None = None
-    double: bool | None = None
+    button: WebMouseButton | None = Field(default=None, description="Mouse button to click. Defaults to the backend left-button behavior.")
+    double: bool | None = Field(default=None, description="When true, perform a double click.")
 
 
 class WebTypeTextParams(_WebTargetParams):
-    text: str
+    text: str = Field(description="Literal text to type, or a runtime secret name when textType is runtimeSecret.")
     # Name mirrors the authored text-entry payload contract.
-    textType: TextSourceType = "literal"  # noqa: N815
-    clear: bool | None = None
+    textType: TextSourceType = Field(default="literal", description=TEXT_TYPE_DESCRIPTION)  # noqa: N815
+    clear: bool | None = Field(default=None, description="When true, clear existing target text before typing.")
 
     @model_validator(mode="after")
     def _require_text(self) -> "WebTypeTextParams":
@@ -414,10 +426,10 @@ class WebTypeTextParams(_WebTargetParams):
 
 
 class WebSelectOptionParams(_WebTargetParams):
-    value: str | None = None
-    label: str | None = None
-    index: int | None = Field(default=None, ge=0)
-    values: list[str] | None = None
+    value: str | None = Field(default=None, description="Option value to select.")
+    label: str | None = Field(default=None, description="Visible option label to select.")
+    index: int | None = Field(default=None, ge=0, description="Zero-based option index to select.")
+    values: list[str] | None = Field(default=None, description="Multiple option values to select.")
 
     @model_validator(mode="after")
     def _require_option(self) -> "WebSelectOptionParams":
@@ -434,9 +446,9 @@ class WebHoverOnParams(_WebTargetParams):
 
 
 class WebPressKeyParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one key in the active Web page."})
 
-    key: str
+    key: str = Field(description="Non-empty key or shortcut string supported by the Web backend.")
 
     @model_validator(mode="after")
     def _require_key(self) -> "WebPressKeyParams":
@@ -446,14 +458,14 @@ class WebPressKeyParams(BaseModel):
 
 
 class WebWaitForParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Wait for target, locator, text, url, or timeout_ms in the active Web page."})
 
-    target: str | None = None
-    locator: WebLocator | None = None
-    text: str | None = None
-    url: str | None = None
-    state: WebWaitForState | None = None
-    timeout_ms: int | None = Field(default=None, ge=1, le=60000)
+    target: str | None = Field(default=None, description="Exact snapshot target to wait for.")
+    locator: WebLocator | None = Field(default=None, description="Structured Web locator to wait for.")
+    text: str | None = Field(default=None, description="Visible text to wait for.")
+    url: str | None = Field(default=None, description="URL text or pattern to wait for.")
+    state: WebWaitForState | None = Field(default=None, description="Optional element state to wait for when target or locator is used.")
+    timeout_ms: int | None = Field(default=None, ge=1, le=60000, description="Optional bounded wait timeout in milliseconds.")
 
     @model_validator(mode="after")
     def _require_wait_condition(self) -> "WebWaitForParams":
@@ -471,30 +483,30 @@ class WebWaitForParams(BaseModel):
 
 
 class WebTakeScreenshotParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Capture a Web page screenshot for evidence or debugging."})
 
     # Names mirror the authored Playwright screenshot payload contract.
-    fullPage: bool | None = None  # noqa: N815
-    omitBackground: bool | None = None  # noqa: N815
+    fullPage: bool | None = Field(default=None, description="When true, capture the full page instead of only the viewport.")  # noqa: N815
+    omitBackground: bool | None = Field(default=None, description="When true, allow transparent background where supported.")  # noqa: N815
 
 
 class WebPageSnapshotParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Read the current Web page snapshot. No parameters are accepted."})
 
 
 class WebAssertVisibleParams(_WebTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class WebAssertNotVisibleParams(_WebTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class WebTextAssertion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Web text assertion. Provide contains or equals."})
 
-    contains: str | None = None
-    equals: str | None = None
+    contains: str | None = Field(default=None, description="Expected substring in target text.")
+    equals: str | None = Field(default=None, description="Expected exact target text.")
 
     @model_validator(mode="after")
     def _require_text_assertion(self) -> "WebTextAssertion":
@@ -504,15 +516,15 @@ class WebTextAssertion(BaseModel):
 
 
 class WebAssertTextParams(_WebTargetParams):
-    text: WebTextAssertion
-    optional: bool | None = None
+    text: WebTextAssertion = Field(description="Expected text predicate for the target.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class WebAssertWithAIParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Evaluate an explicit Web visual assertion with AI."})
 
-    prompt: str
-    optional: bool | None = None
+    prompt: str = Field(description="Non-empty visual assertion prompt to evaluate against current evidence.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
     @model_validator(mode="after")
     def _require_prompt(self) -> "WebAssertWithAIParams":
@@ -580,26 +592,29 @@ WEB_ACTION_DEFINITIONS_BY_NAME: dict[str, WebActionDefinition] = {definition.fsq
 
 
 class WindowsLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Windows control locator. Provide at least one populated lookup field."},
+    )
 
-    title: str | None = None
-    control_type: str | None = None
-    automation_id: str | None = None
-    class_name: str | None = None
-    index: int | None = Field(default=None, ge=1)
-    parent_title: str | None = None
-    parent_control_type: str | None = None
-    parent_automation_id: str | None = None
+    title: str | None = Field(default=None, description="Window or control title to match.")
+    control_type: str | None = Field(default=None, description="Windows control type to match.")
+    automation_id: str | None = Field(default=None, description="Automation id to match.")
+    class_name: str | None = Field(default=None, description="Control class name to match.")
+    index: int | None = Field(default=None, ge=1, description="One-based match index when multiple controls match.")
+    parent_title: str | None = Field(default=None, description="Optional parent title constraint.")
+    parent_control_type: str | None = Field(default=None, description="Optional parent control type constraint.")
+    parent_automation_id: str | None = Field(default=None, description="Optional parent automation id constraint.")
 
     def has_value(self) -> bool:
         return any(isinstance(value, str) and value.strip() for value in (self.title, self.control_type, self.automation_id, self.class_name))
 
 
 class _WindowsTargetParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": WINDOWS_TARGET_SCHEMA_DESCRIPTION})
 
-    target: str | None = None
-    locator: WindowsLocator
+    target: str | None = Field(default=None, description="Human-readable descriptive target. Windows lookup uses locator, not this field.")
+    locator: WindowsLocator = Field(description="Windows control locator used for lookup. Provide at least one populated lookup field.")
 
     @model_validator(mode="after")
     def _require_target(self) -> "_WindowsTargetParams":
@@ -609,17 +624,17 @@ class _WindowsTargetParams(BaseModel):
 
 
 class WindowsPoint(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Windows screen point in absolute pixels."})
 
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
+    x: int = Field(ge=0, description="Horizontal Windows screen coordinate in pixels.")
+    y: int = Field(ge=0, description="Vertical Windows screen coordinate in pixels.")
 
 
 class WindowsOffset(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Non-zero relative Windows mouse offset."})
 
-    x: int = 0
-    y: int = 0
+    x: int = Field(default=0, description="Horizontal offset in pixels.")
+    y: int = Field(default=0, description="Vertical offset in pixels.")
 
     @model_validator(mode="after")
     def _require_non_zero_offset(self) -> "WindowsOffset":
@@ -629,10 +644,10 @@ class WindowsOffset(BaseModel):
 
 
 class WindowsMouseSource(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Windows mouse source. Provide exactly one of locator or point."})
 
-    locator: WindowsLocator | None = None
-    point: WindowsPoint | None = None
+    locator: WindowsLocator | None = Field(default=None, description="Source Windows control locator.")
+    point: WindowsPoint | None = Field(default=None, description="Source Windows screen point.")
 
     @model_validator(mode="after")
     def _require_exactly_one_mode(self) -> "WindowsMouseSource":
@@ -644,11 +659,11 @@ class WindowsMouseSource(BaseModel):
 
 
 class WindowsMouseDestination(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Windows mouse destination. Provide exactly one of locator, point, or offset."})
 
-    locator: WindowsLocator | None = None
-    point: WindowsPoint | None = None
-    offset: WindowsOffset | None = None
+    locator: WindowsLocator | None = Field(default=None, description="Destination Windows control locator.")
+    point: WindowsPoint | None = Field(default=None, description="Destination Windows screen point.")
+    offset: WindowsOffset | None = Field(default=None, description="Destination offset relative to the source.")
 
     @model_validator(mode="after")
     def _require_exactly_one_mode(self) -> "WindowsMouseDestination":
@@ -660,22 +675,22 @@ class WindowsMouseDestination(BaseModel):
 
 
 class WindowsLaunchAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Launch the configured Windows desktop application."})
 
-    extra_args: list[str] | None = None
+    extra_args: list[str] | None = Field(default=None, description="Optional additional launch arguments appended to configured arguments.")
 
 
 class WindowsKillAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Stop the launched Windows desktop application. No parameters are accepted."})
 
 
 class WindowsClickOnParams(_WindowsTargetParams):
-    button: WindowsMouseButton | None = None
-    double: bool | None = None
+    button: WindowsMouseButton | None = Field(default=None, description="Mouse button to click. Defaults to backend left-button behavior.")
+    double: bool | None = Field(default=None, description="When true, perform a double click.")
 
 
 class WindowsDoubleClickOnParams(_WindowsTargetParams):
-    button: WindowsMouseButton | None = None
+    button: WindowsMouseButton | None = Field(default=None, description="Mouse button to double-click. Defaults to backend left-button behavior.")
 
 
 class WindowsRightClickOnParams(_WindowsTargetParams):
@@ -683,10 +698,10 @@ class WindowsRightClickOnParams(_WindowsTargetParams):
 
 
 class WindowsTypeTextParams(_WindowsTargetParams):
-    text: str
+    text: str = Field(description="Literal text to type, or a runtime secret name when textType is runtimeSecret.")
     # Name mirrors the authored text-entry payload contract.
-    textType: TextSourceType = "literal"  # noqa: N815
-    clear: bool | None = None
+    textType: TextSourceType = Field(default="literal", description=TEXT_TYPE_DESCRIPTION)  # noqa: N815
+    clear: bool | None = Field(default=None, description="When true, clear existing target text before typing.")
 
     @model_validator(mode="after")
     def _require_text(self) -> "WindowsTypeTextParams":
@@ -696,9 +711,9 @@ class WindowsTypeTextParams(_WindowsTargetParams):
 
 
 class WindowsPressKeyParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one key or key sequence in the active Windows window."})
 
-    key: str
+    key: str = Field(description="Non-empty key or shortcut string supported by the Windows backend.")
 
     @model_validator(mode="after")
     def _require_key(self) -> "WindowsPressKeyParams":
@@ -712,7 +727,7 @@ class WindowsHoverOnParams(_WindowsTargetParams):
 
 
 class WindowsScrollOnParams(_WindowsTargetParams):
-    wheel_dist: int
+    wheel_dist: int = Field(description="Non-zero mouse wheel distance. Positive and negative values scroll opposite directions.")
 
     @model_validator(mode="after")
     def _require_wheel_distance(self) -> "WindowsScrollOnParams":
@@ -722,12 +737,12 @@ class WindowsScrollOnParams(_WindowsTargetParams):
 
 
 class WindowsDragToParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Drag from one Windows source to one destination."})
 
-    target: str
-    source: WindowsMouseSource
-    destination: WindowsMouseDestination
-    mouse_button: WindowsMouseButton = "left"
+    target: str = Field(description="Human-readable description of the drag action.")
+    source: WindowsMouseSource = Field(description="Drag source as a locator or screen point.")
+    destination: WindowsMouseDestination = Field(description="Drag destination as a locator, screen point, or relative offset.")
+    mouse_button: WindowsMouseButton = Field(default="left", description="Mouse button to hold during the drag.")
 
     @model_validator(mode="after")
     def _require_target(self) -> "WindowsDragToParams":
@@ -737,18 +752,18 @@ class WindowsDragToParams(BaseModel):
 
 
 class WindowsAssertVisibleParams(_WindowsTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class WindowsUiSnapshotParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Read the current Windows control tree snapshot. No parameters are accepted."})
 
 
 class WindowsAssertWithAIParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Evaluate an explicit Windows visual assertion with AI."})
 
-    prompt: str
-    optional: bool | None = None
+    prompt: str = Field(description="Non-empty visual assertion prompt to evaluate against current evidence.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
     @model_validator(mode="after")
     def _require_prompt(self) -> "WindowsAssertWithAIParams":
@@ -758,26 +773,29 @@ class WindowsAssertWithAIParams(BaseModel):
 
 
 class MacOSPoint(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "macOS screen point in absolute pixels."})
 
-    x: int
-    y: int
+    x: int = Field(description="Horizontal macOS screen coordinate in pixels.")
+    y: int = Field(description="Vertical macOS screen coordinate in pixels.")
 
 
 class MacOSLocator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Structured macOS locator. Provide at least one populated locator field or point."},
+    )
 
     # Names mirror the authored macOS locator payload contract.
-    accessibilityId: str | None = None  # noqa: N815
-    name: str | None = None
-    label: str | None = None
-    value: str | None = None
-    role: str | None = None
-    controlType: str | None = None  # noqa: N815
-    className: str | None = None  # noqa: N815
-    xpath: str | None = None
-    predicate: str | None = None
-    point: MacOSPoint | None = None
+    accessibilityId: str | None = Field(default=None, description="macOS accessibility id to match.")  # noqa: N815
+    name: str | None = Field(default=None, description="macOS accessibility name to match.")
+    label: str | None = Field(default=None, description="macOS accessibility label to match.")
+    value: str | None = Field(default=None, description="macOS accessibility value to match.")
+    role: str | None = Field(default=None, description="macOS accessibility role to match.")
+    controlType: str | None = Field(default=None, description="macOS control type to match.")  # noqa: N815
+    className: str | None = Field(default=None, description="macOS class name to match.")  # noqa: N815
+    xpath: str | None = Field(default=None, description="XPath expression for Appium Mac2 lookup.")
+    predicate: str | None = Field(default=None, description="Appium predicate string for macOS lookup.")
+    point: MacOSPoint | None = Field(default=None, description="macOS screen point used as a locator signal.")
 
     def has_value(self) -> bool:
         if self.point is not None:
@@ -799,11 +817,11 @@ class MacOSLocator(BaseModel):
 
 
 class _MacOSTargetParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": MACOS_TARGET_SCHEMA_DESCRIPTION})
 
-    target: str | None = None
-    locator: MacOSLocator | None = None
-    point: MacOSPoint | None = None
+    target: str | None = Field(default=None, description="macOS semantic target name from the current accessibility snapshot.")
+    locator: MacOSLocator | None = Field(default=None, description="Optional structured macOS locator. Provide at least one populated locator field or point.")
+    point: MacOSPoint | None = Field(default=None, description="macOS screen point for coordinate-based action targeting.")
 
     @model_validator(mode="after")
     def _require_target(self) -> "_MacOSTargetParams":
@@ -820,10 +838,10 @@ class _MacOSTargetParams(BaseModel):
 
 
 class _MacOSElementRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "macOS element reference. Provide target or non-empty locator."})
 
-    target: str | None = None
-    locator: MacOSLocator | None = None
+    target: str | None = Field(default=None, description="macOS semantic target name for an element.")
+    locator: MacOSLocator | None = Field(default=None, description="Structured macOS locator for an element.")
 
     @model_validator(mode="after")
     def _require_element_ref(self) -> "_MacOSElementRef":
@@ -835,47 +853,50 @@ class _MacOSElementRef(BaseModel):
 
 
 class MacOSLaunchAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Launch the configured macOS application or supplied app identity."})
 
-    bundle_id: str | None = None
-    app_path: str | None = None
-    arguments: list[str] | None = None
-    environment: dict[str, str] | None = None
+    bundle_id: str | None = Field(default=None, description="Optional macOS bundle id. Omit to use configured app identity.")
+    app_path: str | None = Field(default=None, description="Optional local app path. Omit to use configured app identity.")
+    arguments: list[str] | None = Field(default=None, description="Optional launch arguments.")
+    environment: dict[str, str] | None = Field(default=None, description="Optional safe launch environment values.")
 
 
 class MacOSKillAppParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Stop the active macOS application or close the Appium session."})
 
-    bundle_id: str | None = None
-    close_session: bool | None = None
+    bundle_id: str | None = Field(default=None, description="Optional macOS bundle id. Omit to use configured app identity.")
+    close_session: bool | None = Field(default=None, description="When true, close the active Appium session as part of teardown.")
 
 
 class MacOSClickOnParams(_MacOSTargetParams):
-    modifiers: list[str] | None = None
+    modifiers: list[str] | None = Field(default=None, description="Optional keyboard modifiers to hold while clicking.")
 
 
 class MacOSDoubleClickOnParams(_MacOSTargetParams):
-    modifiers: list[str] | None = None
+    modifiers: list[str] | None = Field(default=None, description="Optional keyboard modifiers to hold while double-clicking.")
 
 
 class MacOSRightClickOnParams(_MacOSTargetParams):
-    modifiers: list[str] | None = None
+    modifiers: list[str] | None = Field(default=None, description="Optional keyboard modifiers to hold while right-clicking.")
 
 
 class MacOSHoverOnParams(_MacOSTargetParams):
-    duration_ms: int | None = Field(default=None, ge=1)
+    duration_ms: int | None = Field(default=None, ge=1, description="Optional hover duration in milliseconds.")
 
 
 class MacOSTypeTextParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"description": "Type text into macOS. Optional target, locator, or point may focus a destination before typing."},
+    )
 
-    text: str
+    text: str = Field(description="Literal text to type, or a runtime secret name when textType is runtimeSecret.")
     # Name mirrors the authored text-entry payload contract.
-    textType: TextSourceType = "literal"  # noqa: N815
-    target: str | None = None
-    locator: MacOSLocator | None = None
-    point: MacOSPoint | None = None
-    clear: bool | None = None
+    textType: TextSourceType = Field(default="literal", description=TEXT_TYPE_DESCRIPTION)  # noqa: N815
+    target: str | None = Field(default=None, description="Optional macOS semantic target to focus before typing.")
+    locator: MacOSLocator | None = Field(default=None, description="Optional structured macOS locator to focus before typing.")
+    point: MacOSPoint | None = Field(default=None, description="Optional macOS screen point to focus before typing.")
+    clear: bool | None = Field(default=None, description="When true, clear existing target text before typing.")
 
     @model_validator(mode="after")
     def _require_text(self) -> "MacOSTypeTextParams":
@@ -885,10 +906,10 @@ class MacOSTypeTextParams(BaseModel):
 
 
 class MacOSPressKeyParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Press one key or key sequence in macOS."})
 
-    key: str
-    modifiers: list[str] | None = None
+    key: str = Field(description="Non-empty key or key sequence supported by the macOS backend.")
+    modifiers: list[str] | None = Field(default=None, description="Optional keyboard modifiers to hold while pressing the key.")
 
     @model_validator(mode="after")
     def _require_key(self) -> "MacOSPressKeyParams":
@@ -902,38 +923,38 @@ class MacOSDragEndpoint(_MacOSTargetParams):
 
 
 class MacOSDragToParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Drag from one macOS source endpoint to one destination endpoint."})
 
-    source: MacOSDragEndpoint
-    destination: MacOSDragEndpoint
-    duration_ms: int | None = Field(default=None, ge=1)
+    source: MacOSDragEndpoint = Field(description="Drag source expressed as target, locator, or point.")
+    destination: MacOSDragEndpoint = Field(description="Drag destination expressed as target, locator, or point.")
+    duration_ms: int | None = Field(default=None, ge=1, description="Optional drag duration in milliseconds.")
 
 
 class MacOSTakeScreenshotParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Capture a macOS screenshot for evidence or debugging."})
 
-    full_screen: bool | None = None
+    full_screen: bool | None = Field(default=None, description="When true, request a full-screen screenshot where supported.")
 
 
 class MacOSUiSnapshotParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Read the current macOS accessibility tree snapshot."})
 
-    max_depth: int | None = Field(default=None, ge=1)
-    include_attributes: bool | None = None
+    max_depth: int | None = Field(default=None, ge=1, description="Optional maximum tree depth to include.")
+    include_attributes: bool | None = Field(default=None, description="When true, include additional Appium element attributes where supported.")
 
 
 class MacOSAssertVisibleParams(_MacOSTargetParams):
-    optional: bool | None = None
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
 
 class MacOSAssertElementsOrderParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Assert that macOS elements appear in the requested vertical or horizontal order."})
 
-    elements: list[_MacOSElementRef] = Field(min_length=2)
-    direction: MacOSOrderDirection = "vertical"
-    expected_order: list[int] | None = None
-    tolerance: float | None = Field(default=None, ge=0)
-    require_all: bool = True
+    elements: list[_MacOSElementRef] = Field(min_length=2, description="Ordered macOS element references to compare.")
+    direction: MacOSOrderDirection = Field(default="vertical", description="Axis used to compare element centers.")
+    expected_order: list[int] | None = Field(default=None, description="Optional zero-based expected order. Omit to use the authored element order.")
+    tolerance: float | None = Field(default=None, ge=0, description="Optional pixel tolerance for order comparison.")
+    require_all: bool = Field(default=True, description="When true, missing elements fail the assertion.")
 
     @model_validator(mode="after")
     def _validate_expected_order(self) -> "MacOSAssertElementsOrderParams":
@@ -948,10 +969,10 @@ class MacOSAssertElementsOrderParams(BaseModel):
 
 
 class MacOSAssertWithAIParams(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Evaluate an explicit macOS visual assertion with AI."})
 
-    prompt: str
-    optional: bool | None = None
+    prompt: str = Field(description="Non-empty visual assertion prompt to evaluate against current evidence.")
+    optional: bool | None = Field(default=None, description="When true, treat assertion uncertainty as optional.")
 
     @model_validator(mode="after")
     def _require_prompt(self) -> "MacOSAssertWithAIParams":

@@ -885,6 +885,21 @@ def test_harness_tool_adapter_uses_default_strict_schema_for_capability_tools() 
     assert tools[0].strict_json_schema is True
 
 
+def test_harness_tool_adapter_preserves_capability_parameter_schema() -> None:
+    harness = _FakeHarness()
+    adapter = HarnessToolAdapter(harness, run_id="schema-run", platform="android")
+    schema = adapter.schemas[0].params_json_schema
+    schema["description"] = "Tool parameter description."
+    schema["properties"]["target"]["description"] = "Target description."
+
+    [tool] = adapter.build_tools(_FakeFunctionTool)
+
+    assert tool.params_json_schema is schema
+    assert tool.params_json_schema["description"] == "Tool parameter description."
+    assert tool.params_json_schema["properties"]["target"]["description"] == "Target description."
+    assert tool.strict_json_schema is True
+
+
 @pytest.mark.asyncio
 async def test_harness_tool_adapter_keeps_default_evidence_policy_for_assertion_actions() -> None:
     harness = _FakeHarness(
