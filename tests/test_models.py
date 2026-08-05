@@ -2,20 +2,30 @@
 # Licensed under the MIT License.
 
 import pytest
+from agents.strict_schema import ensure_strict_json_schema
 
 from fsq_agent import models
 from fsq_agent.models import (
     AgentFinalOutput,
     AgentTaskInput,
+    AndroidInputTextParams,
+    AndroidSwipeParams,
     ExecutionStep,
     GoalPrePlan,
     HarnessSettings,
     LocalToolOutputSettings,
+    MacOSClickOnParams,
+    MacOSKillAppParams,
+    MacOSLaunchAppParams,
+    MacOSPressKeyParams,
     OpenAIAgentsSettings,
     PageKnowledgeIndex,
     PageKnowledgePage,
     SkillConfig,
     Task,
+    WaitMsParams,
+    WebWaitForParams,
+    WindowsClickOnParams,
 )
 
 
@@ -122,6 +132,54 @@ def test_models_public_surface_does_not_export_removed_tool_execution_settings()
     assert not hasattr(models, "VerificationCriterion")
     assert not hasattr(models, "VerificationMode")
     assert not hasattr(models, "VerificationSettings")
+
+
+def test_capability_parameter_schemas_include_llm_facing_guidance() -> None:
+    wait_schema = WaitMsParams.model_json_schema()
+    android_text_schema = AndroidInputTextParams.model_json_schema()
+    android_swipe_schema = AndroidSwipeParams.model_json_schema()
+    web_wait_schema = WebWaitForParams.model_json_schema()
+    windows_click_schema = WindowsClickOnParams.model_json_schema()
+    macos_click_schema = MacOSClickOnParams.model_json_schema()
+    macos_launch_schema = MacOSLaunchAppParams.model_json_schema()
+    macos_kill_schema = MacOSKillAppParams.model_json_schema()
+    macos_press_key_schema = MacOSPressKeyParams.model_json_schema()
+
+    assert "Wait without touching platform state" in wait_schema["description"]
+    assert "milliseconds" in wait_schema["properties"]["duration_ms"]["description"]
+
+    assert "target or non-empty locator" in android_text_schema["description"]
+    assert "runtimeSecret" in android_text_schema["properties"]["textType"]["description"]
+    assert "text to enter" in android_text_schema["properties"]["text"]["description"]
+    assert "semantic target" in android_text_schema["properties"]["target"]["description"]
+    assert "structured Android locator" in android_text_schema["properties"]["locator"]["description"]
+
+    assert "direction or both start and end" in android_swipe_schema["description"]
+    assert "screen size" in android_swipe_schema["properties"]["reference_screen_size"]["description"]
+
+    assert "target, locator, text, url, or timeout_ms" in web_wait_schema["description"]
+    assert "bounded wait" in web_wait_schema["properties"]["timeout_ms"]["description"]
+
+    assert "non-empty locator" in windows_click_schema["description"]
+    assert "descriptive" in windows_click_schema["properties"]["target"]["description"]
+    assert "Windows control locator" in windows_click_schema["properties"]["locator"]["description"]
+
+    assert "target, non-empty locator, or point" in macos_click_schema["description"]
+    assert "macOS screen point" in macos_click_schema["properties"]["point"]["description"]
+
+    assert MacOSLaunchAppParams().new_session is False
+    assert macos_launch_schema["properties"]["new_session"]["default"] is False
+    assert "existing Mac2 session" in macos_launch_schema["properties"]["new_session"]["description"]
+    assert "session creation" in macos_launch_schema["properties"]["arguments"]["description"]
+    assert "configured bundle id" in macos_launch_schema["properties"]["bundle_id"]["description"]
+    assert "environment" not in macos_launch_schema["properties"]
+    assert ensure_strict_json_schema(macos_launch_schema)
+    assert "retain" in macos_kill_schema["properties"]["close_session"]["description"]
+    assert "Enter" in macos_press_key_schema["properties"]["key"]["description"]
+    assert "COMMAND" in macos_press_key_schema["properties"]["modifiers"]["description"]
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        MacOSLaunchAppParams(environment={"APP_MODE": "test"})
 
 
 def test_local_tool_output_rejects_artifact_subdir_escape() -> None:

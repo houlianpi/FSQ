@@ -184,6 +184,8 @@ def test_android_harness_action_space_returns_decorated_driver_method_schemas() 
     assert schemas["tap_on"].metadata["executor_kind"] == "driver"
     assert schemas["tap_on"].metadata["replay"] == {"kind": "fsq_command", "alias": "tapOn"}
     assert "target" in schemas["tap_on"].params_json_schema["properties"]
+    assert "target or non-empty locator" in schemas["tap_on"].params_json_schema["description"]
+    assert "semantic target" in schemas["tap_on"].params_json_schema["properties"]["target"]["description"]
     assert schemas["tap_at"].driver_method == "tap_at"
     assert schemas["tap_at"].fsq_action_name == "tapAt"
     assert "point" in schemas["tap_at"].params_json_schema["properties"]

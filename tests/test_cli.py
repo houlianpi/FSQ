@@ -599,6 +599,7 @@ harness:
 def test_run_strict_macos_case_builds_macos_harness_from_env_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
     monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
+    monkeypatch.delenv("FSQ_MACOS_APP_PATH", raising=False)
     _config(
         tmp_path,
         """
@@ -635,6 +636,7 @@ harness:
         "app_path": None,
         "page_source_max_depth": 7,
         "action_timeout_seconds": 11,
+        "new_command_timeout_seconds": 300,
     }
     assert calls["strict"]["case_path"] == case_path.resolve()
     assert calls["strict"]["run_id"] == "strict_macos"

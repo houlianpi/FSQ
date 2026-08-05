@@ -2126,7 +2126,7 @@ def test_playground_windows_platform_runtime_info_and_session_endpoints() -> Non
 
 
 def test_playground_macos_platform_runtime_info_and_session_endpoints() -> None:
-    settings = Settings(harness={"platform": "macos", "macos": {"action_timeout_seconds": 11}})
+    settings = Settings(harness={"platform": "macos", "macos": {"action_timeout_seconds": 11, "new_command_timeout_seconds": 420}})
     settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
     settings.harness.macos.bundle_id = "com.example.MacApp"
     server = PlaygroundServer(settings)
@@ -2154,6 +2154,7 @@ def test_playground_macos_platform_runtime_info_and_session_endpoints() -> None:
     assert runtime_payload["metadata"]["bundleIdPresent"] is True
     assert runtime_payload["metadata"]["appPathConfigured"] is False
     assert runtime_payload["metadata"]["actionTimeoutSeconds"] == 11
+    assert runtime_payload["metadata"]["newCommandTimeoutSeconds"] == 420
 
 
 def test_playground_web_screenshot_uses_active_harness(tmp_path: Path) -> None:

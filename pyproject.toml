@@ -23,6 +23,7 @@ dependencies = [
  
 [project.optional-dependencies]
 dev = [
+    "pre-commit==4.6.1",
     "pytest==9.0.3",
     "pytest-asyncio==1.3.0",
     "ruff==0.16.1",
@@ -38,7 +39,7 @@ windows = [
     "pillow==12.3.0",
 ]
 macos = [
-    "Appium-Python-Client==2.6.1",
+    "Appium-Python-Client==5.3.1",
 ]
  
 [project.scripts]
@@ -47,6 +48,11 @@ fsq-agent = "fsq_agent.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["fsq_agent"]
 artifacts = ["fsq_agent/playground/static"]
+
+[[tool.uv.index]]
+name = "microsoft-cfs"
+url = "https://packagefeedproxy.microsoft.io/pypi/simple"
+default = true
  
 [tool.pytest.ini_options]
 testpaths = ["tests"]

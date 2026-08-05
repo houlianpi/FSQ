@@ -48,6 +48,18 @@ uv sync --frozen --extra dev --extra $platform
 
 ### Python Quality
 
+Install the repository Git hook once after syncing the development dependencies:
+
+```powershell
+uv run --frozen --extra dev pre-commit install
+```
+
+The hook runs the same Ruff lint and format checks as CI before every commit. Run it manually across the repository with:
+
+```powershell
+uv run --frozen --extra dev pre-commit run --all-files
+```
+
 ```powershell
 # Validate.
 uv run --frozen --extra dev ruff check .

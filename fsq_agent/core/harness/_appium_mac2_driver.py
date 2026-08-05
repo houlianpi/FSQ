@@ -34,7 +34,35 @@ from fsq_agent.models import (
 DEFAULT_APPIUM_MAC2_SERVER_URL = "http://127.0.0.1:4723"
 DEFAULT_MACOS_PAGE_SOURCE_MAX_DEPTH = 12
 DEFAULT_MACOS_ACTION_TIMEOUT_SECONDS = 10
+DEFAULT_MACOS_NEW_COMMAND_TIMEOUT_SECONDS = 300
 DEFAULT_MACOS_SNAPSHOT_SOURCE_PREVIEW_CHARS = 2000
+MACOS_KEY_MODIFIER_FLAGS = {
+    "CAPS_LOCK": 1 << 0,
+    "SHIFT": 1 << 1,
+    "CONTROL": 1 << 2,
+    "OPTION": 1 << 3,
+    "ALT": 1 << 3,
+    "COMMAND": 1 << 4,
+    "FUNCTION": 1 << 5,
+}
+MACOS_KEY_NAMES = {
+    "BACKSPACE": "XCUIKeyboardKeyDelete",
+    "DELETE": "XCUIKeyboardKeyDelete",
+    "DOWN": "XCUIKeyboardKeyDownArrow",
+    "END": "XCUIKeyboardKeyEnd",
+    "ENTER": "XCUIKeyboardKeyReturn",
+    "ESC": "XCUIKeyboardKeyEscape",
+    "ESCAPE": "XCUIKeyboardKeyEscape",
+    "HOME": "XCUIKeyboardKeyHome",
+    "LEFT": "XCUIKeyboardKeyLeftArrow",
+    "PAGEDOWN": "XCUIKeyboardKeyPageDown",
+    "PAGEUP": "XCUIKeyboardKeyPageUp",
+    "RETURN": "XCUIKeyboardKeyReturn",
+    "RIGHT": "XCUIKeyboardKeyRightArrow",
+    "SPACE": " ",
+    "TAB": "XCUIKeyboardKeyTab",
+    "UP": "XCUIKeyboardKeyUpArrow",
+}
 DEFAULT_MACOS_SNAPSHOT_ATTRIBUTE_KEYS = frozenset(
     {
         "identifier",
@@ -72,6 +100,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         app_path: str | Path | None = None,
         page_source_max_depth: int = DEFAULT_MACOS_PAGE_SOURCE_MAX_DEPTH,
         action_timeout_seconds: int = DEFAULT_MACOS_ACTION_TIMEOUT_SECONDS,
+        new_command_timeout_seconds: int = DEFAULT_MACOS_NEW_COMMAND_TIMEOUT_SECONDS,
         session: object | None = None,
     ) -> None:
         self.server_url = server_url.rstrip("/")
@@ -79,6 +108,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         self.app_path = str(Path(app_path)) if app_path else None
         self.page_source_max_depth = page_source_max_depth
         self.action_timeout_seconds = action_timeout_seconds
+        self.new_command_timeout_seconds = new_command_timeout_seconds
         self._session = session
 
     def context(self) -> dict[str, object]:
@@ -105,8 +135,8 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         return self._passed(
             {
                 "session_id": self._safe_attr(session, "session_id"),
-                "bundle_id": params.bundle_id or self.bundle_id,
-                "app_path": params.app_path or self.app_path,
+                "bundle_id": self._effective_bundle_id(params.bundle_id),
+                "app_path": self._effective_app_path(params.app_path),
             }
         )
 
@@ -115,17 +145,18 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         session = self._session
         if session is None:
             return self._passed()
-        bundle_id = params.bundle_id or self.bundle_id
+        bundle_id = self._effective_bundle_id(params.bundle_id)
+        if params.close_session:
+            self.close()
+            return self._passed({"bundle_id": bundle_id, "close_session": True})
         if bundle_id:
             terminate = getattr(session, "terminate_app", None)
-            if callable(terminate):
-                terminate(bundle_id)
-        if params.close_session:
-            quit_session = getattr(session, "quit", None)
-            if callable(quit_session):
-                quit_session()
-            self._session = None
-        return self._passed({"bundle_id": bundle_id, "close_session": bool(params.close_session)})
+            if not callable(terminate):
+                raise ConfigurationError("Active Appium Mac2 session cannot terminate applications.")
+            terminate(bundle_id)
+        else:
+            raise ConfigurationError("macOS application termination requires bundle_id or a configured bundle id.")
+        return self._passed({"bundle_id": bundle_id, "close_session": False})
 
     @_macos_driver_tool("clickOn", description="Click a macOS element or point resolved through Appium Mac2.")
     def click_on(self, params: MacOSClickOnParams) -> dict[str, object]:
@@ -160,33 +191,61 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
     def type_text(self, params: MacOSTypeTextParams) -> dict[str, object]:
         element = self._resolve_element_or_none(params)
         if element is not None:
-            click = getattr(element, "click", None)
-            if callable(click):
-                click()
             if params.clear:
                 clear = getattr(element, "clear", None)
-                if callable(clear):
-                    clear()
-            send_keys = getattr(element, "send_keys", None)
-            if callable(send_keys):
-                send_keys(params.text)
-                return self._passed()
-        session = self._require_session()
-        send_keys = getattr(session, "send_keys", None)
-        if callable(send_keys):
-            send_keys(params.text)
+                if not callable(clear):
+                    return self._failed("action_error", "Resolved Appium element cannot clear existing text.")
+                clear()
+            self._send_macos_text(params.text, element=element)
             return self._passed()
-        return self._failed("action_error", "Appium session cannot send keyboard input.")
+
+        point = self._point_from_params(params)
+        if point is not None:
+            self._perform_pointer_click(point)
+        elif params.target is not None or params.locator is not None:
+            return self._target_missing(params)
+
+        if params.clear:
+            session = self._require_session()
+            switch_to = getattr(session, "switch_to", None)
+            active_element = getattr(switch_to, "active_element", None)
+            clear = getattr(active_element, "clear", None)
+            if not callable(clear):
+                return self._failed("action_error", "Appium session has no active element that can clear existing text.")
+            clear()
+        self._send_macos_text(params.text)
+        if point is not None:
+            return self._passed({"point": point.model_dump(mode="json")})
+        return self._passed()
+
+    def _send_macos_text(self, text: str, *, element: object | None = None) -> None:
+        normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
+        keys = [MACOS_KEY_NAMES["ENTER"] if character == "\n" else character for character in normalized_text]
+        self._execute_macos_keys(keys, element=element)
+
+    def _execute_macos_keys(self, keys: list[object], *, element: object | None = None) -> None:
+        session = self._require_session()
+        execute_script = getattr(session, "execute_script", None)
+        if not callable(execute_script):
+            raise ConfigurationError("Appium Mac2 session cannot execute the macos: keys command.")
+        arguments: dict[str, object] = {"keys": keys}
+        element_id = self._safe_attr(element, "id")
+        if isinstance(element_id, str) and element_id:
+            arguments["elementId"] = element_id
+        execute_script("macos: keys", arguments)
 
     @_macos_driver_tool("pressKey", description="Send a keyboard shortcut or key to macOS.")
     def press_key(self, params: MacOSPressKeyParams) -> dict[str, object]:
-        session = self._require_session()
-        key_sequence = self._key_sequence(params)
-        send_keys = getattr(session, "send_keys", None)
-        if callable(send_keys):
-            send_keys(key_sequence)
-            return self._passed({"key": params.key, "modifiers": params.modifiers or []})
-        return self._failed("action_error", "Appium session cannot send keyboard input.")
+        modifier_flags = 0
+        for modifier in params.modifiers or []:
+            normalized = modifier.strip().upper()
+            if normalized not in MACOS_KEY_MODIFIER_FLAGS:
+                raise ConfigurationError(f"Unsupported macOS key modifier: {modifier}.")
+            modifier_flags |= MACOS_KEY_MODIFIER_FLAGS[normalized]
+        key = MACOS_KEY_NAMES.get(params.key.strip().upper(), params.key)
+        key_payload: object = key if modifier_flags == 0 else {"key": key, "modifierFlags": modifier_flags}
+        self._execute_macos_keys([key_payload])
+        return self._passed({"key": params.key, "modifiers": params.modifiers or []})
 
     @_macos_driver_tool("hoverOn", description="Move the pointer over a macOS element or point.")
     def hover_on(self, params: MacOSHoverOnParams) -> dict[str, object]:
@@ -312,26 +371,37 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         self._session = None
 
     def _ensure_session(self, params: MacOSLaunchAppParams | None = None) -> object:
-        if self._session is not None:
-            return self._session
         params = params or MacOSLaunchAppParams()
+        if self._session is None:
+            return self._create_session(params)
+        if params.new_session:
+            self._require_creation_identity(params)
+            self.close()
+            return self._create_session(params)
+        if params.app_path is not None or params.arguments is not None:
+            raise ConfigurationError("app_path and arguments require new_session=true when a Mac2 session already exists.")
+        bundle_id = self._effective_bundle_id(params.bundle_id)
+        if bundle_id is None:
+            raise ConfigurationError("macOS application activation requires bundle_id or a configured bundle id.")
+        activate = getattr(self._session, "activate_app", None)
+        if not callable(activate):
+            raise ConfigurationError("Active Appium Mac2 session cannot activate applications.")
+        activate(bundle_id)
+        return self._session
+
+    def _create_session(self, params: MacOSLaunchAppParams) -> object:
         capabilities: dict[str, object] = {
             "platformName": "Mac",
             "appium:automationName": "Mac2",
-            "appium:newCommandTimeout": self.action_timeout_seconds,
+            "appium:newCommandTimeout": self.new_command_timeout_seconds,
         }
-        bundle_id = params.bundle_id or self.bundle_id
-        app_path = params.app_path or self.app_path
+        bundle_id, app_path = self._require_creation_identity(params)
         if bundle_id:
             capabilities["appium:bundleId"] = bundle_id
         if app_path:
             capabilities["appium:app"] = app_path
         if params.arguments:
             capabilities["appium:arguments"] = params.arguments
-        if params.environment:
-            capabilities["appium:environment"] = params.environment
-        if not bundle_id and not app_path:
-            raise ConfigurationError("macOS Appium Mac2 session requires bundle_id or app_path.")
         try:
             from appium import webdriver
             from appium.options.mac import Mac2Options
@@ -343,6 +413,23 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         options = Mac2Options().load_capabilities(capabilities)
         self._session = webdriver.Remote(self.server_url, options=options)
         return self._session
+
+    def _require_creation_identity(self, params: MacOSLaunchAppParams) -> tuple[str | None, str | None]:
+        bundle_id = self._effective_bundle_id(params.bundle_id)
+        app_path = self._effective_app_path(params.app_path)
+        if bundle_id is None and app_path is None:
+            raise ConfigurationError("macOS Appium Mac2 session requires bundle_id or app_path.")
+        return bundle_id, app_path
+
+    def _effective_bundle_id(self, bundle_id: str | None) -> str | None:
+        if isinstance(bundle_id, str) and bundle_id.strip():
+            return bundle_id.strip()
+        return self.bundle_id
+
+    def _effective_app_path(self, app_path: str | None) -> str | None:
+        if isinstance(app_path, str) and app_path.strip():
+            return app_path.strip()
+        return self.app_path
 
     def _require_session(self) -> object:
         if self._session is None:
@@ -489,10 +576,6 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         pointer.move_to_location(destination.x, destination.y)
         pointer.pointer_up()
         actions.perform()
-
-    def _key_sequence(self, params: MacOSPressKeyParams) -> str:
-        modifiers = params.modifiers or []
-        return "+".join([*modifiers, params.key]) if modifiers else params.key
 
     def _element_displayed(self, element: object) -> bool:
         displayed = getattr(element, "is_displayed", None)

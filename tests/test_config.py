@@ -505,6 +505,7 @@ harness:
     backend: appium_mac2
     page_source_max_depth: 8
     action_timeout_seconds: 15
+    new_command_timeout_seconds: 420
 """,
         ),
         encoding="utf-8",
@@ -518,6 +519,7 @@ harness:
     assert settings.harness.macos.backend == "appium_mac2"
     assert settings.harness.macos.page_source_max_depth == 8
     assert settings.harness.macos.action_timeout_seconds == 15
+    assert settings.harness.macos.new_command_timeout_seconds == 420
     assert settings.harness.macos.appium_server_url == "http://127.0.0.1:4723"
     assert settings.harness.macos.bundle_id == "com.example.MacApp"
     assert settings.harness.macos.app_path == app_path

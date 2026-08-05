@@ -79,7 +79,7 @@ Windows configuration:
 macOS configuration:
 
 - `harness.macos.backend` supports `appium_mac2` in the first macOS backend.
-- `harness.macos.page_source_max_depth` and `harness.macos.action_timeout_seconds` are YAML-owned stable defaults.
+- `harness.macos.page_source_max_depth`, `harness.macos.action_timeout_seconds`, and `harness.macos.new_command_timeout_seconds` are YAML-owned stable defaults. The action timeout and Appium command-idle timeout are independent settings.
 - `FSQ_MACOS_APPIUM_SERVER_URL` supplies the operator's Appium endpoint. The code may use `http://127.0.0.1:4723` only when the implementation treats it as a stable default and reports whether the endpoint was explicitly configured.
 - `FSQ_MACOS_BUNDLE_ID` and `FSQ_MACOS_APP_PATH` supply the target app identity or path. At least one target selector must be available before `launchApp` starts a new application unless the authored action supplies an explicit target identity.
 - Missing Appium Python packages are reported during macOS runtime construction with actionable setup guidance, not during registry bootstrap. Missing or unusable Appium server URL, bundle id, app path, or path existence issues are reported by configuration validation before external actions begin.
