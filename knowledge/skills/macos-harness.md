@@ -27,6 +27,9 @@ Use when `harness.platform` is macOS. This skill contains macOS-specific stabili
 
 ## Verification and Assertion Rules
 
+- Use `search_artifact` and `read_artifact_slice` only to inspect evidence and choose the next action.
+- Finish every required verification step by calling `assert_visible`, `assert_elements_order`, or `assert_with_ai`.
+- Do not treat a helper search match, artifact read, screenshot path, or `ui_snapshot` narration as completed verification.
 - Use `assert_elements_order` when the requirement is about visual order, such as toolbar item sequence or vertical list ordering.
 - For `assert_elements_order`, keep `expected_order` as zero-based indexes of the provided `elements`; omit it when the authored element list is already the expected order.
 - Use `assert_visible` for required presence or visibility of a macOS accessibility element.
