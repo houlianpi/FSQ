@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import json
 from typing import Any
 
 import pytest
@@ -700,7 +701,11 @@ def test_appium_mac2_driver_ui_snapshot_simplifies_page_source_to_max_depth() ->
     driver = AppiumMac2Driver(
         session=FakeMacSession(
             {},
-            page_source=('<AppiumAUT name="Root"><Window name="Main"><Group name="Toolbar"><Button name="Save" custom="hidden" /></Group></Window><Window name="Other" /></AppiumAUT>'),
+            page_source=(
+                '<AppiumAUT name="Root"><Wrapper><Window name="Main"><Wrapper><Group name="Toolbar">'
+                '<Button name="Save" custom="hidden" /></Group></Wrapper></Window></Wrapper>'
+                '<Window name="Other" /></AppiumAUT>'
+            ),
         ),
         page_source_max_depth=2,
     )
@@ -712,7 +717,7 @@ def test_appium_mac2_driver_ui_snapshot_simplifies_page_source_to_max_depth() ->
     assert snapshot["max_depth"] == 2
     page_source = snapshot["page_source"]
     assert page_source["format"] == "xml"
-    assert page_source["node_count"] == 5
+    assert page_source["node_count"] == 7
     assert page_source["root"] == {
         "type": "AppiumAUT",
         "attributes": {"name": "Root"},
@@ -720,6 +725,136 @@ def test_appium_mac2_driver_ui_snapshot_simplifies_page_source_to_max_depth() ->
             {"type": "Window", "attributes": {"name": "Main"}, "children_truncated": 1},
             {"type": "Window", "attributes": {"name": "Other"}},
         ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("", {"format": "xml", "root": None, "source_length": 0}),
+        (
+            "<AppiumAUT>",
+            {
+                "format": "unparsed_xml",
+                "source_preview": "<AppiumAUT>",
+                "source_length": 11,
+                "truncated": False,
+            },
+        ),
+    ],
+)
+def test_appium_mac2_driver_ui_snapshot_bounds_empty_and_malformed_source(
+    source: str,
+    expected: dict[str, object],
+) -> None:
+    driver = AppiumMac2Driver(session=FakeMacSession({}, page_source=source))
+
+    snapshot = driver.ui_snapshot(MacOSUiSnapshotParams())
+
+    page_source = snapshot["page_source"]
+    assert {key: page_source[key] for key in expected} == expected
+    if source:
+        assert page_source["parse_error"]
+
+
+def test_appium_mac2_driver_ui_snapshot_compacts_semantic_signals() -> None:
+    long_name = "Save " + ("document " * 8)
+    driver = AppiumMac2Driver(
+        session=FakeMacSession(
+            {},
+            page_source=(
+                '<AppiumAUT name="Root"><Wrapper>'
+                f'<Button identifier="save" name="{long_name}" role="AXButton" enabled="true" visible="true" '
+                'selected="false" x="10" y="20" width="80" height="30" custom="drop" />'
+                '<Noise enabled="true" visible="true" x="0" y="0" width="0" height="0" />'
+                '<Hidden visible="false" x="0" y="0" width="0" height="0" />'
+                "</Wrapper></AppiumAUT>"
+            ),
+        ),
+    )
+
+    snapshot = driver.ui_snapshot(MacOSUiSnapshotParams(max_depth=4))
+
+    page_source = snapshot["page_source"]
+    assert page_source["node_count"] == 5
+    assert page_source["root"] == {
+        "type": "AppiumAUT",
+        "attributes": {"name": "Root"},
+        "children": [
+            {
+                "type": "Button",
+                "attributes": {
+                    "identifier": "save",
+                    "name": long_name[:50],
+                    "role": "AXButton",
+                    "x": "10",
+                    "y": "20",
+                    "width": "80",
+                    "height": "30",
+                },
+            },
+            {
+                "type": "Hidden",
+                "attributes": {"visible": "false", "x": "0", "y": "0", "width": "0", "height": "0"},
+            },
+        ],
+    }
+
+
+def test_appium_mac2_driver_ui_snapshot_reduces_noise_heavy_output() -> None:
+    noise = "".join(f'<Noise enabled="true" visible="true" x="{index}" y="0" width="0" height="0" />' for index in range(100))
+    source = f'<AppiumAUT name="Root"><Wrapper>{noise}</Wrapper></AppiumAUT>'
+    driver = AppiumMac2Driver(session=FakeMacSession({}, page_source=source))
+
+    snapshot = driver.ui_snapshot(MacOSUiSnapshotParams())
+
+    page_source = snapshot["page_source"]
+    assert page_source["node_count"] == 102
+    assert page_source["root"] == {"type": "AppiumAUT", "attributes": {"name": "Root"}}
+    assert len(json.dumps(page_source)) < len(source) // 10
+
+
+def test_appium_mac2_driver_ui_snapshot_compacts_included_attributes_and_text() -> None:
+    long_text = "x" * 60
+    driver = AppiumMac2Driver(
+        session=FakeMacSession(
+            {},
+            page_source=(f'<AppiumAUT name="Root"><Button name="Action" custom="keep" empty="   " enabled="TRUE">{long_text}</Button></AppiumAUT>'),
+        ),
+    )
+
+    snapshot = driver.ui_snapshot(MacOSUiSnapshotParams(max_depth=3, include_attributes=True))
+
+    assert snapshot["page_source"]["root"] == {
+        "type": "AppiumAUT",
+        "attributes": {"name": "Root"},
+        "children": [
+            {
+                "type": "Button",
+                "attributes": {"name": "Action", "custom": "keep"},
+                "text": long_text[:50],
+            }
+        ],
+    }
+
+
+def test_appium_mac2_driver_ui_snapshot_bounds_unexpected_compaction_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = '<AppiumAUT name="Root" />'
+    driver = AppiumMac2Driver(session=FakeMacSession({}, page_source=source))
+
+    def fail_compaction(*args, **kwargs):
+        raise RuntimeError("compaction failed")
+
+    monkeypatch.setattr(driver, "_snapshot_attributes", fail_compaction)
+
+    snapshot = driver.ui_snapshot(MacOSUiSnapshotParams())
+
+    assert snapshot["page_source"] == {
+        "format": "unparsed_xml",
+        "source_preview": source,
+        "source_length": len(source),
+        "truncated": False,
+        "parse_error": "compaction failed",
     }
 
 
