@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.core.harness._playwright_driver import PlaywrightWebDriver
-from fsq_agent.models import ConfigurationError, WebCloseBrowserParams, WebNavigateToParams, WebPageSnapshotParams, WebStartBrowserParams
+from fsq_agent.models import ConfigurationError, WebCloseBrowserParams, WebNavigateToParams, WebStartBrowserParams, WebUiSnapshotParams
 
 
 class _FakeResponse:
@@ -134,7 +134,7 @@ def test_playwright_web_driver_runs_page_operations_on_one_worker_thread() -> No
             )
         )
 
-    snapshot = driver.page_snapshot(WebPageSnapshotParams())
+    snapshot = driver.ui_snapshot(WebUiSnapshotParams())
     context = driver.context()
     driver.close()
 
@@ -151,10 +151,10 @@ def test_playwright_web_driver_runs_page_operations_on_one_worker_thread() -> No
     assert driver.create_thread_id not in external_thread_ids
 
 
-def test_playwright_web_driver_page_snapshot_falls_back_when_aria_snapshot_is_empty() -> None:
+def test_playwright_web_driver_ui_snapshot_falls_back_when_aria_snapshot_is_empty() -> None:
     driver = PlaywrightWebDriver(page=_TextFallbackFakePage())
 
-    snapshot = driver.page_snapshot(WebPageSnapshotParams())
+    snapshot = driver.ui_snapshot(WebUiSnapshotParams())
 
     assert snapshot == {
         "url": "https://example.com",

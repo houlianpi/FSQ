@@ -106,7 +106,7 @@ Web platform exports:
 - `WebAssertNotVisibleParams`: Pydantic model for Web `assert_not_visible` parameters. It requires either `target` or non-empty `locator` plus optional assertion metadata.
 - `WebTextAssertion`: Pydantic model for Web text assertion predicates, supporting `contains` and `equals`.
 - `WebAssertTextParams`: Pydantic model for `assert_text` parameters. It supports optional `target` or `locator` plus a text predicate.
-- `WebPageSnapshotParams`: Pydantic model for the read-only `page_snapshot` Web observation capability. It accepts optional exact snapshot `target` or non-empty `locator`, optional `depth`, and optional `boxes` so dynamic agents and strict Web cases can request a current accessibility/DOM-oriented page snapshot through the normal harness action schema path.
+- `WebUiSnapshotParams`: No-argument Pydantic model for the read-only `ui_snapshot` Web observation capability so dynamic agents and strict Web cases can request current accessibility/page snapshot content through the normal harness action schema path.
 - `WebAssertWithAIParams`: Pydantic model for authored Web visual/page assertion parameters with a required prompt and optional assertion metadata. This parameter model is consumed by decorated Web backend driver tools such as `PlaywrightWebDriver.assert_with_ai`.
 
 Windows platform exports:
@@ -197,7 +197,7 @@ Web contracts:
 
 - Web parameter models include browser lifecycle, locator, navigation, click, text typing, select, hover, key, wait, screenshot, page snapshot, deterministic assertions, and Web AI assertion models.
 - Web settings are grouped under `WebHarnessSettings` and are selected by `HarnessSettings.platform == "web"`.
-- Web explicit observation command is represented as `page_snapshot`/`pageSnapshot`; automatic runner evidence captures normalized `ui_snapshot` content sourced from Web page/accessibility snapshot data.
+- Web explicit observation command is represented as `ui_snapshot`/`uiSnapshot`; automatic runner evidence captures normalized `ui_snapshot` content sourced from Web page/accessibility snapshot data.
 - Web action parameter design follows Playwright MCP's LLM-facing core automation conventions where appropriate: action targets are replayable semantic locators or stable unique selectors, optional `element` fields are human-readable descriptions for interaction permission/auditing, screenshots are evidence/debugging observations rather than the normal action-selection substrate, and unsafe/opt-in capability families are not exposed.
 
 Windows contracts:
@@ -267,7 +267,7 @@ All custom exceptions inherit from `FsqAgentError`. Exceptions carry concise hum
 - Runtime-secret text references are represented by text-entry parameter fields, not by a separate pre-resolution `RuntimeSecretRef` object. Omitted `textType` means literal text for YAML compatibility; `textType="runtimeSecret"` means `text` is an environment variable name resolved by `core` before driver invocation.
 - `WaitMsParams` belongs to the inherited `wait_ms` CommonTool capability and its strict replay alias `waitMs`. It lets recorded strict cases replay pure waits without routing through Android gesture or driver APIs.
 - Web browser lifecycle is represented by explicit no-field parameter models `WebStartBrowserParams` and `WebCloseBrowserParams`; `navigate_to` is navigation on an already-started browser/page, not an implicit startup contract.
-- Web `page_snapshot` is a driver-owned, read-only explicit observation capability with canonical alias `pageSnapshot`. It returns a Web page snapshot, remains valid for authored strict YAML cases, is skipped by dynamic recording, and must not reuse Android-oriented `ui_tree` or `uiTree` naming. Automatic Web runner evidence uses normalized `ui_snapshot` artifact naming even when the underlying content comes from page snapshot data.
+- Web `ui_snapshot` is a driver-owned, read-only explicit observation capability with replay alias `uiSnapshot`. It returns Web accessibility/page snapshot content, remains valid for authored strict YAML cases, is skipped by dynamic recording, and must not reuse Android-oriented `ui_tree` or `uiTree` naming. Automatic Web runner evidence uses the same normalized `ui_snapshot` artifact naming.
 - Windows `ui_snapshot` is a driver-owned, read-only observation capability with canonical alias `uiSnapshot`. It returns a bounded pywinauto control-tree snapshot, remains valid for authored strict YAML cases, is skipped by dynamic recording, and also satisfies the normalized automatic `ui_snapshot` evidence contract.
 - macOS `ui_snapshot` is a driver-owned, read-only observation capability with canonical alias `uiSnapshot`. It returns a bounded Appium Mac2 page-source/control-tree snapshot, remains valid for authored strict YAML cases, is skipped by dynamic recording, and also satisfies the normalized automatic `ui_snapshot` evidence contract.
 - macOS `assert_elements_order` is a deterministic assertion contract. It compares resolved element center positions on the requested axis, returns assertion-oriented structured order metadata, and is distinct from AI visual assertions or raw `ui_snapshot` narration.

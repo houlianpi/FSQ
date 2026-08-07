@@ -11,7 +11,6 @@ from fsq_agent.models import EvidenceArtifactKind, EvidenceArtifactRef, StepPhas
 _ARTIFACT_DIRS: dict[EvidenceArtifactKind, str] = {
     "screenshot": "screenshots",
     "ui_tree": "ui-trees",
-    "page_snapshot": "page-snapshots",
     "ui_snapshot": "ui-snapshots",
     "tool_call": "harness-calls",
     "log": "logs",
@@ -22,7 +21,6 @@ _ARTIFACT_DIRS: dict[EvidenceArtifactKind, str] = {
 _DEFAULT_EXTENSIONS: dict[EvidenceArtifactKind, str] = {
     "screenshot": "png",
     "ui_tree": "json",
-    "page_snapshot": "json",
     "ui_snapshot": "json",
     "tool_call": "json",
     "log": "txt",
@@ -33,7 +31,6 @@ _DEFAULT_EXTENSIONS: dict[EvidenceArtifactKind, str] = {
 _DEFAULT_MIME_TYPES: dict[EvidenceArtifactKind, str] = {
     "screenshot": "image/png",
     "ui_tree": "application/json",
-    "page_snapshot": "application/json",
     "ui_snapshot": "application/json",
     "tool_call": "application/json",
     "log": "text/plain",

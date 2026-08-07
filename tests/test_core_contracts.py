@@ -33,9 +33,9 @@ from fsq_agent.models import (
     StepPhaseReport,
     WebClickOnParams,
     WebCloseBrowserParams,
-    WebPageSnapshotParams,
     WebStartBrowserParams,
     WebTypeTextParams,
+    WebUiSnapshotParams,
     WebWaitForParams,
 )
 
@@ -321,9 +321,9 @@ def test_web_action_definitions_are_single_source_for_web_contract() -> None:
     assert WEB_ACTION_DEFINITIONS_BY_NAME["typeText"].params_model is WebTypeTextParams
     assert WEB_ACTION_DEFINITIONS_BY_NAME["waitFor"].driver_method == "wait_for"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["waitFor"].params_model is WebWaitForParams
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["pageSnapshot"].driver_method == "page_snapshot"
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["pageSnapshot"].params_model is WebPageSnapshotParams
-    assert WEB_ACTION_DEFINITIONS_BY_NAME["pageSnapshot"].step_kind == "observation"
+    assert WEB_ACTION_DEFINITIONS_BY_NAME["uiSnapshot"].driver_method == "ui_snapshot"
+    assert WEB_ACTION_DEFINITIONS_BY_NAME["uiSnapshot"].params_model is WebUiSnapshotParams
+    assert WEB_ACTION_DEFINITIONS_BY_NAME["uiSnapshot"].step_kind == "observation"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["assertWithAI"].driver_method == "assert_with_ai"
     assert WEB_ACTION_DEFINITIONS_BY_NAME["assertWithAI"].owner == "driver"
 

@@ -77,7 +77,7 @@ Web command block:
 | `waitFor: {text: Loaded}` | `wait_for` | validated `WebWaitForParams` dump |
 | `takeScreenshot: {full_page: true}` | `take_screenshot` | validated `WebTakeScreenshotParams` dump |
 | `assertText: {text: {contains: Welcome}}` | `assert_text` | validated `WebAssertTextParams` dump |
-| `pageSnapshot: {}` | `page_snapshot` | validated `WebPageSnapshotParams` dump |
+| `uiSnapshot: {}` | `ui_snapshot` | validated `WebUiSnapshotParams` dump |
 
 macOS command block:
 
@@ -118,7 +118,7 @@ Step kind mapping for known actions is owned by capability metadata:
 | `startBrowser` | `setup` |
 | `closeBrowser` | `teardown` |
 | `assert`, `assertVisible`, `assertNotVisible`, `assertText`, `assertElementsOrder`, `assertWithAI` | `assertion` |
-| `takeScreenshot`, `startRecording`, `stopRecording`, `pageSnapshot`, `uiSnapshot` | `observation` |
+| `takeScreenshot`, `startRecording`, `stopRecording`, `uiSnapshot` | `observation` |
 | `waitMs` | `action` |
 | all other commands | `action` |
 
@@ -170,7 +170,7 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Unsupported 
 - Capability decorators and platform action catalogs are declaration-time inputs only. FSQ parsing consumes resolved `CapabilityDefinition` data from the registry snapshot and must not inspect decorated functions or platform catalog objects directly.
 - `waitMs` is a generated strict replay alias for the inherited `wait_ms` CommonTool capability. It is validated by `WaitMsParams`, converted into an `ExecutableStep(action_name="wait_ms")`, and later handled by `StepRunner` through the normal registry path without invoking Android gesture or Web page actions.
 - `assertWithAI` is parsed and validated like any other authored assertion command. This module does not evaluate AI assertions, build provider-backed evaluators, capture screenshots, or decide assertion verdicts.
-- Web replay aliases such as `startBrowser`, `closeBrowser`, `navigateTo`, `navigateBack`, `clickOn`, `typeText`, `selectOption`, `hoverOn`, `waitFor`, `takeScreenshot`, `assertText`, and `pageSnapshot` are accepted only when the supplied registry snapshot contains the corresponding Web capabilities. Android registries must not accept Web-only replay aliases, and Web registries must not accept Android-only replay aliases.
+- Web replay aliases such as `startBrowser`, `closeBrowser`, `navigateTo`, `navigateBack`, `clickOn`, `typeText`, `selectOption`, `hoverOn`, `waitFor`, `takeScreenshot`, `assertText`, and `uiSnapshot` are accepted only when the supplied registry snapshot contains the corresponding Web capabilities. Android registries must not accept Web-only replay aliases, and Web registries must not accept Android-only replay aliases.
 - macOS replay aliases such as `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI` are accepted only when the supplied registry snapshot contains the corresponding macOS capabilities. Shared replay aliases resolve to the active platform's capability definition from the registry snapshot; replay aliases unique to another platform remain invalid.
 - `launchApp`/`killApp` and `startBrowser`/`closeBrowser` are treated as setup and teardown step kinds for strict-core execution. A trailing `closeBrowser` command should be passed to `StepSequenceRunner` as teardown so it still executes after an earlier normal-step failure.
 - Commands marked `optional: true` are still converted into executable steps; optional/non-blocking execution semantics do not belong to this adapter.

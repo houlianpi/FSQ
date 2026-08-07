@@ -349,7 +349,7 @@ platform: web
 - startBrowser
 - navigateTo:
     url: https://www.bing.com
-- pageSnapshot
+- uiSnapshot
 - clickOn:
     target: Search box
     locator:
@@ -378,7 +378,7 @@ platform: web
     assert [step.action_name for step in steps] == [
         "start_browser",
         "navigate_to",
-        "page_snapshot",
+        "ui_snapshot",
         "click_on",
         "type_text",
         "press_key",

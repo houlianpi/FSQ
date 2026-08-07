@@ -29,7 +29,7 @@ platform: web
 - startBrowser
 - navigateTo:
     url: https://www.bing.com
-- pageSnapshot
+- uiSnapshot
 - closeBrowser
 """
 
@@ -590,8 +590,8 @@ harness:
     }
     assert calls["strict"]["case_path"] == case_path.resolve()
     assert calls["strict"]["run_id"] == "strict_web"
-    assert [step.action_name for step in calls["strict"]["steps"]] == ["start_browser", "navigate_to", "page_snapshot", "close_browser"]
-    assert calls["strict"]["registry"].resolve("pageSnapshot") is not None
+    assert [step.action_name for step in calls["strict"]["steps"]] == ["start_browser", "navigate_to", "ui_snapshot", "close_browser"]
+    assert calls["strict"]["registry"].resolve("uiSnapshot") is not None
     assert calls["strict"]["registry"].resolve("startBrowser") is not None
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
@@ -695,7 +695,6 @@ harness:
     assert calls["strict"]["run_id"] == "strict_windows"
     assert [step.action_name for step in calls["strict"]["steps"]] == ["launch_app", "ui_snapshot", "kill_app"]
     assert calls["strict"]["registry"].resolve("uiSnapshot") is not None
-    assert calls["strict"]["registry"].resolve("pageSnapshot") is None
 
 
 def test_run_strict_rejects_case_platform_mismatch_before_driver_construction(tmp_path: Path, monkeypatch) -> None:

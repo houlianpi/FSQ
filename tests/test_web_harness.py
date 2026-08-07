@@ -23,12 +23,12 @@ from fsq_agent.models import (
     WebHoverOnParams,
     WebNavigateBackParams,
     WebNavigateToParams,
-    WebPageSnapshotParams,
     WebPressKeyParams,
     WebSelectOptionParams,
     WebStartBrowserParams,
     WebTakeScreenshotParams,
     WebTypeTextParams,
+    WebUiSnapshotParams,
     WebWaitForParams,
 )
 
@@ -100,17 +100,13 @@ class FakeWebDriver(AIAssertionBackendToolMixin):
     def take_screenshot(self, params: WebTakeScreenshotParams) -> dict[str, object]:
         return self._record("take_screenshot", params)
 
-    @_web_driver_tool("pageSnapshot", description="Return the current Web page accessibility snapshot.")
-    def page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]:
+    @_web_driver_tool("uiSnapshot", description="Return the current Web page accessibility snapshot.")
+    def ui_snapshot(self, params: WebUiSnapshotParams) -> dict[str, object]:
         if hasattr(params, "model_dump"):
             recorded = params.model_dump(mode="json", exclude_none=True)
         else:
             recorded = params
-        self.calls.append(("page_snapshot", recorded))
-        return {"url": "https://www.bing.com", "snapshot": {"role": "WebArea", "name": "Bing"}}
-
-    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
-        self.calls.append(("ui_snapshot", None))
+        self.calls.append(("ui_snapshot", recorded))
         return {"url": "https://www.bing.com", "snapshot": {"role": "WebArea", "name": "Bing"}}
 
     @_web_driver_tool("assertVisible", description="Assert that a Web page target is visible.")
@@ -155,7 +151,7 @@ def test_web_harness_dispatches_fsq_action_names_to_driver() -> None:
         ("pressKey", {"key": "Enter"}, "press_key"),
         ("waitFor", {"text": "Results", "timeout_ms": 5000}, "wait_for"),
         ("takeScreenshot", {}, "take_screenshot"),
-        ("pageSnapshot", {}, "page_snapshot"),
+        ("uiSnapshot", {}, "ui_snapshot"),
         ("assertVisible", {"target": "Results"}, "assert_visible"),
         ("assertNotVisible", {"target": "Dialog"}, "assert_not_visible"),
         ("assertText", {"target": "Results", "text": {"contains": "playwright"}}, "assert_text"),
@@ -187,7 +183,7 @@ def test_web_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "click_on" in schemas
     assert "start_browser" in schemas
     assert "close_browser" in schemas
-    assert "page_snapshot" in schemas
+    assert "ui_snapshot" in schemas
     assert "assert_with_ai" not in schemas
     assert schemas["start_browser"].driver_method == "start_browser"
     assert schemas["start_browser"].fsq_action_name == "startBrowser"
@@ -204,9 +200,9 @@ def test_web_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "target or non-empty locator" in schemas["click_on"].params_json_schema["description"]
     assert "exact snapshot target" in schemas["click_on"].params_json_schema["properties"]["target"]["description"]
     assert "ref" not in click_locator_schema["properties"]
-    assert schemas["page_snapshot"].driver_method == "page_snapshot"
-    assert schemas["page_snapshot"].fsq_action_name == "pageSnapshot"
-    assert schemas["page_snapshot"].params_json_schema.get("properties") == {}
+    assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
+    assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
+    assert schemas["ui_snapshot"].params_json_schema.get("properties") == {}
 
 
 def test_web_harness_validation_failure_does_not_call_driver_method() -> None:
@@ -246,7 +242,7 @@ def test_web_harness_captures_screenshot_and_ui_snapshot_with_artifact_store(tmp
     assert (tmp_path / screenshot_ref.path).read_bytes() == b"fake-png"
     assert ui_snapshot_ref.path.as_posix() == "artifacts/ui-snapshots/step-1-finalize-after-click.json"
     assert "WebArea" in (tmp_path / ui_snapshot_ref.path).read_text(encoding="utf-8")
-    assert driver.calls == [("context", None), ("screenshot", {}), ("ui_snapshot", None)]
+    assert driver.calls == [("context", None), ("screenshot", {}), ("ui_snapshot", {})]
 
 
 def test_web_harness_assert_with_ai_uses_injected_evaluator(tmp_path) -> None:
@@ -291,7 +287,7 @@ def test_web_harness_requires_artifact_store_for_capture() -> None:
 
     with pytest.raises(RuntimeError, match="Artifact capture requires an ArtifactStore"):
         harness.capture_artifact(
-            kind="page_snapshot",
+            kind="ui_snapshot",
             reason="after click",
             context=harness.get_context(),
             step_id="step-1",

@@ -90,7 +90,7 @@ def test_log_run_event_concise_summarizes_tool_calls_without_verbose_output(capt
                 "status": "passed",
                 "artifact_refs": [
                     {"kind": "screenshot", "path": "artifacts/screenshots/before.png"},
-                    {"kind": "page_snapshot", "path": "artifacts/page-snapshots/after.json"},
+                    {"kind": "ui_snapshot", "path": "artifacts/ui-snapshots/after.json"},
                 ],
             },
         )
@@ -98,7 +98,7 @@ def test_log_run_event_concise_summarizes_tool_calls_without_verbose_output(capt
 
     messages = _messages(captured_format_logs)
     assert messages[0] == '[EXECUTION #12] tool started: tap_on args={"target":"Downloads"}'
-    assert messages[1] == "[EXECUTION #13] tool passed: tap_on duration=842ms artifacts=screenshot,page_snapshot"
+    assert messages[1] == "[EXECUTION #13] tool passed: tap_on duration=842ms artifacts=screenshot,ui_snapshot"
     rendered = "\n".join(messages)
     assert "phase_reports" not in rendered
     assert "yyyy" not in rendered

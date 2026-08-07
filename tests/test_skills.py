@@ -76,7 +76,7 @@ def test_repository_web_harness_skill_documents_snapshot_first_guidance() -> Non
     assert "Tool Selection" not in bundles[0].instructions
     assert "Snapshot-First Rules" in bundles[0].instructions
     assert "Tool Usage Error Recovery" in bundles[0].instructions
-    assert "page_snapshot" in bundles[0].instructions
+    assert "ui_snapshot" in bundles[0].instructions
     assert "assert_text" in bundles[0].instructions
     assert "textType" in bundles[0].instructions
     assert "runtimeSecret" in bundles[0].instructions
