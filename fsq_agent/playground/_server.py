@@ -44,8 +44,8 @@ _YAML_COMMAND_CONTROL_KEYS = {"optional", "timeout", "timeout_ms", "evidence", "
 _YAML_SETUP_ACTIONS = {"launchApp", "startBrowser"}
 _YAML_TEARDOWN_ACTIONS = {"killApp", "closeBrowser"}
 _YAML_ASSERTION_ACTIONS = {"assert", "assertVisible", "assertNotVisible", "assertText", "assertElementsOrder", "assertWithAI"}
-_YAML_OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording", "pageSnapshot", "uiSnapshot"}
-_STEP_TEXT_ARTIFACT_KINDS = {"ui_tree", "page_snapshot", "ui_snapshot"}
+_YAML_OBSERVATION_ACTIONS = {"takeScreenshot", "startRecording", "stopRecording", "uiSnapshot"}
+_STEP_TEXT_ARTIFACT_KINDS = {"ui_tree", "ui_snapshot"}
 _RUN_RESULT_MARKERS = {
     "report.md",
     "report.json",
@@ -1133,8 +1133,6 @@ class PlaygroundServer:
         normalized = str(value or "").replace("_", "").lower()
         if normalized == "uitree":
             return "ui_tree"
-        if normalized == "pagesnapshot":
-            return "page_snapshot"
         if normalized == "uisnapshot":
             return "ui_snapshot"
         return None

@@ -259,8 +259,8 @@ def test_playwright_web_driver_declarations_keep_catalog_backed_metadata() -> No
     assert click.metadata["driver_method"] == "click_on"
     assert click.metadata["fsq_action_name"] == "clickOn"
     assert click.replay == ReplayPolicy(kind="fsq_command", alias="clickOn")
-    assert definitions["page_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="pageSnapshot")
-    assert definitions["page_snapshot"].step_kind == "observation"
+    assert definitions["ui_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="uiSnapshot")
+    assert definitions["ui_snapshot"].step_kind == "observation"
     assert definitions["assert_visible"].step_kind == "assertion"
     assert definitions["assert_with_ai"].replay == ReplayPolicy(kind="fsq_command", alias="assertWithAI")
     assert definitions["assert_with_ai"].executor_kind == "driver"
@@ -294,7 +294,6 @@ def test_appium_mac2_driver_declarations_keep_catalog_backed_metadata() -> None:
     assert definitions["assert_with_ai"].executor_kind == "driver"
     assert definitions["assert_with_ai"].owner == "driver"
     assert "tap_on" not in definitions
-    assert "page_snapshot" not in definitions
 
 
 def test_web_registry_uses_web_only_platform_capabilities_without_playwright_import() -> None:
@@ -302,17 +301,18 @@ def test_web_registry_uses_web_only_platform_capabilities_without_playwright_imp
     definitions = {definition.name: definition for definition in snapshot.capabilities}
 
     assert "click_on" in definitions
-    assert "page_snapshot" in definitions
+    assert "ui_snapshot" in definitions
     assert "tap_on" not in definitions
     assert definitions["click_on"].executor_kind == "driver"
     assert definitions["click_on"].platform == "web"
     assert definitions["click_on"].backend == "playwright"
     assert definitions["click_on"].metadata["driver_method"] == "click_on"
-    assert definitions["page_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="pageSnapshot")
-    assert definitions["page_snapshot"].step_kind == "observation"
+    assert definitions["ui_snapshot"].replay == ReplayPolicy(kind="fsq_command", alias="uiSnapshot")
+    assert definitions["ui_snapshot"].step_kind == "observation"
     assert definitions["assert_with_ai"].executor_kind == "driver"
     assert definitions["assert_with_ai"].owner == "driver"
     assert snapshot.resolve("clickOn") is definitions["click_on"]
+    assert snapshot.resolve("uiSnapshot") is definitions["ui_snapshot"]
 
 
 def test_macos_registry_uses_macos_only_platform_capabilities_without_appium_import() -> None:
@@ -323,7 +323,6 @@ def test_macos_registry_uses_macos_only_platform_capabilities_without_appium_imp
     assert "ui_snapshot" in definitions
     assert "assert_elements_order" in definitions
     assert "tap_on" not in definitions
-    assert "page_snapshot" not in definitions
     assert definitions["click_on"].executor_kind == "driver"
     assert definitions["click_on"].platform == "macos"
     assert definitions["click_on"].backend == "appium_mac2"

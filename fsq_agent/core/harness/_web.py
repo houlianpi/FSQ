@@ -21,6 +21,7 @@ from fsq_agent.models import (
     RuntimeSecretSettings,
     StepPhase,
     WebTakeScreenshotParams,
+    WebUiSnapshotParams,
 )
 
 
@@ -158,7 +159,7 @@ class WebHarness:
                     step_id=step_id,
                     phase=phase,
                     name=reason,
-                    payload=self.driver.ui_snapshot(),
+                    payload=self.driver.ui_snapshot(WebUiSnapshotParams()),
                 )
             )
         raise RuntimeError(f"Unsupported Web artifact kind: {kind}")

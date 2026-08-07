@@ -63,7 +63,7 @@ platform: web
 - startBrowser
 - navigateTo:
     url: https://example.com
-- pageSnapshot
+- uiSnapshot
 - closeBrowser
 """
 

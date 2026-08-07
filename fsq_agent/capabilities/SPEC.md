@@ -39,7 +39,7 @@ Android declaration block:
 
 Web declaration block:
 
-- Web Playwright driver methods use catalog-backed `platform_driver_capability` entries with Web replay aliases and parameter models, including explicit browser lifecycle actions `startBrowser`/`closeBrowser` alongside page actions such as `navigateTo` and `pageSnapshot`.
+- Web Playwright driver methods use catalog-backed `platform_driver_capability` entries with Web replay aliases and parameter models, including explicit browser lifecycle actions `startBrowser`/`closeBrowser` alongside page actions such as `navigateTo` and `uiSnapshot`.
 - Web platform-level non-driver behavior must not introduce a live `harness` executor kind; new recordable platform behavior should be represented as a driver-backed PlatformTool or a CommonTool after SPEC review.
 
 macOS declaration block:

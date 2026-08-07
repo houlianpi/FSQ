@@ -22,12 +22,12 @@ from fsq_agent.models import (
     WebHoverOnParams,
     WebNavigateBackParams,
     WebNavigateToParams,
-    WebPageSnapshotParams,
     WebPressKeyParams,
     WebSelectOptionParams,
     WebStartBrowserParams,
     WebTakeScreenshotParams,
     WebTypeTextParams,
+    WebUiSnapshotParams,
     WebWaitForParams,
 )
 
@@ -257,14 +257,11 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             return self._browser_not_started()
         return self._passed({"bytes": len(self._screenshot(params))})
 
-    @_web_driver_tool("pageSnapshot", description="Return the current Web page accessibility snapshot.")
-    def page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]:
-        return self._run_sync(lambda: self._page_snapshot(params))
+    @_web_driver_tool("uiSnapshot", description="Return the current Web page accessibility snapshot.")
+    def ui_snapshot(self, params: WebUiSnapshotParams) -> dict[str, object]:
+        return self._run_sync(lambda: self._ui_snapshot(params))
 
-    def ui_snapshot(self, params: object | None = None) -> dict[str, object]:
-        return self.page_snapshot(WebPageSnapshotParams())
-
-    def _page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]:
+    def _ui_snapshot(self, params: WebUiSnapshotParams) -> dict[str, object]:
         if self.page is None:
             return self._browser_not_started()
         aria_snapshot = getattr(self.page, "aria_snapshot", None)
@@ -275,9 +272,9 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
                 snapshot = aria_snapshot()
             if not isinstance(snapshot, str) or snapshot.strip():
                 return {"url": self._page_url(), "snapshot_type": "aria", "snapshot": snapshot}
-        return self._text_page_snapshot()
+        return self._text_ui_snapshot()
 
-    def _text_page_snapshot(self) -> dict[str, object]:
+    def _text_ui_snapshot(self) -> dict[str, object]:
         return {
             "url": self._page_url(),
             "snapshot_type": "text",

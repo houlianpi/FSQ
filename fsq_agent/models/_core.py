@@ -37,7 +37,7 @@ RunnerEventType: TypeAlias = Literal[
     "step_error",
     "step_finish",
 ]
-EvidenceArtifactKind: TypeAlias = Literal["screenshot", "ui_tree", "page_snapshot", "ui_snapshot", "tool_call", "log", "json", "text", "other"]
+EvidenceArtifactKind: TypeAlias = Literal["screenshot", "ui_tree", "ui_snapshot", "tool_call", "log", "json", "text", "other"]
 HarnessPlatform: TypeAlias = Literal["android", "ios", "macos", "windows", "web"]
 AndroidSwipeDirection: TypeAlias = Literal["up", "down", "left", "right"]
 WebMouseButton: TypeAlias = Literal["left", "right", "middle"]
@@ -490,7 +490,7 @@ class WebTakeScreenshotParams(BaseModel):
     omitBackground: bool | None = Field(default=None, description="When true, allow transparent background where supported.")  # noqa: N815
 
 
-class WebPageSnapshotParams(BaseModel):
+class WebUiSnapshotParams(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"description": "Read the current Web page snapshot. No parameters are accepted."})
 
 
@@ -582,7 +582,7 @@ WEB_ACTION_DEFINITIONS: tuple[WebActionDefinition, ...] = (
     WebActionDefinition("pressKey", "press_key", WebPressKeyParams, "action"),
     WebActionDefinition("waitFor", "wait_for", WebWaitForParams, "action"),
     WebActionDefinition("takeScreenshot", "take_screenshot", WebTakeScreenshotParams, "observation"),
-    WebActionDefinition("pageSnapshot", "page_snapshot", WebPageSnapshotParams, "observation"),
+    WebActionDefinition("uiSnapshot", "ui_snapshot", WebUiSnapshotParams, "observation"),
     WebActionDefinition("assertVisible", "assert_visible", WebAssertVisibleParams, "assertion"),
     WebActionDefinition("assertNotVisible", "assert_not_visible", WebAssertNotVisibleParams, "assertion"),
     WebActionDefinition("assertText", "assert_text", WebAssertTextParams, "assertion"),

@@ -2006,7 +2006,7 @@ function renderStepArtifactTextArtifacts(artifacts) {
   return section;
 }
 
-const OBSERVATION_ARTIFACT_KINDS = ['ui_tree', 'page_snapshot', 'ui_snapshot'];
+const OBSERVATION_ARTIFACT_KINDS = ['ui_tree', 'ui_snapshot'];
 
 function renderUiTreeDiffArtifact(artifacts) {
   const uiTrees = artifacts.filter((artifact) => (

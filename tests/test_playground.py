@@ -2866,7 +2866,7 @@ platform: web
         "base_url": "https://example.test",
         "viewport": (1280, 720),
     }
-    assert captured["registry"].resolve("pageSnapshot") is not None
+    assert captured["registry"].resolve("uiSnapshot") is not None
     assert captured["registry"].resolve("startBrowser") is not None
     assert captured["registry"].resolve("tapOn") is None
     assert [step.action_name for step in captured["steps"]] == ["start_browser", "navigate_to", "click_on", "close_browser"]
@@ -2952,7 +2952,6 @@ platform: windows
         "launch_args": ["--flag", "two words"],
     }
     assert captured["registry"].resolve("uiSnapshot") is not None
-    assert captured["registry"].resolve("pageSnapshot") is None
     assert [step.action_name for step in captured["steps"]] == ["launch_app", "ui_snapshot", "kill_app"]
     assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"
     assert captured["steps"][-1].metadata["authored_action_name"] == "killApp"

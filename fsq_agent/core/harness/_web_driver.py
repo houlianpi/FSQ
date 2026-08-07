@@ -14,12 +14,12 @@ from fsq_agent.models import (
     WebHoverOnParams,
     WebNavigateBackParams,
     WebNavigateToParams,
-    WebPageSnapshotParams,
     WebPressKeyParams,
     WebSelectOptionParams,
     WebStartBrowserParams,
     WebTakeScreenshotParams,
     WebTypeTextParams,
+    WebUiSnapshotParams,
     WebWaitForParams,
 )
 
@@ -50,7 +50,7 @@ class WebDriverInterface(DriverObservationInterface, Protocol):
 
     def take_screenshot(self, params: WebTakeScreenshotParams) -> dict[str, object]: ...
 
-    def page_snapshot(self, params: WebPageSnapshotParams) -> dict[str, object]: ...
+    def ui_snapshot(self, params: WebUiSnapshotParams) -> dict[str, object]: ...
 
     def assert_visible(self, params: WebAssertVisibleParams) -> dict[str, object]: ...
 
