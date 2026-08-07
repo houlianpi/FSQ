@@ -36,6 +36,7 @@ DEFAULT_MACOS_PAGE_SOURCE_MAX_DEPTH = 12
 DEFAULT_MACOS_ACTION_TIMEOUT_SECONDS = 10
 DEFAULT_MACOS_NEW_COMMAND_TIMEOUT_SECONDS = 300
 DEFAULT_MACOS_SNAPSHOT_SOURCE_PREVIEW_CHARS = 2000
+DEFAULT_MACOS_SNAPSHOT_TEXT_LIMIT_CHARS = 50
 MACOS_KEY_MODIFIER_FLAGS = {
     "CAPS_LOCK": 1 << 0,
     "SHIFT": 1 << 1,
@@ -73,12 +74,17 @@ DEFAULT_MACOS_SNAPSHOT_ATTRIBUTE_KEYS = frozenset(
         "role",
         "enabled",
         "visible",
+        "selected",
         "x",
         "y",
         "width",
         "height",
     }
 )
+MACOS_SNAPSHOT_TEXT_ATTRIBUTE_KEYS = frozenset({"name", "label", "value"})
+MACOS_SNAPSHOT_IDENTITY_ATTRIBUTE_KEYS = frozenset({"identifier", *MACOS_SNAPSHOT_TEXT_ATTRIBUTE_KEYS})
+MACOS_SNAPSHOT_SEMANTIC_ATTRIBUTE_KEYS = frozenset({*MACOS_SNAPSHOT_IDENTITY_ATTRIBUTE_KEYS, "type", "role"})
+MACOS_SNAPSHOT_STATE_DEFAULTS = {"enabled": "true", "visible": "true", "selected": "false"}
 
 
 def _parse_xml_safely(source: str) -> ElementTree.Element:
@@ -275,7 +281,12 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
     def take_screenshot(self, params: MacOSTakeScreenshotParams) -> bytes:
         return self.screenshot(params)
 
-    @_macos_driver_tool("uiSnapshot", description="Return the current macOS accessibility tree snapshot.")
+    @_macos_driver_tool(
+        "uiSnapshot",
+        description=(
+            "Return a compact macOS accessibility tree snapshot. Signal-free wrappers and default attributes may be removed, and long text-like values are clipped to the first 50 characters."
+        ),
+    )
     def ui_snapshot(self, params: MacOSUiSnapshotParams) -> dict[str, object]:
         session = self._require_session()
         source = getattr(session, "page_source", None)
@@ -628,24 +639,31 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         try:
             root = _parse_xml_safely(source)
         except ElementTree.ParseError as exc:
-            preview = source[:DEFAULT_MACOS_SNAPSHOT_SOURCE_PREVIEW_CHARS]
+            return self._unparsed_page_source(source, exc)
+        try:
             return {
-                "format": "unparsed_xml",
-                "source_preview": preview,
+                "format": "xml",
                 "source_length": len(source),
-                "truncated": len(source) > len(preview),
-                "parse_error": str(exc),
+                "node_count": self._element_count(root),
+                "root": self._element_snapshot(
+                    root,
+                    depth=1,
+                    max_depth=max_depth,
+                    include_attributes=include_attributes,
+                ),
             }
+        # Snapshot capture must remain available if local compaction encounters unexpected backend data.
+        except Exception as exc:  # noqa: BLE001
+            return self._unparsed_page_source(source, exc)
+
+    def _unparsed_page_source(self, source: str, error: Exception) -> dict[str, object]:
+        preview = source[:DEFAULT_MACOS_SNAPSHOT_SOURCE_PREVIEW_CHARS]
         return {
-            "format": "xml",
+            "format": "unparsed_xml",
+            "source_preview": preview,
             "source_length": len(source),
-            "node_count": self._element_count(root),
-            "root": self._element_snapshot(
-                root,
-                depth=1,
-                max_depth=max_depth,
-                include_attributes=include_attributes,
-            ),
+            "truncated": len(source) > len(preview),
+            "parse_error": str(error),
         }
 
     def _element_snapshot(
@@ -656,37 +674,77 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         max_depth: int,
         include_attributes: bool,
     ) -> dict[str, object]:
-        children = list(element)
-        snapshot: dict[str, object] = {"type": self._xml_name(element.tag)}
+        snapshot = self._compact_element_snapshots(element, include_attributes=include_attributes, preserve_node=True)[0]
+        self._bound_snapshot_depth(snapshot, depth=depth, max_depth=max_depth)
+        return snapshot
+
+    def _compact_element_snapshots(
+        self,
+        element: ElementTree.Element,
+        *,
+        include_attributes: bool,
+        preserve_node: bool = False,
+    ) -> list[dict[str, object]]:
+        children = [child_snapshot for child in element for child_snapshot in self._compact_element_snapshots(child, include_attributes=include_attributes)]
         attributes = self._snapshot_attributes(element.attrib, include_attributes=include_attributes)
+        text = (element.text or "").strip()[:DEFAULT_MACOS_SNAPSHOT_TEXT_LIMIT_CHARS]
+        if not preserve_node and not self._has_snapshot_signal(attributes, text=text):
+            return children
+
+        snapshot: dict[str, object] = {"type": self._xml_name(element.tag)}
         if attributes:
             snapshot["attributes"] = attributes
-        text = (element.text or "").strip()
         if text:
-            snapshot["text"] = text[:500]
-        if depth >= max_depth:
-            if children:
-                snapshot["children_truncated"] = len(children)
-            return snapshot
+            snapshot["text"] = text
         if children:
-            snapshot["children"] = [
-                self._element_snapshot(
-                    child,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                    include_attributes=include_attributes,
-                )
-                for child in children
-            ]
-        return snapshot
+            snapshot["children"] = children
+        return [snapshot]
+
+    def _bound_snapshot_depth(self, snapshot: dict[str, object], *, depth: int, max_depth: int) -> None:
+        children = snapshot.get("children")
+        if not isinstance(children, list) or not children:
+            return
+        if depth >= max_depth:
+            snapshot.pop("children")
+            snapshot["children_truncated"] = len(children)
+            return
+        for child in children:
+            if isinstance(child, dict):
+                self._bound_snapshot_depth(child, depth=depth + 1, max_depth=max_depth)
 
     def _snapshot_attributes(self, attributes: dict[str, str], *, include_attributes: bool) -> dict[str, object]:
         selected: dict[str, object] = {}
-        for key, value in attributes.items():
+        for key, raw_value in attributes.items():
             normalized_key = self._xml_name(key)
-            if include_attributes or normalized_key in DEFAULT_MACOS_SNAPSHOT_ATTRIBUTE_KEYS:
-                selected[normalized_key] = value
+            value = str(raw_value).strip()
+            if not value or (not include_attributes and normalized_key not in DEFAULT_MACOS_SNAPSHOT_ATTRIBUTE_KEYS):
+                continue
+            default_state = MACOS_SNAPSHOT_STATE_DEFAULTS.get(normalized_key)
+            if default_state is not None and value.lower() == default_state:
+                continue
+            if normalized_key in MACOS_SNAPSHOT_TEXT_ATTRIBUTE_KEYS:
+                value = value[:DEFAULT_MACOS_SNAPSHOT_TEXT_LIMIT_CHARS]
+            selected[normalized_key] = value
         return selected
+
+    def _has_snapshot_signal(self, attributes: dict[str, object], *, text: str) -> bool:
+        non_default_state = any(key in MACOS_SNAPSHOT_STATE_DEFAULTS for key in attributes)
+        identity_or_text = bool(text) or any(key in MACOS_SNAPSHOT_IDENTITY_ATTRIBUTE_KEYS for key in attributes)
+        if self._is_zero_size(attributes) or str(attributes.get("visible", "")).lower() == "false":
+            return identity_or_text or non_default_state
+        return identity_or_text or non_default_state or any(key in MACOS_SNAPSHOT_SEMANTIC_ATTRIBUTE_KEYS for key in attributes)
+
+    def _is_zero_size(self, attributes: dict[str, object]) -> bool:
+        dimensions = [attributes.get(key) for key in ("width", "height")]
+        for value in dimensions:
+            if value is None:
+                continue
+            try:
+                if float(str(value)) == 0:
+                    return True
+            except ValueError:
+                continue
+        return False
 
     def _element_count(self, element: ElementTree.Element) -> int:
         return 1 + sum(self._element_count(child) for child in list(element))
