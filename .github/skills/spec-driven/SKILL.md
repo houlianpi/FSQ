@@ -100,6 +100,37 @@ If the sibling files are unavailable, apply the local Python rules below and con
 - Domain logic must not depend on FastAPI, Django, Flask, SQLAlchemy sessions, HTTP request objects, or CLI argument parsers unless the module SPEC explicitly permits that coupling.
 - Pydantic schemas, serializers, ORM models, and DTOs are boundary models unless the SPEC explicitly chooses a simpler combined model.
 
+## Frontend Architecture Integration
+
+For frontend projects or modules, apply the sibling `frontend-architecture` rules layer before:
+
+- Choosing frontend module ownership.
+- Writing or updating frontend `SPEC.md` files.
+- Implementing frontend source, build, dependency, or agent-guidance changes.
+- Running frontend verification, synchronization, or audit checks.
+
+The references are expected at:
+
+```text
+.github/skills/frontend-architecture/SKILL.md
+.github/skills/frontend-architecture/references/architecture-levels.md
+.github/skills/frontend-architecture/references/module-spec-template.md
+.github/skills/frontend-architecture/references/design-rules.md
+.github/skills/frontend-architecture/references/implementation-rules.md
+.github/skills/frontend-architecture/references/verification-checklist.md
+.github/skills/frontend-architecture/references/audit-checklist.md
+```
+
+Load only the reference needed for the current phase:
+
+- Requirements or visible design: `architecture-levels.md` and, when applicable, `design-rules.md`.
+- SPEC ownership and authoring: `architecture-levels.md` and `module-spec-template.md`.
+- Implementation: `implementation-rules.md`.
+- Verification: `verification-checklist.md`.
+- Synchronization or audit: `audit-checklist.md`.
+
+Frontend rules do not create a new user entry point and must not be fetched from remote sources at runtime. New frontend application modules default to the root Vite workspace with React and TypeScript/TSX. Existing modules keep the framework and language in their confirmed module SPEC until a separate SPEC update authorizes a migration.
+
 ## SPEC Update Procedure
 
 ### New module or feature
@@ -108,11 +139,12 @@ If the sibling files are unavailable, apply the local Python rules below and con
 2. Read the confirmed design document.
 3. Decide which module owns the feature, or whether a new module is needed.
 4. For Python work, choose the Python architecture level and write the rationale into SPEC.
-5. Write or update relevant module `SPEC.md` files.
-6. If adding a module or changing module relationships, update root `SPEC.md` module table and architecture diagram.
-7. Ask the user to confirm SPEC changes before implementation.
-8. Implement only after confirmation.
-9. Run verification, synchronization, and audit.
+5. For frontend work, choose the frontend architecture level or accurately record a current legacy exception and write the ownership boundaries into SPEC.
+6. Write or update relevant module `SPEC.md` files.
+7. If adding a module or changing module relationships, update root `SPEC.md` module table and architecture diagram.
+8. Ask the user to confirm SPEC changes before implementation.
+9. Implement only after confirmation.
+10. Run verification, synchronization, and audit.
 
 ### Existing functionality change
 
@@ -139,6 +171,8 @@ Every module has exactly one `SPEC.md`. Use this structure unless root `SPEC.md`
 ## Public Interface
 ## Internal Structure
 ## Python Architecture        (for Python modules)
+## Data And State Flow        (for stateful frontend modules)
+## Frontend Architecture      (for frontend modules)
 ## Error Handling             (if applicable)
 ## Verification Scope         (optional; current externally visible verification obligations only)
 ## Current Invariants         (optional; present-tense constraints that keep implementation aligned)
@@ -166,7 +200,8 @@ After SPEC confirmation:
 3. If implementation reveals a missing or wrong SPEC decision, stop and update SPEC first.
 4. Keep edits scoped to affected modules and tests.
 5. For behavior changes, write or update tests before production code unless the user explicitly accepts a generated-code or throwaway exception.
-6. Run the repository's available verification commands.
+6. For frontend work, follow the confirmed framework/language contract and the staged frontend implementation rules; do not mix a partial migration into an existing exception.
+7. Run the repository's available verification commands and the applicable frontend verification checklist.
 
 ## Change Synchronization Check
 
@@ -178,6 +213,9 @@ After implementation, verify relevant specs still match code:
 - [ ] Module `SPEC.md` Dependencies match actual imports from other project modules.
 - [ ] Module `SPEC.md` Internal Structure lists actual module files.
 - [ ] Python Architecture section matches package layout, import direction, framework boundaries, and model boundaries.
+- [ ] Parent and child frontend SPEC ownership matches the workspace and application directories without duplicated contracts.
+- [ ] Frontend Public Interface, Data And State Flow, Internal Structure, and Frontend Architecture match entries, source, state ownership, transport boundaries, framework, and language.
+- [ ] Frontend manifest, lock file, Vite configuration, generated-output policy, and required browser evidence match the confirmed specs.
 - [ ] Agent entry files remain thin pointers to root `SPEC.md`, keep ordinary interaction read-only, and require explicit SDD prompt invocation before writes.
 - [ ] SPEC text contains current facts only; design process, historical narrative, target-state wording, future roadmap, and detailed test matrices are absent or moved elsewhere.
 

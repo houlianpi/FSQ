@@ -19,7 +19,7 @@ This project follows the [Microsoft Open Source Code of Conduct](https://opensou
 3. Keep the change focused and include tests or documentation when appropriate.
 4. Open a pull request with a clear description of the change and validation performed.
 
-Documentation-only, repository metadata, and open-source readiness changes do not require the spec-driven development workflow. Code changes that affect supported behavior, public interfaces, or project requirements should follow the repository `SPEC.md` guidance.
+Every repository file modification follows the explicit two-phase spec-driven development workflow defined by the root [SPEC.md](SPEC.md). First confirm a design through `/requirements-to-design`; then invoke `/spec-driven` with that design document, confirm the relevant SPEC updates, and only then modify non-SPEC files. Documentation, repository metadata, tests, configuration, and other narrow changes do not bypass this workflow.
 
 ## Contributor Growth Path
 

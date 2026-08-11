@@ -42,10 +42,11 @@ Do not provide persuasive summaries such as "this is complete" or "tests pass, s
 1. Identify SPEC items that apply to the change.
 2. Read the diff and locate concrete implementation evidence for each SPEC item.
 3. For Python work, apply `python-architecture` audit rules or `references/audit-checklist.md` from that skill.
-4. Classify each item with a verdict.
-5. Report blocking gaps before quality/style feedback.
-6. If blocking gaps exist, return to implementation or to `spec-driven` when SPEC itself needs correction.
-7. Re-audit after fixes.
+4. For frontend work, apply `frontend-architecture/references/audit-checklist.md` and inspect required browser evidence.
+5. Classify each item with a verdict.
+6. Report blocking gaps before quality/style feedback.
+7. If blocking gaps exist, return to implementation or to `spec-driven` when SPEC itself needs correction.
+8. Re-audit after fixes.
 
 ## Python Architecture Audit
 
@@ -59,6 +60,21 @@ For Python modules, also verify:
 - Domain/application/infrastructure/framework boundaries match SPEC.
 - Boundary model choices match SPEC: Pydantic schemas, ORM models, DTOs, serializers, and domain objects do not silently swap roles.
 - Tests cover public behavior and invariants promised by SPEC.
+
+## Frontend Architecture Audit
+
+For frontend-owned files, also verify:
+
+- Root module navigation and parent/child frontend SPEC links match actual ownership boundaries.
+- Parent specs own workspace/build policy while child specs own application behavior, state flow, source structure, and browser integration.
+- The implemented framework and source language match the module SPEC, including named legacy exceptions.
+- npm manifest, lock file, Vite configuration, imports, and generated-output policy agree.
+- Frontend code consumes documented backend transport contracts without importing backend implementation or duplicating backend security/filesystem policy.
+- Server data, durable browser preferences, transient interaction state, derived values, streams, timers, and cleanup follow the documented owners.
+- Loading, empty, error, disabled, cancellation, conflict, completion, responsive, keyboard, focus, and reduced-motion behavior required by SPEC is implemented.
+- Available build, type, lint, unit/component, integration, package, browser, accessibility, and visual checks required by SPEC were run.
+
+Use `.github/skills/frontend-architecture/references/audit-checklist.md` for the full checklist. Missing browser or screenshot evidence is blocking when the confirmed SPEC requires it.
 
 ## Verdicts
 
