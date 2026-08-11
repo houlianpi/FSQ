@@ -2,15 +2,15 @@
 
 This repository uses Python Spec-Driven Development.
 
-Root `SPEC.md` is the project-level source of truth. Relevant module `SPEC.md` files must be read before changes.
+Root `SPEC.md` and relevant module `SPEC.md` files are the grounding truth for implementation.
 
-For non-trivial work:
+Ordinary discussion, explanation, review, and planning are read-only. Do not automatically load or invoke repository workflow skills.
 
-1. Use `$requirements-to-design` to clarify requirements and produce a confirmed design document.
-2. After the user confirms the design, use `$spec-driven` with the design document path.
-3. `$spec-driven` updates SPEC files, waits for SPEC confirmation, implements, verifies, synchronizes, and audits.
+Before creating, modifying, renaming, or deleting any repository file, require the user to explicitly invoke `/requirements-to-design <request>`. A natural-language edit request, a skill name mentioned in prose, or approval outside an explicit prompt invocation is not authorization to write; stop and direct the user to that command.
 
-Use installed skills when available. For Python architecture decisions, apply `$python-architecture` through the SDD flow.
+After the design document is confirmed, only an explicit `/spec-driven <confirmed-design-document-path>` invocation may update relevant SPEC files. Non-SPEC repository files must not change until the user confirms those SPEC updates. There is no narrow-change exception.
+
+Read repository skills only when an explicitly invoked prompt directs you to them. This file is an entry point, not a project specification; keep project and module requirements in `SPEC.md` files.
 
 New Python source files must start with:
 
@@ -18,5 +18,3 @@ New Python source files must start with:
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 ```
-
-Do not treat this file as a specification. Keep project and module requirements in `SPEC.md` files.

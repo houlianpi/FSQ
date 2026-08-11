@@ -1,11 +1,17 @@
 ---
 name: spec-implementation-audit
-description: Use after implementation and before completion claims, merge, or PR when work must be checked against confirmed SPEC.md files, Python architecture rules, and the actual diff.
+description: "Internal diff-based SPEC audit rules loaded only when an explicitly invoked repository prompt directs the agent to this file."
+user-invocable: false
+disable-model-invocation: true
 ---
 
 # SPEC Implementation Audit
 
-Determine whether implementation satisfies confirmed specifications. This is a SPEC-centered, diff-based audit. It is not a general test pass check and not a restatement of the implementer's summary.
+Determine whether implementation from an explicitly invoked SDD workflow satisfies confirmed specifications. This is a SPEC-centered, diff-based audit. It is not a general test pass check and not a restatement of the implementer's summary.
+
+## Invocation Gate
+
+Load this skill only when an explicitly invoked repository prompt directs the agent to this file. Ordinary discussion, explanation, review, planning, natural-language edit requests, skill-name mentions, and prose approvals must not trigger it.
 
 ## Core Rule
 

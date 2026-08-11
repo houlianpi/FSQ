@@ -1,15 +1,21 @@
 ---
 name: requirements-to-design
-description: Use when the user invokes requirements-to-design, asks to start an SDD design phase, or wants non-trivial Python work clarified into a confirmed design document before SPEC.md changes.
+description: "Internal rules loaded only by the explicit /requirements-to-design prompt. Produces a confirmed SDD design document without changing SPEC or implementation files."
+user-invocable: false
+disable-model-invocation: true
 ---
 
 # Requirements To Design
 
-Turn an idea into a reviewed design document. This skill is the front door of the SDD workflow. It clarifies intent and records design decisions, but it does not update `SPEC.md` files and does not implement code.
+Turn an explicitly supplied request into a reviewed design document. This internal skill implements the `/requirements-to-design` prompt; it clarifies intent and records design decisions, but it does not update `SPEC.md` files or implement code.
+
+## Invocation Gate
+
+Load this skill only when the user explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with a requested repository modification. Ordinary discussion, explanation, review, planning, natural-language edit requests, skill-name mentions, and prose approvals must not trigger this skill. If the explicit prompt or its request is absent, stop without writing.
 
 ## Hard Gate
 
-Do not write implementation code. Do not update root or module `SPEC.md` files. The terminal state is a confirmed design document and a prompt for the user to invoke `spec-driven` with that design document path.
+Do not write implementation code. Do not update root or module `SPEC.md` files. The user-confirmed design document is the only permitted repository write. The terminal state is that confirmed document and a prompt for the user to invoke `/spec-driven` explicitly with its path.
 
 ## Process
 
@@ -21,7 +27,7 @@ Read enough local context before detailed questions:
 - Relevant module `SPEC.md` files, if the affected area is obvious.
 - `AGENTS.md`, `CLAUDE.md`, pyproject metadata, package layout, tests, and recent docs when useful.
 
-If no root `SPEC.md` exists, note that the target repository should create one before `spec-driven` implementation begins.
+If no root `SPEC.md` exists, note that the target repository must create one through the later `/spec-driven` SPEC phase before implementation begins.
 
 ### 2. Check Scope
 
@@ -94,7 +100,7 @@ After confirmation, end with exactly this shape:
 
 ```text
 Design document: docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
-Next step: invoke spec-driven with this design document path.
+Next step: invoke /spec-driven with this design document path.
 ```
 
 ## Boundaries
