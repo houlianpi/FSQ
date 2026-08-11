@@ -1,11 +1,17 @@
 ---
 name: spec-driven
-description: Use when the user invokes spec-driven with an approved design path, asks to update SPEC.md files from a confirmed design, or wants Python SDD implementation run from confirmed specs.
+description: "Internal rules loaded only by the explicit /spec-driven prompt with a confirmed design document path. Enforces SPEC confirmation before implementation."
+user-invocable: false
+disable-model-invocation: true
 ---
 
 # Spec-Driven Development
 
-Translate approved design intent into root/module `SPEC.md` files, get confirmation, then carry the work through implementation, verification, synchronization, and audit. This is the main execution skill after `requirements-to-design`.
+Translate an explicitly supplied confirmed design document into root/module `SPEC.md` files, get confirmation, then carry the work through implementation, verification, synchronization, and audit. This internal skill implements the `/spec-driven` prompt.
+
+## Invocation Gate
+
+Load this skill only when the user explicitly invokes `.github/prompts/spec-driven.prompt.md` with a confirmed design document path. Do not infer invocation or a design path from ordinary discussion, editor state, a natural-language edit request, a skill-name mention, or prose approval. If the explicit prompt, path, or confirmed design is absent, stop without writing and ask the user to invoke `/spec-driven <confirmed-design-document-path>`.
 
 ## Core Rule
 
@@ -14,7 +20,7 @@ Translate approved design intent into root/module `SPEC.md` files, get confirmat
 - Root `SPEC.md` owns current repository-wide architecture, module navigation, dependency diagrams, global development rules, and the SDD contract needed to run the project workflow.
 - Module `SPEC.md` files own current module contracts, public interfaces, internal structure, dependencies, error handling, architecture level, and current invariants.
 - Design documents, implementation notes, migration history, removed behavior, future roadmap, and detailed test matrices are not SPEC content unless they describe a currently supported compatibility behavior or a current verification obligation.
-- `CLAUDE.md` and `AGENTS.md` are thin agent entry points only. They point agents to root `SPEC.md`; they are not specifications.
+- `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md` are thin agent entry points only. They point agents to root `SPEC.md`; they are not specifications.
 
 Implementation must not start until relevant `SPEC.md` changes are reviewed and confirmed.
 
@@ -33,7 +39,7 @@ Before writing or updating any `SPEC.md`, apply this filter:
 Do not stop after updating `SPEC.md`. Once the user confirms the SPEC changes, continue in the same turn whenever feasible:
 
 ```text
-approved design document
+explicit /spec-driven <confirmed-design-document-path>
   -> update root/module SPEC.md
   -> user confirms SPEC.md changes
   -> implement against confirmed SPEC.md
@@ -44,11 +50,11 @@ approved design document
   -> final report
 ```
 
-If the user invokes this with a task instead of a design path, identify whether an approved design already exists. If not and the change is non-trivial, stop and tell the user to invoke `requirements-to-design` first.
+If the user supplies a task, approval, or instruction instead of a confirmed design document path, stop without writing. Direct the user to `/requirements-to-design <request>` when no confirmed design exists, or `/spec-driven <confirmed-design-document-path>` when one does.
 
 ## Input Path
 
-When a confirmed design document exists, read it before editing specs:
+Read the confirmed design document supplied to the explicit prompt before editing specs:
 
 ```text
 docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
@@ -118,9 +124,9 @@ If the sibling files are unavailable, apply the local Python rules below and con
 6. Implement only after confirmation.
 7. Run verification, synchronization, and audit.
 
-### Narrow bug fix
+### All repository modifications
 
-Bug fixes that do not change public interfaces or intended behavior may skip design-doc creation. Still read relevant specs, fix code, verify specs remain accurate, and update specs only if the bug reveals inaccurate or incomplete specification.
+Bug fixes, tests, configuration, documentation, agent customization, and other narrow changes do not bypass design confirmation or SPEC confirmation. Apply the existing-functionality procedure and keep the SPEC delta limited to legitimate current facts. If no legitimate current-fact SPEC delta exists, stop for a human decision rather than changing implementation or adding artificial SPEC content.
 
 ## Module SPEC Structure
 
@@ -172,7 +178,7 @@ After implementation, verify relevant specs still match code:
 - [ ] Module `SPEC.md` Dependencies match actual imports from other project modules.
 - [ ] Module `SPEC.md` Internal Structure lists actual module files.
 - [ ] Python Architecture section matches package layout, import direction, framework boundaries, and model boundaries.
-- [ ] Agent entry files remain thin pointers to root `SPEC.md`.
+- [ ] Agent entry files remain thin pointers to root `SPEC.md`, keep ordinary interaction read-only, and require explicit SDD prompt invocation before writes.
 - [ ] SPEC text contains current facts only; design process, historical narrative, target-state wording, future roadmap, and detailed test matrices are absent or moved elsewhere.
 
 If anything is out of sync, fix the spec or code before completion.

@@ -1,11 +1,17 @@
 ---
 name: python-architecture
-description: Use when designing, specifying, implementing, or auditing Python project architecture, package boundaries, public APIs, domain logic, persistence boundaries, or module dependencies.
+description: "Internal Python architecture rules loaded only when an explicitly invoked repository prompt directs the agent to this file."
+user-invocable: false
+disable-model-invocation: true
 ---
 
 # Python Architecture
 
-Use this as the Python architecture rules layer for SDD. It helps choose the simplest adequate architecture, write Python-aware `SPEC.md` sections, implement against those specs, and audit code/spec synchronization.
+This is the internal Python architecture rules layer for an explicitly invoked SDD workflow. It helps choose the simplest adequate architecture, write Python-aware `SPEC.md` sections, implement against those specs, and audit code/spec synchronization.
+
+## Invocation Gate
+
+Load this skill only when an explicitly invoked repository prompt directs the agent to this file. Ordinary discussion, explanation, review, planning, natural-language edit requests, skill-name mentions, and prose approvals must not trigger it.
 
 ## Core Principle
 
