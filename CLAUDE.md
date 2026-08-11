@@ -1,6 +1,6 @@
 # Claude Instructions
 
-This repository uses Python Spec-Driven Development.
+This repository uses Spec-Driven Development.
 
 Root `SPEC.md` and relevant module `SPEC.md` files are the grounding truth for implementation.
 

@@ -26,6 +26,7 @@ Read enough local context before detailed questions:
 - Root `SPEC.md`, if present.
 - Relevant module `SPEC.md` files, if the affected area is obvious.
 - `AGENTS.md`, `CLAUDE.md`, pyproject metadata, package layout, tests, and recent docs when useful.
+- For frontend work, the parent frontend SPEC, affected child application SPEC, root npm/Vite metadata, and backend specs that own consumed transport contracts when useful.
 
 If no root `SPEC.md` exists, note that the target repository must create one through the later `/spec-driven` SPEC phase before implementation begins.
 
@@ -43,10 +44,15 @@ Ask one question at a time. Prefer multiple choice when it helps. Focus on:
 - Affected modules and ownership boundaries.
 - Risks, edge cases, rollout, and compatibility.
 - For Python work: project type, package boundary, public API shape, persistence/framework coupling, and expected verification commands.
+- For frontend work: audience and primary task, existing visual language, interaction states, responsive and accessibility behavior, state ownership, backend data contracts, browser support, and expected build/browser evidence.
+
+For frontend requests, ask visual-direction questions only when the change adds or reshapes visible UI. Build, dependency, documentation, and internal refactoring requests do not need an invented aesthetic direction.
 
 ### 4. Propose Approaches
 
 Present 2-3 approaches with trade-offs and a recommendation. For Python architecture work, include the simplest viable architecture level and why a higher level is or is not justified.
+
+For frontend architecture work, include the simplest viable frontend level and justify any router, global state, server-state library, design system, or additional layer. Preserve a module's confirmed framework and language unless the request explicitly designs a migration.
 
 ### 5. Present Design Sections
 
@@ -55,8 +61,11 @@ Present reviewable sections scaled to complexity:
 - Purpose and scope.
 - Architecture and module ownership.
 - Python package/module boundaries.
+- Frontend workspace/application boundaries when applicable.
 - Public behavior and interfaces.
 - Data/control flow.
+- Frontend state categories and interaction states when applicable.
+- Visual direction, responsive behavior, and accessibility when visible UI changes.
 - Error handling and edge cases.
 - Verification and audit expectations.
 
@@ -76,6 +85,7 @@ Include:
 - Scope and non-goals.
 - Proposed design.
 - Python architecture level and rationale when the project is Python.
+- Frontend architecture level and rationale when the work affects a frontend application.
 - Affected root/module specs expected to change.
 - Open questions resolved during discussion.
 - Verification expectations.
@@ -109,3 +119,15 @@ Next step: invoke /spec-driven with this design document path.
 - After `SPEC.md` files are updated and confirmed, implementation must follow `SPEC.md`, not this design document or chat history.
 - Do not invoke an implementation plan as the next step.
 - Do not start implementation from the design document.
+
+## Frontend Architecture Integration
+
+For frontend work, use the internal sibling rules at:
+
+```text
+.github/skills/frontend-architecture/SKILL.md
+.github/skills/frontend-architecture/references/architecture-levels.md
+.github/skills/frontend-architecture/references/design-rules.md
+```
+
+Load `architecture-levels.md` for frontend ownership and architecture choices. Load `design-rules.md` only when the request adds or reshapes user-visible UI. Do not fetch upstream frontend skills or guidelines at runtime; the repository-local rules are the deterministic source for this workflow.
