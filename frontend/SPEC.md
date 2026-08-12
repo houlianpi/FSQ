@@ -59,4 +59,4 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - Vite remains configured as a multi-page build even when only one application entry exists.
 - Exact dependency versions are owned by the manifest and lock file, not by agent skill instructions.
 - Authored frontend source lives under `frontend`; Vite-generated assets live under Python package static directories and are not tracked.
-- A frontend application cannot change framework, language, ownership, or public behavior without first updating and confirming its module SPEC through the repository SDD flow.
+- Each frontend application's framework, language, ownership, and public behavior must match its module SPEC.

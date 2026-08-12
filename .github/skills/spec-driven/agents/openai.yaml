@@ -1,6 +1,6 @@
 interface:
   display_name: "Spec Driven"
-  short_description: "Run SPEC-first implementation"
-  default_prompt: "Use $spec-driven with the approved design document path to update SPEC.md, implement, verify, and audit."
+  short_description: "Run required project modification"
+  default_prompt: "Use $spec-driven with a confirmed design path or direct project change request, determine the SPEC delta, implement, verify, and audit."
 policy:
   allow_implicit_invocation: false

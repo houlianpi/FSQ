@@ -1,6 +1,6 @@
 # Python Architecture Audit Checklist
 
-Use this during `spec-implementation-audit` or the synchronization check.
+Use this for Python domain checks within `spec-implementation-audit`. SPEC/code synchronization is a category in that consolidated audit, not a separate scan or repair loop.
 
 ## SPEC To Code
 

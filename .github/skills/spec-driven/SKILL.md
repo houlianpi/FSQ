@@ -1,28 +1,31 @@
 ---
 name: spec-driven
-description: "Internal rules loaded only by the explicit /spec-driven prompt with a confirmed design document path. Enforces SPEC confirmation before implementation."
+description: "Internal project modification rules loaded only by the explicit /spec-driven prompt with a confirmed design path or direct project change request."
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Spec-Driven Development
 
-Translate an explicitly supplied confirmed design document into root/module `SPEC.md` files, get confirmation, then carry the work through implementation, verification, synchronization, and audit. This internal skill implements the `/spec-driven` prompt.
+Turn an explicitly supplied confirmed project design document or direct project change request into SPEC-grounded implementation, verification, and independent audit. This internal skill implements the required `/spec-driven` project write entry point; `/requirements-to-design` is optional upstream input refinement.
 
 ## Invocation Gate
 
-Load this skill only when the user explicitly invokes `.github/prompts/spec-driven.prompt.md` with a confirmed design document path. Do not infer invocation or a design path from ordinary discussion, editor state, a natural-language edit request, a skill-name mention, or prose approval. If the explicit prompt, path, or confirmed design is absent, stop without writing and ask the user to invoke `/spec-driven <confirmed-design-document-path>`.
+Load this skill only when the user explicitly invokes `.github/prompts/spec-driven.prompt.md` with either a confirmed project design document path or a direct project change request. Do not infer invocation or prompt input from ordinary discussion, editor state, a natural-language project edit request outside the prompt, a skill-name mention, or prose approval. If the explicit prompt or a non-empty input is absent, stop without writing and ask the user to invoke `/spec-driven <confirmed-design-document-path | direct-project-change-request>`.
+
+This skill does not handle workflow-control-only maintenance. If the supplied input changes only `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/prompts/**`, or `.github/skills/**`, stop and explain that a clear ordinary edit request is sufficient.
 
 ## Core Rule
 
-`SPEC.md` files are the source of truth for implementation and must describe current project or module facts.
+`SPEC.md` files are the source of truth for project implementation and must describe current project or module facts.
 
-- Root `SPEC.md` owns current repository-wide architecture, module navigation, dependency diagrams, global development rules, and the SDD contract needed to run the project workflow.
+- Root `SPEC.md` owns current project-wide architecture, module navigation, dependency diagrams, project development constraints, and project implementation invariants.
 - Module `SPEC.md` files own current module contracts, public interfaces, internal structure, dependencies, error handling, architecture level, and current invariants.
 - Design documents, implementation notes, migration history, removed behavior, future roadmap, and detailed test matrices are not SPEC content unless they describe a currently supported compatibility behavior or a current verification obligation.
-- `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md` are thin agent entry points only. They point agents to root `SPEC.md`; they are not specifications.
 
-Implementation must not start until relevant `SPEC.md` changes are reviewed and confirmed.
+Project SPEC files must not define, duplicate, or override the SDD workflow. Agent workflow files may consume project SPEC as audit input, but they must not make SPEC the authority for how SDD is invoked or executed.
+
+Project implementation may start only after required `SPEC.md` changes are reviewed and confirmed, or after a no-SPEC-delta decision is recorded with concrete existing-SPEC and defect evidence. If current SPEC does not ground the intended supported behavior, a SPEC delta is required.
 
 ## SPEC Hygiene Rule
 
@@ -36,33 +39,51 @@ Before writing or updating any `SPEC.md`, apply this filter:
 
 ## Required Flow
 
-Do not stop after updating `SPEC.md`. Once the user confirms the SPEC changes, continue in the same turn whenever feasible:
-
 ```text
-explicit /spec-driven <confirmed-design-document-path>
-  -> update root/module SPEC.md
-  -> user confirms SPEC.md changes
+explicit /spec-driven <confirmed-design-document-path | direct-project-change-request>
+  -> resolve and clarify the input
+  -> read current SPEC and implementation evidence
+  -> determine whether a SPEC delta is required
+  -> if required: update root/module SPEC.md and get user confirmation
+  -> if none: record existing-SPEC and defect evidence
   -> implement against confirmed SPEC.md
   -> run verification
-  -> run SPEC/code synchronization check
-  -> run spec-implementation-audit
-  -> fix blocking gaps or ask for decision
+  -> run consolidated spec-implementation-audit
+  -> batch-fix complete finding set
+  -> incrementally re-audit affected findings and boundaries
   -> final report
 ```
 
-If the user supplies a task, approval, or instruction instead of a confirmed design document path, stop without writing. Direct the user to `/requirements-to-design <request>` when no confirmed design exists, or `/spec-driven <confirmed-design-document-path>` when one does.
+Do not redirect a direct project change request to `/requirements-to-design`; that design phase is optional. Clarify ambiguous direct input within `/spec-driven` before deciding the SPEC delta or writing project files.
 
-## Input Path
+## Input Resolution
 
-Read the confirmed design document supplied to the explicit prompt before editing specs:
+If the input resolves to a design document path, require the document to exist and be user-confirmed, then read it before deciding the SPEC delta. Design documents normally use:
 
 ```text
 docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
 ```
 
-The design document is input to SPEC updates, not implementation authority. Once `SPEC.md` is confirmed, code must be implemented against `SPEC.md`.
+If the input is not a design document path, treat the complete prompt argument as the direct project change request. Read enough current implementation, tests, and local documentation to remove material ambiguity. Ask focused questions when two materially different implementations remain possible, but do not require a separate design document.
+
+A design document or direct request is input to the SPEC-delta decision, not final project implementation authority. Project code must be implemented against current confirmed `SPEC.md` files.
 
 When translating a design document into SPEC updates, copy only the resulting current contract. Do not copy the design process, rejected options, implementation sequence, temporary target state, or historical narrative into SPEC.
+
+## SPEC Delta Decision
+
+Before modifying non-SPEC project files, read the root and relevant module specs plus enough implementation and verification evidence to classify the request.
+
+A no-SPEC-delta path is allowed only when all of these are true:
+
+- Current SPEC already grounds the intended supported behavior and remains accurate after the repair.
+- The request restores implementation conformance rather than adding or changing a supported contract.
+- Public interfaces, configuration semantics, module ownership, dependency direction, architecture level, and the set of supported behaviors remain unchanged.
+- The defect is demonstrated by concrete implementation evidence, a failing focused test, or a reproducible behavior mismatch.
+
+Record the no-SPEC-delta decision before implementation with precise SPEC references, defect evidence, and the boundaries expected to remain unchanged. A user label such as `bugfix` or `no-spec-delta` is not proof and does not control this decision.
+
+If any condition is unproven, current SPEC is missing or wrong, or the requested behavior conflicts with SPEC, a SPEC delta is required. Update the relevant current-fact specs and get user confirmation before modifying non-SPEC project files. Never add artificial SPEC text solely to manufacture a delta.
 
 ## Python Architecture Integration
 
@@ -71,7 +92,7 @@ For Python projects or Python modules, apply the sibling `python-architecture` r
 - Choosing module ownership.
 - Writing or updating module `SPEC.md` files.
 - Implementing code.
-- Running the synchronization and audit checks.
+- Running the consolidated project implementation audit.
 
 When this bundle is installed under `.github/skills/`, the references are expected at:
 
@@ -87,7 +108,7 @@ Load only the reference needed for the current phase:
 
 - SPEC design or module ownership: `architecture-levels.md` and `module-spec-template.md`.
 - Implementation: `implementation-rules.md`.
-- Synchronization or audit: `audit-checklist.md`.
+- Consolidated project audit: `audit-checklist.md`.
 
 If the sibling files are unavailable, apply the local Python rules below and continue.
 
@@ -106,8 +127,8 @@ For frontend projects or modules, apply the sibling `frontend-architecture` rule
 
 - Choosing frontend module ownership.
 - Writing or updating frontend `SPEC.md` files.
-- Implementing frontend source, build, dependency, or agent-guidance changes.
-- Running frontend verification, synchronization, or audit checks.
+- Implementing frontend source, build, or dependency changes.
+- Running frontend verification and the consolidated project implementation audit.
 
 The references are expected at:
 
@@ -127,7 +148,7 @@ Load only the reference needed for the current phase:
 - SPEC ownership and authoring: `architecture-levels.md` and `module-spec-template.md`.
 - Implementation: `implementation-rules.md`.
 - Verification: `verification-checklist.md`.
-- Synchronization or audit: `audit-checklist.md`.
+- Consolidated project audit: `audit-checklist.md`.
 
 Frontend rules do not create a new user entry point and must not be fetched from remote sources at runtime. New frontend application modules default to the root Vite workspace with React and TypeScript/TSX. Existing modules keep the framework and language in their confirmed module SPEC until a separate SPEC update authorizes a migration.
 
@@ -136,7 +157,7 @@ Frontend rules do not create a new user entry point and must not be fetched from
 ### New module or feature
 
 1. Read root `SPEC.md` and relevant module `SPEC.md` files.
-2. Read the confirmed design document.
+2. Read the resolved design document or direct project change request.
 3. Decide which module owns the feature, or whether a new module is needed.
 4. For Python work, choose the Python architecture level and write the rationale into SPEC.
 5. For frontend work, choose the frontend architecture level or accurately record a current legacy exception and write the ownership boundaries into SPEC.
@@ -144,21 +165,18 @@ Frontend rules do not create a new user entry point and must not be fetched from
 7. If adding a module or changing module relationships, update root `SPEC.md` module table and architecture diagram.
 8. Ask the user to confirm SPEC changes before implementation.
 9. Implement only after confirmation.
-10. Run verification, synchronization, and audit.
+10. Run verification and the consolidated project implementation audit.
 
 ### Existing functionality change
 
 1. Read root `SPEC.md` and current module specs for every touched module.
-2. Read the confirmed design document when one exists.
+2. Read the resolved design document or direct project change request.
 3. Determine impact: public interface, module contract, internal-only, or cross-module dependency change.
-4. Update relevant specs.
-5. Ask the user to confirm SPEC changes before implementation.
-6. Implement only after confirmation.
-7. Run verification, synchronization, and audit.
-
-### All repository modifications
-
-Bug fixes, tests, configuration, documentation, agent customization, and other narrow changes do not bypass design confirmation or SPEC confirmation. Apply the existing-functionality procedure and keep the SPEC delta limited to legitimate current facts. If no legitimate current-fact SPEC delta exists, stop for a human decision rather than changing implementation or adding artificial SPEC content.
+4. Apply the SPEC delta decision rules.
+5. When a delta is required, update relevant specs and ask the user to confirm them before implementation.
+6. When no delta is required, record the required evidence and proceed without editing SPEC.
+7. Implement against current confirmed SPEC.
+8. Run verification and the consolidated project implementation audit.
 
 ## Module SPEC Structure
 
@@ -182,7 +200,7 @@ Root `SPEC.md` should contain repository-wide sections such as:
 
 ```text
 # {project} Project Specification
-## SPEC Ownership And SDD Contract
+## Project Specification Ownership
 ## Module Table
 ## Architecture Diagram
 ## Development Rules
@@ -191,9 +209,9 @@ Root `SPEC.md` should contain repository-wide sections such as:
 
 Do not add `Testing Contract` or `Design Decisions` as default sections for new module specs. Existing sections with those names should be narrowed during touched updates: test matrices move to tests/docs, while decision rationale becomes current invariants only when it still constrains code.
 
-## Implementation Rules
+## Project Implementation Rules
 
-After SPEC confirmation:
+After required project SPEC confirmation or a recorded no-SPEC-delta decision:
 
 1. Re-read confirmed root/module specs.
 2. Implement only what the confirmed specs require.
@@ -203,9 +221,29 @@ After SPEC confirmation:
 6. For frontend work, follow the confirmed framework/language contract and the staged frontend implementation rules; do not mix a partial migration into an existing exception.
 7. Run the repository's available verification commands and the applicable frontend verification checklist.
 
-## Change Synchronization Check
+## Project Audit Lifecycle
 
-After implementation, verify relevant specs still match code:
+After project implementation verification, `spec-driven` starts exactly one complete first-pass project audit. The independent reviewer must establish the full applicable-item inventory and inspect every item before returning. Finding the first blocker must not end the pass.
+
+The first-pass result must contain stable item IDs, concrete diff evidence, verdicts, stable finding IDs, repair ownership, and one complete coverage table. The only allowed early return is `audit-blocked` when required authority inputs, tools, or artifacts are unavailable. `audit-blocked` is not a passing verdict and does not consume a repair attempt.
+
+After the complete result returns:
+
+1. Group all open findings by implementation repair, authority/human decision, or verification environment.
+2. Repair all implementation-fixable blocking findings in one batch.
+3. Run verification affected by that repair batch.
+4. Request incremental re-audit with the reviewer-authored baseline, prior result, repair diff, current overall diff, and neutral verification evidence.
+5. Recheck every open finding, every repair change, overlapping or transitive boundaries, and newly introduced issues.
+6. Reuse an earlier passing item only when its authority input and represented boundary are unchanged and demonstrably unaffected. Mark reused and revalidated items explicitly.
+7. If `spec-implementation-audit` declares the baseline invalid, rebuild the complete applicable-item inventory before judging completion.
+
+The implementation agent may explain its repair but may not close reviewer findings. A re-audit may reuse the same independent reviewer context or supply another fresh reviewer with the reviewer-authored baseline and result. Do not provide persuasive implementation summaries.
+
+The same finding may receive at most two automatic repair attempts. If it remains open after the second attempt, or one repair/re-audit round makes no substantive progress, pause automatic repair and present the finding, current evidence, attempted repairs, reviewer rationale, and concrete human decision options. The finding remains blocking until an allowed decision and any required project SPEC confirmation are complete.
+
+## Consolidated Project Implementation Audit
+
+For a project change, `spec-implementation-audit` owns the applicable-item inventory, verdict semantics, evidence, baseline reuse, and baseline invalidation. SPEC/code synchronization is a category in that audit, not a separate scan. Include these checks when applicable:
 
 - [ ] Root `SPEC.md` module table matches actual modules.
 - [ ] Root `SPEC.md` architecture diagram matches actual project dependencies.
@@ -216,20 +254,15 @@ After implementation, verify relevant specs still match code:
 - [ ] Parent and child frontend SPEC ownership matches the workspace and application directories without duplicated contracts.
 - [ ] Frontend Public Interface, Data And State Flow, Internal Structure, and Frontend Architecture match entries, source, state ownership, transport boundaries, framework, and language.
 - [ ] Frontend manifest, lock file, Vite configuration, generated-output policy, and required browser evidence match the confirmed specs.
-- [ ] Agent entry files remain thin pointers to root `SPEC.md`, keep ordinary interaction read-only, and require explicit SDD prompt invocation before writes.
 - [ ] SPEC text contains current facts only; design process, historical narrative, target-state wording, future roadmap, and detailed test matrices are absent or moved elsewhere.
 
-If anything is out of sync, fix the spec or code before completion.
-
-## Audit Gate
-
-Before claiming completion, run the sibling `spec-implementation-audit` procedure or apply it directly. If available, read:
+Before claiming project completion, read and run:
 
 ```text
 .github/skills/spec-implementation-audit/SKILL.md
 ```
 
-Audit against:
+Audit against the current project authority inputs and actual diff:
 
 ```text
 root SPEC.md + relevant module SPEC.md files + actual diff
@@ -237,18 +270,28 @@ root SPEC.md + relevant module SPEC.md files + actual diff
 
 Tests, lint, and summaries are supporting evidence only. They do not replace diff-based SPEC audit.
 
-If blocking gaps exist:
+If project SPEC itself needs correction, stop project implementation, update and confirm the applicable SPEC, invalidate the audit baseline, and start a new complete project audit after reconciliation.
 
-- Fix implementation gaps and re-audit.
-- If SPEC and implementation cannot be reconciled, ask the user for a design decision.
-- Do not claim completion while blocking gaps remain.
+## Completion Gate
+
+Do not claim completion while any blocking finding remains. Completion also requires:
+
+- a valid audit baseline;
+- a complete applicable-item inventory;
+- concrete diff evidence and a current verdict for every item;
+- every implementation-fixable finding closed by the independent reviewer;
+- reused and revalidated results marked explicitly;
+- required verification run or unavailable verification reported as blocking;
+- no pending baseline invalidation condition;
+- any accepted `needs-human-decision` recorded explicitly.
 
 ## Required Final Report
 
 End with:
 
-- Specs updated and confirmed.
+- Input type: confirmed design document or direct project change request.
+- Project specs updated and confirmed, or the no-SPEC-delta decision with precise SPEC and defect evidence.
 - Files implemented.
 - Verification commands run and results.
-- Synchronization check result.
-- Audit result, including any accepted human decisions.
+- Audited SPEC inputs, diff or commit range, and baseline status.
+- Complete finding status, reused/revalidated summary, and any accepted human decisions.

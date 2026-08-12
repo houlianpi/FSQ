@@ -1,16 +1,10 @@
 # fsq-agent Project Specification
 
-This repository uses spec-driven development. Root `SPEC.md` is the project-level specification and module navigation source of truth. Each module also owns a module-level `SPEC.md`.
+Root `SPEC.md` is the project-level specification and module navigation source of truth. Each module also owns a module-level `SPEC.md`.
 
-## SPEC Ownership And SDD Contract
+## Project Specification Ownership
 
 Root `SPEC.md` and module `SPEC.md` files are the current factual baseline for implementation. They describe present behavior, public contracts, module ownership, dependency direction, configuration surface, error semantics, architecture level, and implementation invariants.
-
-Every repository file modification uses the explicit two-phase SDD workflow. The user first explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with the requested change; that phase may write only a user-confirmed design document and must not update SPEC or implementation files. The user then explicitly invokes `.github/prompts/spec-driven.prompt.md` with that confirmed design document path; that phase updates the relevant current-fact SPEC files and receives user confirmation before creating, modifying, renaming, or deleting any non-SPEC repository file. The confirmed design document is the only repository write permitted before SPEC confirmation.
-
-Ordinary discussion, explanation, review, and planning are read-only and must not automatically invoke repository workflow skills. A natural-language edit request, a skill name mentioned in prose, or approval given outside an explicit prompt invocation does not authorize a repository write or substitute for either explicit phase. There is no narrow-change exception. If implementation reveals that a spec is missing or wrong, implementation stops until the relevant spec is updated and confirmed.
-
-SPEC files must not carry design-process narrative, migration history, discarded alternatives, future roadmap, planned signatures, removed behavior that code no longer supports, or detailed test matrices. Current compatibility behavior and current rejection behavior may be specified, but must be written as present-tense facts.
 
 ## Tool And Capability Execution
 
@@ -204,10 +198,7 @@ flowchart TD
 - Provider construction lives in `providers`; `core` must use provider-neutral protocols and must not import provider/runtime modules.
 - Dynamic-only local helper utilities live as AgentTools in `tools`; recordable CommonTool and PlatformTool capabilities live in `core`, with CommonTool bodies in platform tool providers and backend PlatformTool bodies on concrete drivers. CommonTools and PlatformTools declare executable metadata through `capabilities`. All recordable capabilities must be registered before strict YAML parsing or SDK capability exposure, and platform registries must contain only inherited CommonTools plus the active platform's PlatformTools. AgentTools must not be registered for strict replay.
 - Replay, sensitivity, evidence, and tool-origin behavior must come from capability metadata and normalized `StepRunner` results, not hard-coded tool-name sets.
-- Every repository modification follows the explicit design-confirmation and SPEC-confirmation gates in the SDD contract; bug fixes, tests, configuration, documentation, and agent customization files have no bypass.
-- New platforms or capability groups require current-fact SPEC updates before implementation and must reuse shared capability declaration/registry contracts unless the confirmed SPEC changes the shared contract.
-- SPEC content must remain a current factual baseline. Design rationale, historical narrative, future roadmap, implementation plan, and detailed test matrices belong in design docs, reference docs, or tests rather than root or module SPEC files.
-- `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md` are thin, always-loaded agent entry points only. They enforce read-only ordinary interaction, require explicit SDD prompt invocation before writes, point to this root `SPEC.md`, and do not duplicate project specification or detailed workflow content.
+- New platforms or capability groups reuse shared capability declaration and registry contracts unless the project specification defines a changed shared contract.
 
 ## Python Architecture Rules
 

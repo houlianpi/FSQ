@@ -1,6 +1,6 @@
 interface:
-  display_name: "SPEC Audit"
-  short_description: "Audit diff against confirmed SPEC"
-  default_prompt: "Use $spec-implementation-audit to audit the implementation diff against confirmed SPEC.md files."
+  display_name: "Project SPEC Audit"
+  short_description: "Audit project diff and SPEC delta mode"
+  default_prompt: "Use $spec-implementation-audit to audit the project implementation diff and independently validate its confirmed-update or no-delta mode against current SPEC.md files."
 policy:
   allow_implicit_invocation: false
