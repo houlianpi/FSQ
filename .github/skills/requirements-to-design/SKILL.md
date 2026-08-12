@@ -1,17 +1,19 @@
 ---
 name: requirements-to-design
-description: "Internal rules loaded only by the explicit /requirements-to-design prompt. Produces a confirmed SDD design document without changing SPEC or implementation files."
+description: "Optional internal design rules loaded only by the explicit /requirements-to-design prompt. Produces a confirmed project design document without changing SPEC or implementation files."
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Requirements To Design
 
-Turn an explicitly supplied request into a reviewed design document. This internal skill implements the `/requirements-to-design` prompt; it clarifies intent and records design decisions, but it does not update `SPEC.md` files or implement code.
+Turn an explicitly supplied project modification into a reviewed design document. This optional internal skill implements the `/requirements-to-design` prompt; it clarifies project intent and records design decisions as higher-quality `/spec-driven` input, but it does not update `SPEC.md` files or implement code and is not a prerequisite for project modification.
 
 ## Invocation Gate
 
-Load this skill only when the user explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with a requested repository modification. Ordinary discussion, explanation, review, planning, natural-language edit requests, skill-name mentions, and prose approvals must not trigger this skill. If the explicit prompt or its request is absent, stop without writing.
+Load this skill only when the user explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with a requested project modification. Ordinary discussion, explanation, review, planning, natural-language project edit requests, skill-name mentions, and prose approvals must not trigger this skill. If the explicit prompt or its request is absent, stop without writing.
+
+This skill does not handle workflow-control-only maintenance. If the request changes only `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/prompts/**`, or `.github/skills/**`, explain that a clear ordinary edit request is sufficient and stop without writing a design document.
 
 ## Hard Gate
 
@@ -23,16 +25,15 @@ Do not write implementation code. Do not update root or module `SPEC.md` files. 
 
 Read enough local context before detailed questions:
 
-- Root `SPEC.md`, if present.
-- Relevant module `SPEC.md` files, if the affected area is obvious.
+- Root `SPEC.md` and relevant module `SPEC.md` files.
 - `AGENTS.md`, `CLAUDE.md`, pyproject metadata, package layout, tests, and recent docs when useful.
 - For frontend work, the parent frontend SPEC, affected child application SPEC, root npm/Vite metadata, and backend specs that own consumed transport contracts when useful.
 
-If no root `SPEC.md` exists, note that the target repository must create one through the later `/spec-driven` SPEC phase before implementation begins.
+If no root `SPEC.md` exists, note that the target repository must create one through the later `/spec-driven` project SPEC phase before implementation begins.
 
 ### 2. Check Scope
 
-If the request spans multiple independent subsystems, stop and propose decomposition. Each independent subsystem should get its own design document and later its own `SPEC.md` update cycle.
+If the request spans multiple independent project subsystems, stop and propose decomposition. Each independent subsystem should get its own design document and later SPEC update cycle.
 
 ### 3. Ask Clarifying Questions
 
@@ -115,10 +116,10 @@ Next step: invoke /spec-driven with this design document path.
 
 ## Boundaries
 
-- The design document is not the implementation source of truth.
-- After `SPEC.md` files are updated and confirmed, implementation must follow `SPEC.md`, not this design document or chat history.
+- The design document records the confirmed requested project change but is not the implementation source of truth.
+- After any required project `SPEC.md` updates are confirmed, or `/spec-driven` independently validates that no delta is needed, implementation must follow current confirmed specs, not chat history.
 - Do not invoke an implementation plan as the next step.
-- Do not start implementation from the design document.
+- Do not start implementation directly from the design document without an explicit `/spec-driven <confirmed-design-document-path>` invocation.
 
 ## Frontend Architecture Integration
 

@@ -33,7 +33,7 @@ Load only the references needed for the active SDD phase:
 | SPEC authoring or ownership | [Architecture levels](./references/architecture-levels.md) and [module SPEC template](./references/module-spec-template.md) |
 | Implementation | [Implementation rules](./references/implementation-rules.md) |
 | Verification | [Verification checklist](./references/verification-checklist.md) |
-| Synchronization or audit | [Audit checklist](./references/audit-checklist.md) |
+| Consolidated project audit | [Audit checklist](./references/audit-checklist.md) |
 
 Do not load design rules for dependency-only, build-only, documentation-only, or internal refactoring work that has no user-visible effect.
 

@@ -1,6 +1,6 @@
 interface:
   display_name: "Requirements To Design"
-  short_description: "Turn requests into SDD design docs"
-  default_prompt: "Use $requirements-to-design to clarify this Python change and produce a confirmed SDD design document."
+  short_description: "Optionally clarify project design"
+  default_prompt: "Use $requirements-to-design to clarify this project change and produce a confirmed design document for later $spec-driven input."
 policy:
   allow_implicit_invocation: false
