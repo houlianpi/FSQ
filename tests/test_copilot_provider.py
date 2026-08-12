@@ -27,26 +27,34 @@ def _fake_github_token(suffix: str) -> str:
     return f"ghu_{suffix}"
 
 
+def _github_settings(
+    tmp_path,
+    *,
+    github_token: dict[str, object] | None = None,
+    provider_token: dict[str, object] | None = None,
+) -> Settings:
+    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
+    settings.openai_agents.model = "gpt-5.5"
+    settings.openai_agents.github_token = github_token
+    settings.openai_agents.provider_token = provider_token
+    settings.openai_agents.user_config_root = tmp_path
+    return settings
+
+
 class _AsyncOpenAI:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
 
 
 def test_build_github_copilot_client_config_uses_plan_endpoint(tmp_path) -> None:
-    token_cache_path = tmp_path / "auth" / "github-copilot-provider-token.json"
-    token_cache_path.parent.mkdir()
-    token_cache_path.write_text(
-        json.dumps(
-            {
-                "token": _fake_copilot_token(),
-                "expires_at": time.time() + 3600,
-                "plan": "business",
-            }
-        ),
-        encoding="utf-8",
+    settings = _github_settings(
+        tmp_path,
+        provider_token={
+            "token": _fake_copilot_token(),
+            "expires_at": time.time() + 3600,
+            "plan": "business",
+        },
     )
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
     with patch.object(copilot, "_get_copilot_plan") as get_plan, patch.object(copilot, "_get_copilot_token") as get_token:
         config = copilot.build_github_copilot_client_config(settings)
 
@@ -59,12 +67,11 @@ def test_build_github_copilot_client_config_uses_plan_endpoint(tmp_path) -> None
 
 
 def test_prepare_model_provider_session_exchanges_and_caches_copilot_provider_token(tmp_path) -> None:
-    oauth_cache_path = tmp_path / "auth" / "github-copilot-token.json"
     provider_cache_path = tmp_path / "auth" / "github-copilot-provider-token.json"
-    oauth_cache_path.parent.mkdir()
-    oauth_cache_path.write_text(json.dumps({"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600}), encoding="utf-8")
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
+    settings = _github_settings(
+        tmp_path,
+        github_token={"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600},
+    )
 
     with (
         patch.object(copilot, "_get_copilot_plan", return_value="business") as get_plan,
@@ -74,7 +81,7 @@ def test_prepare_model_provider_session_exchanges_and_caches_copilot_provider_to
             return_value=copilot.CopilotToken(token=_fake_copilot_token(), expires_at=time.time() + 3600),
         ) as get_token,
     ):
-        session = prepare_model_provider_session(settings, interactive_auth=True)
+        session = prepare_model_provider_session(settings)
 
     get_plan.assert_called_once_with(_fake_github_token("test"))
     get_token.assert_called_once_with(_fake_github_token("test"))
@@ -85,31 +92,28 @@ def test_prepare_model_provider_session_exchanges_and_caches_copilot_provider_to
 
 
 def test_runtime_copilot_provider_session_requires_cached_provider_or_github_token(tmp_path) -> None:
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
+    settings = _github_settings(tmp_path)
 
-    with patch.object(copilot, "_authenticate") as authenticate, patch.object(copilot, "_get_copilot_token") as get_token, pytest.raises(ConfigurationError, match="Run fsq-agent init"):
+    with (
+        patch.object(copilot, "request_github_copilot_device_code") as request_device_code,
+        patch.object(copilot, "_get_copilot_token") as get_token,
+        pytest.raises(ConfigurationError, match="Control Plane Config"),
+    ):
         build_model_provider_session(settings)
 
-    authenticate.assert_not_called()
+    request_device_code.assert_not_called()
     get_token.assert_not_called()
 
 
 def test_runtime_copilot_provider_session_refreshes_expired_provider_token_from_cached_github_token(tmp_path) -> None:
-    auth_dir = tmp_path / "auth"
-    oauth_cache_path = auth_dir / "github-copilot-token.json"
-    provider_cache_path = auth_dir / "github-copilot-provider-token.json"
-    auth_dir.mkdir()
-    oauth_cache_path.write_text(json.dumps({"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600}), encoding="utf-8")
-    provider_cache_path.write_text(
-        json.dumps({"token": _fake_copilot_token("old-provider"), "expires_at": time.time() - 1, "plan": "enterprise"}),
-        encoding="utf-8",
+    provider_cache_path = tmp_path / "auth" / "github-copilot-provider-token.json"
+    settings = _github_settings(
+        tmp_path,
+        github_token={"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600},
+        provider_token={"token": _fake_copilot_token("old-provider"), "expires_at": time.time() - 1, "plan": "enterprise"},
     )
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
 
     with (
-        patch.object(copilot, "_authenticate") as authenticate,
         patch.object(
             copilot,
             "_get_copilot_plan",
@@ -123,7 +127,6 @@ def test_runtime_copilot_provider_session_refreshes_expired_provider_token_from_
     ):
         session = build_model_provider_session(settings)
 
-    authenticate.assert_not_called()
     get_plan.assert_called_once_with(_fake_github_token("test"))
     get_token.assert_called_once_with(_fake_github_token("test"))
     assert session.client_config.api_key == _fake_copilot_token("new-provider")
@@ -132,20 +135,14 @@ def test_runtime_copilot_provider_session_refreshes_expired_provider_token_from_
 
 
 def test_refresh_model_provider_session_always_refreshes_from_cached_github_token(tmp_path) -> None:
-    auth_dir = tmp_path / "auth"
-    oauth_cache_path = auth_dir / "github-copilot-token.json"
-    provider_cache_path = auth_dir / "github-copilot-provider-token.json"
-    auth_dir.mkdir()
-    oauth_cache_path.write_text(json.dumps({"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600}), encoding="utf-8")
-    provider_cache_path.write_text(
-        json.dumps({"token": _fake_copilot_token("still-valid-provider"), "expires_at": time.time() + 3600, "plan": "business"}),
-        encoding="utf-8",
+    provider_cache_path = tmp_path / "auth" / "github-copilot-provider-token.json"
+    settings = _github_settings(
+        tmp_path,
+        github_token={"access_token": _fake_github_token("test"), "expires_at": time.time() + 3600},
+        provider_token={"token": _fake_copilot_token("still-valid-provider"), "expires_at": time.time() + 3600, "plan": "business"},
     )
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
 
     with (
-        patch.object(copilot, "_authenticate") as authenticate,
         patch.object(
             copilot,
             "_get_copilot_plan",
@@ -159,7 +156,6 @@ def test_refresh_model_provider_session_always_refreshes_from_cached_github_toke
     ):
         session = refresh_model_provider_session(settings)
 
-    authenticate.assert_not_called()
     get_plan.assert_called_once_with(_fake_github_token("test"))
     get_token.assert_called_once_with(_fake_github_token("test"))
     assert session.client_config.api_key == _fake_copilot_token("fresh-provider")
@@ -169,20 +165,14 @@ def test_refresh_model_provider_session_always_refreshes_from_cached_github_toke
 
 
 def test_runtime_copilot_provider_session_and_ai_assertion_use_cached_provider_token(tmp_path) -> None:
-    provider_cache_path = tmp_path / "auth" / "github-copilot-provider-token.json"
-    provider_cache_path.parent.mkdir()
-    provider_cache_path.write_text(
-        json.dumps(
-            {
-                "token": _fake_copilot_token(),
-                "expires_at": time.time() + 3600,
-                "plan": "enterprise",
-            }
-        ),
-        encoding="utf-8",
+    settings = _github_settings(
+        tmp_path,
+        provider_token={
+            "token": _fake_copilot_token(),
+            "expires_at": time.time() + 3600,
+            "plan": "enterprise",
+        },
     )
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
 
     with patch.object(copilot, "_get_copilot_token") as get_token:
         session = build_model_provider_session(settings)
@@ -195,32 +185,28 @@ def test_runtime_copilot_provider_session_and_ai_assertion_use_cached_provider_t
 
 
 def test_load_cached_token_returns_none_when_expired(tmp_path) -> None:
-    token_cache_path = tmp_path / "auth" / "github-copilot-token.json"
-    token_cache_path.parent.mkdir()
-    token_cache_path.write_text(json.dumps({"access_token": _fake_github_token("old"), "expires_at": time.time() - 1}), encoding="utf-8")
-
-    assert copilot._load_cached_token(token_cache_path) is None
+    assert copilot._load_github_token({"access_token": _fake_github_token("old"), "expires_at": time.time() - 1}) is None
 
 
-def test_resolve_github_token_authenticates_when_cache_expired(tmp_path) -> None:
-    token_cache_path = tmp_path / "auth" / "github-copilot-token.json"
-    token_cache_path.parent.mkdir()
-    token_cache_path.write_text(json.dumps({"access_token": _fake_github_token("old"), "expires_at": time.time() - 1}), encoding="utf-8")
-
-    with patch.object(copilot, "_authenticate", return_value=_fake_github_token("new")) as authenticate:
-        token = copilot._resolve_github_token(token_cache_path)
+def test_load_github_token_returns_saved_nonexpired_token() -> None:
+    token = copilot._load_github_token({"access_token": _fake_github_token("new")})
 
     assert token == _fake_github_token("new")
-    authenticate.assert_called_once_with(token_cache_path)
 
 
 def test_request_device_code_uses_explicit_copilot_scope() -> None:
     response = MagicMock()
-    response.json.return_value = {"device_code": "device", "user_code": "user"}
+    response.json.return_value = {
+        "device_code": "device",
+        "user_code": "user",
+        "verification_uri": "https://github.com/login/device",
+        "expires_in": 600,
+        "interval": 5,
+    }
     response.raise_for_status = MagicMock()
 
     with patch.object(copilot.httpx, "post", return_value=response) as post:
-        copilot._request_device_code()
+        copilot.request_github_copilot_device_code()
 
     assert post.call_args.kwargs["data"]["scope"] == copilot.GITHUB_OAUTH_SCOPE
 
@@ -244,13 +230,16 @@ def test_get_copilot_token_uses_copilot_exchange_headers() -> None:
 
 
 def test_prepare_model_provider_session_noninteractive_rejects_missing_provider_token(tmp_path) -> None:
-    settings = Settings(openai_agents=OpenAIAgentsSettings(provider="github_copilot"))
-    settings.workspace.root_dir = tmp_path
+    settings = _github_settings(tmp_path)
 
-    with patch.object(copilot, "_authenticate") as authenticate, patch.object(copilot, "_get_copilot_token") as get_token, pytest.raises(ConfigurationError, match="Run fsq-agent init"):
-        prepare_model_provider_session(settings, interactive_auth=False)
+    with (
+        patch.object(copilot, "request_github_copilot_device_code") as request_device_code,
+        patch.object(copilot, "_get_copilot_token") as get_token,
+        pytest.raises(ConfigurationError, match="Control Plane Config"),
+    ):
+        prepare_model_provider_session(settings)
 
-    authenticate.assert_not_called()
+    request_device_code.assert_not_called()
     get_token.assert_not_called()
 
 

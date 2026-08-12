@@ -21,7 +21,6 @@ from fsq_agent.cli._case_lifecycle import (
 )
 from fsq_agent.cli._core_execution import run_strict_fsq_core_case
 from fsq_agent.cli._formatting import log_result, log_run_event
-from fsq_agent.cli._llm_setup import setup_llm_provider
 from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
@@ -41,7 +40,6 @@ from fsq_agent.report import resolve_report_path
 
 logger = logging.getLogger(__name__)
 PLATFORM_CHOICE = click.Choice(["android", "web", "windows", "macos"])
-LLM_PROVIDER_CHOICE = click.Choice(["github_copilot", "azure_openai"])
 
 
 def _log_cli_error(message: str, *args: object) -> None:
@@ -55,11 +53,8 @@ def main() -> None:
 
 @main.command()
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
-@click.option("--provider", type=LLM_PROVIDER_CHOICE, default=None)
-def init(platform: str, provider: str | None) -> None:
+def init(platform: str) -> None:
     try:
-        if provider is not None:
-            setup_llm_provider(provider=provider)
         settings = load_platform_settings(platform, _current_workspace_path())
         logger.info("Initialized fsq-agent workspace: %s", settings.workspace.root_dir)
         logger.info("Output root: %s", settings.output.root_dir)

@@ -226,12 +226,16 @@ class OpenAIAgentPromptConfig(BaseModel):
 class OpenAIAgentsSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["azure_openai", "github_copilot"] = "github_copilot"
+    provider: Literal["azure_openai", "github_copilot"] | None = None
     max_turns: int = Field(default=50, ge=1)
     tracing_enabled: bool = True
     prompt: OpenAIAgentPromptConfig = Field(default_factory=OpenAIAgentPromptConfig)
     _base_url: str = PrivateAttr(default="")
-    _model: str = PrivateAttr(default="gpt-5.5")
+    _model: str = PrivateAttr(default="")
+    _api_key: str = PrivateAttr(default="")
+    _github_token: dict[str, Any] | None = PrivateAttr(default=None)
+    _provider_token: dict[str, Any] | None = PrivateAttr(default=None)
+    _user_config_root: Path | None = PrivateAttr(default=None)
     _context_trimming: ContextTrimmingSettings = PrivateAttr(default_factory=ContextTrimmingSettings)
     _local_tool_output: LocalToolOutputSettings = PrivateAttr(default_factory=LocalToolOutputSettings)
 
@@ -244,8 +248,12 @@ class OpenAIAgentsSettings(BaseModel):
         self._base_url = value
 
     @property
-    def api_key_env(self) -> str:
-        return "AZURE_OPENAI_API_KEY"
+    def api_key(self) -> str:
+        return self._api_key
+
+    @api_key.setter
+    def api_key(self, value: str) -> None:
+        self._api_key = value
 
     @property
     def model(self) -> str:
@@ -254,6 +262,30 @@ class OpenAIAgentsSettings(BaseModel):
     @model.setter
     def model(self, value: str) -> None:
         self._model = value
+
+    @property
+    def github_token(self) -> dict[str, Any] | None:
+        return dict(self._github_token) if self._github_token is not None else None
+
+    @github_token.setter
+    def github_token(self, value: dict[str, Any] | None) -> None:
+        self._github_token = dict(value) if value is not None else None
+
+    @property
+    def provider_token(self) -> dict[str, Any] | None:
+        return dict(self._provider_token) if self._provider_token is not None else None
+
+    @provider_token.setter
+    def provider_token(self, value: dict[str, Any] | None) -> None:
+        self._provider_token = dict(value) if value is not None else None
+
+    @property
+    def user_config_root(self) -> Path | None:
+        return self._user_config_root
+
+    @user_config_root.setter
+    def user_config_root(self, value: Path | None) -> None:
+        self._user_config_root = value
 
     @property
     def context_trimming(self) -> ContextTrimmingSettings:

@@ -246,8 +246,8 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
         def close_sync(self) -> None:
             captured["closed"] = True
 
-    def prepare(_settings, *, interactive_auth: bool):
-        captured["interactive"] = interactive_auth
+    def prepare(_settings):
+        captured["prepared"] = True
         return Session()
 
     monkeypatch.setattr("fsq_agent.control_plane._readiness.prepare_model_provider_session", prepare)
@@ -255,7 +255,7 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
     result = provider_readiness(_settings(tmp_path))
 
     assert result["status"] == "ready"
-    assert captured == {"interactive": False, "closed": True}
+    assert captured == {"prepared": True, "closed": True}
 
 
 def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

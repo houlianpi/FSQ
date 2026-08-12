@@ -233,13 +233,17 @@ def _patch_runtime_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(agents.extensions, "ToolOutputTrimmer", _FakeToolOutputTrimmer)
 
 
+def _azure_openai_settings(*, api_key: str = "dummy") -> OpenAIAgentsSettings:
+    settings = OpenAIAgentsSettings(provider="azure_openai")
+    settings.base_url = "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
+    settings.model = "gpt-5.4"
+    settings.api_key = api_key
+    return settings
+
+
 @pytest.mark.asyncio
-async def test_runtime_failure_returns_failed_step(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
-    openai_settings = OpenAIAgentsSettings(provider="azure_openai")
-    openai_settings.base_url = "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
-    openai_settings.model = "gpt-5.4"
-    settings = Settings(openai_agents=openai_settings)
+async def test_runtime_failure_returns_failed_step() -> None:
+    settings = Settings(openai_agents=_azure_openai_settings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory(), lambda _run_id: _FailingHarness())
     task = Task(
         id="runtime-failure",
@@ -257,9 +261,8 @@ async def test_runtime_failure_returns_failed_step(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.asyncio
 async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
-    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), _fake_harness_factory)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     task = Task(id="startup", name="Startup", description="Run startup.")
     events: list[Any] = []
 
@@ -293,9 +296,8 @@ async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: py
 async def test_runtime_constructs_sdk_agents_with_explicit_medium_model_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     from agents.model_settings import ModelSettings
 
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
-    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), _fake_harness_factory)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     task = Task(id="explicit-model-settings", name="Model Settings", description="Run with stable SDK settings.")
 
     await runtime.run_pre_plan("Open the app.", KnowledgeBundle(), [], "explicit-model-settings-run")
@@ -317,13 +319,12 @@ async def test_runtime_constructs_sdk_agents_with_explicit_medium_model_settings
 
 @pytest.mark.asyncio
 async def test_runtime_harness_construction_failure_is_visible(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
 
     def fail_harness(_run_id: str) -> _FakeHarness:
         raise RuntimeError("device connect failed")
 
-    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), fail_harness)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), fail_harness)
     events: list[Any] = []
 
     results = await runtime.run_task(Task(id="failure", description="Fail startup."), KnowledgeBundle(), [], "failure-run", events.append)
@@ -338,14 +339,13 @@ async def test_runtime_harness_construction_failure_is_visible(monkeypatch: pyte
 
 @pytest.mark.asyncio
 async def test_runtime_harness_construction_timeout_is_visible(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
 
     def slow_harness(_run_id: str) -> _FakeHarness:
         time.sleep(2)
         return _FakeHarness()
 
-    settings = Settings(agent={"step_timeout_seconds": 1}, openai_agents=OpenAIAgentsSettings())
+    settings = Settings(agent={"step_timeout_seconds": 1}, openai_agents=_azure_openai_settings())
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory(), slow_harness)
     events: list[Any] = []
 
@@ -391,10 +391,9 @@ async def test_runtime_classifies_sdk_content_filter_incomplete(monkeypatch: pyt
         def run_streamed(_agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _ContentFilterRunResult:
             return _ContentFilterRunResult()
 
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
     monkeypatch.setattr(agents, "Runner", _ContentFilterRunner)
-    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), _EmptyToolFactory(), _fake_harness_factory)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     events: list[Any] = []
 
     results = await runtime.run_task(Task(id="content-filter", description="Trigger content filter."), KnowledgeBundle(), [], "content-filter-run", events.append)
@@ -1084,10 +1083,9 @@ def test_runtime_tool_output_payload_adds_agent_tool_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_uses_sdk_stream_events_for_agent_tools(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
     _patch_runtime_sdk(monkeypatch)
     tool_factory = _CapturingToolFactory()
-    runtime = OpenAIAgentsRuntime(Settings(openai_agents=OpenAIAgentsSettings()), tool_factory, _fake_harness_factory)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), tool_factory, _fake_harness_factory)
     task = Task(id="agent-tools", name="Agent Tools", description="Run with AgentTools.")
 
     await runtime.run_task(task, KnowledgeBundle(), [], "agent-tools-run", event_sink=lambda _event: None)
@@ -1282,7 +1280,7 @@ def test_runtime_builds_run_config_respects_explicit_tracing_disable(monkeypatch
     assert run_config.kwargs["tracing_disabled"] is True
 
 
-def test_provider_session_builds_azure_openai_agents_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provider_session_builds_azure_openai_agents_provider() -> None:
     class _AsyncOpenAI:
         def __init__(self, **kwargs: Any) -> None:
             self.kwargs = kwargs
@@ -1291,11 +1289,7 @@ def test_provider_session_builds_azure_openai_agents_provider(monkeypatch: pytes
         def __init__(self, **kwargs: Any) -> None:
             self.kwargs = kwargs
 
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "azure-key")
-    openai_settings = OpenAIAgentsSettings(provider="azure_openai")
-    openai_settings.base_url = "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
-    openai_settings.model = "gpt-5.4"
-    settings = Settings(openai_agents=openai_settings)
+    settings = Settings(openai_agents=_azure_openai_settings(api_key="azure-key"))
 
     session = build_model_provider_session(settings)
     provider = session.create_agents_provider(openai_provider_type=_OpenAIProvider, async_openai_type=_AsyncOpenAI)

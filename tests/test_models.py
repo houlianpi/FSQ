@@ -88,9 +88,10 @@ def test_agent_task_input_wraps_task_contract() -> None:
 def test_openai_agents_settings_defaults_to_safe_offline_mode() -> None:
     settings = OpenAIAgentsSettings()
 
-    assert settings.provider == "github_copilot"
-    assert settings.model == "gpt-5.5"
-    assert settings.api_key_env == "AZURE_OPENAI_API_KEY"
+    assert settings.provider is None
+    assert settings.model == ""
+    assert settings.base_url == ""
+    assert settings.api_key == ""
     assert settings.tracing_enabled is True
     assert not hasattr(settings.prompt, "custom_instructions")
     assert not hasattr(settings.prompt, "custom_instructions_path")

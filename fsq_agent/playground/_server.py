@@ -23,7 +23,7 @@ import yaml
 from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import ConfigurationError
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
-from fsq_agent.playground._execution import PlaygroundExecutionHandle, start_dynamic_goal_execution
+from fsq_agent.playground._execution import PlaygroundExecutionHandle, refresh_execution_settings, start_dynamic_goal_execution
 from fsq_agent.playground._state import BusyError, PlaygroundState
 from fsq_agent.playground._yaml_lifecycle import (
     YamlLifecycleConflictError,
@@ -276,6 +276,10 @@ class PlaygroundServer:
                 return 400, {"error": "Exactly one of goal, caseYamlPath, or strictCaseYamlPath is required."}
             if self.settings.harness.platform == "android" and not self.state.session.connected:
                 return 409, {"error": "No active Android session. Create a session before execution."}
+            try:
+                execution_settings = refresh_execution_settings(self.settings)
+            except (ConfigurationError, OSError) as exc:
+                return 400, {"error": str(exc)}
             if has_goal:
                 task_label = goal.strip()
             elif has_case_yaml:
@@ -289,13 +293,13 @@ class PlaygroundServer:
             if has_strict_case_yaml:
                 self._reset_replay_for_known_run(request_id, self._strict_case_run_id(strict_case_yaml_path.strip()))
             handle = start_dynamic_goal_execution(
-                settings=self.settings,
+                settings=execution_settings,
                 state=self.state,
                 request_id=request_id,
                 goal=goal.strip() if has_goal else None,
                 case_yaml_path=case_yaml_path.strip() if has_case_yaml else None,
                 strict_case_yaml_path=strict_case_yaml_path.strip() if has_strict_case_yaml else None,
-                device_id=self.state.session.device_id if self.settings.harness.platform == "android" else None,
+                device_id=self.state.session.device_id if execution_settings.harness.platform == "android" else None,
                 record=self.options.record,
                 record_on_failure=self.options.record_on_failure,
             )

@@ -17,8 +17,10 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases
+from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
 from ._evidence import EvidenceProjection, read_screenshot, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
+from ._provider_auth import ProviderAuthState
 from ._readiness import load_control_plane_settings, readiness
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
@@ -35,6 +37,7 @@ class ControlPlaneServerOptions:
     open_browser: bool = True
     workspace_path: Path = field(default_factory=lambda: Path.cwd() / ".fsq-agent-workspace")
     static_path: Path | None = None
+    user_config_root: Path | None = None
 
 
 class ControlPlaneServer:
@@ -45,6 +48,7 @@ class ControlPlaneServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
         self._handles: dict[str, ExecutionHandle] = {}
+        self._provider_auth = ProviderAuthState(self.options.user_config_root)
 
     @property
     def port(self) -> int:
@@ -64,6 +68,7 @@ class ControlPlaneServer:
         self._thread.start()
 
     def stop(self) -> None:
+        self._provider_auth.shutdown()
         httpd = self._httpd
         self._httpd = None
         if httpd is None:
@@ -74,20 +79,27 @@ class ControlPlaneServer:
             self._thread.join(timeout=5)
         self._thread = None
 
-    def handle_get(self, path: str, query: dict[str, list[str]] | None = None) -> tuple[int, Any, dict[str, str]]:
+    def handle_get(self, path: str, query: dict[str, list[str]] | None = None, *, peer_host: str | None = "127.0.0.1") -> tuple[int, Any, dict[str, str]]:
         query = query or {}
         try:
+            if path == f"{_API_PREFIX}/config":
+                self._require_config_access(peer_host)
+                return 200, get_config(self.options.user_config_root), dict(_JSON_HEADERS)
+            auth_request_id = _device_flow_route_or_none(path)
+            if auth_request_id is not None:
+                self._require_config_access(peer_host)
+                return 200, self._provider_auth.get(auth_request_id), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/bootstrap":
                 initialized = self.options.workspace_path.is_dir() and (self.options.workspace_path / ".fsq-agent-workspace").is_file()
                 return 200, self.state.bootstrap(self.options.workspace_path.name, initialized=initialized), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/readiness":
                 platform = _platform_query(query)
-                return 200, readiness(platform, self.options.workspace_path), dict(_JSON_HEADERS)
+                return 200, self._readiness(platform), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/targets":
-                settings = load_control_plane_settings(_platform_query(query), self.options.workspace_path)
+                settings = self._load_settings(_platform_query(query))
                 return 200, discover_targets(settings), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/cases":
-                settings = load_control_plane_settings(_platform_query(query), self.options.workspace_path)
+                settings = self._load_settings(_platform_query(query))
                 return 200, discover_cases(settings), dict(_JSON_HEADERS)
             request_id, suffix = _run_route(path)
             if suffix == "":
@@ -106,6 +118,8 @@ class ControlPlaneServer:
             if suffix == "/stream":
                 return 400, _error("sse_required", "Use an SSE client for the stream endpoint.", "Connect with EventSource."), dict(_JSON_HEADERS)
             return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
+        except ConfigAPIError as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action), dict(_JSON_HEADERS)
         except RequestNotFoundError:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request."), dict(_JSON_HEADERS)
         except FileNotFoundError as exc:
@@ -119,7 +133,17 @@ class ControlPlaneServer:
         except Exception as exc:  # noqa: BLE001 - HTTP boundary does not expose tracebacks.
             return 500, _exception_error("internal_error", exc, "Retry or inspect the local server logs.", unexpected=True), dict(_JSON_HEADERS)
 
-    def handle_post(self, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def handle_post(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        if path.startswith(f"{_API_PREFIX}/config/"):
+            return self._handle_config_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         if path == f"{_API_PREFIX}/runs":
             return self._start_run(body)
         try:
@@ -136,6 +160,67 @@ class ControlPlaneServer:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry.")
         else:
             return 200, snapshot
+
+    def handle_put(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return self._handle_config_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
+
+    def handle_delete(
+        self,
+        path: str,
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return self._handle_config_write("DELETE", path, {}, peer_host=peer_host, origin=origin, host=host)
+
+    def _handle_config_write(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None,
+        origin: str | None,
+        host: str | None,
+    ) -> tuple[int, dict[str, Any]]:
+        try:
+            self._require_config_access(peer_host)
+            require_same_origin_write(origin, host)
+            if method == "PUT" and path == f"{_API_PREFIX}/config/azure":
+                return 200, save_azure_config(body, self.options.user_config_root)
+            if method == "POST" and path == f"{_API_PREFIX}/config/github/device-flow":
+                return 202, self._provider_auth.start(body)
+            if method == "POST" and path == f"{_API_PREFIX}/config/test-connection":
+                return 200, test_saved_connection(body, self.options.user_config_root)
+            auth_request_id = _device_flow_route_or_none(path)
+            if method == "DELETE" and auth_request_id is not None:
+                return 200, self._provider_auth.cancel(auth_request_id)
+            return 404, _error("not_found", "Control Plane Config endpoint not found.", "Check the API path and method.")
+        except Exception as exc:  # noqa: BLE001 - Config boundary maps safe errors.
+            mapped = map_config_exception(exc)
+            return mapped.status, _error(mapped.code, mapped.message, mapped.action)
+
+    def _require_config_access(self, peer_host: str | None) -> None:
+        require_config_access(self.options.host, peer_host)
+
+    def _load_settings(self, platform: str) -> Any:
+        if self.options.user_config_root is None:
+            return load_control_plane_settings(platform, self.options.workspace_path)
+        return load_control_plane_settings(platform, self.options.workspace_path, self.options.user_config_root)
+
+    def _readiness(self, platform: str) -> dict[str, Any]:
+        if self.options.user_config_root is None:
+            return readiness(platform, self.options.workspace_path)
+        return readiness(platform, self.options.workspace_path, self.options.user_config_root)
 
     def sse_snapshots(self, request_id: str, *, after_sequence: int = 0, timeout: float = 15.0):
         revision = -1
@@ -177,7 +262,7 @@ class ControlPlaneServer:
         except BusyError as exc:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
         try:
-            settings = load_control_plane_settings(platform, self.options.workspace_path)
+            settings = self._load_settings(platform)
             prepared = prepare_run(request_id=request_id, settings=settings, body=body)
             self._handles[request_id] = start_execution(prepared, self.state)
         except (TypeError, ValueError, FsqAgentError, OSError) as exc:
@@ -195,7 +280,7 @@ class ControlPlaneServer:
         if (artifact and ui_artifact) or not run_id:
             return
         snapshot = self.state.snapshot(request_id)
-        settings = load_control_plane_settings(str(snapshot["platform"]), self.options.workspace_path)
+        settings = self._load_settings(str(snapshot["platform"]))
         projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
         projection.bind_run(run_id)
         projection.load_persisted_manifest()
@@ -224,13 +309,22 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if request_id and suffix == "/stream":
                 self._send_sse(request_id, query)
                 return
-            status, body, headers = self.server.control_plane.handle_get(parsed.path, query)
+            status, body, headers = self.server.control_plane.handle_get(parsed.path, query, peer_host=self.client_address[0])
             self._send(status, body, headers)
             return
         status, body, content_type = self.server.control_plane.static_response(self.path)
         self._send(status, body, {"Content-Type": content_type})
 
     def do_POST(self) -> None:
+        self._handle_json_write("POST")
+
+    def do_PUT(self) -> None:
+        self._handle_json_write("PUT")
+
+    def do_DELETE(self) -> None:
+        self._handle_json_write("DELETE")
+
+    def _handle_json_write(self, method: str) -> None:
         parsed = urlsplit(self.path)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -241,7 +335,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError, json.JSONDecodeError):
             self._send(400, _error("invalid_json", "Request body must be a JSON object.", "Correct the request body."), _JSON_HEADERS)
             return
-        status, payload = self.server.control_plane.handle_post(parsed.path, body)
+        request_kwargs = {
+            "peer_host": self.client_address[0],
+            "origin": self.headers.get("Origin"),
+            "host": self.headers.get("Host"),
+        }
+        if method == "POST":
+            status, payload = self.server.control_plane.handle_post(parsed.path, body, **request_kwargs)
+        elif method == "PUT":
+            status, payload = self.server.control_plane.handle_put(parsed.path, body, **request_kwargs)
+        else:
+            status, payload = self.server.control_plane.handle_delete(parsed.path, **request_kwargs)
         self._send(status, payload, _JSON_HEADERS)
 
     def log_message(self, format_string: str, *args: Any) -> None:
@@ -337,6 +441,14 @@ def _run_route_or_empty(path: str) -> tuple[str | None, str | None]:
         return _run_route(path)
     except ValueError:
         return None, None
+
+
+def _device_flow_route_or_none(path: str) -> str | None:
+    prefix = f"{_API_PREFIX}/config/github/device-flow/"
+    if not path.startswith(prefix):
+        return None
+    auth_request_id = unquote(path.removeprefix(prefix))
+    return auth_request_id if auth_request_id and "/" not in auth_request_id else None
 
 
 def _error(code: str, message: str, action: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

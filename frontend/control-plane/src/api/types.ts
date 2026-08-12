@@ -111,6 +111,39 @@ export interface UiSnapshotResponse {
   content: string;
 }
 
+export interface AzureProviderConfig {
+  type: 'azure_openai';
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+}
+export interface GitHubProviderConfig {
+  type: 'github_copilot';
+  modelName: string;
+  authenticated: true;
+}
+export type ProviderConfig = AzureProviderConfig | GitHubProviderConfig;
+export type ConfigResponse =
+  | { configured: false; provider: null }
+  | { configured: true; provider: ProviderConfig };
+export interface AzureConfigPayload { baseUrl: string; modelName: string; apiKey: string }
+export type DeviceFlowStatus = 'waiting' | 'success' | 'failed' | 'expired' | 'cancelled';
+export interface GitHubDeviceFlowResponse {
+  authRequestId: string;
+  verificationUri: string;
+  userCode: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+  status: DeviceFlowStatus;
+  message?: string;
+}
+export interface ConnectionTestResponse {
+  success: true;
+  provider: 'azure_openai' | 'github_copilot';
+  modelName: string;
+  durationMs: number;
+}
+
 export interface RequestResource<T> {
   state: LoadState;
   data: T | null;
