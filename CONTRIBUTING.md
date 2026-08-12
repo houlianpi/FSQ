@@ -19,7 +19,7 @@ This project follows the [Microsoft Open Source Code of Conduct](https://opensou
 3. Keep the change focused and include tests or documentation when appropriate.
 4. Open a pull request with a clear description of the change and validation performed.
 
-Every repository file modification follows the explicit two-phase spec-driven development workflow defined by the root [SPEC.md](SPEC.md). First confirm a design through `/requirements-to-design`; then invoke `/spec-driven` with that design document, confirm the relevant SPEC updates, and only then modify non-SPEC files. Documentation, repository metadata, tests, configuration, and other narrow changes do not bypass this workflow.
+For agent-assisted project modifications, explicitly invoke `/spec-driven <confirmed-design-document-path | direct-project-change-request>`. `/requirements-to-design <request>` is an optional design aid that produces higher-quality input for `/spec-driven`, not a prerequisite. During `/spec-driven`, the agent determines whether a SPEC delta is required: required SPEC updates must be confirmed before non-SPEC project files change, while a repair already grounded in current SPEC may proceed after recording concrete no-SPEC-delta evidence. Workflow-control-only maintenance follows the repository agent instruction files and does not use project SDD.
 
 ## Contributor Growth Path
 
