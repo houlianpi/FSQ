@@ -3492,7 +3492,7 @@ def test_playground_frontend_uses_locked_npm_dependency_without_vendor_bundle() 
     assert package["private"] is True
     assert package["engines"]["node"] == "^20.19.0 || >=22.12.0"
     assert package["dependencies"]["ts-ebml"] == "3.0.2"
-    assert package["scripts"]["build"] == "vite build"
+    assert package["scripts"]["build"] == "vite build && node scripts/distribute-frontend-build.mjs"
     assert "vendor/ts-ebml.min.js" not in html
     assert '<script type="module" src="./playground.js"></script>' in html
     assert "import EBML from 'ts-ebml/dist/EBML.js';" in script
