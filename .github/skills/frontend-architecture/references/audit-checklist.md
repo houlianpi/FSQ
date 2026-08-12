@@ -2,6 +2,8 @@
 
 Audit frontend implementation against the confirmed root and relevant frontend/backend module specs plus the actual diff. Tests and screenshots are supporting evidence, not substitutes for diff inspection.
 
+Use these as frontend domain checks within the consolidated project implementation audit. Do not start a separate synchronization scan or repair loop.
+
 ## Ownership And Structure
 
 - Root module navigation points to the actual parent frontend SPEC.

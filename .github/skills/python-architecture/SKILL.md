@@ -26,7 +26,7 @@ Use for Python work involving:
 - Module boundary changes.
 - Domain logic, business rules, persistence, external integrations, or framework boundaries.
 - Refactoring Python code with unclear ownership or tangled imports.
-- SPEC/code synchronization and architecture audits.
+- Python domain checks within consolidated project implementation audits.
 
 Do not use for tiny one-off scripts unless the script is becoming a maintained module.
 
@@ -92,7 +92,7 @@ Before completion, check:
 - Domain/application/infrastructure boundaries match SPEC.
 - Tests cover public behavior promised by SPEC.
 
-Use `references/audit-checklist.md` when doing a full audit.
+Use `references/audit-checklist.md` for Python domain checks within the consolidated project implementation audit. Do not start a separate synchronization scan or repair loop.
 
 ## References
 
