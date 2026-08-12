@@ -22,7 +22,9 @@ knowledge/*
 !knowledge/skills/
 !knowledge/skills/**
 node_modules/
+.frontend-dist/
 fsq_agent/playground/static/
+fsq_agent/control_plane/static/
 
 
 # Private/local planning material. Do not commit.

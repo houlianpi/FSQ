@@ -118,17 +118,18 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | core | fsq_agent/core/SPEC.md | Defines the shared `StepRunner` execution manager, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factory boundaries for capability definitions, drivers, and harnesses, private concrete platform backends, and evidence coordination. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
-| cli | fsq_agent/cli/SPEC.md | Exposes the public `init`, `run`, `report`, `playground`, optional provider setup during initialization, capability registry bootstrap, strict replay including case lifecycle hook orchestration, dynamic-run recording, and local playground workflows. |
+| control_plane | fsq_agent/control_plane/SPEC.md | Serves the local platform-selectable Control Plane, including HTTP/static delivery, discovery/readiness, run orchestration, progress streaming, cancellation, and current evidence projection. |
+| cli | fsq_agent/cli/SPEC.md | Exposes the public `init`, `run`, `report`, `playground`, and `control-plane` commands, optional provider setup during initialization, capability registry bootstrap, strict replay including case lifecycle hook orchestration, dynamic-run recording, and thin local server startup workflows. |
 | frontend | frontend/SPEC.md | Owns the repository npm/Vite workspace, browser dependency and build policy, generated-asset boundary, and navigation to independently owned frontend application modules. |
 
 ## Frontend Build Boundary
 
 - The repository root npm project owns browser-source dependency resolution and Vite compilation for repository web pages. It uses one lock file and a multi-page Vite configuration so independently owned page entries build to distinct output paths.
-- `frontend/SPEC.md` owns the frontend workspace contract and links to child application specs without repeating their behavior. `frontend/playground/SPEC.md` owns the authored Playground browser application; the Python `playground` module owns its HTTP contracts and production static serving.
+- `frontend/SPEC.md` owns the frontend workspace contract and links to child application specs without repeating their behavior. `frontend/playground/SPEC.md` and `frontend/control-plane/SPEC.md` own their authored browser applications; the corresponding Python modules own HTTP contracts and production static serving.
 - New frontend application modules use Vite, React, and TypeScript/TSX unless their confirmed module SPEC records a concrete exception. The current `frontend/playground` module is a documented Vite-built vanilla JavaScript application and remains governed by its current module SPEC.
 - `ts-ebml` is an exact npm dependency consumed through an ES module import. Third-party browser bundles and Vite-generated assets are not tracked in Git.
-- Vite-generated Playground assets live under `fsq_agent/playground/static` and are included in the Python wheel. Release builds run the npm build before Python wheel construction. A prebuilt wheel is self-contained and does not require Node.js or network access at runtime.
-- Frontend development may use the Vite development server with API and streaming requests proxied to the Python Playground server. Production and installed-wheel usage serve generated assets and APIs from the single Python Playground process.
+- Vite-generated Playground and Control Plane assets live under `fsq_agent/playground/static` and `fsq_agent/control_plane/static` and are included in the Python wheel. Release builds run the npm build before Python wheel construction. A prebuilt wheel is self-contained and does not require Node.js or network access at runtime.
+- Frontend development may use the Vite development server with API and streaming requests proxied to the corresponding Python server. Production and installed-wheel usage serve each generated entry and its APIs from its owning Python process.
 
 ## Architecture Diagram
 
@@ -142,6 +143,7 @@ flowchart TD
     CLI --> Models[models]
     CLI --> Report[report]
     CLI --> Playground[playground]
+    CLI --> ControlPlane[control_plane]
     Agent --> Core[core]
     Agent --> Config[config]
     Agent --> Providers[providers]
@@ -163,10 +165,21 @@ flowchart TD
     Core --> Models
     Capabilities[capabilities] --> Models
     Core --> Capabilities
+    ControlPlane --> Agent
+    ControlPlane --> Core
+    ControlPlane --> FSQ
+    ControlPlane --> Config
+    ControlPlane --> Providers
+    ControlPlane --> Models
+    ControlPlane --> Report
     Frontend[frontend] --> FrontendPlayground[frontend/playground]
+    Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendPlayground --> Playground
     FrontendPlayground --> StaticAssets[generated static assets]
     Playground --> StaticAssets
+    FrontendControlPlane --> ControlPlane
+    FrontendControlPlane --> ControlPlaneStatic[generated Control Plane static assets]
+    ControlPlane --> ControlPlaneStatic
 ```
 
 ## Development Rules
@@ -180,7 +193,7 @@ flowchart TD
 - Internal Python implementation files are prefixed with `_`.
 - Shared data structures and exceptions live only in the `models` module. Capability declaration decorators, catalog-backed platform validation, and decorated-method discovery live only in the `capabilities` module.
 - Module imports must follow the DAG in the architecture diagram.
-- Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer bootstrap, strict lifecycle orchestration, and dynamic-run recording used by CLI and Playground. They must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
+- Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer capability bootstrap, registry-metadata-based provider requirement detection, strict lifecycle orchestration, and dynamic-run recording used by CLI, Playground, and Control Plane. Provider requirement detection compares the active platform registry with and without provider-backed capabilities and resolves executable steps through the registry snapshot rather than branching on action names. These helpers must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
 - `capabilities` may import `models` only among project modules. It must not import `tools`, `core`, `agent`, `cli`, `fsq`, `providers`, `report`, `playground`, SDK objects, concrete drivers, or backend runtime types.
 - Provider construction lives in `providers`; `core` must use provider-neutral protocols and must not import provider/runtime modules.
 - Dynamic-only local helper utilities live as AgentTools in `tools`; recordable CommonTool and PlatformTool capabilities live in `core`, with CommonTool bodies in platform tool providers and backend PlatformTool bodies on concrete drivers. CommonTools and PlatformTools declare executable metadata through `capabilities`. All recordable capabilities must be registered before strict YAML parsing or SDK capability exposure, and platform registries must contain only inherited CommonTools plus the active platform's PlatformTools. AgentTools must not be registered for strict replay.
@@ -191,6 +204,6 @@ flowchart TD
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
 - `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
-- `core`, `agent`, `cli`, and `playground` use Level 3 Layered Application because they coordinate execution flows, external SDKs, harnesses, providers, persistence, HTTP entry points, and user entry points.
+- `core`, `agent`, `cli`, `playground`, and `control_plane` use Level 3 Layered Application because they coordinate execution flows, external SDKs, harnesses, providers, persistence, HTTP entry points, and user entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 from fsq_agent._strict_case_recording import StrictCaseRecording
 from fsq_agent.cli._main import _task_from_goal, _task_from_raw_case_source, main
-from fsq_agent.models import ReportArtifact, Task, TaskResult, VerificationResult
+from fsq_agent.models import ConfigurationError, ReportArtifact, Task, TaskResult, VerificationResult
 
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
@@ -105,7 +105,54 @@ def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_only_public_commands_are_registered() -> None:
-    assert set(main.commands) == {"init", "run", "report", "playground"}
+    assert set(main.commands) == {"init", "run", "report", "playground", "control-plane"}
+
+
+def test_control_plane_command_has_no_platform_and_delegates_current_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_control_plane(options) -> None:
+        captured.update(
+            host=options.host,
+            port=options.port,
+            open_browser=options.open_browser,
+            workspace_path=options.workspace_path,
+        )
+
+    monkeypatch.setattr("fsq_agent.cli._main.run_control_plane", fake_run_control_plane)
+
+    result = CliRunner().invoke(main, ["control-plane", "--host", "localhost", "--port", "9000", "--no-open-browser"])
+
+    assert result.exit_code == 0, result.output
+    assert captured == {
+        "host": "localhost",
+        "port": 9000,
+        "open_browser": False,
+        "workspace_path": tmp_path / ".fsq-agent-workspace",
+    }
+    rejected = CliRunner().invoke(main, ["control-plane", "--platform", "android"])
+    assert rejected.exit_code != 0
+    assert "No such option: --platform" in rejected.output
+
+
+@pytest.mark.parametrize("error", [ConfigurationError("invalid workspace"), OSError("bind failed")])
+def test_control_plane_command_normalizes_startup_errors(
+    error: Exception,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_startup(_options) -> None:
+        raise error
+
+    monkeypatch.setattr("fsq_agent.cli._main.run_control_plane", fail_startup)
+
+    result = CliRunner().invoke(main, ["control-plane", "--no-open-browser"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert "Aborted!" in result.output
 
 
 def test_init_provider_copilot_writes_env_and_prepares_interactive_session(
