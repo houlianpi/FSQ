@@ -24,11 +24,11 @@ def readiness(platform: str, workspace_path: Path) -> dict[str, Any]:
         record = _record("error", safe_exception_message(exc), "Fix the committed platform preset or workspace configuration.")
         return {"platform": platform, "workspace": record, "provider": record, "target": record, "strict": record}
 
-    workspace_ready = settings.workspace.root_dir is not None and Path(settings.workspace.root_dir).is_dir() and settings.cases.dir.is_dir()
+    workspace_ready = settings.workspace.root_dir is not None and Path(settings.workspace.root_dir).is_dir()
     workspace = _record(
         "ready" if workspace_ready else "unavailable",
-        "Workspace and case root are ready." if workspace_ready else "Workspace is initialized, but the configured case root is unavailable.",
-        "Create the configured cases directory." if not workspace_ready else "",
+        "Workspace is ready." if workspace_ready else "Workspace is unavailable.",
+        "Initialize the configured workspace directory." if not workspace_ready else "",
     )
     provider = provider_readiness(settings)
     target_ready, target_message, target_action = target_readiness(settings)

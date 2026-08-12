@@ -24,3 +24,12 @@ it('shows strict case facts without claiming human review', async () => {
   await userEvent.click(screen.getByRole('radio', { name: 'Explore' }));
   expect(onModeChange).toHaveBeenCalledWith('explore');
 });
+
+it('shows an empty Strict Replay source while readiness remains available', () => {
+  render(<OperationComposer mode="strict" goal="" casePath="" cases={[]} casesState="ready" readiness={ready} discoveryLoading={false} canStart={false} primaryInputRef={createRef()} onModeChange={vi.fn()} onGoalChange={vi.fn()} onCaseChange={vi.fn()} onStart={vi.fn()} />);
+
+  expect(screen.getByRole('option', { name: 'No validated cases available' })).toBeInTheDocument();
+  expect(screen.getByText('Workspace ready')).toBeInTheDocument();
+  expect(screen.getByText('Strict ready')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Start strict replay' })).toBeDisabled();
+});

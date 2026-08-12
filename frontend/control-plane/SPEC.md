@@ -58,6 +58,7 @@ Explore:
 - Accepts one non-empty natural-language goal.
 - Explains that FSQ plans, operates, captures evidence, and verifies.
 - Requires workspace, provider, target, and source readiness.
+- Does not depend on case discovery completion, case selection, or existence of the configured cases directory.
 
 Strict Replay:
 
@@ -65,6 +66,7 @@ Strict Replay:
 - Shows case name/path, declared platform, command count, `requiresAiAssertion`, and `validated` state.
 - Never labels machine validation as human review.
 - Requires workspace, strict, target, and source readiness. It additionally requires provider readiness when the selected case has `requiresAiAssertion=true`.
+- When case discovery returns no selectable cases, shows the empty case-source state and keeps start disabled without changing workspace or strict-runner readiness.
 
 The start action is derived from authoritative visible readiness, target, input, case, busy, and request states. The frontend still treats run-start server validation as authoritative and displays structured server errors.
 
@@ -77,9 +79,15 @@ Starting a run replaces the composer with:
 - Safe live timeline derived from server events.
 - Cancel while cancellation remains available.
 
+On desktop, the run workspace is bounded to the viewport below the title bar. The operation and evidence cards keep their headers and outer status/action regions visible while timeline history and the active evidence surface scroll independently. Appended run events do not increase document height.
+
+The timeline preserves every server event in chronological order and groups only contiguous events with the same phase; a missing phase is presented as Run, and a repeated phase separated by another phase forms a new group. The latest/current phase defaults expanded and older phases default collapsed while explicit user disclosure choices for historical groups are preserved. Group summaries are derived presentation and do not replace or fabricate events.
+
+Long safe event messages default to a bounded preview and expose per-message native expand/collapse controls. Timeline history auto-follows appended events only while its scroll position remains near the bottom. User scrolling upward pauses following, preserves the reading position, counts appended unseen events, and exposes Jump to latest; returning to the bottom or activating that control resumes following without moving keyboard focus.
+
 The frontend does not fabricate waiting/completed timeline steps. Live updates do not steal focus.
 
-Terminal states are success, failed, inconclusive, cancelled, and error. The timeline and truthful result summary remain visible. New run returns to the composer, preserves the selected platform when still valid, and focuses the primary mode input. Terminal transitions focus the result heading through deliberate focus management.
+Terminal states are success, failed, inconclusive, cancelled, and error. The truthful result summary and New run action remain visible outside the bounded timeline history. New run returns to the composer, preserves the selected platform when still valid, and focuses the primary mode input. Terminal transitions focus the result heading through deliberate focus management without forcing the timeline or Logs scroll position.
 
 ### Live evidence
 
@@ -87,7 +95,7 @@ The right panel exposes semantic Screen, UI Tree, and Logs tabs:
 
 - Screen loads the latest real screenshot only when its revision changes, preserves natural aspect ratio, and does not fabricate application content. Android may use device-proportioned presentation; other platforms use a neutral canvas.
 - UI Tree loads the latest normalized `ui_snapshot` only when its revision changes and displays read-only whitespace-preserving text with scrolling.
-- Logs render structured time, level, phase, tool, status, and safe message rows rather than raw JSON.
+- Logs render structured time, level, phase, tool, status, and safe message rows rather than raw JSON. The table header remains sticky in the bounded Logs scroll region. Long messages use per-row native disclosure. Logs independently auto-follow near-bottom appends, pause and count unseen rows while the user reads history, and expose Jump to latest to resume.
 
 Each tab distinguishes loading, not-yet-captured, unavailable, oversized, failed, and available states. Evidence-tab failures do not replace the run result.
 
@@ -110,9 +118,9 @@ Current Devices ownership:
 - `src/features/devices/components/TargetToolbar.tsx`: platform/target/status/refresh controls supplied to the shell title bar.
 - `src/features/devices/components/OperationComposer.tsx`: Explore/Strict source input.
 - `src/features/devices/components/PreflightStatus.tsx`: readiness presentation.
-- `src/features/devices/components/RunTimeline.tsx`: source, task state, timeline, result, cancel, and new-run actions.
+- `src/features/devices/components/RunTimeline.tsx`: source, task state, contiguous phase grouping, timeline and message disclosure, timeline scroll following, result, cancel, and new-run actions.
 - `src/features/devices/components/LiveEvidencePanel.tsx`: evidence tab composition.
-- `src/features/devices/components/ScreenView.tsx`, `UiSnapshotView.tsx`, and `RunLogsView.tsx`: evidence-kind presentation.
+- `src/features/devices/components/ScreenView.tsx`, `UiSnapshotView.tsx`, and `RunLogsView.tsx`: evidence-kind presentation; Logs owns structured-row message disclosure, sticky-table semantics, and log scroll following.
 - `src/features/devices/hooks/useDeviceWorkspace.ts`: page state and discovery/run commands.
 - `src/features/devices/hooks/useRunStream.ts`: sequence, SSE reconnect, and snapshot fallback.
 - `src/api/controlPlaneClient.ts`: fetch/EventSource boundary, structured errors, cancellation, and response validation.
@@ -121,7 +129,7 @@ Current Devices ownership:
 
 `ControlPlaneShell` has a router-neutral page outlet and active-page callback contract and does not import Devices internals. No client routing dependency is required while Devices is the only available page.
 
-`useDeviceWorkspace` owns selected platform/target/mode/goal/case, discovery request state, active request snapshot, and selected evidence tab. Start eligibility, connection status, validated summary, and control locks are derived values. `useRunStream` owns transport/reconnect state but not run truth.
+`useDeviceWorkspace` owns selected platform/target/mode/goal/case, discovery request state, active request snapshot, and selected evidence tab. Start eligibility, connection status, validated summary, and control locks are derived values. Phase/message disclosure, scroll positions, follow state, and unseen counts are local transient state owned by their timeline or Logs presentation component and are not workspace state. `useRunStream` owns transport/reconnect state but not run truth.
 
 Effects synchronize fetch, stream, image, and focus boundaries. Render-derived values and event-handler work are not stored or synchronized through effects. Request cancellation and generation checks prevent stale platform responses.
 
@@ -147,12 +155,13 @@ Empty states direct the user to select/configure a platform, connect a target, p
 
 - The visual system follows the Control Plane UX: warm off-white workbench, clean surfaces, subtle borders, deep rose primary accent, persistent product navigation, and fixed context bar.
 - The distinguishing layout is the operation timeline beside live evidence; generic dashboard metrics, decorative numbering, unrelated gradients, and ambient motion are absent.
-- Desktop uses a sidebar plus two-column Devices workbench. Narrow layouts use the shell-owned sidebar drawer, stacked workbench, and wrapped toolbar without clipping.
+- Desktop uses a sidebar plus a viewport-bounded two-column Devices workbench whose timeline and evidence bodies scroll independently. Narrow layouts use the shell-owned sidebar drawer, normal page scrolling, a stacked workbench, bounded panel-body maximum heights, and a wrapped toolbar without clipping or touch scroll traps.
 - Native controls and semantic headings/landmarks precede ARIA recreation.
 - Navigation, tabs, mode controls, selects, textarea, start/cancel/new-run, and sidebar drawer are keyboard operable with visible `:focus-visible`.
 - Status is communicated by text/icon as well as color. A restrained live region announces connection, start, cancellation, and terminal results.
 - Tab behavior uses standard selected/tab-panel relationships. Icon-only controls have accessible names.
 - Live updates preserve focus. Drawer/result/new-run focus transitions are explicit.
+- Phase and message disclosure plus Jump to latest use native keyboard-operable buttons with visible focus, accessible names, `aria-expanded`/`aria-controls` where applicable, and unseen-event text that does not rely on color.
 - Motion respects `prefers-reduced-motion`; functionality does not depend on animation.
 - Screenshot alternative text identifies platform/target and evidence state.
 
@@ -160,8 +169,8 @@ Empty states direct the user to select/configure a platform, connect a target, p
 
 - A clean lock-file install, TypeScript check, focused frontend tests, and Vite build validate the entry.
 - Shell tests prove one centralized sidebar can render Devices and arbitrary page outlet content without Devices imports; cover active/unavailable semantics, keyboard order, `aria-current`, narrow drawer, and focus restoration.
-- Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, timeline/cancel/terminal/new-run behavior, stream resume/fallback, evidence states, tabs, accessible names, live announcements, and focus behavior.
-- Browser verification covers responsive layout, keyboard-only operation, all four platform unavailable/readiness presentations, and at least one available platform's Explore/Strict start, progress, evidence, cancellation, and terminal behavior.
+- Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, contiguous timeline phase grouping/disclosure, long timeline/log message disclosure, independent near-bottom auto-follow/pause/unseen/resume behavior, timeline/cancel/terminal/new-run behavior, stream resume/fallback, evidence states, sticky Logs structure, tabs, accessible names, live announcements, and focus behavior.
+- Browser verification covers desktop viewport containment and independent panel scrolling at 1440×900 and 1280×720, narrow stacked/page-scrolling behavior around 390px, keyboard-only disclosure and Jump to latest, long-content wrapping, sticky Logs headers, all four platform unavailable/readiness presentations, and at least one available platform's Explore/Strict start, progress, evidence, cancellation, and terminal behavior. Layout changes require reviewed desktop and narrow screenshots plus a clean browser console.
 - Build/package verification proves both Vite entries are generated, existing Playground remains functional, and an isolated wheel starts Control Plane without Node.js.
 
 ## Current Invariants

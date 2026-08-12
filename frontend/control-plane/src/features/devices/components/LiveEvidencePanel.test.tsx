@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ControlPlaneApiError, controlPlaneClient } from '../../../api/controlPlaneClient';
 import type { RunSnapshot } from '../../../api/types';
@@ -71,4 +71,27 @@ it('distinguishes UI Tree loading, unavailable, oversized, failed, and available
 it('shows an explicit not-yet-captured screen state', () => {
   render(<LiveEvidencePanel tab="screen" snapshot={snapshot} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
   expect(screen.getByText('Screen not yet captured')).toBeInTheDocument();
+});
+
+it('discloses long log messages and resumes paused log following', async () => {
+  const longMessage = 'A safe structured agent message '.repeat(8);
+  const withLongLog = { ...snapshot, events: [{ ...snapshot.events[0], message: longMessage }] };
+  const { container, rerender } = render(<LiveEvidencePanel tab="logs" snapshot={withLongLog} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
+  const disclosure = screen.getByRole('button', { name: 'Expand message' });
+  await userEvent.click(disclosure);
+  expect(disclosure).toHaveTextContent('Collapse message');
+
+  const scrolling = container.querySelector('.logs-table-wrap') as HTMLDivElement;
+  const scrollTo = vi.fn();
+  Object.defineProperties(scrolling, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 }, scrollTop: { configurable: true, value: 0, writable: true }, scrollTo: { configurable: true, value: scrollTo } });
+  fireEvent.scroll(scrolling);
+  rerender(<LiveEvidencePanel tab="logs" snapshot={{ ...withLongLog, events: [...withLongLog.events, { sequence: 2, phase: 'execution', message: 'New row' }] }} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
+
+  const jump = await screen.findByRole('button', { name: 'Jump to latest · 1 new' });
+  expect(scrollTo).not.toHaveBeenCalled();
+  await userEvent.click(jump);
+  expect(scrollTo).toHaveBeenCalled();
+  expect(jump).toHaveFocus();
+  fireEvent.blur(jump);
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument());
 });

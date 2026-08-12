@@ -531,6 +531,22 @@ def test_readiness_covers_all_supported_platforms(tmp_path: Path, monkeypatch: p
     assert {payload[key]["status"] for key in ("workspace", "provider", "target", "strict")} == {"ready"}
 
 
+def test_readiness_and_case_discovery_do_not_require_cases_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    settings.cases.dir.rmdir()
+    monkeypatch.setattr("fsq_agent.control_plane._readiness.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
+    monkeypatch.setattr("fsq_agent.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
+    monkeypatch.setattr("fsq_agent.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
+
+    payload = readiness("android", settings.workspace.root_dir)
+
+    assert payload["workspace"] == {"status": "ready", "message": "Workspace is ready.", "action": ""}
+    assert payload["strict"]["status"] == "ready"
+    assert discover_cases(settings) == {"platform": "android", "cases": [], "truncated": False}
+    assert not settings.cases.dir.exists()
+
+
 def test_ui_snapshot_limit_is_local_to_read(tmp_path: Path) -> None:
     path = tmp_path / "large.txt"
     path.write_bytes(b"x" * (UI_SNAPSHOT_LIMIT_BYTES + 1))

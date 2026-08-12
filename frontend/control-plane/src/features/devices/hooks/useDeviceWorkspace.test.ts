@@ -95,6 +95,28 @@ it('allows Explore and sends its payload without waiting for case discovery', as
   expect(startRun).toHaveBeenCalledWith({ mode: 'explore', platform: 'android', targetId: 'android-target', goal: 'Verify the welcome page' });
 });
 
+it('allows Explore with an empty case result while Strict has no selectable source', async () => {
+  const startRun = vi.fn().mockResolvedValue({ requestId: 'explore-request' });
+  const emptyCases: CasesResponse = { platform: 'android', cases: [], truncated: false };
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
+    targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(emptyCases),
+    startRun, cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot('explore-request')), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace(client));
+  await waitFor(() => expect(result.current.cases.state).toBe('ready'));
+  act(() => result.current.setGoal('Verify without authored cases'));
+
+  expect(result.current.canStart).toBe(true);
+  act(() => result.current.setMode('strict'));
+  expect(result.current.selectedCase).toBeNull();
+  expect(result.current.canStart).toBe(false);
+
+  act(() => result.current.setMode('explore'));
+  await act(async () => result.current.start());
+  expect(startRun).toHaveBeenCalledWith({ mode: 'explore', platform: 'android', targetId: 'android-target', goal: 'Verify without authored cases' });
+});
+
 it('respects backend bootstrap truth when starting a new run', async () => {
   const activeBootstrap: BootstrapResponse = {
     ...bootstrap, busy: true,
