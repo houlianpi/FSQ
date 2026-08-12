@@ -3,11 +3,12 @@
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel
 
-from fsq_agent._capability_bootstrap import build_capability_registry
+from fsq_agent._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
 from fsq_agent.capabilities import (
     CapabilityActionDefinition,
     capability,
@@ -65,6 +66,18 @@ def test_common_platform_tools_use_shared_declaration_layer() -> None:
     assert definitions["wait_ms"].owner == "common"
     assert definitions["wait_ms"].replay == ReplayPolicy(kind="fsq_command", alias="waitMs")
     assert set(definitions) == {"wait_ms"}
+
+
+@pytest.mark.parametrize("platform", ["android", "web", "windows", "macos"])
+def test_provider_requirement_is_derived_from_platform_registry_metadata(platform: str) -> None:
+    snapshot = build_capability_registry(platform=platform).snapshot()
+    required_names = provider_required_capability_names(platform)
+
+    assert required_names == frozenset({"assert_with_ai"})
+    assert steps_require_provider([SimpleNamespace(action_name="assertWithAI")], snapshot, required_names)
+    assert steps_require_provider([SimpleNamespace(action_name="assert_with_ai")], snapshot, required_names)
+    assert not steps_require_provider([SimpleNamespace(action_name="waitMs")], snapshot, required_names)
+    assert not steps_require_provider([SimpleNamespace(action_name="unknown")], snapshot, required_names)
 
 
 def test_capability_registry_resolves_replay_alias_and_allows_self_alias() -> None:

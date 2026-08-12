@@ -33,6 +33,20 @@ def build_capability_registry(*, platform: HarnessPlatform = "android", include_
     )
 
 
+def provider_required_capability_names(platform: HarnessPlatform) -> frozenset[str]:
+    full_snapshot = build_capability_registry(platform=platform, include_ai_assertion=True).snapshot()
+    provider_free_names = build_capability_registry(platform=platform, include_ai_assertion=False).snapshot().by_name()
+    return frozenset(capability.name for capability in full_snapshot.capabilities if capability.name not in provider_free_names)
+
+
+def steps_require_provider(
+    steps: list[Any],
+    registry_snapshot: Any,
+    provider_required_names: frozenset[str],
+) -> bool:
+    return any((capability := registry_snapshot.resolve(step.action_name)) is not None and capability.name in provider_required_names for step in steps)
+
+
 def _platform_capability_definitions(platform: HarnessPlatform, *, include_ai_assertion: bool) -> list[CapabilityDefinition]:
     return _CAPABILITY_DEFINITION_FACTORY.platform_definitions(
         platform=platform,

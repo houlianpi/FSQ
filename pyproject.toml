@@ -47,7 +47,7 @@ fsq-agent = "fsq_agent.cli:main"
  
 [tool.hatch.build.targets.wheel]
 packages = ["fsq_agent"]
-artifacts = ["fsq_agent/playground/static"]
+artifacts = ["fsq_agent/playground/static", "fsq_agent/control_plane/static"]
 
 [[tool.uv.index]]
 name = "microsoft-cfs"

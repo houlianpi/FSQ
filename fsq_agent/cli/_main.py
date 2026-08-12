@@ -12,7 +12,7 @@ import click
 
 from fsq_agent._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
 from fsq_agent.agent import FsqAgent
-from fsq_agent.cli._capability_bootstrap import build_capability_registry
+from fsq_agent.cli._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
 from fsq_agent.cli._case_lifecycle import (
     case_has_lifecycle_hooks,
     collect_lifecycle_cases,
@@ -26,6 +26,7 @@ from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
 from fsq_agent.config import Settings, load_platform_settings, validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 from fsq_agent.core import (
     ArtifactStore,
     HarnessFactory,
@@ -164,6 +165,28 @@ def playground(
         raise click.Abort() from exc
     except OSError as exc:
         _log_cli_error("Playground startup failed: %s", exc)
+        raise click.Abort() from exc
+
+
+@main.command(name="control-plane")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8879, show_default=True, type=click.IntRange(1, 65535))
+@click.option("--open-browser/--no-open-browser", "open_browser", default=True, show_default=True)
+def control_plane(host: str, port: int, open_browser: bool) -> None:
+    try:
+        run_control_plane(
+            ControlPlaneServerOptions(
+                host=host,
+                port=port,
+                open_browser=open_browser,
+                workspace_path=_current_workspace_path(),
+            )
+        )
+    except FsqAgentError as exc:
+        _log_cli_error("Error: %s", exc)
+        raise click.Abort() from exc
+    except OSError as exc:
+        _log_cli_error("Control Plane startup failed: %s", exc)
         raise click.Abort() from exc
 
 
@@ -486,7 +509,9 @@ def _build_strict_harness(
 
 def _case_requires_ai_assertion(settings: Settings, case: FsqCase, registry_snapshot=None) -> bool:
     registry_snapshot = registry_snapshot or build_capability_registry(platform=settings.harness.platform).snapshot()
-    return any(step.action_name == "assert_with_ai" for step in FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case))
+    steps = FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(case)
+    required_names = provider_required_capability_names(settings.harness.platform)
+    return steps_require_provider(steps, registry_snapshot, required_names)
 
 
 def _strict_case_app_id(settings: Settings, case: FsqCase) -> str:

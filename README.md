@@ -154,6 +154,16 @@ fsq-agent run --platform web --strict --case-yaml path/to/case.codex.yaml
 
 **Output:** `screenshots` + `UI snapshots` + `verification report` + `replayable .codex.yaml`
 
+### Control Plane
+
+Launch the local browser Control Plane for platform readiness, target and case discovery, Explore runs, Strict Replay, and live evidence:
+
+```bash
+fsq-agent control-plane
+```
+
+It listens on `127.0.0.1:8879` and opens a browser by default. Use `--host`, `--port`, and `--no-open-browser` to override those defaults. A wheel installation includes the compiled frontend and needs no Node.js runtime. From a source checkout, run `npm ci && npm run build` before starting the Control Plane.
+
 ---
 
 ## Supported Platforms

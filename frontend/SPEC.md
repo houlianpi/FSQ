@@ -17,8 +17,9 @@ This parent module does not own child application behavior or Python HTTP/runtim
 ## Public Interface
 
 - `npm run dev` starts the Vite development server for frontend entries and proxies configured Playground API paths to `FSQ_PLAYGROUND_API_ORIGIN`, defaulting to `http://127.0.0.1:8878`.
-- `npm run build` compiles all configured page entries into `fsq_agent/playground/static`.
+- `npm run build` compiles all configured page entries through the untracked `.frontend-dist` staging directory and distributes each entry into its owning Python package static directory.
 - `frontend/playground/SPEC.md` defines the Playground browser application's public behavior and source boundary.
+- `frontend/control-plane/SPEC.md` defines the Control Plane browser application's public behavior and source boundary.
 
 ## Internal Structure
 
@@ -26,7 +27,10 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - `../package-lock.json`: Complete locked npm dependency graph.
 - `../vite.config.js`: Multi-page entry configuration, development API proxying, and production output mapping.
 - `playground/`: Independently specified Playground browser application.
+- `control-plane/`: Independently specified Control Plane browser application.
+- `../.frontend-dist/`: Untracked temporary Vite build staging.
 - `../fsq_agent/playground/static/`: Untracked generated build output consumed by Python packaging and production static serving; it is not authored frontend source.
+- `../fsq_agent/control_plane/static/`: Untracked generated build output consumed by Python packaging and production static serving; it is not authored frontend source.
 
 ## Frontend Architecture
 
@@ -39,11 +43,11 @@ This parent module does not own child application behavior or Python HTTP/runtim
 
 - Locked installation or Vite compilation failures fail the frontend build; the workspace does not fall back to vendored or remote browser bundles.
 - Missing or incompatible browser dependency exports fail during compilation rather than degrading at browser runtime.
-- Source-checkout production startup behavior for missing generated assets is owned by `fsq_agent/playground/SPEC.md`.
+- Source-checkout production startup behavior for missing generated assets is owned by the Python module that serves each generated entry.
 
 ## Verification Scope
 
-- A locked npm install and Vite build produce the configured page entry and hashed assets under the package static root.
+- A locked npm install and Vite build produce all configured page entries and hashed assets under their owning package static roots.
 - The npm manifest and lock file remain synchronized, and CI exercises the supported Node.js release lines.
 - Generated assets, third-party bundles, and `node_modules` remain untracked.
 - Installed-wheel verification confirms generated frontend assets are packaged without requiring Node.js at runtime.
