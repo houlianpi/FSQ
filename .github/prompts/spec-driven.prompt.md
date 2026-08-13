@@ -14,7 +14,7 @@ Read these files before acting:
 - `.github/skills/python-architecture/SKILL.md` when the work touches Python code
 - `.github/skills/spec-implementation-audit/SKILL.md` before claiming completion
 
-This prompt applies only to project development. If the input changes only workflow-control files, stop and explain that a clear ordinary edit request is sufficient.
+This prompt applies only to project development. If the input changes only workflow-control files, stop and explain that a clear ordinary edit request is sufficient. Do the same when every non-workflow path is verified to be both untracked and ignored by Git and the requested writes are local-only. A tracked file does not qualify even if it matches an ignore rule, and changes to ignore rules follow normal project authorization.
 
 Read the input, current root/module `SPEC.md` files, and enough implementation evidence to determine whether the requested change requires a SPEC delta. Do not rely on a user-supplied `no-spec-delta` label.
 

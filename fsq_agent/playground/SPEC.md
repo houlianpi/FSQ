@@ -9,7 +9,7 @@ The authored browser application and browser-local interaction state are owned b
 ## Dependencies
 
 - `models`: Uses `Task`, `TaskResult`, `RunEvent`, report artifacts, and shared configuration/error models.
-- `config`: Loads settings and applies the same runtime/provider/strict validation policy used by CLI entry points.
+- `config`: Loads startup settings, refreshes only the user-provider portion at each complete execution boundary, and applies the same runtime/provider/strict validation policy used by CLI entry points.
 - `providers`: Builds the provider-backed AI assertion evaluator used by configured dynamic and strict execution.
 - `agent`: Runs dynamic goal/raw-reference tasks through `FsqAgent.run` and receives live events through an event sink.
 - `fsq`: Loads strict FSQ YAML cases and converts them into executable steps for strict mode.
@@ -59,6 +59,8 @@ Initial HTTP API:
 
 `POST /execute` accepts exactly one of `goal`, `caseYamlPath`, or `strictCaseYamlPath`. `goal` constructs a dynamic `Task` equivalent to CLI `--goal`. `caseYamlPath` resolves against `settings.cases.dir` first, then the current working directory, reads the complete UTF-8 file as raw text, and constructs a dynamic raw-case reference task equivalent to CLI non-strict `--case-yaml`; it must not parse YAML into strict executable steps. `strictCaseYamlPath` resolves the same way and executes the complete strict lifecycle through the shared strict lifecycle service and active platform harness. Lifecycle order is config before hooks, case before hooks, main commands, case after hooks, then config after hooks. Lifecycle and main steps share one report and evidence manifest. Playground dynamic execution should attempt post-run recording with `allow_failure=True`, matching CLI `--record --record-on-failure`; strict YAML execution does not record again.
 
+At the beginning of every accepted `/execute`, Playground copies its startup settings and refreshes only the user-provider snapshot before validating or constructing provider-dependent runtime objects. The server's selected platform, active target/session metadata, workspace, cases, output paths, and all other runtime policy remain unchanged. The refreshed snapshot is frozen for that complete execution; Config changes do not alter a preparing/running/finalizing task.
+
 Lifecycle `runCase` uses strict path resolution and recursion detection, and repeated actions preserve authored order. Before-hook failure skips the remaining before/main work as appropriate, while after hooks still execute. Windows `runShell` uses PowerShell; other platforms use the local system shell. Playground cancellation applies throughout lifecycle execution.
 
 `PUT /yaml/input/lifecycle` is a source-editing operation, not an execution path. Each lifecycle field is represented as one ordered list of `runCase`/`runShell` actions; action types may repeat. Playground validates each row through shared FSQ action/hook models and serializes each row as one single-action YAML list item. It must not resolve `runCase` paths, run shell commands, adapt command steps, or execute lifecycle hooks. The server rejects saves while a task is running. The revision is a SHA-256 digest of the exact UTF-8 source bytes returned by `GET /yaml/input`; a mismatch returns `409` without modifying the source.
@@ -68,7 +70,7 @@ Lifecycle `runCase` uses strict path resolution and recursion detection, and rep
 Shared playground behavior:
 
 - Runtime info reports the active platform and safe backend metadata.
-- Dynamic and strict execution use the same runtime secret store semantics as CLI execution. Playground startup/settings loading may report safe runtime secret presence warnings by environment variable name, but must not expose secret values. Restarting the playground remains the way to pick up `.env` changes.
+- Dynamic and strict execution use the same runtime secret store semantics as CLI execution. Playground startup/settings loading may report safe runtime secret presence warnings by environment variable name, but must not expose secret values. Non-provider `.env` changes still require restart; saved Provider changes are captured by the next `/execute` without restart.
 - `/execute`, progress polling, screenshots, replay frames/video, and report lookup route through the active platform execution path.
 - Strict execution parses YAML through the active platform registry snapshot containing inherited CommonTools plus active PlatformTools. Authored command names resolve through canonical capability names and active `fsq_command` replay aliases.
 - Strict execution always uses the shared lifecycle service, including cases without hooks. Lifecycle, child, and main steps share progress, evidence, report, preview, and replay behavior.
@@ -110,7 +112,7 @@ macOS playground behavior:
 - `_state.py`: In-memory session/task state, one-task lock, progress event buffering with optional sequence-window projection, final result summaries, and request id generation.
 - `_android.py`: ADB discovery, setup schema generation, Android session metadata, and screenshot helper boundaries.
 - `_recording.py`: Playground-owned dynamic post-run recording adapter around package-private `fsq_agent._strict_case_recording`, including recording failure normalization.
-- `_execution.py`: Dynamic goal/raw-case execution adapter around `FsqAgent.run`, strict YAML execution adapter around core runner contracts, platform-dispatching harness/backend construction, configured post-action delay settings, event capture, result/report shaping, recording, and error normalization.
+- `_execution.py`: Provider-only settings refresh at the complete-task boundary, dynamic goal/raw-case execution adapter around `FsqAgent.run`, strict YAML execution adapter around core runner contracts, platform-dispatching harness/backend construction, configured post-action delay settings, event capture, result/report shaping, recording, and error normalization.
 - `static/`: Untracked Vite-generated production assets included as Python package data and served by the Playground HTTP server. Authored source ownership is defined by `frontend/playground/SPEC.md`.
 - `SPEC.md`: Module design.
 
@@ -153,6 +155,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 ### Execution and Ownership
 
 - Goal, YAML, and Strict YAML preserve the corresponding CLI execution semantics: dynamic goal task construction, non-strict raw UTF-8 YAML reference material, and registry-backed deterministic strict execution with core evidence reporting.
+- Each `/execute` captures the latest complete Provider snapshot while preserving startup platform/session/workspace/path policy. Active tasks never change Provider in place.
 - Capability declaration and discovery remain bootstrap concerns. Playground consumes validated registry metadata, public execution APIs, and normalized results rather than decorator internals or platform action catalogs.
 - Completed dynamic runs use post-run recording with `allow_failure=True`; recording failure does not change execution status.
 - Authored browser source and npm dependencies are owned by `frontend/SPEC.md` and `frontend/playground/SPEC.md`. The Python package owns production serving of generated assets; generated bundles are package data rather than authored or tracked source.

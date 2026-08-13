@@ -6,6 +6,7 @@ import base64
 import json
 import subprocess
 import time
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -19,6 +20,7 @@ from fsq_agent.control_plane._evidence import UI_SNAPSHOT_LIMIT_BYTES, EvidenceP
 from fsq_agent.control_plane._execution import _run_explore, _run_strict, prepare_run
 from fsq_agent.control_plane._readiness import provider_readiness, readiness
 from fsq_agent.control_plane._replay import read_replay_video, replay_video_metadata, store_replay_video
+from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
 from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
@@ -69,6 +71,23 @@ def _wait_for_terminal(url: str) -> dict[str, object]:
             return snapshot
         time.sleep(0.01)
     raise AssertionError("Control Plane run did not reach a terminal state")
+
+
+@pytest.mark.parametrize("disconnect_error", [ConnectionAbortedError, ConnectionResetError, BrokenPipeError])
+def test_request_handler_closes_connection_when_client_disconnects(
+    monkeypatch: pytest.MonkeyPatch,
+    disconnect_error: type[OSError],
+) -> None:
+    def raise_disconnect(_handler: BaseHTTPRequestHandler) -> None:
+        raise disconnect_error()
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, "handle_one_request", raise_disconnect)
+    handler = object.__new__(_RequestHandler)
+    handler.close_connection = False
+
+    handler.handle_one_request()
+
+    assert handler.close_connection is True
 
 
 def test_state_holds_single_active_task_through_cancellation() -> None:
@@ -248,8 +267,8 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
         def close_sync(self) -> None:
             captured["closed"] = True
 
-    def prepare(_settings, *, interactive_auth: bool):
-        captured["interactive"] = interactive_auth
+    def prepare(_settings):
+        captured["prepared"] = True
         return Session()
 
     monkeypatch.setattr("fsq_agent.control_plane._readiness.prepare_model_provider_session", prepare)
@@ -257,7 +276,7 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
     result = provider_readiness(_settings(tmp_path))
 
     assert result["status"] == "ready"
-    assert captured == {"interactive": False, "closed": True}
+    assert captured == {"prepared": True, "closed": True}
 
 
 def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

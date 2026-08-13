@@ -14,7 +14,7 @@ export const CONTROL_PLANE_NAVIGATION: readonly NavigationItem[] = [
   { id: 'workspace', label: 'Workspace', icon: 'workspace', available: false, section: 'primary' },
   { id: 'devices', label: 'Devices', icon: 'devices', available: true, section: 'primary' },
   { id: 'runs', label: 'Runs', icon: 'runs', available: false, section: 'primary' },
-  { id: 'config', label: 'Config', icon: 'config', available: false, section: 'footer' },
+  { id: 'config', label: 'Config', icon: 'config', available: true, section: 'footer' },
   { id: 'settings', label: 'Settings', icon: 'settings', available: false, section: 'footer' },
 ] as const;
 

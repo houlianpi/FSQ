@@ -15,6 +15,12 @@ it.each([
   ['replay frames', () => controlPlaneClient.replayFrames('request-1')],
   ['replay video', () => controlPlaneClient.replayVideo('request-1')],
   ['replay upload', () => controlPlaneClient.uploadReplayVideo('request-1', 'video/webm', 'encoded')],
+  ['config', () => controlPlaneClient.config()],
+  ['Azure config save', () => controlPlaneClient.saveAzureConfig({ baseUrl: 'https://example.test', modelName: 'model', apiKey: 'key' })],
+  ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow('model')],
+  ['GitHub device-flow status', () => controlPlaneClient.githubDeviceFlow('auth-1')],
+  ['GitHub device-flow cancellation', () => controlPlaneClient.cancelGithubDeviceFlow('auth-1')],
+  ['connection test', () => controlPlaneClient.testConnection()],
 ])('rejects a malformed successful %s response', async (_name, request) => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({}), {
     status: 200,
@@ -33,6 +39,29 @@ it('requires step artifacts to contain readable content or an item error', async
     artifacts: [{ kind: 'screenshot', phase: 'before', timestamp: null, mimeType: 'image/png' }],
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   await expect(controlPlaneClient.stepArtifacts('request-1', 'step-1')).rejects.toMatchObject({ body: expect.objectContaining({ code: 'invalid_response' }) });
+});
+
+it('accepts Config responses without admitting GitHub token fields into the contract', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await expect(controlPlaneClient.config()).resolves.toEqual({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true },
+  });
+});
+
+it('rejects a GitHub Config projection containing an unexpected token field', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true, accessToken: 'must-not-enter-state' },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await expect(controlPlaneClient.config()).rejects.toMatchObject({
+    body: expect.objectContaining({ code: 'invalid_response' }),
+  });
 });
 
 it('rejects malformed stream snapshots and non-image screen responses', async () => {

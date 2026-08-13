@@ -1,39 +1,37 @@
 ---
 name: requirements-to-design
-description: "Optional internal design rules loaded only by the explicit /requirements-to-design prompt. Produces a confirmed project design document without changing SPEC or implementation files."
+description: "Optional internal design rules loaded only by the explicit /requirements-to-design prompt. Produces a confirmed design document for any requested change without changing SPEC or implementation files."
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Requirements To Design
 
-Turn an explicitly supplied project modification into a reviewed design document. This optional internal skill implements the `/requirements-to-design` prompt; it clarifies project intent and records design decisions as higher-quality `/spec-driven` input, but it does not update `SPEC.md` files or implement code and is not a prerequisite for project modification.
+Turn an explicitly supplied requested change into a reviewed design document. This optional internal skill implements the `/requirements-to-design` prompt and is available whenever the user voluntarily invokes it, including for workflow-control maintenance and local-only ignored files that do not require SDD. It does not update `SPEC.md` files, implement changes, or become a prerequisite for modification. For project development that requires SDD, the confirmed design is higher-quality `/spec-driven` input.
 
 ## Invocation Gate
 
-Load this skill only when the user explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with a requested project modification. Ordinary discussion, explanation, review, planning, natural-language project edit requests, skill-name mentions, and prose approvals must not trigger this skill. If the explicit prompt or its request is absent, stop without writing.
-
-This skill does not handle workflow-control-only maintenance. If the request changes only `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/prompts/**`, or `.github/skills/**`, explain that a clear ordinary edit request is sufficient and stop without writing a design document.
+Load this skill only when the user explicitly invokes `.github/prompts/requirements-to-design.prompt.md` with a requested change. Ordinary discussion, explanation, review, planning, natural-language edit requests, skill-name mentions, and prose approvals must not trigger this skill. If the explicit prompt or its request is absent, stop without writing. An explicit invocation is valid for any requested change; do not reject it because downstream implementation is exempt from SDD.
 
 ## Hard Gate
 
-Do not write implementation code. Do not update root or module `SPEC.md` files. The user-confirmed design document is the only permitted repository write. The terminal state is that confirmed document and a prompt for the user to invoke `/spec-driven` explicitly with its path.
+Do not write implementation code. Do not update root or module `SPEC.md` files. The user-confirmed design document is the only permitted repository write. The terminal state is that confirmed document and the implementation authorization appropriate to the requested change: explicit `/spec-driven` invocation for project development that requires SDD, or a clear ordinary implementation request for an exempt change.
 
 ## Process
 
 ### 1. Explore Context
 
-Read enough local context before detailed questions:
+Read enough relevant local context before detailed questions:
 
-- Root `SPEC.md` and relevant module `SPEC.md` files.
-- `AGENTS.md`, `CLAUDE.md`, pyproject metadata, package layout, tests, and recent docs when useful.
+- Root `SPEC.md` and relevant module `SPEC.md` files for project development when useful.
+- `AGENTS.md`, `CLAUDE.md`, workflow-control files, project metadata, package layout, tests, target local files, and recent docs when useful.
 - For frontend work, the parent frontend SPEC, affected child application SPEC, root npm/Vite metadata, and backend specs that own consumed transport contracts when useful.
 
-If no root `SPEC.md` exists, note that the target repository must create one through the later `/spec-driven` project SPEC phase before implementation begins.
+If no root `SPEC.md` exists and downstream project implementation requires SDD, note that the target repository must create one through the later `/spec-driven` project SPEC phase before implementation begins.
 
 ### 2. Check Scope
 
-If the request spans multiple independent project subsystems, stop and propose decomposition. Each independent subsystem should get its own design document and later SPEC update cycle.
+If the request spans multiple independent change areas, stop and propose decomposition. Each independent area should get its own design document and appropriate implementation authorization.
 
 ### 3. Ask Clarifying Questions
 
@@ -87,7 +85,7 @@ Include:
 - Proposed design.
 - Python architecture level and rationale when the project is Python.
 - Frontend architecture level and rationale when the work affects a frontend application.
-- Affected root/module specs expected to change.
+- SDD applicability and affected root/module specs, or why downstream implementation is exempt.
 - Open questions resolved during discussion.
 - Verification expectations.
 
@@ -97,7 +95,7 @@ Before handoff, fix:
 
 - Placeholder text such as `TBD` or `TODO`.
 - Internal contradictions.
-- Scope too broad for one SPEC update cycle.
+- Scope too broad for one design and implementation cycle.
 - Ambiguous requirements that could be implemented two ways.
 - Hidden implementation assumptions that should be explicit.
 
@@ -107,19 +105,29 @@ Ask the user to review the written design document. Do not proceed until the use
 
 ### 9. Handoff
 
-After confirmation, end with exactly this shape:
+After confirmation, use the applicable handoff.
+
+For project development that requires SDD:
 
 ```text
 Design document: docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
 Next step: invoke /spec-driven with this design document path.
 ```
 
+For workflow-control maintenance or verified local-only writes that are exempt from SDD:
+
+```text
+Design document: docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md
+Next step: submit a clear ordinary implementation request; /spec-driven is not required for this exempt change.
+```
+
 ## Boundaries
 
-- The design document records the confirmed requested project change but is not the implementation source of truth.
-- After any required project `SPEC.md` updates are confirmed, or `/spec-driven` independently validates that no delta is needed, implementation must follow current confirmed specs, not chat history.
+- The design document records the confirmed requested change but does not itself authorize implementation.
+- For project development that requires SDD, implementation must follow current confirmed specs after required `SPEC.md` updates are confirmed or `/spec-driven` independently validates that no delta is needed.
+- For an exempt change, a clear ordinary implementation request is sufficient and implementation follows the confirmed design plus current workflow or local constraints.
 - Do not invoke an implementation plan as the next step.
-- Do not start implementation directly from the design document without an explicit `/spec-driven <confirmed-design-document-path>` invocation.
+- Do not start implementation directly from the design document without the applicable authorization: explicit `/spec-driven <confirmed-design-document-path>` for project development that requires SDD, or a clear ordinary implementation request for an exempt change.
 
 ## Frontend Architecture Integration
 

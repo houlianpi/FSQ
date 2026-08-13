@@ -155,125 +155,34 @@ def test_control_plane_command_normalizes_startup_errors(
     assert "Aborted!" in result.output
 
 
-def test_init_provider_copilot_writes_env_and_prepares_interactive_session(
+def test_init_rejects_provider_before_provider_or_workspace_side_effects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _config(tmp_path)
-    monkeypatch.delenv("FSQ_LLM_PROVIDER", raising=False)
-    captured: dict[str, object] = {}
-
-    class FakeSession:
-        def close_sync(self) -> None:
-            captured["closed"] = True
-
-    def fake_prepare_model_provider_session(settings, *, interactive_auth: bool = True):
-        captured["provider"] = settings.openai_agents.provider
-        captured["workspace"] = settings.workspace.root_dir
-        captured["interactive_auth"] = interactive_auth
-        return FakeSession()
-
-    monkeypatch.setattr(
-        "fsq_agent.cli._llm_setup.prepare_model_provider_session",
-        fake_prepare_model_provider_session,
-    )
+    user_root = tmp_path / "user"
+    monkeypatch.setenv("HOME", str(user_root))
+    monkeypatch.setenv("USERPROFILE", str(user_root))
 
     result = CliRunner().invoke(main, ["init", "--platform", "android", "--provider", "github_copilot"])
 
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == "FSQ_LLM_PROVIDER=github_copilot\n"
-    assert (tmp_path / ".fsq-agent-workspace" / ".fsq-agent-workspace").exists()
-    assert captured == {
-        "provider": "github_copilot",
-        "workspace": tmp_path / ".fsq-agent-workspace",
-        "interactive_auth": True,
-        "closed": True,
-    }
+    assert result.exit_code != 0
+    assert "No such option: --provider" in result.output
+    assert not (tmp_path / ".env").exists()
+    assert not (tmp_path / ".fsq-agent-workspace").exists()
+    assert not (user_root / ".fsq").exists()
 
 
 def test_init_without_provider_does_not_update_env_or_use_interactive_auth(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _config(tmp_path)
-    monkeypatch.delenv("FSQ_LLM_PROVIDER", raising=False)
-    captured: dict[str, object] = {}
-
-    def fake_prepare_model_provider_session(settings, *, interactive_auth: bool = True):
-        captured["provider"] = settings.openai_agents.provider
-        captured["interactive_auth"] = interactive_auth
-        raise AssertionError("init without --provider must not prepare a provider session")
-
-    monkeypatch.setattr(
-        "fsq_agent.cli._llm_setup.prepare_model_provider_session",
-        fake_prepare_model_provider_session,
-    )
 
     result = CliRunner().invoke(main, ["init", "--platform", "android"])
 
     assert result.exit_code == 0, result.output
     assert not (tmp_path / ".env").exists()
     assert (tmp_path / ".fsq-agent-workspace" / ".fsq-agent-workspace").exists()
-    assert captured == {}
-
-
-def test_init_provider_azure_prompts_writes_env_and_does_not_echo_secret(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _config(tmp_path)
-    for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
-    captured: dict[str, object] = {}
-
-    class FakeSession:
-        def close_sync(self) -> None:
-            captured["closed"] = True
-
-    def fake_prepare_model_provider_session(settings, *, interactive_auth: bool = True):
-        captured["provider"] = settings.openai_agents.provider
-        captured["base_url"] = settings.openai_agents.base_url
-        captured["model"] = settings.openai_agents.model
-        captured["interactive_auth"] = interactive_auth
-        return FakeSession()
-
-    monkeypatch.setattr(
-        "fsq_agent.cli._llm_setup.prepare_model_provider_session",
-        fake_prepare_model_provider_session,
-    )
-
-    result = CliRunner().invoke(
-        main,
-        ["init", "--platform", "android", "--provider", "azure_openai"],
-        input="https://edgeqa-resource.cognitiveservices.azure.com\ngpt-5.4\nsecret-key\n",
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "secret-key" not in result.output
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == (
-        "FSQ_LLM_PROVIDER=azure_openai\nAZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=secret-key\n"
-    )
-    assert captured == {
-        "provider": "azure_openai",
-        "base_url": "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/",
-        "model": "gpt-5.4",
-        "interactive_auth": True,
-        "closed": True,
-    }
-
-
-def test_init_provider_reports_env_io_errors_concisely(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(tmp_path)
-
-    def fake_setup_llm_provider(*, provider: str) -> None:
-        raise OSError("Unable to write .env file: .env")
-
-    monkeypatch.setattr("fsq_agent.cli._main.setup_llm_provider", fake_setup_llm_provider)
-
-    result = CliRunner().invoke(main, ["init", "--platform", "android", "--provider", "github_copilot"])
-
-    assert result.exit_code != 0
-    assert "Error: Unable to write .env file: .env" in result.output
 
 
 def test_removed_setup_command_fails() -> None:
