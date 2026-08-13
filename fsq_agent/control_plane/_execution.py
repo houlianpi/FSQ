@@ -189,6 +189,7 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
                 },
             )
         projection.load_persisted_manifest()
+        projection.load_persisted_step_ids()
         state.finish(
             request_id,
             status=result.status,

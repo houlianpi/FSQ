@@ -110,6 +110,38 @@ export interface UiSnapshotResponse {
   format: string;
   content: string;
 }
+export interface StepArtifact {
+  kind: 'screenshot' | 'ui_snapshot';
+  phase: string;
+  timestamp: string | null;
+  mimeType: string;
+  format?: string;
+  contentBase64?: string;
+  content?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface StepArtifactsResponse {
+  available: boolean;
+  stepId: string;
+  artifacts: StepArtifact[];
+  message: string | null;
+}
+export interface ReplayFrame {
+  index: number;
+  timestamp: number | null;
+  mimeType: string;
+  contentBase64?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface ReplayFramesResponse { available: boolean; frames: ReplayFrame[]; message: string | null }
+export interface ReplayVideoResponse {
+  available: boolean;
+  videoUrl: string | null;
+  mimeType?: string;
+  sizeBytes?: number;
+}
 
 export interface RequestResource<T> {
   state: LoadState;

@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ControlPlaneApiError, controlPlaneClient, toApiError } from '../../../api/controlPlaneClient';
 import type { UiSnapshotResponse } from '../../../api/types';
+import { formatUiTreeContent, isStructuredXmlTree } from '../replay/uiTreeFormat';
+
+function UiTreeContent({ content }: { content: string }) {
+  const formatted = formatUiTreeContent(content);
+  const structured = isStructuredXmlTree(content);
+  return <pre aria-label={structured ? 'Structured XML UI Tree' : undefined}>{formatted}</pre>;
+}
 
 export function UiSnapshotView({ requestId, revision }: { requestId: string | null; revision: number }) {
   const [state, setState] = useState<'empty' | 'loading' | 'available' | 'unavailable' | 'oversized' | 'error'>('empty');
@@ -18,7 +25,7 @@ export function UiSnapshotView({ requestId, revision }: { requestId: string | nu
     });
     return () => controller.abort();
   }, [requestId, revision]);
-  if (state === 'available' && snapshot) return <div className="ui-snapshot"><div className="evidence-meta">Revision {snapshot.revision} · {snapshot.format}{snapshot.stepId ? ` · ${snapshot.stepId}` : ''}</div><pre>{snapshot.content}</pre></div>;
+  if (state === 'available' && snapshot) return <div className="ui-snapshot"><div className="evidence-meta">Revision {snapshot.revision} · {snapshot.format}{snapshot.stepId ? ` · ${snapshot.stepId}` : ''}</div><UiTreeContent content={snapshot.content} /></div>;
   const copy = {
     empty: ['UI Tree not yet captured', 'The latest normalized UI snapshot will appear after evidence capture.'],
     loading: ['Loading UI Tree', 'Reading the latest snapshot revision…'],
