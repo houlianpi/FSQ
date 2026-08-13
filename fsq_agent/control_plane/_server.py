@@ -18,16 +18,21 @@ from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases
 from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
-from ._evidence import EvidenceProjection, read_screenshot, read_ui_snapshot, safe_exception_message, safe_text
+from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
 from ._provider_auth import ProviderAuthState
 from ._readiness import load_control_plane_settings, readiness
+from ._replay import read_replay_video, replay_video_metadata, store_replay_video
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
 
 _API_PREFIX = "/api/control-plane"
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
-_MAX_BODY_BYTES = 1024 * 1024
+_MAX_BODY_BYTES = 36 * 1024 * 1024
+
+
+class _RunNotTerminalError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -103,6 +108,8 @@ class ControlPlaneServer:
                 return 200, discover_cases(settings), dict(_JSON_HEADERS)
             request_id, suffix = _run_route(path)
             if suffix == "":
+                if self.state.snapshot(request_id).get("terminal"):
+                    self._hydrate_evidence(request_id)
                 return 200, self.state.snapshot(request_id), dict(_JSON_HEADERS)
             if suffix == "/screen":
                 self._hydrate_evidence(request_id)
@@ -115,6 +122,15 @@ class ControlPlaneServer:
                 artifact, _ = self.state.artifact(request_id, "ui_snapshot")
                 payload, headers = read_ui_snapshot(artifact)
                 return 200, payload, {**_JSON_HEADERS, **headers}
+            if suffix.startswith("/step-artifacts/"):
+                run_dir = self._terminal_run_dir(request_id)
+                step_id = unquote(suffix.removeprefix("/step-artifacts/")).strip()
+                return 200, read_step_artifacts(run_dir, step_id), dict(_JSON_HEADERS)
+            if suffix == "/replay":
+                return 200, read_replay_frames(self._terminal_run_dir(request_id)), dict(_JSON_HEADERS)
+            if suffix == "/replay-video":
+                video_url = f"{_API_PREFIX}/runs/{request_id}/replay-video/file"
+                return 200, replay_video_metadata(self._terminal_run_dir(request_id), video_url), dict(_JSON_HEADERS)
             if suffix == "/stream":
                 return 400, _error("sse_required", "Use an SSE client for the stream endpoint.", "Connect with EventSource."), dict(_JSON_HEADERS)
             return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
@@ -126,6 +142,8 @@ class ControlPlaneServer:
             return 404, _error("evidence_unavailable", str(exc), "Wait for evidence capture or select another evidence view."), dict(_JSON_HEADERS)
         except OverflowError as exc:
             return 413, _error("evidence_too_large", str(exc), "Inspect the persisted artifact outside the Control Plane display."), dict(_JSON_HEADERS)
+        except _RunNotTerminalError as exc:
+            return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish."), dict(_JSON_HEADERS)
         except (ValueError, FsqAgentError) as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry."), dict(_JSON_HEADERS)
         except OSError as exc:
@@ -148,6 +166,9 @@ class ControlPlaneServer:
             return self._start_run(body)
         try:
             request_id, suffix = _run_route(path)
+            if suffix == "/replay-video":
+                stored = store_replay_video(self._terminal_run_dir(request_id), body.get("mimeType"), body.get("videoBase64"))
+                return 200, {**stored, "videoUrl": f"{_API_PREFIX}/runs/{request_id}/replay-video/file"}
             if suffix != "/cancel":
                 return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path.")
             snapshot = self.state.request_cancel(request_id)
@@ -158,8 +179,15 @@ class ControlPlaneServer:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request.")
         except ValueError as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry.")
+        except OverflowError as exc:
+            return 413, _exception_error("body_too_large", exc, "Upload a smaller replay video.")
+        except _RunNotTerminalError as exc:
+            return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish.")
         else:
             return 200, snapshot
+
+    def handle_replay_video_file(self, request_id: str, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
+        return read_replay_video(self._terminal_run_dir(request_id), range_header)
 
     def handle_put(
         self,
@@ -277,13 +305,31 @@ class ControlPlaneServer:
     def _hydrate_evidence(self, request_id: str) -> None:
         artifact, run_id = self.state.artifact(request_id, "screenshot")
         ui_artifact, _ = self.state.artifact(request_id, "ui_snapshot")
-        if (artifact and ui_artifact) or not run_id:
+        if not run_id:
             return
-        snapshot = self.state.snapshot(request_id)
-        settings = self._load_settings(str(snapshot["platform"]))
-        projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
+        run_dir = self.state.run_directory(request_id)
+        if isinstance(run_dir, Path):
+            projection = EvidenceProjection(self.state, request_id, run_dir.parent)
+        else:
+            snapshot = self.state.snapshot(request_id)
+            settings = self._load_settings(str(snapshot["platform"]))
+            projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
         projection.bind_run(run_id)
-        projection.load_persisted_manifest()
+        if not (artifact and ui_artifact):
+            projection.load_persisted_manifest()
+        projection.load_persisted_step_ids()
+
+    def _terminal_run_dir(self, request_id: str) -> Path:
+        snapshot = self.state.snapshot(request_id)
+        if not snapshot.get("terminal"):
+            raise _RunNotTerminalError("Run evidence is available after the run reaches a terminal state.")
+        run_id = snapshot.get("runId")
+        if not isinstance(run_id, str) or not run_id:
+            raise FileNotFoundError("Run artifacts are unavailable.")
+        run_dir = self.state.run_directory(request_id)
+        if not isinstance(run_dir, Path) or not run_dir.is_dir():
+            raise FileNotFoundError("Run artifacts are unavailable.")
+        return run_dir
 
     def _entry_path(self) -> Path | None:
         candidates = (self._static_root / "control-plane" / "index.html", self._static_root / "index.html")
@@ -308,6 +354,17 @@ class _RequestHandler(BaseHTTPRequestHandler):
             request_id, suffix = _run_route_or_empty(parsed.path)
             if request_id and suffix == "/stream":
                 self._send_sse(request_id, query)
+                return
+            if request_id and suffix == "/replay-video/file":
+                try:
+                    status, body, headers = self.server.control_plane.handle_replay_video_file(request_id, self.headers.get("Range"))
+                    self._send(status, body, headers)
+                except RequestNotFoundError:
+                    self._send(404, _error("request_not_found", "Run request not found.", "Reload Control Plane."), _JSON_HEADERS)
+                except FileNotFoundError as exc:
+                    self._send(404, _error("evidence_unavailable", str(exc), "Wait for replay generation."), _JSON_HEADERS)
+                except (_RunNotTerminalError, ValueError) as exc:
+                    self._send(409 if isinstance(exc, _RunNotTerminalError) else 416, _error("invalid_range", str(exc), "Retry with a valid range after completion."), _JSON_HEADERS)
                 return
             status, body, headers = self.server.control_plane.handle_get(parsed.path, query, peer_host=self.client_address[0])
             self._send(status, body, headers)

@@ -11,6 +11,10 @@ it.each([
   ['cancel', () => controlPlaneClient.cancelRun('request-1')],
   ['snapshot', () => controlPlaneClient.runSnapshot('request-1')],
   ['ui snapshot', () => controlPlaneClient.uiSnapshot('request-1')],
+  ['step artifacts', () => controlPlaneClient.stepArtifacts('request-1', 'step-1')],
+  ['replay frames', () => controlPlaneClient.replayFrames('request-1')],
+  ['replay video', () => controlPlaneClient.replayVideo('request-1')],
+  ['replay upload', () => controlPlaneClient.uploadReplayVideo('request-1', 'video/webm', 'encoded')],
   ['config', () => controlPlaneClient.config()],
   ['Azure config save', () => controlPlaneClient.saveAzureConfig({ baseUrl: 'https://example.test', modelName: 'model', apiKey: 'key' })],
   ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow('model')],
@@ -27,6 +31,14 @@ it.each([
     status: 200,
     body: expect.objectContaining({ code: 'invalid_response' }),
   });
+});
+
+it('requires step artifacts to contain readable content or an item error', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    available: true, stepId: 'step-1', message: null,
+    artifacts: [{ kind: 'screenshot', phase: 'before', timestamp: null, mimeType: 'image/png' }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  await expect(controlPlaneClient.stepArtifacts('request-1', 'step-1')).rejects.toMatchObject({ body: expect.objectContaining({ code: 'invalid_response' }) });
 });
 
 it('accepts Config responses without admitting GitHub token fields into the contract', async () => {

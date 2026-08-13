@@ -12,6 +12,7 @@ The entry does not own backend validation, Provider persistence/auth protocol, t
 - TypeScript is the authored language and type-check boundary.
 - Vite and the root Vite React plugin compile the entry within the repository multi-page build.
 - Vitest, Testing Library, and a DOM test environment verify focused state and component behavior.
+- `ts-ebml` and browser Canvas, `captureStream`, `MediaRecorder`, image, blob, and media APIs provide browser-side seekable WebM replay generation and playback.
 - Browser built-ins provide fetch, `AbortController`, `EventSource`, image loading, and accessibility semantics.
 - `/api/control-plane/*` is the only backend contract consumed by this entry.
 
@@ -95,21 +96,28 @@ Starting a run replaces the composer with:
 
 On desktop, the run workspace is bounded to the viewport below the title bar. The operation and evidence cards keep their headers and outer status/action regions visible while timeline history and the active evidence surface scroll independently. Appended run events do not increase document height.
 
-The timeline preserves every server event in chronological order and groups only contiguous events with the same phase; a missing phase is presented as Run, and a repeated phase separated by another phase forms a new group. The latest/current phase defaults expanded and older phases default collapsed while explicit user disclosure choices for historical groups are preserved. Group summaries are derived presentation and do not replace or fabricate events.
+The timeline preserves every server event in sequence order as one flat list of event cards. It does not add phase group containers, phase headers, group summaries, or group-level disclosure controls. Each event card preserves its own label, safe message, status, and timestamp without replacing or fabricating events.
 
-Long safe event messages default to a bounded preview and expose per-message native expand/collapse controls. Timeline history auto-follows appended events only while its scroll position remains near the bottom. User scrolling upward pauses following, preserves the reading position, counts appended unseen events, and exposes Jump to latest; returning to the bottom or activating that control resumes following without moving keyboard focus.
+Safe event messages default to one visual line with ellipsis. A message that overflows that line exposes one icon-only down-arrow control at the right edge; activation expands the complete message and changes the control to an up arrow, and a second activation collapses it. The control is a native button with an accessible Expand/Collapse message name and explicit expanded state.
+
+Timeline history auto-follows appended events only while an active run remains near the bottom. During `preparing`, `running`, or `finalizing`, user scrolling upward pauses following, preserves the reading position, counts appended unseen events, and exposes Jump to latest. Activating Jump to latest synchronously sets the corresponding scroll region to its actual maximum scroll position, verifies bottom-follow state from the resulting geometry, clears the unseen count, removes the control, and transfers keyboard focus to that scroll region rather than leaving focus on a removed element. Returning to the bottom through ordinary scrolling also resumes following. Terminal runs never display Jump to latest regardless of preserved scroll position or focus. Logs use the same active-run-only visibility, deterministic bottom scroll, immediate-dismiss, and focus-transfer behavior for their independent scroll region.
 
 The frontend does not fabricate waiting/completed timeline steps. Live updates do not steal focus.
 
 Terminal states are success, failed, inconclusive, cancelled, and error. The truthful result summary and New run action remain visible outside the bounded timeline history. New run returns to the composer, preserves the selected platform when still valid, and focuses the primary mode input. Terminal transitions focus the result heading through deliberate focus management without forcing the timeline or Logs scroll position.
 
+After a run becomes terminal, timeline events that identify an execution step are selectable Action cards. Selecting one step highlights every timeline row representing that step and makes the right-side Screen and UI Tree tabs inspect that step without changing the active evidence tab. Selecting the same step again or activating Show run replay clears the selection. Action selection is unavailable while execution or finalization is active and events without a step id remain non-selectable.
+
 ### Live evidence
 
 The right panel exposes semantic Screen, UI Tree, and Logs tabs:
 
-- Screen loads the latest real screenshot only when its revision changes, preserves natural aspect ratio, and does not fabricate application content. Android may use device-proportioned presentation; other platforms use a neutral canvas.
-- UI Tree loads the latest normalized `ui_snapshot` only when its revision changes and displays read-only whitespace-preserving text with scrolling.
-- Logs render structured time, level, phase, tool, status, and safe message rows rather than raw JSON. The table header remains sticky in the bounded Logs scroll region. Long messages use per-row native disclosure. Logs independently auto-follow near-bottom appends, pause and count unseen rows while the user reads history, and expose Jump to latest to resume.
+- Screen shows the latest real screenshot while a run is active. After completion with no selected Action, it automatically resolves or generates the persisted run replay and displays the stored seekable WebM with native playback controls. With an Action selected, it displays that step's available Before and After screenshots as a centered side-by-side comparison in capture order; one-sided evidence is shown without an empty fabricated counterpart. Android comparisons may use device-proportioned cards; other platforms use a neutral canvas.
+- Screen evidence surfaces use a subtle grid workbench background behind screenshot, selected-Action screenshot, replay-video, and replay-generation states. Screenshot and replay-video media are constrained to the visible evidence surface with `object-fit: contain` behavior so desktop and narrow viewports can inspect the whole media without page-level clipping; overflow stays inside the evidence surface when the available viewport is smaller than the media.
+- UI Tree loads the latest normalized `ui_snapshot` while a run is active. With a terminal Action selected, it displays the available Before and After normalized snapshots as a read-only full-content diff with line-level and paired inline change highlighting; one-sided evidence remains readable and is not treated as a failed run. When a UI snapshot contains XML, the UI Tree view parses it into a readable structured tree that preserves useful element names, text-like attributes, state, and geometry signals, and falls back to raw text when XML parsing fails.
+- Logs render structured time, level, phase, tool, status, and safe message rows rather than raw JSON. The table header remains sticky in the bounded Logs scroll region. Overflowing messages use the same one-line arrow disclosure as timeline messages. Logs independently auto-follow near-bottom appends, pause and count unseen rows while the user reads history, and expose Jump to latest to resume.
+
+Replay generation is automatic after terminal completion. The browser requests persisted screenshot frames in chronological order, uses their timestamps to derive bounded display durations, renders them through Canvas and `MediaRecorder`, converts the result to a seekable WebM through `ts-ebml`, uploads it to the frozen run, and then plays only the stored range-capable video URL. An existing stored video is reused. Runs with no readable frames show an unavailable state; unsupported browser media APIs, frame failures, generation failures, upload failures, and playback failures stay local to Screen and never change the truthful run result. Object URLs, media streams, timers, and in-flight generation are cleaned up when the run, selection, or component changes.
 
 Each tab distinguishes loading, not-yet-captured, unavailable, oversized, failed, and available states. Evidence-tab failures do not replace the run result.
 
@@ -132,9 +140,12 @@ Current Devices ownership:
 - `src/features/devices/components/TargetToolbar.tsx`: platform/target/status/refresh controls supplied to the shell title bar.
 - `src/features/devices/components/OperationComposer.tsx`: Explore/Strict source input.
 - `src/features/devices/components/PreflightStatus.tsx`: readiness presentation.
-- `src/features/devices/components/RunTimeline.tsx`: source, task state, contiguous phase grouping, timeline and message disclosure, timeline scroll following, result, cancel, and new-run actions.
-- `src/features/devices/components/LiveEvidencePanel.tsx`: evidence tab composition.
-- `src/features/devices/components/ScreenView.tsx`, `UiSnapshotView.tsx`, and `RunLogsView.tsx`: evidence-kind presentation; Logs owns structured-row message disclosure, sticky-table semantics, and log scroll following.
+- `src/features/devices/components/RunTimeline.tsx`: source, task state, flat chronological event presentation, one-line message disclosure, terminal Action selection, timeline scroll following, result, cancel, and new-run actions.
+- `src/features/devices/components/LiveEvidencePanel.tsx`: evidence tab composition, selected-Action context, and run-replay restoration.
+- `src/features/devices/components/ScreenView.tsx`, `UiSnapshotView.tsx`, and `RunLogsView.tsx`: current/selected-step evidence presentation; Logs owns structured-row message disclosure, sticky-table semantics, and log scroll following.
+- `src/features/devices/components/ReplayVideoView.tsx`: terminal replay resolution, generation state, stored-video playback, and browser-resource cleanup.
+- `src/features/devices/components/StepEvidenceView.tsx`: selected-step screenshot comparison and UI-snapshot diff presentation.
+- `src/features/devices/replay/`: frame timing, Canvas/MediaRecorder capture, seekable WebM conversion, and diff helpers that remain independent from Playground source.
 - `src/features/devices/hooks/useDeviceWorkspace.ts`: page state and discovery/run commands.
 - `src/features/devices/hooks/useRunStream.ts`: sequence, SSE reconnect, and snapshot fallback.
 - `src/api/controlPlaneClient.ts`: fetch/EventSource boundary, structured errors, cancellation, and response validation.
@@ -150,7 +161,7 @@ Current Config ownership:
 
 `ControlPlaneShell` has a router-neutral page outlet and active-page callback contract and does not import Devices or Config internals. `ControlPlaneApp` owns local `devices | config` selection and supplies the active page to the shell. Durable URLs and a client router are not required.
 
-`useDeviceWorkspace` owns selected platform/target/mode/goal/case, discovery request state, active request snapshot, and selected evidence tab. Start eligibility, connection status, validated summary, and control locks are derived values. Phase/message disclosure, scroll positions, follow state, and unseen counts are local transient state owned by their timeline or Logs presentation component and are not workspace state. `useRunStream` owns transport/reconnect state but not run truth.
+`useDeviceWorkspace` owns selected platform/target/mode/goal/case, discovery request state, active request snapshot, selected evidence tab, and terminal selected-step id. Start eligibility, connection status, validated summary, and control locks are derived values. Message disclosure, scroll positions, follow state, unseen counts, loaded step artifacts, replay generation, and media resources are local transient state owned by their timeline, evidence, replay, or Logs presentation component and are not run truth. `useRunStream` owns transport/reconnect state but not run truth.
 
 Effects synchronize fetch, stream, image, and focus boundaries. Render-derived values and event-handler work are not stored or synchronized through effects. Request cancellation and generation checks prevent stale platform responses.
 
@@ -179,7 +190,7 @@ Config server state, pending request state, and the Azure draft are local to the
 
 The API client recognizes structured `code`, `message`, `action`, and optional safe `details`. User-visible errors say what happened and what action is available. They do not display tracebacks, hidden reasoning, raw internal JSON, secret values, or unnecessary local paths.
 
-Platform changes cancel stale requests. Target/case disappearance at run start is shown as server validation failure and triggers relevant refresh guidance. Stream disconnection is shown as reconnecting without changing task outcome. Screen/UI-snapshot failures stay scoped to their tabs. A restarted backend reports that the prior live session ended rather than presenting a stale running state.
+Platform changes cancel stale requests. Target/case disappearance at run start is shown as server validation failure and triggers relevant refresh guidance. Stream disconnection is shown as reconnecting without changing task outcome. Screen/UI-snapshot, selected-step artifact, replay-frame, video-generation, upload, and playback failures stay scoped to their evidence surface. A restarted backend reports that the prior live session ended rather than presenting a stale running state.
 
 Empty states direct the user to add a Provider, select/configure a platform, connect a target, provide a goal, or add a valid case. Missing evidence is not represented by a blank success panel. Config save/auth/test failures remain scoped to Config and never fabricate a configured state.
 
@@ -194,17 +205,17 @@ Empty states direct the user to add a Provider, select/configure a platform, con
 - Tab behavior uses standard selected/tab-panel relationships. Icon-only controls have accessible names.
 - Live updates preserve focus. Drawer/result/new-run focus transitions are explicit.
 - Config choice/auth/result dialogs have labelled dialog semantics, contained Tab order, Escape cancellation where cancellation is allowed, logical initial focus, and focus restoration. Copy-code and key-visibility icon controls have accessible names and tooltips.
-- Phase and message disclosure plus Jump to latest use native keyboard-operable buttons with visible focus, accessible names, `aria-expanded`/`aria-controls` where applicable, and unseen-event text that does not rely on color.
+- Message disclosure, Action selection, Show run replay, and Jump to latest use native keyboard-operable buttons with visible focus, accessible names, `aria-expanded`/`aria-pressed`/`aria-controls` where applicable, and unseen-event text that does not rely on color. Immediate Jump removal transfers focus to the labelled scroll region.
 - Motion respects `prefers-reduced-motion`; functionality does not depend on animation.
 - Screenshot alternative text identifies platform/target and evidence state.
 
 ## Verification Scope
 
 - A clean lock-file install, TypeScript check, focused frontend tests, and Vite build validate the entry.
-- Shell tests prove one centralized sidebar can render Devices and Config without feature imports; cover active/unavailable semantics, keyboard order, `aria-current`, narrow drawer, page selection, and focus restoration.
-- Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, contiguous timeline phase grouping/disclosure, long timeline/log message disclosure, independent near-bottom auto-follow/pause/unseen/resume behavior, timeline/cancel/terminal/new-run behavior, stream resume/fallback, evidence states, sticky Logs structure, tabs, accessible names, live announcements, and focus behavior.
+- Shell tests prove one centralized sidebar can render Devices and arbitrary page outlet content without Devices imports; cover active/unavailable semantics, keyboard order, `aria-current`, narrow drawer, and focus restoration.
+- Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, flat sequence-ordered timeline events, one-line overflow disclosure, active-run-only Jump visibility, exact bottom scrolling, immediate Jump dismissal/focus transfer, terminal Action selection, selected-step artifact states, screenshot comparison, UI Tree diff, replay generation/reuse/error cleanup, range-video playback, timeline/cancel/terminal/new-run behavior, stream resume/fallback, sticky Logs structure, tabs, accessible names, live announcements, and focus behavior.
+- Browser verification covers desktop viewport containment and independent panel scrolling at 1440×900 and 1280×720, narrow stacked/page-scrolling behavior around 390px, keyboard-only one-line disclosure, Action selection, Show run replay, and immediate Jump dismissal, Before/After comparison, UI Tree diff including XML structured rendering, generated-video playback/seeking, constrained screenshot/replay media with the Screen grid background visible, sticky Logs headers, all four platform unavailable/readiness presentations, and at least one available platform's Explore/Strict progress, evidence, cancellation, and terminal behavior. Layout changes require reviewed desktop and narrow screenshots plus a clean browser console.
 - Config tests cover malformed-response rejection, loading/empty/configured/unavailable states, complete Azure save and key visibility, dirty-state discard behavior, provider replacement preservation, device-flow request/poll/success/failure/retry/cancel cleanup, saved-only Test connection eligibility/results, dialog keyboard/focus behavior, and secret-safe presentation.
-- Browser verification covers desktop viewport containment and independent panel scrolling at 1440×900 and 1280×720, narrow stacked/page-scrolling behavior around 390px, keyboard-only disclosure and Jump to latest, long-content wrapping, sticky Logs headers, all four platform unavailable/readiness presentations, and at least one available platform's Explore/Strict start, progress, evidence, cancellation, and terminal behavior. Layout changes require reviewed desktop and narrow screenshots plus a clean browser console.
 - Build/package verification proves both Vite entries are generated, existing Playground remains functional, and an isolated wheel starts Control Plane without Node.js.
 
 ## Current Invariants

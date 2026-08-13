@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
 
 UI_SNAPSHOT_LIMIT_BYTES = 512 * 1024
 _MANIFEST_LIMIT_BYTES = 8 * 1024 * 1024
+_SCREENSHOT_LIMIT_BYTES = 8 * 1024 * 1024
+_REPLAY_TOTAL_LIMIT_BYTES = 64 * 1024 * 1024
 _SECRET_PATTERN = re.compile(r"(?i)(bearer\s+|(?:api[_ -]?key|access[_ -]?token|token)[=:]\s*)[^\s,;]+")
 _WINDOWS_PATH_PATTERN = re.compile(r"(?i)(?<![\w])(?:[a-z]:[\\/]|\\\\)[^\r\n\t\"'<>|]+")
 _POSIX_PATH_PATTERN = re.compile(r"(?<![:\w])/(?:[^/\s]+/)+[^\s,;:)\]}]*")
@@ -61,19 +65,22 @@ class EvidenceProjection:
             self.bind_run(event.run_id)
         status = _run_event_status(event)
         message = self.safe_text(event.message or event.title)
-        self.state.add_event(
-            self.request_id,
-            {
-                "time": event.timestamp.isoformat(),
-                "phase": _run_phase(event.type),
-                "label": self.safe_text(event.tool_name or event.title, limit=200),
-                "tool": self.safe_text(event.tool_name or "", limit=100) or None,
-                "status": status,
-                "durationMs": event.duration_ms,
-                "message": message,
-                "level": "error" if status == "failed" else "info",
-            },
+        projected = {
+            "time": event.timestamp.isoformat(),
+            "phase": _run_phase(event.type),
+            "label": self.safe_text(event.tool_name or event.title, limit=200),
+            "tool": self.safe_text(event.tool_name or "", limit=100) or None,
+            "status": status,
+            "durationMs": event.duration_ms,
+            "message": message,
+            "level": "error" if status == "failed" else "info",
+        }
+        step_id = (
+            _optional_str((event.payload or {}).get("runner_step_id") or (event.payload or {}).get("step_id")) if event.type in {"tool_call_completed", "tool_call_failed", "step_completed"} else None
         )
+        if step_id:
+            projected["stepId"] = step_id
+        self.state.add_event(self.request_id, projected)
         self._consume_run_artifacts(event)
 
     def project_runner_event(self, event: RunnerEvent) -> None:
@@ -107,7 +114,7 @@ class EvidenceProjection:
         if not _is_relative_to(candidate, self.runs_dir):
             return
         self.run_dir = candidate
-        self.state.bind_run(self.request_id, run_id)
+        self.state.bind_run(self.request_id, run_id, candidate)
 
     def load_persisted_manifest(self) -> None:
         if self.run_dir is None:
@@ -125,6 +132,44 @@ class EvidenceProjection:
         for artifact in artifacts:
             if isinstance(artifact, dict):
                 self._consider_artifact(artifact, step_id=_optional_str(artifact.get("step_id")), timestamp=_optional_str(artifact.get("created_at")))
+
+    def load_persisted_step_ids(self) -> None:
+        if self.run_dir is None:
+            return
+        events_path = self.run_dir / "events.jsonl"
+        try:
+            lines = events_path.read_text(encoding="utf-8").splitlines() if events_path.is_file() else []
+        except OSError:
+            return
+        parsed_events: list[dict[str, Any]] = []
+        step_ids_by_tool_call: dict[str, str] = {}
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            parsed_events.append(event)
+            if event.get("type") not in {"tool_call_completed", "tool_call_failed"}:
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            runner_result = payload.get("runner_result") if isinstance(payload.get("runner_result"), dict) else {}
+            step_id = _optional_str(payload.get("runner_step_id") or payload.get("step_id") or runner_result.get("step_id"))
+            tool_call_id = _optional_str(event.get("tool_call_id"))
+            if tool_call_id and step_id:
+                step_ids_by_tool_call[tool_call_id] = step_id
+
+        for event in parsed_events:
+            sequence = event.get("sequence")
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            runner_result = payload.get("runner_result") if isinstance(payload.get("runner_result"), dict) else {}
+            tool_call_id = _optional_str(event.get("tool_call_id"))
+            step_id = _optional_str(payload.get("runner_step_id") or payload.get("step_id") or runner_result.get("step_id"))
+            if not step_id and tool_call_id:
+                step_id = step_ids_by_tool_call.get(tool_call_id)
+            if isinstance(sequence, int) and sequence > 0 and step_id:
+                self.state.annotate_event_step(self.request_id, sequence, step_id)
 
     def safe_text(self, value: str, *, limit: int = 1000) -> str:
         return safe_text(value, secret_values=self.secret_values, limit=limit)
@@ -211,6 +256,163 @@ def read_ui_snapshot(artifact: dict[str, Any] | None) -> tuple[dict[str, Any], d
     return payload, {"ETag": f'"{artifact.get("revision", 0)}"'}
 
 
+def read_step_artifacts(run_dir: Path, step_id: str) -> dict[str, Any]:
+    if not step_id or step_id.isdecimal():
+        raise ValueError("A non-numeric step id is required.")
+    refs = [ref for ref in _persisted_artifact_refs(run_dir) if _artifact_step_id(ref) == step_id]
+    payloads = [_artifact_payload(run_dir, ref) for ref in sorted(refs, key=_artifact_sort_key)]
+    artifacts = [payload for payload in payloads if payload is not None]
+    return {"available": bool(artifacts), "stepId": step_id, "artifacts": artifacts, "message": None if artifacts else "No artifacts for this step."}
+
+
+def read_replay_frames(run_dir: Path) -> dict[str, Any]:
+    screenshots = [ref for ref in _persisted_artifact_refs(run_dir) if ref.get("kind") == "screenshot"]
+    frames: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    total = 0
+    for ref in sorted(screenshots, key=lambda item: (_timestamp_ms(item.get("created_at") or item.get("timestamp")) or 0, str(item.get("path") or ""))):
+        resolved = _contained_artifact_path(run_dir, ref.get("path"))
+        if resolved is None or resolved in seen:
+            continue
+        seen.add(resolved)
+        common = {
+            "index": len(frames) + 1,
+            "timestamp": _timestamp_ms(ref.get("created_at") or ref.get("timestamp")),
+            "mimeType": _optional_str(ref.get("mime_type") or ref.get("mimeType")) or mimetypes.guess_type(resolved.name)[0] or "image/png",
+        }
+        try:
+            if not resolved.is_file():
+                raise FileNotFoundError
+            size = resolved.stat().st_size
+        except OSError:
+            frames.append({**common, "error": "Replay frame is unreadable."})
+            continue
+        if size > _SCREENSHOT_LIMIT_BYTES or total + size > _REPLAY_TOTAL_LIMIT_BYTES:
+            frames.append({**common, "error": "Replay frame exceeds the display limit.", "sizeBytes": size})
+            continue
+        total += size
+        try:
+            data = resolved.read_bytes()
+        except OSError:
+            frames.append({**common, "error": "Replay frame is unreadable."})
+            continue
+        frames.append({**common, "contentBase64": base64.b64encode(data).decode("ascii")})
+    available = any("contentBase64" in frame for frame in frames)
+    return {"available": available, "frames": frames, "message": None if available else "No readable replay frames were captured."}
+
+
+def _persisted_artifact_refs(run_dir: Path) -> list[dict[str, Any]]:
+    root = run_dir.resolve()
+    manifest_path = root / "evidence-manifest.json"
+    refs: list[dict[str, Any]] = []
+    try:
+        if manifest_path.is_file() and manifest_path.stat().st_size <= _MANIFEST_LIMIT_BYTES:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("bundle"), dict):
+                payload = payload["bundle"]
+            artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+            if isinstance(artifacts, list):
+                refs.extend(dict(ref) for ref in artifacts if isinstance(ref, dict))
+    except (OSError, ValueError):
+        pass
+    events_path = root / "events.jsonl"
+    try:
+        lines = events_path.read_text(encoding="utf-8").splitlines() if events_path.is_file() else []
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        event_refs = payload.get("artifact_refs")
+        if isinstance(event_refs, list):
+            refs.extend({**ref, "created_at": ref.get("created_at") or event.get("timestamp")} for ref in event_refs if isinstance(ref, dict))
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+    for ref in refs:
+        key = (str(ref.get("kind") or ""), str(ref.get("path") or ""), str(_artifact_step_id(ref) or ""), _artifact_phase(ref))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(ref)
+    return deduped
+
+
+def _artifact_payload(run_dir: Path, ref: dict[str, Any]) -> dict[str, Any] | None:
+    kind = ref.get("kind")
+    if kind not in {"screenshot", "ui_snapshot"}:
+        return None
+    path = _contained_artifact_path(run_dir, ref.get("path"))
+    if path is None:
+        return None
+    phase = _artifact_phase(ref)
+    mime = _optional_str(ref.get("mime_type") or ref.get("mimeType")) or mimetypes.guess_type(path.name)[0] or ("image/png" if kind == "screenshot" else "application/json")
+    common = {"kind": kind, "phase": phase, "timestamp": _optional_str(ref.get("created_at") or ref.get("timestamp")), "mimeType": mime}
+    try:
+        if not path.is_file():
+            raise FileNotFoundError
+        size = path.stat().st_size
+    except OSError:
+        return {**common, "error": f"{'Screenshot' if kind == 'screenshot' else 'UI snapshot'} is unreadable."}
+    if kind == "screenshot":
+        if size > _SCREENSHOT_LIMIT_BYTES:
+            return {**common, "error": "Screenshot exceeds the display limit.", "sizeBytes": size}
+        try:
+            return {**common, "contentBase64": base64.b64encode(path.read_bytes()).decode("ascii")}
+        except OSError:
+            return {**common, "error": "Screenshot is unreadable."}
+    if size > UI_SNAPSHOT_LIMIT_BYTES:
+        return {**common, "error": "UI snapshot exceeds the 512 KiB display limit.", "sizeBytes": size}
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {**common, "error": "UI snapshot is unreadable or is not UTF-8."}
+    return {**common, "format": "json" if "json" in mime or path.suffix.casefold() == ".json" else "text", "content": content}
+
+
+def _contained_artifact_path(run_dir: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    root = run_dir.resolve()
+    candidate = Path(value)
+    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    return resolved if _is_relative_to(resolved, root) else None
+
+
+def _artifact_step_id(ref: dict[str, Any]) -> str | None:
+    return _optional_str(ref.get("step_id") or ref.get("stepId"))
+
+
+def _artifact_phase(ref: dict[str, Any]) -> str:
+    value = str(ref.get("phase") or ref.get("reason") or "").casefold()
+    if "before" in value or "prepare" in value:
+        return "before"
+    if "after" in value or "finalize" in value:
+        return "after"
+    return value or "capture"
+
+
+def _artifact_sort_key(ref: dict[str, Any]) -> tuple[int, int, int, str]:
+    kind_order = 0 if ref.get("kind") == "screenshot" else 1
+    phase_order = {"before": 0, "after": 1}.get(_artifact_phase(ref), 2)
+    return (kind_order, phase_order, _timestamp_ms(ref.get("created_at") or ref.get("timestamp")) or 0, str(ref.get("path") or ""))
+
+
+def _timestamp_ms(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
 def _run_event_status(event: RunEvent) -> str:
     if event.type in {"run_failed", "tool_call_failed"}:
         return "failed"
@@ -249,4 +451,14 @@ def _is_relative_to(path: Path, root: Path) -> bool:
     return True
 
 
-__all__ = ["UI_SNAPSHOT_LIMIT_BYTES", "EvidenceProjection", "configured_secret_values", "read_screenshot", "read_ui_snapshot", "safe_exception_message", "safe_text"]
+__all__ = [
+    "UI_SNAPSHOT_LIMIT_BYTES",
+    "EvidenceProjection",
+    "configured_secret_values",
+    "read_replay_frames",
+    "read_screenshot",
+    "read_step_artifacts",
+    "read_ui_snapshot",
+    "safe_exception_message",
+    "safe_text",
+]

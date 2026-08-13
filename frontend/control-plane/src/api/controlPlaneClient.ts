@@ -8,10 +8,13 @@ import type {
   GitHubDeviceFlowResponse,
   PlatformId,
   ReadinessResponse,
+  ReplayFramesResponse,
+  ReplayVideoResponse,
   RunSnapshot,
   StartRunPayload,
   StartRunResponse,
   TargetsResponse,
+  StepArtifactsResponse,
   UiSnapshotResponse,
 } from './types';
 
@@ -135,6 +138,28 @@ function validateUiSnapshot(value: unknown): UiSnapshotResponse {
     || !string(value.mimeType) || !string(value.format) || !string(value.content)) invalidResponse('ui snapshot', 'Invalid UI snapshot fields.');
   return value as unknown as UiSnapshotResponse;
 }
+function validateStepArtifacts(value: unknown): StepArtifactsResponse {
+  const artifact = (item: unknown) => record(item) && ['screenshot', 'ui_snapshot'].includes(String(item.kind))
+    && string(item.phase) && nullableString(item.timestamp) && string(item.mimeType)
+    && (item.format === undefined || string(item.format)) && (item.contentBase64 === undefined || string(item.contentBase64))
+    && (item.content === undefined || string(item.content)) && (item.error === undefined || string(item.error))
+    && (item.sizeBytes === undefined || nonNegativeInteger(item.sizeBytes))
+    && (string(item.error) || (item.kind === 'screenshot' ? string(item.contentBase64) : string(item.content)));
+  if (!record(value) || !bool(value.available) || !string(value.stepId) || !arrayOf(value.artifacts, artifact) || !nullableString(value.message)) invalidResponse('step artifacts', 'Invalid step artifact fields.');
+  return value as unknown as StepArtifactsResponse;
+}
+function validateReplayFrames(value: unknown): ReplayFramesResponse {
+  const frame = (item: unknown) => record(item) && nonNegativeInteger(item.index) && (item.timestamp === null || finiteNumber(item.timestamp)) && string(item.mimeType)
+    && (item.contentBase64 === undefined || string(item.contentBase64)) && (item.error === undefined || string(item.error))
+    && (item.sizeBytes === undefined || nonNegativeInteger(item.sizeBytes)) && (string(item.contentBase64) || string(item.error));
+  if (!record(value) || !bool(value.available) || !arrayOf(value.frames, frame) || !nullableString(value.message)) invalidResponse('replay frames', 'Invalid replay frame fields.');
+  return value as unknown as ReplayFramesResponse;
+}
+function validateReplayVideo(value: unknown): ReplayVideoResponse {
+  if (!record(value) || !bool(value.available) || !nullableString(value.videoUrl)
+    || (value.mimeType !== undefined && !string(value.mimeType)) || (value.sizeBytes !== undefined && !nonNegativeInteger(value.sizeBytes))) invalidResponse('replay video', 'Invalid replay video fields.');
+  return value as unknown as ReplayVideoResponse;
+}
 function validateConfig(value: unknown): ConfigResponse {
   if (!record(value) || !hasOnlyKeys(value, ['configured', 'provider']) || !bool(value.configured)) invalidResponse('config', 'Invalid configured state.');
   if (!value.configured) {
@@ -217,6 +242,14 @@ export const controlPlaneClient = {
   },
   uiSnapshot: (requestId: string, signal?: AbortSignal) =>
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/ui-snapshot`, validateUiSnapshot, { signal }),
+  stepArtifacts: (requestId: string, stepId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/step-artifacts/${encodeURIComponent(stepId)}`, validateStepArtifacts, { signal }),
+  replayFrames: (requestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay`, validateReplayFrames, { signal }),
+  replayVideo: (requestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { signal }),
+  uploadReplayVideo: (requestId: string, mimeType: string, videoBase64: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { method: 'POST', body: JSON.stringify({ mimeType, videoBase64 }), signal }),
   config: (signal?: AbortSignal) => jsonRequest('/config', validateConfig, { signal }),
   saveAzureConfig: (payload: AzureConfigPayload, signal?: AbortSignal) =>
     jsonRequest('/config/azure', validateConfig, { method: 'PUT', body: JSON.stringify(payload), signal }),

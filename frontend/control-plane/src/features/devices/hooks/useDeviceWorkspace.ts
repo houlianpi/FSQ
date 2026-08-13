@@ -31,6 +31,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   const [requestId, setRequestId] = useState<string | null>(null);
   const [startError, setStartError] = useState<ApiErrorBody | null>(null);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('screen');
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const generationRef = useRef(0);
   const discoveryControllerRef = useRef<AbortController | null>(null);
   const { snapshot, connection, error: streamError } = useRunStream(requestId, client);
@@ -87,6 +88,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
     setPlatformState(snapshot.platform);
     setTargetId(snapshot.targetId);
     setMode(snapshot.mode);
+    if (!snapshot.terminal) setSelectedStepId(null);
   }, [snapshot]);
 
   useEffect(() => {
@@ -144,6 +146,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   const newRun = () => {
     setStartError(null);
     setEvidenceTab('screen');
+    setSelectedStepId(null);
     return client.bootstrap().then((data) => {
       setBootstrap({ state: 'ready', data, error: null });
       if (data.activeTask) {
@@ -168,7 +171,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   return {
     bootstrap, platform, setPlatform, targetId, setTargetId, mode, setMode, goal, setGoal, casePath, setCasePath,
     readiness, targets, cases, selectedTarget, selectedCase, requestId, snapshot, streamError, startError,
-    evidenceTab, setEvidenceTab, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, newRun,
+    evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, newRun,
   };
 }
 

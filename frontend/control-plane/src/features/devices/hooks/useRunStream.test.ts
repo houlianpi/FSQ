@@ -29,13 +29,16 @@ class TestEventSource {
   }
 }
 
-it('accepts terminal and status-only snapshots without new events', async () => {
+it('hydrates terminal stream snapshots so existing events receive step ids', async () => {
   const original = window.EventSource;
   Object.defineProperty(window, 'EventSource', { configurable: true, value: TestEventSource });
   Object.defineProperty(globalThis, 'EventSource', { configurable: true, value: TestEventSource });
-  vi.spyOn(controlPlaneClient, 'runSnapshot').mockResolvedValue(snapshot({
-    events: [{ sequence: 4, label: 'Last event' }],
-  }));
+  const runSnapshot = vi.spyOn(controlPlaneClient, 'runSnapshot')
+    .mockResolvedValueOnce(snapshot({ events: [{ sequence: 4, label: 'Last event' }] }))
+    .mockResolvedValueOnce(snapshot({
+      status: 'success', terminal: true, completedAt: '2026-08-11T00:00:00Z', summary: 'Done',
+      events: [{ sequence: 4, label: 'Last event', stepId: 'step-4' }],
+    }));
   vi.spyOn(controlPlaneClient, 'streamUrl').mockReturnValue('/stream');
   const { result, unmount } = renderHook(() => useRunStream('request-1'));
   await waitFor(() => expect(result.current.snapshot?.events).toHaveLength(1));
@@ -48,6 +51,8 @@ it('accepts terminal and status-only snapshots without new events', async () => 
   expect(result.current.snapshot?.summary).toBe('Done');
   expect(result.current.snapshot?.events).toHaveLength(1);
   expect(result.current.connection).toBe('ended');
+  await waitFor(() => expect(result.current.snapshot?.events[0].stepId).toBe('step-4'));
+  expect(runSnapshot).toHaveBeenCalledTimes(2);
   unmount();
   Object.defineProperty(window, 'EventSource', { configurable: true, value: original });
   Object.defineProperty(globalThis, 'EventSource', { configurable: true, value: original });
