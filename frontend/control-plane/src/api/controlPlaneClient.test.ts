@@ -11,6 +11,12 @@ it.each([
   ['cancel', () => controlPlaneClient.cancelRun('request-1')],
   ['snapshot', () => controlPlaneClient.runSnapshot('request-1')],
   ['ui snapshot', () => controlPlaneClient.uiSnapshot('request-1')],
+  ['config', () => controlPlaneClient.config()],
+  ['Azure config save', () => controlPlaneClient.saveAzureConfig({ baseUrl: 'https://example.test', modelName: 'model', apiKey: 'key' })],
+  ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow('model')],
+  ['GitHub device-flow status', () => controlPlaneClient.githubDeviceFlow('auth-1')],
+  ['GitHub device-flow cancellation', () => controlPlaneClient.cancelGithubDeviceFlow('auth-1')],
+  ['connection test', () => controlPlaneClient.testConnection()],
 ])('rejects a malformed successful %s response', async (_name, request) => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({}), {
     status: 200,
@@ -19,6 +25,29 @@ it.each([
 
   await expect(request()).rejects.toMatchObject({
     status: 200,
+    body: expect.objectContaining({ code: 'invalid_response' }),
+  });
+});
+
+it('accepts Config responses without admitting GitHub token fields into the contract', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await expect(controlPlaneClient.config()).resolves.toEqual({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true },
+  });
+});
+
+it('rejects a GitHub Config projection containing an unexpected token field', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    configured: true,
+    provider: { type: 'github_copilot', modelName: 'gpt-5.5', authenticated: true, accessToken: 'must-not-enter-state' },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await expect(controlPlaneClient.config()).rejects.toMatchObject({
     body: expect.objectContaining({ code: 'invalid_response' }),
   });
 });

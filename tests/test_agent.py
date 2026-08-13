@@ -20,9 +20,8 @@ from fsq_agent.observation import ExecutionLogger
 @pytest.mark.asyncio
 async def test_agent_run_requires_configured_model_provider_auth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/")
-    monkeypatch.setenv("AZURE_OPENAI_MODEL", "gpt-5.4")
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         """
@@ -35,8 +34,6 @@ cases:
 agent_context:
     knowledge:
         root_dir: knowledge
-openai_agents:
-    provider: azure_openai
 """,
         encoding="utf-8",
     )
@@ -47,7 +44,7 @@ openai_agents:
         acceptance_criteria=["A report exists."],
     )
 
-    with pytest.raises(ConfigurationError, match="API key"):
+    with pytest.raises(ConfigurationError, match="not configured"):
         await FsqAgent.from_config(config_path).run(task)
 
 

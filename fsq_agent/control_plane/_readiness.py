@@ -13,13 +13,13 @@ from ._evidence import safe_exception_message
 from ._targets import target_readiness
 
 
-def load_control_plane_settings(platform: str, workspace_path: Path) -> Settings:
-    return load_platform_settings(platform, workspace_path)
+def load_control_plane_settings(platform: str, workspace_path: Path, user_config_root: Path | None = None) -> Settings:
+    return load_platform_settings(platform, workspace_path, user_config_root)
 
 
-def readiness(platform: str, workspace_path: Path) -> dict[str, Any]:
+def readiness(platform: str, workspace_path: Path, user_config_root: Path | None = None) -> dict[str, Any]:
     try:
-        settings = load_control_plane_settings(platform, workspace_path)
+        settings = load_control_plane_settings(platform, workspace_path, user_config_root)
     except Exception as exc:  # noqa: BLE001
         record = _record("error", safe_exception_message(exc), "Fix the committed platform preset or workspace configuration.")
         return {"platform": platform, "workspace": record, "provider": record, "target": record, "strict": record}
@@ -45,17 +45,17 @@ def readiness(platform: str, workspace_path: Path) -> dict[str, Any]:
 def provider_readiness(settings: Settings) -> dict[str, str]:
     session = None
     try:
-        session = prepare_model_provider_session(settings, interactive_auth=False)
+        session = prepare_model_provider_session(settings)
         return _record("ready", "Model provider is configured for non-interactive use.", "")
     except Exception as exc:  # noqa: BLE001
-        return _record("unavailable", safe_exception_message(exc, settings=settings), "Run fsq-agent init with a provider to complete local authentication.")
+        return _record("unavailable", safe_exception_message(exc, settings=settings), "Configure a Provider in Control Plane Config.")
     finally:
         if session is not None:
             session.close_sync()
 
 
 def require_provider(settings: Settings) -> None:
-    session = prepare_model_provider_session(settings, interactive_auth=False)
+    session = prepare_model_provider_session(settings)
     session.close_sync()
 
 

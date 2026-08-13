@@ -1,0 +1,152 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from fsq_agent.config import (
+    activate_github_copilot_provider,
+    load_settings,
+    load_user_provider_config,
+    refresh_provider_settings,
+    save_azure_openai_provider,
+    validate_provider_settings,
+)
+from fsq_agent.models import ConfigurationError
+
+
+def _runtime_config(tmp_path: Path) -> Path:
+    config_path = tmp_path / "platform.yaml"
+    config_path.write_text(
+        f"""
+workspace:
+  root_dir: {tmp_path.as_posix()}/workspace
+openai_agents:
+  max_turns: 40
+""",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_load_user_provider_config_initializes_explicit_unconfigured_state(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+
+    config = load_user_provider_config(user_root)
+
+    assert config.version == 1
+    assert config.provider is None
+    assert yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8")) == {
+        "version": 1,
+        "provider": None,
+    }
+    assert (user_root / "auth").is_dir()
+
+
+def test_save_azure_provider_normalizes_and_keeps_secret_out_of_serialization(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+
+    saved = save_azure_openai_provider(
+        base_url="https://example.openai.azure.com/openai/responses?api-version=preview",
+        model="  gpt-5.4  ",
+        api_key="complete-local-key",
+        user_config_root=user_root,
+    )
+    loaded = load_user_provider_config(user_root)
+
+    assert saved.provider is not None
+    assert saved.provider.type == "azure_openai"
+    assert saved.provider.model == "gpt-5.4"
+    assert saved.provider.base_url == "https://example.openai.azure.com/openai/v1/"
+    assert loaded.provider == saved.provider
+    assert loaded.api_key == "complete-local-key"
+    assert "api_key" not in loaded.model_dump()
+    assert json.loads((user_root / "auth" / "azure-openai.json").read_text(encoding="utf-8")) == {"api_key": "complete-local-key"}
+
+
+def test_activate_github_provider_replaces_azure_only_after_complete_auth(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+    save_azure_openai_provider(
+        base_url="https://example.openai.azure.com",
+        model="azure-model",
+        api_key="azure-key",
+        user_config_root=user_root,
+    )
+    github_token = {"access_token": "github-token", "expires_at": 12345}
+    provider_token = {"token": "provider-token", "expires_at": 67890, "plan": "individual"}
+
+    saved = activate_github_copilot_provider(
+        model="copilot-model",
+        github_token=github_token,
+        provider_token=provider_token,
+        user_config_root=user_root,
+    )
+
+    assert saved.provider is not None
+    assert saved.provider.type == "github_copilot"
+    assert saved.provider.model == "copilot-model"
+    assert saved.github_token == github_token
+    assert saved.provider_token == provider_token
+    assert not (user_root / "auth" / "azure-openai.json").exists()
+
+
+def test_invalid_replacement_preserves_active_provider(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+    active = activate_github_copilot_provider(
+        model="copilot-model",
+        github_token={"access_token": "github-token"},
+        provider_token={"token": "provider-token", "plan": "individual"},
+        user_config_root=user_root,
+    )
+
+    with pytest.raises(ConfigurationError, match="API key"):
+        save_azure_openai_provider(
+            base_url="https://example.openai.azure.com",
+            model="azure-model",
+            api_key=" ",
+            user_config_root=user_root,
+        )
+
+    assert load_user_provider_config(user_root).provider == active.provider
+    assert (user_root / "auth" / "github-copilot-token.json").exists()
+    assert (user_root / "auth" / "github-copilot-provider-token.json").exists()
+
+
+def test_runtime_load_ignores_provider_environment_and_refreshes_only_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_root = tmp_path / "user"
+    config_path = _runtime_config(tmp_path)
+    monkeypatch.setenv("FSQ_LLM_PROVIDER", "azure_openai")
+    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://environment.example/openai/v1/")
+    monkeypatch.setenv("AZURE_OPENAI_MODEL", "environment-model")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "environment-key")
+
+    settings = load_settings(config_path, user_config_root=user_root)
+
+    assert settings.openai_agents.provider is None
+    assert settings.openai_agents.model == ""
+    assert settings.openai_agents.base_url == ""
+    assert settings.openai_agents.api_key == ""
+    with pytest.raises(ConfigurationError, match="not configured"):
+        validate_provider_settings(settings)
+
+    save_azure_openai_provider(
+        base_url="https://saved.example.openai.azure.com",
+        model="saved-model",
+        api_key="saved-key",
+        user_config_root=user_root,
+    )
+    refreshed = refresh_provider_settings(settings, user_config_root=user_root)
+
+    assert refreshed is not settings
+    assert refreshed.openai_agents.provider == "azure_openai"
+    assert refreshed.openai_agents.model == "saved-model"
+    assert refreshed.openai_agents.base_url == "https://saved.example.openai.azure.com/openai/v1/"
+    assert refreshed.openai_agents.api_key == "saved-key"
+    assert refreshed.openai_agents.max_turns == 40
+    assert refreshed.workspace.root_dir == settings.workspace.root_dir

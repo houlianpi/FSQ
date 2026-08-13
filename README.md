@@ -126,20 +126,25 @@ uv sync --extra dev --extra web
 ### 2. Initialize
 
 ```bash
-fsq-agent init --platform web --provider github_copilot
+fsq-agent init --platform web
 ```
 
-<details>
-<summary><b>Provider options</b></summary>
+### 3. Configure a Provider
+
+```bash
+fsq-agent control-plane
+```
+
+Open **Config**, select **Add configuration**, and configure one active Provider:
 
 | Provider | Setup |
 |---|---|
-| GitHub Copilot | `--provider github_copilot` (device-code auth) |
-| Azure OpenAI | `--provider azure_openai` (API key) |
+| GitHub Copilot GPT | Model name and GitHub device-code authentication |
+| Azure GPT | Azure OpenAI-compatible base URL, model/deployment name, and API key |
 
-</details>
+Provider configuration is stored under `~/.fsq` and is used by the next complete FSQ task. Config is available only when Control Plane is bound to and accessed through a loopback address.
 
-### 3. Run
+### 4. Run
 
 ```bash
 # Dynamic: AI-driven exploration with full evidence

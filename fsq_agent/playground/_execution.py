@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.agent import FsqAgent
-from fsq_agent.config import validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
     ArtifactStore,
     EvidenceRecorder,
@@ -38,6 +38,14 @@ if TYPE_CHECKING:
 
 class PlaygroundTaskCancelledError(RuntimeError):
     pass
+
+
+def refresh_execution_settings(settings: Settings) -> Settings:
+    snapshot = settings.model_copy(deep=True)
+    user_config_root = settings.openai_agents.user_config_root
+    if user_config_root is None:
+        return snapshot
+    return refresh_provider_settings(snapshot, user_config_root)
 
 
 @dataclass

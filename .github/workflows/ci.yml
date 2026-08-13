@@ -112,6 +112,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Type-check frontend
+        run: npm run typecheck
+
+      - name: Run frontend tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 

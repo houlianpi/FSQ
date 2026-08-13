@@ -1,0 +1,318 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+from threading import RLock
+from typing import TYPE_CHECKING, Annotated, Literal
+from urllib.parse import urlparse
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator
+
+from fsq_agent.models import ConfigurationError
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from fsq_agent.config._settings import Settings
+
+USER_CONFIG_VERSION = 1
+USER_CONFIG_FILENAME = "config.yaml"
+AUTH_DIRECTORY = "auth"
+AZURE_AUTH_FILENAME = "azure-openai.json"
+GITHUB_AUTH_FILENAME = "github-copilot-token.json"
+GITHUB_PROVIDER_AUTH_FILENAME = "github-copilot-provider-token.json"
+
+_WRITE_LOCK = RLock()
+
+
+def _required_text(value: str, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} is required")
+    return normalized
+
+
+def _normalize_azure_base_url(value: str) -> str:
+    normalized = _required_text(value, "Azure OpenAI base URL")
+    if "/openai/responses" in normalized:
+        normalized = normalized.split("/openai/responses", 1)[0] + "/openai/v1/"
+    elif "/openai/v1" in normalized:
+        normalized = normalized.split("/openai/v1", 1)[0] + "/openai/v1/"
+    elif normalized.rstrip("/").endswith((".openai.azure.com", ".cognitiveservices.azure.com")):
+        normalized = normalized.rstrip("/") + "/openai/v1/"
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not normalized.endswith("/openai/v1/"):
+        raise ValueError("Azure OpenAI base URL must use the /openai/v1/ form")
+    return normalized
+
+
+class _AzureOpenAIProviderRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["azure_openai"]
+    model: str
+    base_url: str
+
+    @field_validator("model")
+    @classmethod
+    def _validate_model(cls, value: str) -> str:
+        return _required_text(value, "Model name")
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        return _normalize_azure_base_url(value)
+
+
+class _GitHubCopilotProviderRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["github_copilot"]
+    model: str
+
+    @field_validator("model")
+    @classmethod
+    def _validate_model(cls, value: str) -> str:
+        return _required_text(value, "Model name")
+
+
+_ProviderRecord = Annotated[
+    _AzureOpenAIProviderRecord | _GitHubCopilotProviderRecord,
+    Field(discriminator="type"),
+]
+
+
+class UserProviderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = USER_CONFIG_VERSION
+    provider: _ProviderRecord | None = None
+    _api_key: str = PrivateAttr(default="")
+    _github_token: dict[str, object] | None = PrivateAttr(default=None)
+    _provider_token: dict[str, object] | None = PrivateAttr(default=None)
+
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
+    @property
+    def github_token(self) -> dict[str, object] | None:
+        return dict(self._github_token) if self._github_token is not None else None
+
+    @property
+    def provider_token(self) -> dict[str, object] | None:
+        return dict(self._provider_token) if self._provider_token is not None else None
+
+
+def load_user_provider_config(user_config_root: str | Path | None = None) -> UserProviderConfig:
+    root = _user_config_root(user_config_root)
+    with _WRITE_LOCK:
+        config_path, auth_dir = _ensure_layout(root)
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            raise ConfigurationError("Unable to read user Provider configuration.", context={"path": str(config_path)}) from exc
+        if not isinstance(data, dict):
+            raise ConfigurationError("User Provider configuration must contain a YAML mapping.", context={"path": str(config_path)})
+        try:
+            config = UserProviderConfig.model_validate(data)
+        except ValidationError as exc:
+            raise ConfigurationError("Invalid user Provider configuration.", context={"path": str(config_path), "errors": exc.errors()}) from exc
+        if config.provider is None:
+            return config
+        if config.provider.type == "azure_openai":
+            credentials = _read_json_object(auth_dir / AZURE_AUTH_FILENAME, "Azure OpenAI credentials")
+            config._api_key = _credential_text(credentials, "api_key", "Azure OpenAI API key")
+            return config
+        config._github_token = _read_json_object(auth_dir / GITHUB_AUTH_FILENAME, "GitHub OAuth credentials")
+        config._provider_token = _read_json_object(
+            auth_dir / GITHUB_PROVIDER_AUTH_FILENAME,
+            "GitHub Copilot provider credentials",
+        )
+        _credential_text(config._github_token, "access_token", "GitHub OAuth access token")
+        _credential_text(config._provider_token, "token", "GitHub Copilot provider token")
+        _credential_text(config._provider_token, "plan", "GitHub Copilot plan")
+        return config
+
+
+def save_azure_openai_provider(
+    *,
+    base_url: str,
+    model: str,
+    api_key: str,
+    user_config_root: str | Path | None = None,
+) -> UserProviderConfig:
+    try:
+        provider = _AzureOpenAIProviderRecord(type="azure_openai", model=model, base_url=base_url)
+    except ValidationError as exc:
+        raise ConfigurationError("Invalid Azure OpenAI Provider configuration.", context={"error": str(exc)}) from exc
+    try:
+        normalized_api_key = _required_text(api_key, "Azure OpenAI API key")
+    except ValueError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    if normalized_api_key.lower().startswith("replace-with"):
+        raise ConfigurationError("Azure OpenAI API key still contains a placeholder value.")
+    config = UserProviderConfig(provider=provider)
+    root = _user_config_root(user_config_root)
+    with _WRITE_LOCK:
+        config_path, auth_dir = _ensure_layout(root)
+        _commit_replacement(
+            {
+                auth_dir / AZURE_AUTH_FILENAME: _json_bytes({"api_key": normalized_api_key}),
+                config_path: _yaml_bytes(config),
+            },
+            [auth_dir / GITHUB_AUTH_FILENAME, auth_dir / GITHUB_PROVIDER_AUTH_FILENAME],
+        )
+    return load_user_provider_config(root)
+
+
+def activate_github_copilot_provider(
+    *,
+    model: str,
+    github_token: Mapping[str, object],
+    provider_token: Mapping[str, object],
+    user_config_root: str | Path | None = None,
+) -> UserProviderConfig:
+    try:
+        provider = _GitHubCopilotProviderRecord(type="github_copilot", model=model)
+        github_payload = dict(github_token)
+        provider_payload = dict(provider_token)
+        _credential_text(github_payload, "access_token", "GitHub OAuth access token")
+        _credential_text(provider_payload, "token", "GitHub Copilot provider token")
+        _credential_text(provider_payload, "plan", "GitHub Copilot plan")
+    except (ValidationError, ValueError) as exc:
+        raise ConfigurationError("Invalid GitHub Copilot Provider configuration.", context={"error": str(exc)}) from exc
+    config = UserProviderConfig(provider=provider)
+    root = _user_config_root(user_config_root)
+    with _WRITE_LOCK:
+        config_path, auth_dir = _ensure_layout(root)
+        _commit_replacement(
+            {
+                auth_dir / GITHUB_AUTH_FILENAME: _json_bytes(github_payload),
+                auth_dir / GITHUB_PROVIDER_AUTH_FILENAME: _json_bytes(provider_payload),
+                config_path: _yaml_bytes(config),
+            },
+            [auth_dir / AZURE_AUTH_FILENAME],
+        )
+    return load_user_provider_config(root)
+
+
+def refresh_provider_settings(
+    settings: Settings,
+    user_config_root: str | Path | None = None,
+) -> Settings:
+    root = _user_config_root(user_config_root)
+    config = load_user_provider_config(root)
+    refreshed = settings.model_copy(deep=True)
+    provider_settings = refreshed.openai_agents
+    provider_settings.provider = config.provider.type if config.provider is not None else None
+    provider_settings.model = config.provider.model if config.provider is not None else ""
+    provider_settings.base_url = config.provider.base_url if isinstance(config.provider, _AzureOpenAIProviderRecord) else ""
+    provider_settings.api_key = config.api_key
+    provider_settings.github_token = config.github_token
+    provider_settings.provider_token = config.provider_token
+    provider_settings.user_config_root = root
+    return refreshed
+
+
+def _user_config_root(value: str | Path | None) -> Path:
+    return Path(value).expanduser() if value is not None else Path.home() / ".fsq"
+
+
+def _ensure_layout(root: Path) -> tuple[Path, Path]:
+    config_path = root / USER_CONFIG_FILENAME
+    auth_dir = root / AUTH_DIRECTORY
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        auth_dir.mkdir(parents=True, exist_ok=True)
+        if not config_path.exists():
+            _atomic_write(config_path, _yaml_bytes(UserProviderConfig()))
+    except OSError as exc:
+        raise ConfigurationError("Unable to initialize user Provider configuration.", context={"path": str(root)}) from exc
+    return config_path, auth_dir
+
+
+def _read_json_object(path: Path, description: str) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigurationError(f"Unable to read {description}.", context={"path": str(path)}) from exc
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{description} must contain a JSON object.", context={"path": str(path)})
+    return data
+
+
+def _credential_text(data: Mapping[str, object], key: str, description: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{description} is required")
+    return value
+
+
+def _yaml_bytes(config: UserProviderConfig) -> bytes:
+    return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False).encode("utf-8")
+
+
+def _json_bytes(data: Mapping[str, object]) -> bytes:
+    return json.dumps(dict(data), separators=(",", ":")).encode("utf-8")
+
+
+def _commit_replacement(payloads: Mapping[Path, bytes], removals: list[Path]) -> None:
+    affected = list(dict.fromkeys([*payloads, *removals]))
+    snapshots: dict[Path, bytes | None] = {}
+    staged: dict[Path, Path] = {}
+    try:
+        for path in affected:
+            snapshots[path] = path.read_bytes() if path.exists() else None
+        for path, payload in payloads.items():
+            staged[path] = _stage_write(path, payload)
+        for path, temporary_path in staged.items():
+            temporary_path.replace(path)
+        for path in removals:
+            path.unlink(missing_ok=True)
+    except OSError as exc:
+        _restore_snapshots(snapshots)
+        raise ConfigurationError("Unable to persist user Provider configuration.") from exc
+    finally:
+        for temporary_path in staged.values():
+            temporary_path.unlink(missing_ok=True)
+
+
+def _restore_snapshots(snapshots: Mapping[Path, bytes | None]) -> None:
+    for path, payload in snapshots.items():
+        try:
+            if payload is None:
+                path.unlink(missing_ok=True)
+            else:
+                _atomic_write(path, payload)
+        except OSError:
+            continue
+
+
+def _atomic_write(path: Path, payload: bytes) -> None:
+    temporary_path = _stage_write(path, payload)
+    try:
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _stage_write(path: Path, payload: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as temporary_file:
+            temporary_file.write(payload)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+    except OSError:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path

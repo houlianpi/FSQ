@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 import pytest
 import yaml
 
-from fsq_agent.config import Settings
+from fsq_agent.config import Settings, save_azure_openai_provider
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
@@ -2032,6 +2032,41 @@ def test_playground_web_platform_does_not_require_android_session(monkeypatch) -
     assert status == 202
     assert payload["requestId"]
     assert captured["device_id"] is None
+
+
+def test_playground_execute_refreshes_only_provider_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    user_root = tmp_path / "user"
+    save_azure_openai_provider(
+        base_url="https://new.openai.azure.com",
+        model="new-model",
+        api_key="new-key",
+        user_config_root=user_root,
+    )
+    settings = Settings(harness={"platform": "web"})
+    settings.workspace.root_dir = tmp_path / "workspace"
+    settings.openai_agents.provider = "azure_openai"
+    settings.openai_agents.model = "old-model"
+    settings.openai_agents.base_url = "https://old.openai.azure.com/openai/v1/"
+    settings.openai_agents.api_key = "old-key"
+    settings.openai_agents.user_config_root = user_root
+    captured: dict[str, object] = {}
+
+    def fake_start_dynamic_goal_execution(**kwargs):
+        captured.update(kwargs)
+        return PlaygroundExecutionHandle(request_id=kwargs["request_id"])
+
+    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    server = PlaygroundServer(settings)
+
+    status, _ = server.handle_post("/execute", {"goal": "Do it"})
+
+    run_settings = captured["settings"]
+    assert status == 202
+    assert run_settings.openai_agents.model == "new-model"
+    assert run_settings.openai_agents.api_key == "new-key"
+    assert run_settings.workspace.root_dir == tmp_path / "workspace"
+    assert server.settings.openai_agents.model == "old-model"
+    assert server.settings.openai_agents.api_key == "old-key"
 
 
 def test_playground_macos_platform_does_not_require_android_session(monkeypatch) -> None:

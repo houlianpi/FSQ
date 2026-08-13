@@ -1,6 +1,6 @@
 interface:
   display_name: "Requirements To Design"
   short_description: "Optionally clarify project design"
-  default_prompt: "Use $requirements-to-design to clarify this project change and produce a confirmed design document for later $spec-driven input."
+  default_prompt: "Use $requirements-to-design to clarify this requested change, produce a confirmed design document, and select the correct SDD or exempt implementation handoff."
 policy:
   allow_implicit_invocation: false

@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Own shared model provider construction, local provider setup/auth readiness, and provider-backed model call access for fsq-agent. The providers module builds Azure OpenAI and GitHub Copilot OpenAI-compatible clients from validated, resolved settings, owns provider authentication, Copilot request compatibility, and endpoint selection details, exposes OpenAI Agents SDK provider/session construction for the dynamic agent runtime, exposes provider setup/check helpers for the CLI, and exposes direct Responses-style model access for provider-backed AI assertion evaluators.
+Own shared model provider construction, observable GitHub Copilot authentication, non-interactive runtime token refresh, real connection testing, and provider-backed model call access for fsq-agent. The module builds Azure OpenAI and GitHub Copilot OpenAI-compatible clients from validated user-provider snapshots, owns Copilot request compatibility and endpoint selection, exposes OpenAI Agents SDK provider/session construction, and exposes direct Responses-style model access for provider-backed AI assertion evaluators.
 
 The module centralizes provider behavior so the main agent loop, internal pre-planner, evidence-based verifier, and platform AI assertion evaluators reuse the same provider configuration, token cache behavior, model selection, and redaction policy.
 
 ## Dependencies
 
-- `models`: Uses `OpenAIAgentsSettings`, `WorkspaceSettings`, `AIAssertionRequest`, `AIAssertionResult`, and `ConfigurationError`.
-- `config`: Uses the resolved `Settings` aggregate as provider factory input.
+- `models`: Uses `OpenAIAgentsSettings`, `AIAssertionRequest`, `AIAssertionResult`, and `ConfigurationError`.
+- `config`: Uses resolved `Settings`, loads the latest saved user provider for connection tests, and activates complete GitHub authentication results through public config operations.
 
 The providers module must not depend on `agent`, `tools`, `core`, `cli`, `report`, `knowledge`, `skills`, or `fsq`.
 
@@ -20,21 +20,25 @@ Current `__init__.py` exports via `__all__`:
 - `ModelProviderFactory`: Builds provider sessions from resolved `Settings` for OpenAI Agents SDK runs and direct evaluator calls.
 - `ModelProviderSession`: Owns the lifecycle of one configured provider client/session and exposes provider metadata, model name, an Agents SDK provider object factory, and direct Responses-style model invocation for evaluator-style calls.
 - `AIAssertionEvaluator`: Provider-backed evaluator that satisfies `core`'s synchronous evaluator protocol: it accepts an `AIAssertionRequest`, calls the configured model through a `ModelProviderSession`, and returns an `AIAssertionResult`.
-- `prepare_model_provider_session(settings: Settings, *, interactive_auth: bool = True) -> ModelProviderSession`: Builds a configured provider session for setup/readiness use without sending a live model request. For GitHub Copilot, `interactive_auth=True` may run device-code authentication with explicit OAuth scopes when no valid cached GitHub OAuth token exists, then exchange and cache a short-lived Copilot provider token for runtime use; `interactive_auth=False` must not start device-code authentication, but may use a valid cached GitHub OAuth token to refresh a missing or expired provider token. For Azure OpenAI, it validates and constructs local client configuration from fixed environment values.
-- `refresh_model_provider_session(settings: Settings) -> ModelProviderSession`: Refreshes provider-local runtime credentials at the beginning of a dynamic task without sending a live model request. For GitHub Copilot, it must use only a valid cached GitHub OAuth token to exchange and cache a fresh short-lived Copilot provider token, regardless of whether the previous provider token is still valid, and it must not start device-code authentication. For Azure OpenAI, it validates and constructs local client configuration from fixed environment values.
-- `build_model_provider_session(settings: Settings) -> ModelProviderSession`: Convenience factory for runtime construction. For GitHub Copilot, runtime construction must first read the cached Copilot provider token produced by `prepare_model_provider_session(..., interactive_auth=True)`; when the provider token is missing or expired, it may use a valid cached GitHub OAuth token to silently exchange and cache a fresh provider token, but it must not start device-code authentication.
+- `prepare_model_provider_session(settings: Settings) -> ModelProviderSession`: Builds a configured session for readiness without sending a model request. For GitHub Copilot it may silently exchange a valid cached GitHub OAuth token when the provider token is absent or expired, but never starts device flow. For Azure it validates and constructs client configuration from the resolved user snapshot.
+- `refresh_model_provider_session(settings: Settings) -> ModelProviderSession`: Refreshes provider-local runtime credentials at the beginning of a dynamic task without sending a live model request. For GitHub Copilot, it uses only a valid cached GitHub OAuth token to exchange and cache a fresh short-lived Copilot provider token and never starts device authentication. For Azure OpenAI, it validates and constructs client configuration from the resolved user snapshot.
+- `build_model_provider_session(settings: Settings) -> ModelProviderSession`: Convenience factory for runtime construction. For GitHub Copilot it reads the user-level cached provider token and may silently refresh it from a valid cached OAuth token, but never starts device flow.
 - `build_ai_assertion_evaluator(settings: Settings) -> AIAssertionEvaluator`: Convenience factory used by entry-layer code when a platform harness needs provider-backed AI assertion. For GitHub Copilot, it follows the same non-interactive provider-token read/refresh rule as `build_model_provider_session`.
+- `request_github_copilot_device_code() -> GitHubDeviceCode`: Requests one GitHub device code with the existing explicit Copilot scopes and returns verification URI, user code, polling interval, and expiration without printing to a terminal or starting polling.
+- `complete_github_copilot_device_flow(device_code: GitHubDeviceCode, *, model: str, cancel_requested: Callable[[], bool], user_config_root: str | Path | None = None) -> UserProviderConfig`: Polls with GitHub's interval/slow-down semantics, checks cancellation, exchanges the OAuth token for Copilot plan/provider-token data, and activates GitHub through `config` only after the complete flow succeeds.
+- `test_model_provider_connection(user_config_root: str | Path | None = None) -> ProviderConnectionTestResult`: Loads the latest saved provider, creates a fresh session, sends one fixed minimal prompt requesting a short deterministic acknowledgement, returns provider/model/elapsed duration after a valid response, and always closes the session.
 
 Current usage shape:
 
 ```python
 session = build_model_provider_session(settings)
-setup_session = prepare_model_provider_session(settings, interactive_auth=False)
+setup_session = prepare_model_provider_session(settings)
 refreshed_session = refresh_model_provider_session(settings)
 provider = session.create_agents_provider(openai_provider_type=OpenAIProvider, async_openai_type=AsyncOpenAI)
 result = await session.invoke_responses(messages=[...], response_format=...)
 evaluator = build_ai_assertion_evaluator(settings)
 assertion = evaluator.evaluate(request)
+connection = test_model_provider_connection()
 await session.close()
 ```
 
@@ -45,18 +49,29 @@ Concrete type annotations may use `Any` for OpenAI Agents SDK classes at the bou
 - `__init__.py`: Public exports only.
 - `_factory.py`: Settings-based factory functions and `ModelProviderFactory` implementation.
 - `_session.py`: `ModelProviderSession` lifecycle wrapper, provider metadata, Agents SDK provider construction, direct Responses-style invocation, and cleanup.
-- `_azure_openai.py`: Azure OpenAI client construction from fixed environment-backed endpoint/model/API-key values, endpoint normalization assumptions, and provider metadata.
-- `_github_copilot.py`: GitHub device-code auth with explicit OAuth scopes, non-interactive cached provider-token inspection, GitHub OAuth token cache loading/saving, Copilot provider-token cache loading/saving, non-interactive provider-token refresh from cached GitHub OAuth tokens, Copilot token exchange, plan detection, endpoint selection, request/header/timeout compatibility, and provider metadata.
+- `_azure_openai.py`: Azure OpenAI client construction from resolved user-provider endpoint/model/API-key values and provider metadata.
+- `_github_copilot.py`: Observable device-code request and cancellable polling, non-interactive cached token inspection/refresh under the user auth root, Copilot token exchange, plan detection, endpoint selection, request/header/timeout compatibility, and configurable-model metadata.
+- `_connection_test.py`: Fresh-session minimal Responses request, acknowledgement validation, elapsed-time measurement, safe result shaping, and guaranteed cleanup.
 - `_ai_assertion.py`: `AIAssertionEvaluator` implementation and model-response parsing into `AIAssertionResult`.
 - `SPEC.md`: Module design.
 
+## Python Architecture
+
+- Architecture level: 2 Simple Package.
+- Public API: provider session/factory/evaluator types, non-interactive preparation/refresh/build helpers, GitHub device-code request/completion operations, and saved-provider connection testing exported from `__init__.py`.
+- Internal modules: `_factory.py`, `_session.py`, `_azure_openai.py`, `_github_copilot.py`, `_connection_test.py`, and `_ai_assertion.py` are private implementation files.
+- Domain boundaries: providers owns external model/auth protocols, client/session lifecycle, Copilot token exchange, device polling, and model invocation. Config owns files and active-provider persistence; Control Plane owns HTTP and task presentation.
+- Boundary models: settings and assertion contracts come from public `config`/`models`; provider-specific device/result records are public immutable values only where callers need protocol facts.
+- Dependency direction: providers may depend on public `models` and `config`; it must not import agent, entry-layer, execution, report, or frontend modules.
+- Rationale: two provider integrations share a narrow session abstraction and protocol helpers, but no additional application/service layer is justified.
+
 ## Error Handling
 
-Provider setup failures raise `ConfigurationError` from `models` with non-secret context such as provider name, missing environment variable name, endpoint shape, token-cache path, HTTP status code, or Copilot plan value. Provider errors must never include API keys, OAuth tokens, Copilot API tokens, authorization headers, cookies, or model prompt content containing runtime secrets.
+Provider preparation, authentication, refresh, and test failures raise `ConfigurationError` from `models` with non-secret context such as provider name, endpoint family, token-cache path, safe HTTP category/status, or Copilot plan value. Errors never include API keys, OAuth tokens, Copilot API tokens, authorization headers, cookies, or user/workspace prompt content.
 
-GitHub Copilot device-code authorization failures should distinguish request failure, polling failure, expired device code, authorization denial, token exchange failure, and unknown plan. Azure OpenAI validation failures should distinguish missing fixed environment variables, invalid base URL shape, and client construction failure.
+GitHub device authorization distinguishes request failure, polling/network failure, slow-down, expiration, denial, cancellation, token exchange failure, and unknown plan. Azure validation distinguishes incomplete saved values, invalid base URL shape, authorization, unavailable model/deployment, rate limiting, malformed response, timeout, and client construction failure.
 
-Non-interactive Copilot readiness checks and runtime construction must not start device-code polling. They may call the Copilot token exchange endpoint only when a valid cached GitHub OAuth token is available and the short-lived provider token is missing or expired. They must fail clearly when neither a valid cached Copilot provider token nor a valid cached GitHub OAuth token exists. Provider setup/readiness helpers must not send Responses API model requests.
+Non-interactive readiness and runtime construction never start device polling. They may call token exchange only when a valid cached OAuth token exists and the short-lived provider token is missing or expired. Readiness helpers do not send model requests; only the explicit connection-test operation does.
 
 Direct evaluator invocation failures should return or raise structured diagnostics that entry-layer code can convert into failed `HarnessActionResult` values. Missing provider credentials for an explicitly authored `assertWithAI` step should produce a configuration failure, not a silent assertion pass or fallback path.
 
@@ -65,9 +80,11 @@ Direct evaluator invocation failures should return or raise structured diagnosti
 - Provider construction belongs in `providers`, not `agent`, because the main runner, pre-planner, verifier, and platform AI assertion evaluator need the same Azure/Copilot behavior.
 - `providers` may depend on `config` because it consumes resolved `Settings`, but `config` must not depend on `providers`.
 - The resolved `openai_agents.provider` and provider model are the provider/model source for AI assertions. There is no separate AI assertion model override.
-- All configured providers use the Responses API. GitHub Copilot mode is the default provider path, uses Copilot model `gpt-5.5`, and must keep device-code OAuth, explicit OAuth scopes for Copilot token exchange, token cache under the fsq-agent workspace, short-lived Copilot provider-token caching, dynamic task startup provider-token refresh from cached GitHub OAuth tokens, plan-specific endpoint selection, and Copilot headers. Dynamic task startup refreshes the provider token once from the cached GitHub OAuth token before pre-plan begins. Runtime surfaces including pre-plan, dynamic execution, verification, and provider-backed AI assertion never start device-code authentication; after startup refresh they use the cached provider token.
-- Azure OpenAI remains available when config resolves `azure_openai`, but endpoint, model/deployment name, and API key are supplied by fixed environment variables resolved by `config`: `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_MODEL`, and `AZURE_OPENAI_API_KEY`. Provider diagnostics may name those variables when missing but must never include values.
-- Provider setup readiness is local readiness only. It may perform GitHub/Copilot authentication and token exchange, but it must not call model inference endpoints or prove deployment authorization through a live request.
+- All configured providers use the Responses API and the non-empty model stored in the user-provider record. There is no default provider or fixed GitHub model.
+- GitHub keeps the existing explicit OAuth scopes, token exchange, plan detection, plan-specific endpoints, Copilot headers, and expiration behavior, but token files live under `~/.fsq/auth`. Runtime surfaces never start device authentication.
+- Azure endpoint, model/deployment name, and API key come from the resolved user-provider snapshot, not fixed environment variables.
+- Readiness proves local configuration/token readiness only. The explicit connection test is the sole setup surface that sends a live minimal model request.
+- Device-flow operations do not print or prompt. Control Plane owns background task state and presentation; `providers` owns protocol timing, cancellation checks, exchange, and complete activation through `config`.
 - The providers module owns provider client lifecycle so callers do not leave `AsyncOpenAI` clients open.
 - `AIAssertionEvaluator.evaluate` is synchronous to satisfy the current `core` harness protocol. It may internally bridge to asynchronous provider calls, but that detail must not leak into `core`.
 - OpenAI Agents SDK runtime objects are not shared models. Provider sessions may construct SDK objects, while `models` stores only serializable settings, requests, results, and metadata.
