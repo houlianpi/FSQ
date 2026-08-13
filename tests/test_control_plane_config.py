@@ -161,6 +161,7 @@ def test_device_flow_success_is_queryable_without_returning_tokens(tmp_path: Pat
             )
             if auth_payload["status"] == "success":
                 break
+            time.sleep(0.01)
 
     assert status == 202
     assert auth_payload is not None
