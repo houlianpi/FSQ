@@ -351,6 +351,12 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format_string: str, *args: Any) -> None:
         return
 
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
+
     def _send_sse(self, request_id: str, query: dict[str, list[str]]) -> None:
         try:
             after = _after_sequence(query)

@@ -5,6 +5,7 @@ import asyncio
 import json
 import subprocess
 import time
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -17,6 +18,7 @@ from fsq_agent.control_plane._cases import discover_cases, resolve_case
 from fsq_agent.control_plane._evidence import UI_SNAPSHOT_LIMIT_BYTES, EvidenceProjection, read_screenshot, read_ui_snapshot, safe_exception_message, safe_text
 from fsq_agent.control_plane._execution import _run_explore, _run_strict, prepare_run
 from fsq_agent.control_plane._readiness import provider_readiness, readiness
+from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
 from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
@@ -67,6 +69,23 @@ def _wait_for_terminal(url: str) -> dict[str, object]:
             return snapshot
         time.sleep(0.01)
     raise AssertionError("Control Plane run did not reach a terminal state")
+
+
+@pytest.mark.parametrize("disconnect_error", [ConnectionAbortedError, ConnectionResetError, BrokenPipeError])
+def test_request_handler_closes_connection_when_client_disconnects(
+    monkeypatch: pytest.MonkeyPatch,
+    disconnect_error: type[OSError],
+) -> None:
+    def raise_disconnect(_handler: BaseHTTPRequestHandler) -> None:
+        raise disconnect_error()
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, "handle_one_request", raise_disconnect)
+    handler = object.__new__(_RequestHandler)
+    handler.close_connection = False
+
+    handler.handle_one_request()
+
+    assert handler.close_connection is True
 
 
 def test_state_holds_single_active_task_through_cancellation() -> None:
