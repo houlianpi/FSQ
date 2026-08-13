@@ -232,5 +232,5 @@ def test_connection_test_uses_saved_provider_and_always_closes_session(tmp_path:
     assert result.provider == "azure_openai"
     assert result.model == "saved-model"
     assert result.duration_seconds >= 0
-    assert session.invoke_responses_sync.call_args.kwargs["input"] == "Reply with FSQ_OK."
+    assert session.invoke_responses_sync.call_args.kwargs == {"input": "Reply with FSQ_OK."}
     session.close_sync.assert_called_once_with()
