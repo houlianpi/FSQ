@@ -570,12 +570,13 @@ def test_runtime_task_input_uses_goal_only_verification_contract() -> None:
     assert "verification_goal" in task_input
 
 
-def test_runtime_task_input_includes_runtime_secret_names_and_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TEST_ACCOUNT_EMAIL", "user@example.com")
-    monkeypatch.delenv("TEST_ACCOUNT_PASSWORD", raising=False)
+def test_runtime_task_input_includes_runtime_secret_names_and_warnings() -> None:
+    runtime_secrets = RuntimeSecretSettings()
+    runtime_secrets.set_values({"TEST_ACCOUNT_EMAIL": "user@example.com"})
+    runtime_secrets.allowed_env_names.append("TEST_ACCOUNT_PASSWORD")
     settings = Settings(
         openai_agents=OpenAIAgentsSettings(),
-        runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_EMAIL", "TEST_ACCOUNT_PASSWORD"]),
+        runtime_secrets=runtime_secrets,
     )
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory())
     task = Task(id="login", name="Login", description="Sign in.")
@@ -1458,12 +1459,13 @@ def test_runtime_preview_redacts_wrapped_sensitive_tool_output() -> None:
     assert '"value": "***"' in preview
 
 
-def test_runtime_redacts_configured_secret_values_from_final_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TEST_ACCOUNT_PASSWORD", "super-secret")
+def test_runtime_redacts_configured_secret_values_from_final_output() -> None:
+    runtime_secrets = RuntimeSecretSettings()
+    runtime_secrets.set_values({"TEST_ACCOUNT_PASSWORD": "super-secret"})
     runtime = OpenAIAgentsRuntime(
         Settings(
             openai_agents=OpenAIAgentsSettings(),
-            runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_PASSWORD"]),
+            runtime_secrets=runtime_secrets,
         ),
         _EmptyToolFactory(),
     )
@@ -1480,12 +1482,13 @@ def test_runtime_redacts_configured_secret_values_from_final_output(monkeypatch:
     assert redacted.evidence == ["The password *** was entered."]
 
 
-def test_runtime_redacts_configured_secret_values_from_tool_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TEST_ACCOUNT_PASSWORD", "super-secret")
+def test_runtime_redacts_configured_secret_values_from_tool_arguments() -> None:
+    runtime_secrets = RuntimeSecretSettings()
+    runtime_secrets.set_values({"TEST_ACCOUNT_PASSWORD": "super-secret"})
     runtime = OpenAIAgentsRuntime(
         Settings(
             openai_agents=OpenAIAgentsSettings(),
-            runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_PASSWORD"]),
+            runtime_secrets=runtime_secrets,
         ),
         _EmptyToolFactory(),
     )

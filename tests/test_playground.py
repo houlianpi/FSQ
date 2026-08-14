@@ -105,6 +105,24 @@ def test_task_from_case_yaml_rejects_wrong_suffix(tmp_path: Path) -> None:
         task_from_case_yaml("sample.yaml", settings)
 
 
+def test_playground_case_inputs_reject_paths_outside_workspace_cases(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text("schemaVersion: fsq.ai-test/v1\nname: Outside\n---\n- launchApp\n", encoding="utf-8")
+    settings = Settings()
+    settings.cases.dir = cases_dir
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    with pytest.raises(ConfigurationError, match="workspace cases"):
+        task_from_case_yaml(str(outside), settings)
+    status, payload = server.handle_get("/yaml/input", {"path": [str(outside)]})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "workspace cases" in payload["error"]
+
+
 def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
     settings = Settings()
     settings.harness.android.serial = "device-2"
@@ -766,17 +784,14 @@ def test_playground_server_lifecycle_save_uses_input_path_resolution_policy(tmp_
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    cwd = tmp_path / "cwd"
-    cwd.mkdir()
-    cwd_case = cwd / "cwd.fsq.yaml"
-    absolute_case = tmp_path / "absolute.fsq.yaml"
+    relative_case = settings.cases.dir / "relative.fsq.yaml"
+    absolute_case = settings.cases.dir / "absolute.fsq.yaml"
     content = "schemaVersion: fsq.ai-test/v1\nname: Path\nplatform: android\n---\n- launchApp: {}\n"
-    cwd_case.write_text(content, encoding="utf-8")
+    relative_case.write_text(content, encoding="utf-8")
     absolute_case.write_text(content, encoding="utf-8")
-    monkeypatch.chdir(cwd)
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    for path_text in ("cwd.fsq.yaml", str(absolute_case)):
+    for path_text in (relative_case.name, str(absolute_case)):
         _status, loaded = server.handle_get("/yaml/input", {"path": [path_text]})
         status, _payload = server.handle_put(
             "/yaml/input/lifecycle",
@@ -2551,6 +2566,7 @@ appId: com.microsoft.emmx
     def fake_run_strict_lifecycle_case(**kwargs):
         steps = FsqExecutableStepAdapter(registry_snapshot=kwargs["registry_snapshot"]).to_executable_steps(kwargs["case"])
         captured["steps"] = kwargs["resolve_steps"](steps, kwargs["case"])
+        captured["run_id"] = kwargs["run_id"]
         output_dir = kwargs["output_dir"]
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "core-report.md"
@@ -2580,6 +2596,8 @@ appId: com.microsoft.emmx
     assert progress is not None
     assert progress["result"]["status"] == "success"
     assert captured["driver"] == {"app_id": "com.microsoft.emmx", "serial": "device-1"}
+    assert captured["run_id"].startswith("strict_case-")
+    assert (settings.output.runs_dir / captured["run_id"]).parent == settings.output.runs_dir
     assert captured["steps"][0].action_name == "launch_app"
     assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"
 
@@ -2663,10 +2681,10 @@ def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, m
     )
 
     progress = state.get_task(request_id)
-    manifest_path = settings.output.runs_dir / "strict_lifecycle" / "evidence-manifest.json"
+    assert progress is not None
+    manifest_path = settings.output.runs_dir / progress["result"]["runId"] / "evidence-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     commands = [step["metadata"].get("command") for step in manifest["steps"] if step["metadata"].get("command")]
-    assert progress is not None
     assert progress["result"]["status"] == "success"
     assert actions == ["launch_app"]
     assert commands == ["echo config-before", "echo case-before", "echo case-after", "echo config-after"]
@@ -2849,7 +2867,9 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
         record_on_failure=True,
     )
 
-    manifest_path = settings.output.runs_dir / "root-child" / "evidence-manifest.json"
+    progress = state.get_task(request_id)
+    assert progress is not None
+    manifest_path = settings.output.runs_dir / progress["result"]["runId"] / "evidence-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     parent_index = next(index for index, step_id in enumerate(active_ids) if "hook-run-case" in step_id)
     child_index = next(index for index, step_id in enumerate(active_ids) if step_id.startswith("child-case-step"))

@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from fsq_agent._workspace_paths import resolve_discovered_case_path
 from fsq_agent.models import ConfigurationError, FsqCase, FsqCaseConfig
 
 FSQ_CASE_SUFFIX = ".fsq.yaml"
@@ -31,10 +32,14 @@ class FsqCaseLoader:
         return self._build_case(case_path, docs)
 
     def load_cases(self, path: str | Path) -> list[FsqCase]:
-        root = Path(path)
+        root = Path(path).expanduser().resolve()
         if root.is_file():
             return [self.load_case(root)]
-        candidates = sorted(candidate for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}") if candidate.is_file() and is_fsq_case_file(candidate))
+        candidates = sorted(
+            resolve_discovered_case_path(candidate, root)
+            for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}")
+            if candidate.is_file() and is_fsq_case_file(candidate)
+        )
         return [self.load_case(candidate) for candidate in candidates]
 
     def _build_case(self, path: Path, docs: list[Any]) -> FsqCase:

@@ -1059,11 +1059,7 @@ class OpenAIAgentsRuntime:
         return redacted
 
     def _runtime_secret_values(self) -> tuple[str, ...]:
-        values: list[str] = []
-        for name in self.settings.runtime_secrets.allowed_env_names:
-            raw_value = os.getenv(name)
-            if raw_value:
-                values.append(raw_value)
+        values = self.settings.runtime_secrets.private_values().values()
         return tuple(sorted(set(values), key=len, reverse=True))
 
     def _replace_secret_values(self, value: Any, secret_values: tuple[str, ...]) -> Any:

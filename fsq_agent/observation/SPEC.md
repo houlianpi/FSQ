@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Persist run-level event timelines under the fsq-agent output directory. Screenshots, UI trees, page sources, and other runtime observations are not captured by the observation module itself; they are represented by artifact references produced by active platform runtime services, PlatformTools, CommonTools, or AgentTool artifact helpers.
+Persist run-level event timelines under the active workspace's direct run directory. Screenshots, UI trees, page sources, and other runtime observations are not captured by the observation module itself; they are represented by artifact references produced by active platform runtime services, PlatformTools, CommonTools, or AgentTool artifact helpers.
 
 ## Dependencies
 
@@ -27,5 +27,5 @@ Event logging failures are treated as I/O errors from the underlying filesystem.
 ## Current Invariants
 
 - The observation module does not implement screenshot, UI tree, or page-source capture. Current platform observations should be requested through active PlatformTools or harness runtime services; dynamic historical artifact lookup should use AgentTools. If no active capability exposes an observation type, that observation type is unavailable for the run.
-- Live run event timelines are persisted as `output.runs_dir/<run-id>/events.jsonl` so interrupted or long-running tasks can be inspected before final reports are generated.
-- Event timelines, reports, and tool artifacts must be written under the configured output directories so installed CLI usage does not scatter artifacts across user directories.
+- Live run event timelines are persisted as `<workspace>/cases/<run-id>/events.jsonl`, equivalent to `output.runs_dir/<run-id>/events.jsonl` after workspace settings composition, so interrupted or long-running tasks can be inspected before final reports are generated.
+- Event timelines, reports, and tool artifacts must remain inside the unique current run directory, a direct child of workspace `cases/`; observation never creates a separate workspace `output/` root.

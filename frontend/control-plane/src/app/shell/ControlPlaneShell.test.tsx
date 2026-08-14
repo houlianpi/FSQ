@@ -7,9 +7,10 @@ it('renders reusable shell content with truthful navigation semantics', () => {
   expect(screen.getByText('Arbitrary page outlet')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('button', { name: 'Config' })).toBeEnabled();
-  expect(screen.queryByRole('button', { name: 'Overview' })).not.toBeInTheDocument();
-  expect(screen.getByText('Overview').closest('[aria-disabled="true"]')).toBeInTheDocument();
-  expect(screen.getAllByText('Unavailable')).toHaveLength(4);
+  expect(screen.getByRole('button', { name: 'Overview' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Workspace' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Create workspace' })).toBeEnabled();
+  expect(screen.getAllByText('Unavailable')).toHaveLength(2);
 });
 
 it('opens and closes the accessible drawer with focus restoration', async () => {

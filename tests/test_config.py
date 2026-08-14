@@ -10,6 +10,7 @@ from fsq_agent.config import (
     activate_github_copilot_provider,
     load_platform_settings,
     load_settings,
+    load_workspace_settings,
     save_azure_openai_provider,
     validate_provider_settings,
     validate_runtime_settings,
@@ -41,6 +42,93 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
     app_path = tmp_path / name
     app_path.write_text("", encoding="utf-8")
     return app_path
+
+
+def test_load_workspace_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
+        workspace = tmp_path / "checkout-android"
+        config_dir = workspace / ".fsq"
+        config_dir.mkdir(parents=True)
+        (tmp_path / "config.android.yaml").write_text(
+                """
+harness:
+    platform: android
+    android:
+        backend: uiautomator2
+""",
+                encoding="utf-8",
+        )
+        (config_dir / "config.yaml").write_text(
+                f"""
+version: 1
+name: checkout-android
+root_path: {workspace.as_posix()}
+platform: android
+target:
+    app_id: com.example.checkout
+env:
+    TEST_ACCOUNT_PASSWORD: local-secret
+""",
+                encoding="utf-8",
+        )
+
+        settings = load_workspace_settings(workspace)
+
+        assert settings.workspace.root_dir == workspace
+        assert settings.workspace.config_path == config_dir / "config.yaml"
+        assert settings.harness.platform == "android"
+        assert settings.harness.android.app_id == "com.example.checkout"
+        assert settings.runtime_secrets.allowed_names == ["TEST_ACCOUNT_PASSWORD"]
+        assert settings.runtime_secrets.resolve("TEST_ACCOUNT_PASSWORD") == "local-secret"
+        assert settings.cases.dir == workspace / "cases"
+        assert settings.output.root_dir == workspace / "cases"
+        assert settings.output.runs_dir == workspace / "cases"
+        assert settings.agent_context.knowledge.root_dir == workspace / "knowledge"
+        assert not (workspace / "cases").exists()
+        assert not (workspace / "knowledge").exists()
+
+
+def test_validate_runtime_settings_rejects_workspace_macos_path_that_is_not_bundle_or_executable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "checkout-macos"
+    config_dir = workspace / ".fsq"
+    config_dir.mkdir(parents=True)
+    invalid_app_path = tmp_path / "ordinary-directory"
+    invalid_app_path.mkdir()
+    (tmp_path / "config.macos.yaml").write_text(
+        """
+harness:
+  platform: macos
+  macos:
+    backend: appium_mac2
+""",
+        encoding="utf-8",
+    )
+    (config_dir / "config.yaml").write_text(
+        f"""
+version: 1
+name: checkout-macos
+root_path: {workspace.as_posix()}
+platform: macos
+target:
+  app_path: {invalid_app_path.as_posix()}
+env: {{}}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
+    user_root = tmp_path / "user"
+    save_azure_openai_provider(
+        base_url="https://example.openai.azure.com",
+        model="test-model",
+        api_key="test-key",
+        user_config_root=user_root,
+    )
+    settings = load_workspace_settings(workspace, user_config_root=user_root)
+
+    with pytest.raises(ConfigurationError, match="application bundle or executable"):
+        validate_runtime_settings(settings)
 
 
 @pytest.fixture(autouse=True)

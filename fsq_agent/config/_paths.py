@@ -38,7 +38,8 @@ def _set_hidden_best_effort(path: Path) -> None:
 def _ensure_workspace(settings: Settings, base_dir: Path) -> Path:
     root = settings.workspace.root_dir
     workspace_root = _default_workspace_root(base_dir) if root is None else _resolve_path(root, base_dir)
-    marker_path = workspace_root / settings.workspace.marker_file
+    marker_file = ".fsq-agent-workspace"
+    marker_path = workspace_root / marker_file
 
     if workspace_root.exists() and not workspace_root.is_dir():
         raise ConfigurationError("Workspace root must be a directory.", context={"workspace": str(workspace_root)})
@@ -48,12 +49,7 @@ def _ensure_workspace(settings: Settings, base_dir: Path) -> Path:
     if workspace_root.exists() and any(workspace_root.iterdir()):
         raise ConfigurationError(
             "Workspace directory is not marked as an fsq-agent workspace.",
-            context={"workspace": str(workspace_root), "marker_file": settings.workspace.marker_file},
-        )
-    if not settings.workspace.auto_init:
-        raise ConfigurationError(
-            "Workspace directory is not initialized.",
-            context={"workspace": str(workspace_root), "marker_file": settings.workspace.marker_file},
+            context={"workspace": str(workspace_root), "marker_file": marker_file},
         )
 
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -94,3 +90,23 @@ def resolve_runtime_paths(settings: Settings, base_dir: Path | None = None) -> N
         prompt.agent_template_path = _resolve_path(prompt.agent_template_path, config_base)
     if prompt.task_template_path is not None:
         prompt.task_template_path = _resolve_path(prompt.task_template_path, config_base)
+
+
+def resolve_workspace_runtime_paths(settings: Settings, workspace_root: Path, preset_base: Path) -> None:
+    workspace_root = workspace_root.expanduser().resolve()
+    settings.workspace.root_dir = workspace_root
+    settings.cases.dir = workspace_root / "cases"
+    settings.output.root_dir = workspace_root / "cases"
+    settings.output.runs_dir = workspace_root / "cases"
+
+    knowledge = settings.agent_context.knowledge
+    knowledge.root_dir = workspace_root / "knowledge"
+    knowledge.skills.dir = _resolve_path(knowledge.skills.dir, preset_base)
+    if knowledge.pre_plan.dir is not None:
+        knowledge.pre_plan.dir = _resolve_path(knowledge.pre_plan.dir, knowledge.root_dir)
+
+    prompt = settings.openai_agents.prompt
+    if prompt.agent_template_path is not None:
+        prompt.agent_template_path = _resolve_path(prompt.agent_template_path, preset_base)
+    if prompt.task_template_path is not None:
+        prompt.task_template_path = _resolve_path(prompt.task_template_path, preset_base)

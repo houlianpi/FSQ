@@ -13,6 +13,12 @@ import type {
   StartRunResponse,
   TargetsResponse,
   UiSnapshotResponse,
+  WorkspaceDetail,
+  WorkspaceEntriesResponse,
+  WorkspaceFileResponse,
+  WorkspaceListResponse,
+  CreateWorkspacePayload,
+  UpdateWorkspacePayload,
 } from './types';
 
 const API_BASE = '/api/control-plane';
@@ -169,6 +175,69 @@ function validateConnectionTest(value: unknown): ConnectionTestResponse {
   return value as unknown as ConnectionTestResponse;
 }
 
+function workspaceTarget(value: unknown, platformId: PlatformId): boolean {
+  if (!record(value)) return false;
+  if (platformId === 'android') return hasOnlyKeys(value, ['appId']) && string(value.appId) && Boolean(value.appId);
+  if (platformId === 'web') return hasOnlyKeys(value, ['browserExecutablePath']) && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
+  if (platformId === 'windows') {
+    return hasOnlyKeys(value, ['appPath', 'launchArgs']) || hasOnlyKeys(value, ['appPath', 'windowTitleRe', 'launchArgs'])
+      ? string(value.appPath) && Boolean(value.appPath) && string(value.launchArgs)
+        && (value.windowTitleRe === undefined || string(value.windowTitleRe))
+      : false;
+  }
+  const keys = Object.keys(value);
+  return keys.every((key) => key === 'bundleId' || key === 'appPath')
+    && keys.length > 0
+    && (value.bundleId === undefined || string(value.bundleId))
+    && (value.appPath === undefined || string(value.appPath))
+    && Boolean(value.bundleId || value.appPath);
+}
+
+function validateWorkspaceList(value: unknown): WorkspaceListResponse {
+  const entry = (item: unknown) => {
+    if (!record(item) || !string(item.name) || !string(item.configPath) || !string(item.rootPath)
+      || !string(item.status) || !string(item.message)) return false;
+    if (item.status === 'available') {
+      return hasOnlyKeys(item, ['name', 'configPath', 'rootPath', 'status', 'message', 'platform']) && platform(item.platform);
+    }
+    return item.status === 'unavailable'
+      && hasOnlyKeys(item, ['name', 'configPath', 'rootPath', 'status', 'message', 'action'])
+      && string(item.action);
+  };
+  if (!record(value) || !arrayOf(value.workspaces, entry)) invalidResponse('workspaces', 'Invalid workspace registry fields.');
+  return value as unknown as WorkspaceListResponse;
+}
+
+function validateWorkspaceDetail(value: unknown): WorkspaceDetail {
+  if (!record(value) || !string(value.name) || !string(value.rootPath) || !string(value.configPath)
+    || !platform(value.platform) || !workspaceTarget(value.target, value.platform)
+    || !record(value.env) || !Object.entries(value.env).every(([name, secret]) => Boolean(name) && string(secret))
+    || !string(value.revision) || !value.revision.startsWith('sha256:')) {
+    invalidResponse('workspace detail', 'Invalid workspace configuration fields.');
+  }
+  return value as unknown as WorkspaceDetail;
+}
+
+function validateWorkspaceEntries(value: unknown): WorkspaceEntriesResponse {
+  const entry = (item: unknown) => record(item) && string(item.path) && string(item.name)
+    && (item.kind === 'directory' || item.kind === 'file')
+    && (item.size === null || nonNegativeInteger(item.size)) && string(item.modifiedTime);
+  if (!record(value) || !string(value.path) || !arrayOf(value.entries, entry) || !bool(value.truncated)) {
+    invalidResponse('workspace entries', 'Invalid workspace directory fields.');
+  }
+  return value as unknown as WorkspaceEntriesResponse;
+}
+
+function validateWorkspaceFile(value: unknown): WorkspaceFileResponse {
+  if (!record(value) || !string(value.path) || !string(value.name) || !string(value.mediaType)
+    || (value.presentation !== 'markdown' && value.presentation !== 'code')
+    || !nonNegativeInteger(value.size) || !nonNegativeInteger(value.lineCount)
+    || !string(value.modifiedTime) || !string(value.content)) {
+    invalidResponse('workspace file', 'Invalid workspace file fields.');
+  }
+  return value as unknown as WorkspaceFileResponse;
+}
+
 async function jsonRequest<T>(path: string, validate: (value: unknown) => T, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -228,6 +297,17 @@ export const controlPlaneClient = {
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', body: '{}', signal }),
   testConnection: (signal?: AbortSignal) =>
     jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', body: '{}', signal }),
+  workspaces: (signal?: AbortSignal) => jsonRequest('/workspaces', validateWorkspaceList, { signal }),
+  workspace: (name: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),
+  createWorkspace: (payload: CreateWorkspacePayload, signal?: AbortSignal) =>
+    jsonRequest('/workspaces', validateWorkspaceDetail, { method: 'POST', body: JSON.stringify(payload), signal }),
+  updateWorkspace: (name: string, payload: UpdateWorkspacePayload, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { method: 'PUT', body: JSON.stringify(payload), signal }),
+  workspaceEntries: (name: string, path: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/entries?path=${encodeURIComponent(path)}`, validateWorkspaceEntries, { signal }),
+  workspaceFile: (name: string, path: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`, validateWorkspaceFile, { signal }),
 };
 
 export type ControlPlaneClient = typeof controlPlaneClient;

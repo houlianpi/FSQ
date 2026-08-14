@@ -24,6 +24,15 @@ from ._provider_auth import ProviderAuthState
 from ._readiness import load_control_plane_settings, readiness
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
+from ._workspace_files import WorkspaceFileAPIError, list_workspace_entries, read_workspace_file
+from ._workspaces import (
+    WorkspaceAPIError,
+    create_workspace_request,
+    get_workspace,
+    list_workspaces,
+    map_workspace_exception,
+    update_workspace_request,
+)
 
 _API_PREFIX = "/api/control-plane"
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
@@ -85,6 +94,27 @@ class ControlPlaneServer:
             if path == f"{_API_PREFIX}/config":
                 self._require_config_access(peer_host)
                 return 200, get_config(self.options.user_config_root), dict(_JSON_HEADERS)
+            if path == f"{_API_PREFIX}/workspaces":
+                self._require_config_access(peer_host)
+                return 200, list_workspaces(self.options.user_config_root), dict(_JSON_HEADERS)
+            workspace_name, workspace_suffix = _workspace_route_or_none(path)
+            if workspace_name is not None:
+                self._require_config_access(peer_host)
+                if workspace_suffix == "":
+                    return 200, get_workspace(workspace_name, self.options.user_config_root), dict(_JSON_HEADERS)
+                if workspace_suffix == "/entries":
+                    return 200, list_workspace_entries(
+                        workspace_name,
+                        _workspace_path_query(query, required=False),
+                        self.options.user_config_root,
+                    ), dict(_JSON_HEADERS)
+                if workspace_suffix == "/file":
+                    return 200, read_workspace_file(
+                        workspace_name,
+                        _workspace_path_query(query, required=True),
+                        self.options.user_config_root,
+                    ), dict(_JSON_HEADERS)
+                return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
             auth_request_id = _device_flow_route_or_none(path)
             if auth_request_id is not None:
                 self._require_config_access(peer_host)
@@ -120,6 +150,8 @@ class ControlPlaneServer:
             return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
         except ConfigAPIError as exc:
             return exc.status, _error(exc.code, exc.message, exc.action), dict(_JSON_HEADERS)
+        except (WorkspaceAPIError, WorkspaceFileAPIError) as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action), dict(_JSON_HEADERS)
         except RequestNotFoundError:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request."), dict(_JSON_HEADERS)
         except FileNotFoundError as exc:
@@ -142,6 +174,8 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
+        if path == f"{_API_PREFIX}/workspaces":
+            return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         if path.startswith(f"{_API_PREFIX}/config/"):
             return self._handle_config_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         if path == f"{_API_PREFIX}/runs":
@@ -170,6 +204,9 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
+        workspace_name, workspace_suffix = _workspace_route_or_none(path)
+        if workspace_name is not None and workspace_suffix == "":
+            return self._handle_workspace_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
         return self._handle_config_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
 
     def handle_delete(
@@ -207,6 +244,31 @@ class ControlPlaneServer:
             return 404, _error("not_found", "Control Plane Config endpoint not found.", "Check the API path and method.")
         except Exception as exc:  # noqa: BLE001 - Config boundary maps safe errors.
             mapped = map_config_exception(exc)
+            return mapped.status, _error(mapped.code, mapped.message, mapped.action)
+
+    def _handle_workspace_write(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None,
+        origin: str | None,
+        host: str | None,
+    ) -> tuple[int, dict[str, Any]]:
+        try:
+            self._require_config_access(peer_host)
+            require_same_origin_write(origin, host)
+            if method == "POST" and path == f"{_API_PREFIX}/workspaces":
+                return 201, create_workspace_request(body, self.options.user_config_root)
+            workspace_name, workspace_suffix = _workspace_route_or_none(path)
+            if method == "PUT" and workspace_name is not None and workspace_suffix == "":
+                return 200, update_workspace_request(workspace_name, body, self.options.user_config_root)
+            return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path and method.")
+        except ConfigAPIError as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action)
+        except Exception as exc:  # noqa: BLE001 - Workspace boundary maps safe errors.
+            mapped = map_workspace_exception(exc)
             return mapped.status, _error(mapped.code, mapped.message, mapped.action)
 
     def _require_config_access(self, peer_host: str | None) -> None:
@@ -455,6 +517,28 @@ def _device_flow_route_or_none(path: str) -> str | None:
         return None
     auth_request_id = unquote(path.removeprefix(prefix))
     return auth_request_id if auth_request_id and "/" not in auth_request_id else None
+
+
+def _workspace_route_or_none(path: str) -> tuple[str | None, str | None]:
+    prefix = f"{_API_PREFIX}/workspaces/"
+    if not path.startswith(prefix):
+        return None, None
+    remainder = unquote(path.removeprefix(prefix))
+    workspace_name, separator, suffix = remainder.partition("/")
+    if not workspace_name:
+        return None, None
+    return workspace_name, f"/{suffix}" if separator else ""
+
+
+def _workspace_path_query(query: dict[str, list[str]], *, required: bool) -> str:
+    values = query.get("path")
+    if not values:
+        if not required:
+            return ""
+        raise WorkspaceFileAPIError(400, "invalid_workspace_path", "A workspace file path is required.", "Select a file and retry.")
+    if len(values) != 1:
+        raise WorkspaceFileAPIError(400, "invalid_workspace_path", "Workspace path must have one value.", "Select a workspace path and retry.")
+    return values[0]
 
 
 def _error(code: str, message: str, action: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

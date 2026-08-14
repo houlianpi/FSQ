@@ -106,7 +106,7 @@ Shared command block:
 |---|---|---|
 | `waitMs: {duration_ms: 1000, reason: settle}` | `wait_ms` | validated `WaitMsParams` dump |
 
-For text-entry commands omitting `textType`, `FsqExecutableStepAdapter` validates and stores the payload as literal text for YAML compatibility. For commands containing `textType: runtimeSecret`, the adapter validates the text-entry shape while preserving the environment variable name in `ExecutableStep.params`; final value resolution is owned by `core` immediately before driver invocation. The object shape `text: {runtimeSecret: NAME}` is normalized to `text: NAME` plus `textType: runtimeSecret` before parameter validation.
+For text-entry commands omitting `textType`, `FsqExecutableStepAdapter` validates and stores the payload as literal text for YAML compatibility. For commands containing `textType: runtimeSecret`, the adapter validates the text-entry shape while preserving the workspace secret name in `ExecutableStep.params`; final private-value resolution is owned by `core` immediately before driver invocation. The object shape `text: {runtimeSecret: NAME}` is normalized to `text: NAME` plus `textType: runtimeSecret` before parameter validation.
 
 Runner-owned metadata such as valid `timeout` values should be extracted before driver parameter validation and stored in `ExecutableStep.timeout_ms`, not passed through to driver parameter models. The original raw command remains available in `ExecutableStep.metadata` for evidence and debugging.
 
@@ -163,7 +163,7 @@ Invalid FSQ YAML raises `ConfigurationError` with the failing path. Case paths w
 
 - `.fsq.yaml` is the sole canonical test case input format. Matching is exact and case-sensitive on every platform, and recursive discovery derives its pattern from `FSQ_CASE_SUFFIX`.
 - Single-document `.fsq.yaml` files containing only valid case metadata are supported as goal-only cases. Two-document cases with `[]` or an otherwise empty command list are also goal-only cases.
-- Configured `cases.dir` is treated as read-only input. Strict-core execution may parse FSQ case files from it, while dynamic LLM execution may read case files from it as raw text. Generated files and evidence must be written under the output root.
+- Authored content under configured workspace `cases.dir` is treated as read-only input. Strict-core execution may parse contained FSQ case files, while dynamic LLM execution may read them as raw text. Generated files and evidence are written only by entry/runtime owners inside a unique direct run child of that same workspace `cases/` root; FSQ itself performs no output writes.
 - Markdown conversion reports are intentionally ignored and are not loaded as task inputs.
 - FSQ commands are deterministic ordered input for the strict-core execution path when converted by `FsqExecutableStepAdapter`. Generated recorded cases may include strict replay refs and pure wait commands, but those are still deterministic authored input by the time strict execution begins.
 - FSQ lifecycle hooks are deterministic metadata around strict command execution, not commands in `case.commands`. The fsq module validates hook syntax and preserves hook order, but the CLI owns strict lifecycle orchestration so `fsq` stays independent of path resolution, shell execution, harnesses, evidence, and reports.

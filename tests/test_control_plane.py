@@ -556,10 +556,9 @@ def test_evidence_projection_rejects_escape_and_reads_latest_artifacts(tmp_path:
     assert "super-secret" not in json.dumps(state.snapshot(request_id))
 
 
-def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CONTROL_PLANE_TEST_SECRET", "runtime-secret-value")
+def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    settings.runtime_secrets.allowed_env_names = ["CONTROL_PLANE_TEST_SECRET"]
+    settings.runtime_secrets.set_values({"CONTROL_PLANE_TEST_SECRET": "runtime-secret-value"})
     message = safe_exception_message(
         ValueError(f"Failed at {tmp_path / 'private' / 'case.yaml'} with Bearer abc123 api_key=key-value and runtime-secret-value"),
         settings=settings,

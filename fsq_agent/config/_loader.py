@@ -8,10 +8,18 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from fsq_agent.config._paths import resolve_runtime_paths
+from fsq_agent.config._paths import resolve_runtime_paths, resolve_workspace_runtime_paths
 from fsq_agent.config._settings import Settings
 from fsq_agent.config._user_provider import refresh_provider_settings
-from fsq_agent.models import ConfigurationError
+from fsq_agent.config._workspace import CHROME_EXECUTABLE_NAMES, _is_macos_app_bundle_or_executable, load_workspace_config
+from fsq_agent.models import (
+    AndroidWorkspaceTarget,
+    ConfigurationError,
+    MacOSWorkspaceTarget,
+    WebWorkspaceTarget,
+    WindowsWorkspaceTarget,
+    WorkspaceSettings,
+)
 
 DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
 PLATFORM_CONFIG_PATHS = {
@@ -32,7 +40,6 @@ MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
 MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
 MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
 SUPPORTED_LLM_PROVIDERS = ("github_copilot", "azure_openai")
-CHROME_EXECUTABLE_NAMES = {"chrome", "chrome.exe", "google chrome", "google-chrome", "google-chrome-stable"}
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -104,6 +111,64 @@ def load_platform_settings(
             context={"platform": platform_id, "configured_platform": settings.harness.platform},
         )
     return settings
+
+
+def load_workspace_settings(
+    workspace: str | Path | None = None,
+    user_config_root: str | Path | None = None,
+) -> Settings:
+    workspace_config, workspace_root, workspace_config_path = load_workspace_config(workspace)
+    preset_path = resolve_platform_config_path(workspace_config.platform)
+    _load_env_files(preset_path)
+    preset_data = _read_yaml(preset_path)
+    _reject_obsolete_settings(preset_data)
+    _reject_workspace_owned_preset_settings(preset_data)
+    try:
+        settings = Settings.model_validate(preset_data)
+    except ValidationError as exc:
+        raise ConfigurationError("Invalid platform preset.", context={"errors": exc.errors()}) from exc
+
+    settings.workspace = WorkspaceSettings(root_dir=workspace_root, config_path=workspace_config_path)
+    settings.harness.platform = workspace_config.platform
+    target = workspace_config.target
+    if isinstance(target, AndroidWorkspaceTarget):
+        settings.harness.android.app_id = target.app_id
+    elif isinstance(target, WebWorkspaceTarget):
+        settings.harness.web.browser_executable_path = target.browser_executable_path
+    elif isinstance(target, WindowsWorkspaceTarget):
+        settings.harness.windows.app_path = target.app_path
+        settings.harness.windows.window_title_re = target.window_title_re
+        settings.harness.windows.launch_args = _parse_windows_launch_args(target.launch_args) if target.launch_args else []
+    elif isinstance(target, MacOSWorkspaceTarget):
+        settings.harness.macos.bundle_id = target.bundle_id
+        settings.harness.macos.app_path = target.app_path
+
+    settings.runtime_secrets.set_values(workspace_config.env)
+    _apply_retained_environment_settings(settings)
+    settings = refresh_provider_settings(settings, user_config_root)
+    resolve_workspace_runtime_paths(settings, workspace_root, preset_path.parent)
+    return settings
+
+
+def _reject_workspace_owned_preset_settings(data: dict[str, Any]) -> None:
+    for key in ("workspace", "cases", "output", "runtime_secrets"):
+        if key in data:
+            raise ConfigurationError(
+                "Platform preset contains workspace-owned configuration.",
+                context={"config_key": key},
+            )
+
+
+def _apply_retained_environment_settings(settings: Settings) -> None:
+    serial = _env_value(ANDROID_SERIAL_ENV)
+    if serial:
+        settings.harness.android.serial = serial
+    windows_backend_kind = _env_value(WINDOWS_BACKEND_KIND_ENV)
+    if windows_backend_kind:
+        settings.harness.windows.backend_kind = _validate_windows_backend_kind(windows_backend_kind)
+    macos_appium_server_url = _env_value(MACOS_APPIUM_SERVER_URL_ENV)
+    if macos_appium_server_url:
+        settings.harness.macos.appium_server_url = macos_appium_server_url
 
 
 def _reject_obsolete_settings(data: dict[str, Any]) -> None:
@@ -449,7 +514,7 @@ def _validate_macos_harness_settings(settings: Settings) -> None:
             "Configured macOS app path does not exist.",
             context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
         )
-    if not (app_path.is_dir() or app_path.is_file()):
+    if not _is_macos_app_bundle_or_executable(app_path):
         raise ConfigurationError(
             "Configured macOS app path must point to an application bundle or executable.",
             context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
