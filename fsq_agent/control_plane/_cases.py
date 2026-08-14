@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from fsq_agent._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 
 from ._evidence import safe_exception_message
 
@@ -28,7 +28,10 @@ def discover_cases(settings: Settings, *, limit: int = CASE_LIMIT) -> dict[str, 
     root = settings.cases.dir.resolve()
     if not root.is_dir():
         return {"platform": settings.harness.platform, "cases": [], "truncated": False}
-    candidates = sorted((path for path in root.rglob("*.codex.yaml") if path.is_file()), key=lambda path: path.relative_to(root).as_posix().casefold())
+    candidates = sorted(
+        (path for path in root.rglob(f"*{FSQ_CASE_SUFFIX}") if path.is_file() and is_fsq_case_file(path)),
+        key=lambda path: path.relative_to(root).as_posix().casefold(),
+    )
     truncated = len(candidates) > limit
     _, registry_snapshot, provider_required = build_strict_registry_context(settings.harness.platform)
     entries = [_case_summary(path, root, settings, registry_snapshot, provider_required) for path in candidates[:limit]]
@@ -43,8 +46,8 @@ def resolve_case(settings: Settings, path_text: str) -> Path:
         raise ValueError("casePath must be relative to the configured cases directory.")
     root = settings.cases.dir.resolve()
     resolved = (root / requested).resolve()
-    if not _is_relative_to(resolved, root) or not resolved.name.endswith(".codex.yaml"):
-        raise ValueError("casePath must identify a contained .codex.yaml case.")
+    if not _is_relative_to(resolved, root) or not is_fsq_case_file(resolved):
+        raise ValueError(f"casePath must identify a contained {FSQ_CASE_SUFFIX} case.")
     if not resolved.is_file():
         raise ValueError("The selected strict case no longer exists.")
     return resolved
@@ -53,8 +56,14 @@ def resolve_case(settings: Settings, path_text: str) -> Path:
 def _case_summary(path: Path, root: Path, settings: Settings, registry_snapshot: Any, provider_required: frozenset[str]) -> dict[str, Any]:
     relative = path.relative_to(root).as_posix()
     try:
+        _require_case_containment(path, root)
         case = FsqCaseLoader().load_case(path)
-        lifecycle_cases = collect_strict_lifecycle_cases(case_path=path, case=case, settings=settings)
+        lifecycle_cases = collect_strict_lifecycle_cases(
+            case_path=path,
+            case=case,
+            settings=settings,
+            validate_case_path=lambda candidate: _require_case_containment(candidate, root),
+        )
         _require_lifecycle_containment(lifecycle_cases, root)
         steps_by_case = [FsqExecutableStepAdapter(registry_snapshot=registry_snapshot).to_executable_steps(lifecycle_case) for _, lifecycle_case in lifecycle_cases]
         steps = steps_by_case[0]
@@ -78,7 +87,7 @@ def _case_summary(path: Path, root: Path, settings: Settings, registry_snapshot:
     except Exception as exc:  # noqa: BLE001 - one malformed case must not hide other cases.
         return {
             "path": relative,
-            "id": path.name.removesuffix(".codex.yaml"),
+            "id": path.name.removesuffix(FSQ_CASE_SUFFIX),
             "name": path.name,
             "platform": None,
             "commandCount": 0,
@@ -100,6 +109,11 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 def _require_lifecycle_containment(lifecycle_cases: list[tuple[Path, Any]], root: Path) -> None:
     if any(not _is_relative_to(lifecycle_path.resolve(), root) for lifecycle_path, _ in lifecycle_cases):
         raise ValueError("Case lifecycle dependency escapes the configured cases directory.")
+
+
+def _require_case_containment(path: Path, root: Path) -> None:
+    if not _is_relative_to(path.resolve(), root):
+        raise ValueError("Case path escapes the configured cases directory.")
 
 
 __all__ = ["CASE_LIMIT", "discover_cases", "resolve_case"]

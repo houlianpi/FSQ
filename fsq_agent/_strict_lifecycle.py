@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
 ResolveSteps = Callable[[list[ExecutableStep], FsqCase], list[ExecutableStep]]
 CancellationCheck = Callable[[], None]
+CasePathValidator = Callable[[Path], None]
 logger = logging.getLogger(__name__)
 _PHASE_LABELS = {
     "onCaseStart": "before case",
@@ -92,12 +93,15 @@ def collect_strict_lifecycle_cases(
     case_path: Path,
     case: FsqCase,
     settings: Settings,
+    validate_case_path: CasePathValidator | None = None,
 ) -> list[tuple[Path, FsqCase]]:
     cases: list[tuple[Path, FsqCase]] = []
     loader = FsqCaseLoader()
 
     def collect(current_path: Path, current_case: FsqCase, stack: tuple[Path, ...], *, include_config: bool) -> None:
         resolved_path = current_path.resolve()
+        if validate_case_path is not None:
+            validate_case_path(resolved_path)
         if resolved_path in stack:
             raise ConfigurationError(
                 "Recursive lifecycle hook runCase detected.",
@@ -117,6 +121,8 @@ def collect_strict_lifecycle_cases(
                 if action.action_name != "runCase":
                     continue
                 child_path = _resolve_case_yaml_path(action.value, settings.cases.dir)
+                if validate_case_path is not None:
+                    validate_case_path(child_path)
                 collect(child_path, loader.load_case(child_path), stack, include_config=False)
 
     collect(case_path, case, (), include_config=True)

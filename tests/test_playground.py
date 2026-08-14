@@ -79,19 +79,30 @@ def test_task_from_goal_matches_dynamic_goal_contract() -> None:
 def test_task_from_case_yaml_preserves_raw_reference(tmp_path: Path) -> None:
     cases_dir = tmp_path / "cases"
     cases_dir.mkdir()
-    case_path = cases_dir / "sample.codex.yaml"
+    case_path = cases_dir / "sample.fsq.yaml"
     content = "schemaVersion: fsq.ai-test/v1\nname: Sample\n---\n- launchApp\n"
     case_path.write_text(content, encoding="utf-8")
     settings = Settings()
     settings.cases.dir = cases_dir
 
-    task = task_from_case_yaml("sample.codex.yaml", settings)
+    task = task_from_case_yaml("sample.fsq.yaml", settings)
 
-    assert task.name == "Case reference: sample.codex.yaml"
+    assert task.name == "Case reference: sample.fsq.yaml"
     assert task.planning_reference_kind == "raw_case"
     assert task.planning_reference_text is not None
     assert str(case_path.resolve()) in task.planning_reference_text
     assert content in task.planning_reference_text
+
+
+def test_task_from_case_yaml_rejects_wrong_suffix(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    (cases_dir / "sample.yaml").write_text("name: Sample\n", encoding="utf-8")
+    settings = Settings()
+    settings.cases.dir = cases_dir
+
+    with pytest.raises(ConfigurationError, match=r"\.fsq\.yaml"):
+        task_from_case_yaml("sample.yaml", settings)
 
 
 def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
@@ -415,15 +426,15 @@ def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "sample.codex.yaml"
+    case_path = settings.cases.dir / "sample.fsq.yaml"
     case_path.write_text("schemaVersion: fsq.ai-test/v1\nname: Sample\nplatform: android\ndescription: Open sample\ntags: [smoke]\n---\n- launchApp\n", encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["sample.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["sample.fsq.yaml"]})
 
     assert status == 200
     assert payload["kind"] == "input"
-    assert payload["path"] == "sample.codex.yaml"
+    assert payload["path"] == "sample.fsq.yaml"
     assert payload["resolvedPath"] == str(case_path.resolve())
     assert payload["sizeBytes"] == case_path.stat().st_size
     assert "launchApp" in payload["content"]
@@ -434,23 +445,36 @@ def test_playground_server_yaml_input_endpoint_returns_content(tmp_path: Path) -
         {"key": "platform", "label": "Platform", "value": "android"},
         {"key": "schemaVersion", "label": "Schema", "value": "fsq.ai-test/v1"},
         {"key": "description", "label": "Description", "value": "Open sample"},
-        {"key": "path", "label": "Path", "value": "sample.codex.yaml"},
+        {"key": "path", "label": "Path", "value": "sample.fsq.yaml"},
     ]
     assert payload["display"]["steps"] == [{"index": 1, "displayIndex": 1, "artifactStepId": None, "action": "launchApp", "kind": "setup", "badges": [], "params": []}]
+
+
+def test_playground_server_yaml_input_rejects_wrong_suffix(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.cases.dir = tmp_path / "cases"
+    settings.cases.dir.mkdir()
+    (settings.cases.dir / "sample.yaml").write_text("name: Sample\n", encoding="utf-8")
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/input", {"path": ["sample.yaml"]})
+
+    assert status == 400
+    assert ".fsq.yaml" in payload["error"]
 
 
 def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_revision(tmp_path: Path) -> None:
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "lifecycle.codex.yaml"
+    case_path = settings.cases.dir / "lifecycle.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\n"
         "name: Lifecycle\n"
         "platform: android\n"
         "onCaseStart:\n"
         "- runShell: echo first\n"
-        "  runCase: hooks/login.codex.yaml\n"
+        "  runCase: hooks/login.fsq.yaml\n"
         "onCaseComplete:\n"
         "- runShell: echo complete\n"
         "---\n"
@@ -459,7 +483,7 @@ def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_rev
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["lifecycle.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["lifecycle.fsq.yaml"]})
 
     assert status == 200
     assert payload["editable"] is True
@@ -467,7 +491,7 @@ def test_playground_server_yaml_input_endpoint_returns_ordered_lifecycle_and_rev
     assert payload["display"]["lifecycle"] == {
         "onCaseStart": [
             {"index": 1, "action": "runShell", "value": "echo first"},
-            {"index": 2, "action": "runCase", "value": "hooks/login.codex.yaml"},
+            {"index": 2, "action": "runCase", "value": "hooks/login.fsq.yaml"},
         ],
         "onCaseComplete": [{"index": 1, "action": "runShell", "value": "echo complete"}],
     }
@@ -477,7 +501,7 @@ def test_playground_server_saves_input_lifecycle_and_preserves_commands(tmp_path
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "editable.codex.yaml"
+    case_path = settings.cases.dir / "editable.fsq.yaml"
     original = (
         "# case comment\n"
         "schemaVersion: fsq.ai-test/v1\n"
@@ -497,20 +521,20 @@ def test_playground_server_saves_input_lifecycle_and_preserves_commands(tmp_path
     )
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    get_status, loaded = server.handle_get("/yaml/input", {"path": ["editable.codex.yaml"]})
+    get_status, loaded = server.handle_get("/yaml/input", {"path": ["editable.fsq.yaml"]})
     assert get_status == 200
 
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "editable.codex.yaml",
+            "path": "editable.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [
                 {
                     "action": "runCase",
-                    "value": "cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.codex.yaml",
+                    "value": "cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.fsq.yaml",
                 },
-                {"action": "runCase", "value": "hooks/second.codex.yaml"},
+                {"action": "runCase", "value": "hooks/second.fsq.yaml"},
                 {
                     "action": "runShell",
                     "value": "powershell -ExecutionPolicy Bypass -File .fsq-agent-workspace/scripts/clean_edge_data.ps1",
@@ -526,12 +550,12 @@ def test_playground_server_saves_input_lifecycle_and_preserves_commands(tmp_path
     saved = case_path.read_text(encoding="utf-8")
     assert "# case comment" in saved
     assert "# command comment" in saved
-    long_run_case_line = "- runCase: cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.codex.yaml"
+    long_run_case_line = "- runCase: cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.fsq.yaml"
     long_run_shell_line = "- runShell: powershell -ExecutionPolicy Bypass -File .fsq-agent-workspace/scripts/clean_edge_data.ps1"
     assert long_run_case_line in saved
-    assert "runCase: hooks/second.codex.yaml" in saved
+    assert "runCase: hooks/second.fsq.yaml" in saved
     assert long_run_shell_line in saved
-    assert saved.index(long_run_case_line) < saved.index("runCase: hooks/second.codex.yaml") < saved.index(long_run_shell_line)
+    assert saved.index(long_run_case_line) < saved.index("runCase: hooks/second.fsq.yaml") < saved.index(long_run_shell_line)
     assert "onCaseComplete" not in saved
     assert yaml.safe_load_all(saved)
     assert list(yaml.safe_load_all(saved))[1] == list(yaml.safe_load_all(original))[1]
@@ -541,23 +565,23 @@ def test_playground_server_lifecycle_save_preserves_leading_separator_quotes_and
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "roundtrip.codex.yaml"
+    case_path = settings.cases.dir / "roundtrip.fsq.yaml"
     case_path.write_text(
         '---\nschemaVersion: fsq.ai-test/v1\nname: "Quoted case"\nplatform: android\n---\n- launchApp: {}\n',
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["roundtrip.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["roundtrip.fsq.yaml"]})
 
     status, _payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "roundtrip.codex.yaml",
+            "path": "roundtrip.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [
                 {"action": "runShell", "value": "echo first"},
                 {"action": "runShell", "value": "echo second"},
-                {"action": "runCase", "value": "hooks/second.codex.yaml"},
+                {"action": "runCase", "value": "hooks/second.fsq.yaml"},
             ],
             "onCaseComplete": [],
         },
@@ -568,23 +592,23 @@ def test_playground_server_lifecycle_save_preserves_leading_separator_quotes_and
     assert saved.startswith("---\n")
     assert 'name: "Quoted case"' in saved
     assert saved.index("schemaVersion:") < saved.index("name:") < saved.index("platform:") < saved.index("onCaseStart:")
-    assert saved.index("echo first") < saved.index("echo second") < saved.index("hooks/second.codex.yaml")
+    assert saved.index("echo first") < saved.index("echo second") < saved.index("hooks/second.fsq.yaml")
 
 
 def test_playground_server_lifecycle_save_rejects_invalid_complete_case_without_writing(tmp_path: Path) -> None:
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "invalid-case.codex.yaml"
+    case_path = settings.cases.dir / "invalid-case.fsq.yaml"
     original = "name: Missing required metadata\nplatform: android\n---\n- launchApp: {}\n"
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid-case.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid-case.fsq.yaml"]})
 
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "invalid-case.codex.yaml",
+            "path": "invalid-case.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -601,15 +625,15 @@ def test_playground_server_lifecycle_save_reports_path_and_size_errors(tmp_path:
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    (settings.cases.dir / "folder.codex.yaml").mkdir()
-    large_path = settings.cases.dir / "large-save.codex.yaml"
+    (settings.cases.dir / "folder.fsq.yaml").mkdir()
+    large_path = settings.cases.dir / "large-save.fsq.yaml"
     large_path.write_text("x" * (YAML_DISPLAY_SIZE_LIMIT_BYTES + 1), encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
     body = {"revision": "sha256:none", "onCaseStart": [], "onCaseComplete": []}
 
-    missing_status, _missing_payload = server.handle_put("/yaml/input/lifecycle", {"path": "missing.codex.yaml", **body})
-    directory_status, _directory_payload = server.handle_put("/yaml/input/lifecycle", {"path": "folder.codex.yaml", **body})
-    oversized_status, _oversized_payload = server.handle_put("/yaml/input/lifecycle", {"path": "large-save.codex.yaml", **body})
+    missing_status, _missing_payload = server.handle_put("/yaml/input/lifecycle", {"path": "missing.fsq.yaml", **body})
+    directory_status, _directory_payload = server.handle_put("/yaml/input/lifecycle", {"path": "folder.fsq.yaml", **body})
+    oversized_status, _oversized_payload = server.handle_put("/yaml/input/lifecycle", {"path": "large-save.fsq.yaml", **body})
 
     assert missing_status == 404
     assert directory_status == 400
@@ -620,11 +644,11 @@ def test_playground_server_lifecycle_atomic_replace_failure_preserves_source(tmp
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "replace-failure.codex.yaml"
+    case_path = settings.cases.dir / "replace-failure.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: Replace\nplatform: android\n---\n- launchApp: {}\n"
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["replace-failure.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["replace-failure.fsq.yaml"]})
     monkeypatch.setattr(
         "fsq_agent.playground._yaml_lifecycle.os.replace",
         lambda source, destination: (_ for _ in ()).throw(OSError("replace failed")),
@@ -633,7 +657,7 @@ def test_playground_server_lifecycle_atomic_replace_failure_preserves_source(tmp
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "replace-failure.codex.yaml",
+            "path": "replace-failure.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -650,11 +674,11 @@ def test_playground_server_lifecycle_temp_write_failure_returns_500(tmp_path: Pa
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "temp-failure.codex.yaml"
+    case_path = settings.cases.dir / "temp-failure.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: Temp\nplatform: android\n---\n- launchApp: {}\n"
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["temp-failure.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["temp-failure.fsq.yaml"]})
     monkeypatch.setattr(
         "fsq_agent.playground._yaml_lifecycle.tempfile.NamedTemporaryFile",
         lambda **kwargs: (_ for _ in ()).throw(OSError("temp create failed")),
@@ -663,7 +687,7 @@ def test_playground_server_lifecycle_temp_write_failure_returns_500(tmp_path: Pa
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "temp-failure.codex.yaml",
+            "path": "temp-failure.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -681,11 +705,11 @@ def test_playground_server_lifecycle_serialization_failure_returns_400(tmp_path:
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "serialize-failure.codex.yaml"
+    case_path = settings.cases.dir / "serialize-failure.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: Serialize\nplatform: android\n---\n- launchApp: {}\n"
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["serialize-failure.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["serialize-failure.fsq.yaml"]})
     real_yaml = YAML(typ="rt")
 
     class FailingYaml:
@@ -702,7 +726,7 @@ def test_playground_server_lifecycle_serialization_failure_returns_400(tmp_path:
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "serialize-failure.codex.yaml",
+            "path": "serialize-failure.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -718,16 +742,16 @@ def test_playground_server_lifecycle_result_size_limit_preserves_source(tmp_path
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "result-large.codex.yaml"
+    case_path = settings.cases.dir / "result-large.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: Large result\nplatform: android\n---\n- launchApp: {}\n"
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["result-large.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["result-large.fsq.yaml"]})
 
     status, _payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "result-large.codex.yaml",
+            "path": "result-large.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "x" * YAML_DISPLAY_SIZE_LIMIT_BYTES}],
             "onCaseComplete": [],
@@ -744,15 +768,15 @@ def test_playground_server_lifecycle_save_uses_input_path_resolution_policy(tmp_
     settings.cases.dir.mkdir()
     cwd = tmp_path / "cwd"
     cwd.mkdir()
-    cwd_case = cwd / "cwd.codex.yaml"
-    absolute_case = tmp_path / "absolute.codex.yaml"
+    cwd_case = cwd / "cwd.fsq.yaml"
+    absolute_case = tmp_path / "absolute.fsq.yaml"
     content = "schemaVersion: fsq.ai-test/v1\nname: Path\nplatform: android\n---\n- launchApp: {}\n"
     cwd_case.write_text(content, encoding="utf-8")
     absolute_case.write_text(content, encoding="utf-8")
     monkeypatch.chdir(cwd)
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    for path_text in ("cwd.codex.yaml", str(absolute_case)):
+    for path_text in ("cwd.fsq.yaml", str(absolute_case)):
         _status, loaded = server.handle_get("/yaml/input", {"path": [path_text]})
         status, _payload = server.handle_put(
             "/yaml/input/lifecycle",
@@ -770,20 +794,20 @@ def test_playground_server_rejects_stale_lifecycle_revision_without_writing(tmp_
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "conflict.codex.yaml"
+    case_path = settings.cases.dir / "conflict.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Conflict\nplatform: android\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["conflict.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["conflict.fsq.yaml"]})
     externally_changed = case_path.read_text(encoding="utf-8").replace("name: Conflict", "name: Changed")
     case_path.write_text(externally_changed, encoding="utf-8")
 
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "conflict.codex.yaml",
+            "path": "conflict.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -799,12 +823,12 @@ def test_playground_server_detects_source_change_during_lifecycle_validation(tmp
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "validation-race.codex.yaml"
+    case_path = settings.cases.dir / "validation-race.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: Race\nplatform: android\n---\n- launchApp: {}\n"
     external = original.replace("name: Race", "name: External")
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["validation-race.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["validation-race.fsq.yaml"]})
     real_load_case = FsqCaseLoader.load_case
 
     def change_source_during_validation(loader: FsqCaseLoader, path: Path):
@@ -817,7 +841,7 @@ def test_playground_server_detects_source_change_during_lifecycle_validation(tmp
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "validation-race.codex.yaml",
+            "path": "validation-race.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
             "onCaseComplete": [],
@@ -834,19 +858,19 @@ def test_playground_server_rejects_invalid_or_busy_lifecycle_save(tmp_path: Path
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "invalid.codex.yaml"
+    case_path = settings.cases.dir / "invalid.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Invalid\nplatform: android\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
-    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid.codex.yaml"]})
+    _status, loaded = server.handle_get("/yaml/input", {"path": ["invalid.fsq.yaml"]})
     original = case_path.read_text(encoding="utf-8")
 
     invalid_status, invalid_payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "invalid.codex.yaml",
+            "path": "invalid.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [{"action": "runShell", "value": ""}],
             "onCaseComplete": [],
@@ -856,7 +880,7 @@ def test_playground_server_rejects_invalid_or_busy_lifecycle_save(tmp_path: Path
     busy_status, busy_payload = server.handle_put(
         "/yaml/input/lifecycle",
         {
-            "path": "invalid.codex.yaml",
+            "path": "invalid.fsq.yaml",
             "revision": loaded["revision"],
             "onCaseStart": [],
             "onCaseComplete": [],
@@ -875,7 +899,7 @@ def test_playground_server_yaml_input_endpoint_reports_missing_file(tmp_path: Pa
     settings.cases.dir = tmp_path / "cases"
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["missing.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["missing.fsq.yaml"]})
 
     assert status == 404
     assert payload["available"] is False
@@ -885,10 +909,10 @@ def test_playground_server_yaml_input_endpoint_reports_missing_file(tmp_path: Pa
 def test_playground_server_yaml_input_endpoint_reports_directory(tmp_path: Path) -> None:
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
-    (settings.cases.dir / "folder.codex.yaml").mkdir(parents=True)
+    (settings.cases.dir / "folder.fsq.yaml").mkdir(parents=True)
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["folder.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["folder.fsq.yaml"]})
 
     assert status == 400
     assert payload["available"] is False
@@ -899,11 +923,11 @@ def test_playground_server_yaml_input_endpoint_limits_display_size(tmp_path: Pat
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "large.codex.yaml"
+    case_path = settings.cases.dir / "large.fsq.yaml"
     case_path.write_text("x" * (YAML_DISPLAY_SIZE_LIMIT_BYTES + 1), encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["large.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["large.fsq.yaml"]})
 
     assert status == 413
     assert payload["available"] is False
@@ -914,11 +938,11 @@ def test_playground_server_yaml_input_endpoint_reports_display_parse_errors(tmp_
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "broken.codex.yaml"
+    case_path = settings.cases.dir / "broken.fsq.yaml"
     case_path.write_text("schemaVersion: [\n", encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    status, payload = server.handle_get("/yaml/input", {"path": ["broken.codex.yaml"]})
+    status, payload = server.handle_get("/yaml/input", {"path": ["broken.fsq.yaml"]})
 
     assert status == 400
     assert payload["available"] is False
@@ -930,7 +954,7 @@ def test_playground_server_recorded_yaml_endpoint_returns_content(tmp_path: Path
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path = run_dir / "recorded.fsq.yaml"
     recorded_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n- inputText:\n    text: TEST_PASSWORD\n    textType: runtimeSecret\n    target: Password\n    locator:\n      resourceId: com.example:id/password\n      text: null\n",
         encoding="utf-8",
@@ -989,7 +1013,7 @@ def _recorded_run_with_events(tmp_path: Path, *, events: list[dict], commands: s
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path = run_dir / "recorded.fsq.yaml"
     recorded_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Recorded\nplatform: android\n---\n" + (commands or "- launchApp:\n    appId: com.example\n- clickOn:\n    target: Login\n"),
         encoding="utf-8",
@@ -1200,7 +1224,7 @@ def test_playground_server_recorded_yaml_endpoint_reports_missing_metadata(tmp_p
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    (run_dir / "recorded.codex.yaml").write_text("schemaVersion: fsq.ai-test/v1\n", encoding="utf-8")
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n", encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
     status, payload = server.handle_get("/yaml/recorded/run-1", {})
@@ -1230,7 +1254,7 @@ def test_playground_server_recorded_yaml_endpoint_reports_non_utf8_case(tmp_path
     settings.output.runs_dir = tmp_path / "runs"
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    recorded_path = run_dir / "recorded.codex.yaml"
+    recorded_path = run_dir / "recorded.fsq.yaml"
     recorded_path.write_bytes(b"\xff")
     (run_dir / "recording.json").write_text(
         json.dumps({"status": "recorded", "recorded_case_path": str(recorded_path)}),
@@ -1251,7 +1275,7 @@ def test_playground_server_recorded_yaml_endpoint_rejects_escaped_case_path(tmp_
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
     (run_dir / "recording.json").write_text(
-        json.dumps({"status": "recorded", "recorded_case_path": "../outside.codex.yaml"}),
+        json.dumps({"status": "recorded", "recorded_case_path": "../outside.fsq.yaml"}),
         encoding="utf-8",
     )
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
@@ -1261,6 +1285,26 @@ def test_playground_server_recorded_yaml_endpoint_rejects_escaped_case_path(tmp_
     assert status == 400
     assert payload["available"] is False
     assert "outside" in payload["error"]
+
+
+def test_playground_server_recorded_yaml_endpoint_rejects_noncanonical_contained_case_path(tmp_path: Path) -> None:
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    alternate_path = run_dir / "alternate.fsq.yaml"
+    alternate_path.write_text("schemaVersion: fsq.ai-test/v1\n", encoding="utf-8")
+    (run_dir / "recording.json").write_text(
+        json.dumps({"status": "recorded", "recorded_case_path": str(alternate_path)}),
+        encoding="utf-8",
+    )
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    status, payload = server.handle_get("/yaml/recorded/run-1", {})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "recorded.fsq.yaml" in payload["error"]
 
 
 def test_playground_server_step_artifacts_endpoint_returns_manifest_artifacts(tmp_path: Path) -> None:
@@ -2300,8 +2344,8 @@ def test_playground_execute_requires_exactly_one_source() -> None:
     server.state.create_session("device-1")
 
     missing_status, missing_payload = server.handle_post("/execute", {})
-    both_status, both_payload = server.handle_post("/execute", {"goal": "Do it", "caseYamlPath": "case.codex.yaml"})
-    strict_both_status, strict_both_payload = server.handle_post("/execute", {"caseYamlPath": "case.codex.yaml", "strictCaseYamlPath": "case.codex.yaml"})
+    both_status, both_payload = server.handle_post("/execute", {"goal": "Do it", "caseYamlPath": "case.fsq.yaml"})
+    strict_both_status, strict_both_payload = server.handle_post("/execute", {"caseYamlPath": "case.fsq.yaml", "strictCaseYamlPath": "case.fsq.yaml"})
 
     assert missing_status == 400
     assert "Exactly one" in missing_payload["error"]
@@ -2321,13 +2365,13 @@ def test_playground_execute_starts_strict_yaml(monkeypatch) -> None:
     server = PlaygroundServer(Settings())
     server.state.create_session("device-1")
 
-    status, payload = server.handle_post("/execute", {"strictCaseYamlPath": "case.codex.yaml"})
+    status, payload = server.handle_post("/execute", {"strictCaseYamlPath": "case.fsq.yaml"})
 
     assert status == 202
     assert payload["requestId"]
     assert captured["goal"] is None
     assert captured["case_yaml_path"] is None
-    assert captured["strict_case_yaml_path"] == "case.codex.yaml"
+    assert captured["strict_case_yaml_path"] == "case.fsq.yaml"
     assert captured["record"] is True
     assert captured["record_on_failure"] is True
 
@@ -2448,7 +2492,7 @@ def test_playground_execute_clears_strict_replay_dir_at_start(tmp_path: Path, mo
     settings.cases.dir = tmp_path / "cases"
     settings.output.runs_dir = tmp_path / "runs"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "strict_case.codex.yaml"
+    case_path = settings.cases.dir / "strict_case.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -2469,7 +2513,7 @@ platform: android
     server = PlaygroundServer(settings)
     server.state.create_session("device-1")
 
-    status, _payload = server.handle_post("/execute", {"strictCaseYamlPath": "strict_case.codex.yaml"})
+    status, _payload = server.handle_post("/execute", {"strictCaseYamlPath": "strict_case.fsq.yaml"})
 
     assert status == 202
     assert not replay_dir.exists()
@@ -2481,7 +2525,7 @@ def test_playground_strict_yaml_execution_uses_standard_step_adapter(tmp_path: P
     settings.output.runs_dir = tmp_path / "runs"
     settings.harness.android.serial = "device-1"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "strict_case.codex.yaml"
+    case_path = settings.cases.dir / "strict_case.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -2526,7 +2570,7 @@ appId: com.microsoft.emmx
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="strict_case.codex.yaml",
+        strict_case_yaml_path="strict_case.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2551,7 +2595,7 @@ def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, m
     settings.output.runs_dir = tmp_path / "runs"
     settings.harness.android.app_id = "com.example"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "strict_lifecycle.codex.yaml"
+    case_path = settings.cases.dir / "strict_lifecycle.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\n"
         "name: Strict Lifecycle\n"
@@ -2612,7 +2656,7 @@ def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, m
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="strict_lifecycle.codex.yaml",
+        strict_case_yaml_path="strict_lifecycle.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2635,7 +2679,7 @@ def test_playground_strict_preflight_failure_runs_no_hooks_or_harness(tmp_path: 
     settings.output.runs_dir = tmp_path / "runs"
     settings.harness.windows.app_path = tmp_path / "app.exe"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "preflight.codex.yaml"
+    case_path = settings.cases.dir / "preflight.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\n"
         "name: Preflight\n"
@@ -2671,7 +2715,7 @@ def test_playground_strict_preflight_failure_runs_no_hooks_or_harness(tmp_path: 
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="preflight.codex.yaml",
+        strict_case_yaml_path="preflight.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2690,7 +2734,7 @@ def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Pat
     settings.output.runs_dir = tmp_path / "runs"
     settings.harness.android.app_id = "com.example"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "no-hooks.codex.yaml"
+    case_path = settings.cases.dir / "no-hooks.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: No Hooks\nplatform: android\nappId: com.example\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -2719,7 +2763,7 @@ def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Pat
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="no-hooks.codex.yaml",
+        strict_case_yaml_path="no-hooks.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2733,14 +2777,14 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
     settings.output.runs_dir = tmp_path / "runs"
     settings.harness.android.app_id = "com.example"
     settings.cases.dir.mkdir()
-    child_path = settings.cases.dir / "child.codex.yaml"
+    child_path = settings.cases.dir / "child.fsq.yaml"
     child_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
-    root_path = settings.cases.dir / "root-child.codex.yaml"
+    root_path = settings.cases.dir / "root-child.fsq.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Root Child\nplatform: android\nappId: com.example\nonCaseStart:\n- runCase: child.codex.yaml\n---\n- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Root Child\nplatform: android\nappId: com.example\nonCaseStart:\n- runCase: child.fsq.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     actions: list[str] = []
@@ -2799,7 +2843,7 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="root-child.codex.yaml",
+        strict_case_yaml_path="root-child.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2838,7 +2882,7 @@ def test_playground_strict_web_yaml_execution_uses_web_harness(tmp_path: Path, m
     settings.cases.dir = tmp_path / "cases"
     settings.output.runs_dir = tmp_path / "runs"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "strict_web.codex.yaml"
+    case_path = settings.cases.dir / "strict_web.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -2885,7 +2929,7 @@ platform: web
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="strict_web.codex.yaml",
+        strict_case_yaml_path="strict_web.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -2927,7 +2971,7 @@ def test_playground_strict_windows_yaml_execution_uses_windows_harness(tmp_path:
     settings.cases.dir = tmp_path / "cases"
     settings.output.runs_dir = tmp_path / "runs"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "strict_windows.codex.yaml"
+    case_path = settings.cases.dir / "strict_windows.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -2971,7 +3015,7 @@ platform: windows
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="strict_windows.codex.yaml",
+        strict_case_yaml_path="strict_windows.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -3022,7 +3066,7 @@ def test_playground_strict_yaml_runs_outside_async_event_loop(monkeypatch) -> No
         request_id=request_id,
         goal=None,
         case_yaml_path=None,
-        strict_case_yaml_path="strict_case.codex.yaml",
+        strict_case_yaml_path="strict_case.fsq.yaml",
         device_id=None,
         record=True,
         record_on_failure=True,
@@ -3031,7 +3075,7 @@ def test_playground_strict_yaml_runs_outside_async_event_loop(monkeypatch) -> No
     progress = state.get_task(request_id)
     assert progress is not None
     assert progress["status"] == "success"
-    assert captured == {"running_loop": False, "path_text": "strict_case.codex.yaml"}
+    assert captured == {"running_loop": False, "path_text": "strict_case.fsq.yaml"}
 
 
 def test_playground_auto_session_route_creates_single_device_session(monkeypatch) -> None:
@@ -3091,7 +3135,7 @@ def test_playground_server_saves_yaml_lifecycle_over_http(tmp_path: Path) -> Non
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "http.codex.yaml"
+    case_path = settings.cases.dir / "http.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: HTTP\nplatform: android\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -3099,12 +3143,12 @@ def test_playground_server_saves_yaml_lifecycle_over_http(tmp_path: Path) -> Non
     server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
     server.start()
     try:
-        with _open_loopback(f"{server.url}/yaml/input?path=http.codex.yaml") as response:
+        with _open_loopback(f"{server.url}/yaml/input?path=http.fsq.yaml") as response:
             loaded = json.loads(response.read().decode("utf-8"))
         request = _loopback_json_put_request(
             f"{server.url}/yaml/input/lifecycle",
             {
-                "path": "http.codex.yaml",
+                "path": "http.fsq.yaml",
                 "revision": loaded["revision"],
                 "onCaseStart": [{"action": "runShell", "value": "echo setup"}],
                 "onCaseComplete": [],
@@ -3125,20 +3169,20 @@ def test_playground_server_rejects_stale_yaml_lifecycle_over_http(tmp_path: Path
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    case_path = settings.cases.dir / "http-conflict.codex.yaml"
+    case_path = settings.cases.dir / "http-conflict.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\nname: HTTP conflict\nplatform: android\n---\n- launchApp: {}\n"
     external = original.replace("name: HTTP conflict", "name: External")
     case_path.write_text(original, encoding="utf-8")
     server = PlaygroundServer(settings, PlaygroundServerOptions(port=0, static_path=static_dir, open_browser=False))
     server.start()
     try:
-        with _open_loopback(f"{server.url}/yaml/input?path=http-conflict.codex.yaml") as response:
+        with _open_loopback(f"{server.url}/yaml/input?path=http-conflict.fsq.yaml") as response:
             loaded = json.loads(response.read().decode("utf-8"))
         case_path.write_text(external, encoding="utf-8")
         request = _loopback_json_put_request(
             f"{server.url}/yaml/input/lifecycle",
             {
-                "path": "http-conflict.codex.yaml",
+                "path": "http-conflict.fsq.yaml",
                 "revision": loaded["revision"],
                 "onCaseStart": [{"action": "runShell", "value": "echo draft"}],
                 "onCaseComplete": [],
@@ -3721,9 +3765,9 @@ import model from {json.dumps(model_path.as_uri())};
 const snapshot = model.empty();
 let draft = model.addAction(snapshot, 'onCaseStart', 'runCase');
 const invalidEmpty = model.validationError(draft);
-draft = model.updateAction(draft, 'onCaseStart', 0, 'value', 'hooks/setup.codex.yaml');
+draft = model.updateAction(draft, 'onCaseStart', 0, 'value', 'hooks/setup.fsq.yaml');
 draft = model.addAction(draft, 'onCaseStart', 'runCase');
-draft = model.updateAction(draft, 'onCaseStart', 1, 'value', 'hooks/second.codex.yaml');
+draft = model.updateAction(draft, 'onCaseStart', 1, 'value', 'hooks/second.fsq.yaml');
 draft = model.addAction(draft, 'onCaseStart', 'runShell');
 draft = model.updateAction(draft, 'onCaseStart', 2, 'value', 'echo ready');
 draft = model.moveAction(draft, 'onCaseStart', 2, -1);
@@ -3742,12 +3786,12 @@ console.log(JSON.stringify({{ invalidEmpty, ordered, remaining: model.actions(dr
     assert payload["invalidEmpty"] == "Lifecycle action values cannot be empty."
     assert payload["ordered"] == [
         ["runShell", "echo ready"],
-        ["runCase", "hooks/setup.codex.yaml"],
-        ["runCase", "hooks/second.codex.yaml"],
+        ["runCase", "hooks/setup.fsq.yaml"],
+        ["runCase", "hooks/second.fsq.yaml"],
     ]
     assert payload["remaining"] == [
         {"action": "runShell", "value": "echo ready"},
-        {"action": "runCase", "value": "hooks/second.codex.yaml"},
+        {"action": "runCase", "value": "hooks/second.fsq.yaml"},
     ]
     assert payload["valid"] == ""
     assert payload["discarded"] == {"onCaseStart": [], "onCaseComplete": []}

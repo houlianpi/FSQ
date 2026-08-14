@@ -98,7 +98,7 @@ class FsqCase(BaseModel):
 
     @property
     def id(self) -> str:
-        return self.path.stem.replace(".codex", "")
+        return self.path.name.removesuffix(".fsq.yaml")
 
 
 def _normalize_lifecycle_hook_field(value: Any) -> Any:

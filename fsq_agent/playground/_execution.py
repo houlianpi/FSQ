@@ -24,8 +24,8 @@ from fsq_agent.core import (
     HarnessInterface,
     RuntimeSecretStore,
 )
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
+from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.playground._recording import record_dynamic_result
 from fsq_agent.providers import build_ai_assertion_evaluator
 
@@ -147,7 +147,7 @@ def task_from_case_yaml(path_text: str, settings: Settings) -> Task:
         f"{content}"
     )
     reference_text = f"Source path: {display_path}\n\nRaw file content:\n{content}"
-    slug_source = source_path.stem or "case-yaml"
+    slug_source = source_path.name.removesuffix(FSQ_CASE_SUFFIX) or "case-yaml"
     slug = re.sub(r"[^a-z0-9]+", "-", slug_source.lower()).strip("-") or "case-yaml"
     return Task(
         id=slug[:80],
@@ -160,6 +160,8 @@ def task_from_case_yaml(path_text: str, settings: Settings) -> Task:
 
 def _read_case_yaml_text(path_text: str, settings: Settings) -> tuple[Path, str]:
     requested = Path(path_text.strip())
+    if not is_fsq_case_file(requested):
+        raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
     candidates = []
     if requested.is_absolute():
         candidates.append(requested)
@@ -432,6 +434,8 @@ class _CancellableHarness:
 
 def _resolve_case_yaml_path(path_text: str, settings: Settings) -> Path:
     requested = Path(path_text.strip())
+    if not is_fsq_case_file(requested):
+        raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
     candidates = [requested] if requested.is_absolute() else [settings.cases.dir / requested, Path.cwd() / requested]
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():

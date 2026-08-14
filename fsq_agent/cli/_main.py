@@ -32,7 +32,7 @@ from fsq_agent.core import (
     HarnessInterface,
     RuntimeSecretStore,
 )
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task
 from fsq_agent.playground import PlaygroundServerOptions, run_playground
 from fsq_agent.providers import build_ai_assertion_evaluator
@@ -224,7 +224,8 @@ def _run_dynamic(
         _run_dynamic_task(settings, _task_from_goal(goal), stream, stream_format, record, record_on_failure)
         return
     if case_yaml_path is not None:
-        source_path, content = read_raw_text_file(case_yaml_path, settings.cases.dir)
+        source_path = resolve_case_yaml_path(case_yaml_path, settings.cases.dir)
+        _, content = read_raw_text_file(source_path)
         _run_dynamic_task(settings, _task_from_raw_case_source(source_path, content), stream, stream_format, record, record_on_failure)
         return
     if case_dir_path is None:
@@ -571,7 +572,7 @@ def _task_from_raw_case_source(source_path: Path, content: str) -> Task:
     label = source_path.name
     planning_reference_text = _raw_case_planning_reference(source_path, content)
     return Task(
-        id=_goal_task_id(source_path.name.removesuffix(".codex.yaml")),
+        id=_goal_task_id(source_path.name.removesuffix(FSQ_CASE_SUFFIX)),
         name=f"Case reference: {label}",
         description=(
             "Run this case through dynamic LLM execution using the raw file content below as reference material. "
@@ -593,7 +594,7 @@ def _goal_task_id(goal: str) -> str:
 
 
 def _case_run_slug(case_path: Path, index: int) -> str:
-    stem = case_path.name.removesuffix(".codex.yaml")
+    stem = case_path.name.removesuffix(FSQ_CASE_SUFFIX)
     slug = re.sub(r"[^a-z0-9]+", "-", stem.casefold()).strip("-")
     return f"{index:03d}-{slug[:80] or 'case'}"
 

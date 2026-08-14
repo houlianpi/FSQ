@@ -13,7 +13,7 @@ const readiness = (platform: 'android' | 'web'): ReadinessResponse => ({
   target: { status: 'ready', message: 'ready', action: '' }, strict: { status: 'ready', message: 'ready', action: '' },
 });
 const targets = (platform: 'android' | 'web'): TargetsResponse => ({ platform, targetLabel: platform === 'web' ? 'Browser' : 'Device', targets: [{ id: `${platform}-target`, label: `${platform} target`, description: 'ready', status: 'ready', selectable: true, isDefault: true, metadata: {} }] });
-const cases = (platform: 'android' | 'web'): CasesResponse => ({ platform, truncated: false, cases: [{ path: `${platform}.codex.yaml`, id: platform, name: `${platform} case`, platform, commandCount: 1, requiresAiAssertion: false, validationStatus: 'validated', selectable: true, diagnostics: [] }] });
+const cases = (platform: 'android' | 'web'): CasesResponse => ({ platform, truncated: false, cases: [{ path: `${platform}.fsq.yaml`, id: platform, name: `${platform} case`, platform, commandCount: 1, requiresAiAssertion: false, validationStatus: 'validated', selectable: true, diagnostics: [] }] });
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 const runSnapshot = (requestId = 'request-1', platform: 'android' | 'web' = 'android') => ({
@@ -47,21 +47,21 @@ it('derives start eligibility and sends mode-specific strict payloads', async ()
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),
     startRun, cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot()), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ requestId: 'request-1', runId: null, platform: 'android', targetId: 'android-target', mode: 'strict', status: 'preparing', source: { casePath: 'android.codex.yaml' }, startedAt: '', completedAt: null, cancelRequested: false, events: [], activeStep: null, result: null, summary: 'Preparing', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ requestId: 'request-1', runId: null, platform: 'android', targetId: 'android-target', mode: 'strict', status: 'preparing', source: { casePath: 'android.fsq.yaml' }, startedAt: '', completedAt: null, cancelRequested: false, events: [], activeStep: null, result: null, summary: 'Preparing', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
   const { result } = renderHook(() => useDeviceWorkspace(client));
   await waitFor(() => expect(result.current.targets.state).toBe('ready'));
   expect(result.current.canStart).toBe(false);
   act(() => result.current.setMode('strict'));
   await waitFor(() => expect(result.current.canStart).toBe(true));
   await act(async () => result.current.start());
-  expect(startRun).toHaveBeenCalledWith({ mode: 'strict', platform: 'android', targetId: 'android-target', casePath: 'android.codex.yaml' });
+  expect(startRun).toHaveBeenCalledWith({ mode: 'strict', platform: 'android', targetId: 'android-target', casePath: 'android.fsq.yaml' });
   expect(result.current.controlsLocked).toBe(true);
 });
 
 it('requires provider readiness only for provider-gated strict cases', async () => {
   const unavailableProvider = { ...readiness('android'), provider: { status: 'unavailable' as const, message: 'setup', action: 'configure' } };
   const baseCase = cases('android').cases[0];
-  const providerCases = { ...cases('android'), cases: [{ ...baseCase, path: 'gated.codex.yaml', requiresAiAssertion: true }, { ...baseCase, path: 'free.codex.yaml' }] };
+  const providerCases = { ...cases('android'), cases: [{ ...baseCase, path: 'gated.fsq.yaml', requiresAiAssertion: true }, { ...baseCase, path: 'free.fsq.yaml' }] };
   const client = {
     bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(unavailableProvider),
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(providerCases),
@@ -73,7 +73,7 @@ it('requires provider readiness only for provider-gated strict cases', async () 
   expect(result.current.selectedCase?.requiresAiAssertion).toBe(true);
   expect(result.current.canStart).toBe(false);
 
-  act(() => result.current.setCasePath('free.codex.yaml'));
+  act(() => result.current.setCasePath('free.fsq.yaml'));
   expect(result.current.canStart).toBe(true);
 });
 

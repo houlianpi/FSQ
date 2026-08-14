@@ -93,7 +93,7 @@ Use the selected platform extra when running the CLI from a source checkout:
 uv run --frozen --extra dev --extra $platform fsq-agent --help
 uv run --frozen --extra dev --extra $platform fsq-agent init --platform $platform
 uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --goal "Describe the task"
-uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --strict --case-yaml "path/to/case.codex.yaml"
+uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --strict --case-yaml "path/to/case.fsq.yaml"
 uv run --frozen --extra dev --extra $platform fsq-agent report --platform $platform --run-id "run-id" --format markdown
 uv run --frozen --extra dev --extra $platform fsq-agent playground --platform $platform
 ```

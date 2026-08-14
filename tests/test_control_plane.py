@@ -23,6 +23,7 @@ from fsq_agent.control_plane._replay import read_replay_video, replay_video_meta
 from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
+from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 
 
@@ -110,7 +111,7 @@ def test_state_holds_single_active_task_through_cancellation() -> None:
 
 def test_state_sequences_resumable_snapshots_and_releases_only_after_finalizing() -> None:
     state = ControlPlaneState()
-    request_id = state.reserve(platform="web", target_id="chrome", mode="strict", source={"casePath": "a.codex.yaml"})
+    request_id = state.reserve(platform="web", target_id="chrome", mode="strict", source={"casePath": "a.fsq.yaml"})
     state.transition(request_id, "running")
     state.add_event(request_id, {"label": "one"})
     state.add_event(request_id, {"label": "two"})
@@ -220,39 +221,89 @@ def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatc
 
 def test_case_discovery_is_recursive_sorted_validated_and_platform_filtered(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "z.codex.yaml")
-    _case(settings.cases.dir / "nested" / "a.codex.yaml")
-    _case(settings.cases.dir / "wrong.codex.yaml", platform="web", app_id=False)
-    (settings.cases.dir / "broken.codex.yaml").write_text("not: valid: yaml", encoding="utf-8")
+    _case(settings.cases.dir / "z.fsq.yaml")
+    _case(settings.cases.dir / "nested" / "a.fsq.yaml")
+    _case(settings.cases.dir / "wrong.fsq.yaml", platform="web", app_id=False)
+    _case(settings.cases.dir / "excluded.FSQ.yaml")
+    (settings.cases.dir / "broken.fsq.yaml").write_text("not: valid: yaml", encoding="utf-8")
 
     payload = discover_cases(settings)
 
-    assert [entry["path"] for entry in payload["cases"]] == ["broken.codex.yaml", "nested/a.codex.yaml", "wrong.codex.yaml", "z.codex.yaml"]
+    assert [entry["path"] for entry in payload["cases"]] == ["broken.fsq.yaml", "nested/a.fsq.yaml", "wrong.fsq.yaml", "z.fsq.yaml"]
     assert payload["cases"][1]["validationStatus"] == "validated"
     assert payload["cases"][1]["commandCount"] == 1
     assert payload["cases"][2]["selectable"] is False
     assert payload["cases"][0]["diagnostics"]
 
 
+def test_case_discovery_rejects_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text("outside", encoding="utf-8")
+    linked = settings.cases.dir / "linked.fsq.yaml"
+    linked.symlink_to(outside)
+    loaded: list[Path] = []
+
+    def track_load(_loader, path: Path):
+        loaded.append(path)
+        raise AssertionError("escaped case must not be read")
+
+    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+
+    payload = discover_cases(settings)
+
+    assert loaded == []
+    assert payload["cases"][0]["selectable"] is False
+    assert "escapes" in payload["cases"][0]["diagnostics"][0]
+
+
+def test_case_discovery_rejects_lifecycle_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    _case(outside)
+    linked = settings.cases.dir / "child.fsq.yaml"
+    linked.symlink_to(outside)
+    root_path = settings.cases.dir / "root.fsq.yaml"
+    root_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        encoding="utf-8",
+    )
+    original_load = FsqCaseLoader.load_case
+    loaded: list[Path] = []
+
+    def track_load(loader: FsqCaseLoader, path: Path):
+        loaded.append(path.resolve())
+        return original_load(loader, path)
+
+    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+
+    payload = discover_cases(settings)
+
+    root_entry = next(entry for entry in payload["cases"] if entry["path"] == "root.fsq.yaml")
+    assert outside.resolve() not in loaded
+    assert root_entry["selectable"] is False
+    assert "escapes" in root_entry["diagnostics"][0]
+
+
 def test_case_discovery_limit_and_contained_resolution(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     for index in range(3):
-        _case(settings.cases.dir / f"{index}.codex.yaml")
+        _case(settings.cases.dir / f"{index}.fsq.yaml")
 
     payload = discover_cases(settings, limit=2)
 
     assert len(payload["cases"]) == 2
     assert payload["truncated"] is True
-    assert resolve_case(settings, "0.codex.yaml") == (settings.cases.dir / "0.codex.yaml").resolve()
+    assert resolve_case(settings, "0.fsq.yaml") == (settings.cases.dir / "0.fsq.yaml").resolve()
     with pytest.raises(ValueError, match="contained"):
-        resolve_case(settings, "../outside.codex.yaml")
+        resolve_case(settings, "../outside.fsq.yaml")
     with pytest.raises(ValueError, match="relative"):
-        resolve_case(settings, str((settings.cases.dir / "0.codex.yaml").resolve()))
+        resolve_case(settings, str((settings.cases.dir / "0.fsq.yaml").resolve()))
 
 
 def test_case_discovery_derives_ai_requirement_from_registry_snapshots(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "ai.codex.yaml", command="assertWithAI:\n    prompt: Verify the page")
+    _case(settings.cases.dir / "ai.fsq.yaml", command="assertWithAI:\n    prompt: Verify the page")
 
     entry = discover_cases(settings)["cases"][0]
 
@@ -301,10 +352,10 @@ def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(t
 
 def test_strict_preparation_validates_lifecycle_children_before_harness_creation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "child.codex.yaml", platform="web", app_id=False)
-    root_path = settings.cases.dir / "root.codex.yaml"
+    _case(settings.cases.dir / "child.fsq.yaml", platform="web", app_id=False)
+    root_path = settings.cases.dir / "root.fsq.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.codex.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
         encoding="utf-8",
     )
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
@@ -313,13 +364,44 @@ def test_strict_preparation_validates_lifecycle_children_before_harness_creation
         prepare_run(
             request_id="request-1",
             settings=settings,
-            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.codex.yaml"},
+            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.fsq.yaml"},
         )
+
+
+def test_strict_preparation_rejects_lifecycle_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    _case(outside)
+    linked = settings.cases.dir / "child.fsq.yaml"
+    linked.symlink_to(outside)
+    root_path = settings.cases.dir / "root.fsq.yaml"
+    root_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        encoding="utf-8",
+    )
+    original_load = FsqCaseLoader.load_case
+    loaded: list[Path] = []
+
+    def track_load(loader: FsqCaseLoader, path: Path):
+        loaded.append(path.resolve())
+        return original_load(loader, path)
+
+    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.control_plane._execution.FsqCaseLoader.load_case", track_load)
+
+    with pytest.raises(ValueError, match="escapes"):
+        prepare_run(
+            request_id="request-1",
+            settings=settings,
+            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.fsq.yaml"},
+        )
+
+    assert loaded == [root_path.resolve()]
 
 
 def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "strict.codex.yaml")
+    _case(settings.cases.dir / "strict.fsq.yaml")
     calls: list[bool] = []
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr(
@@ -331,7 +413,7 @@ def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(
     prepared = prepare_run(
         request_id="request-1",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.fsq.yaml"},
     )
 
     assert prepared.registry_snapshot.resolve("waitMs") is not None
@@ -342,7 +424,7 @@ def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(
 
 def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "ai.codex.yaml", command="assertWithAI:\n    prompt: Verify the page")
+    _case(settings.cases.dir / "ai.fsq.yaml", command="assertWithAI:\n    prompt: Verify the page")
     calls: list[str] = []
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda _settings, requires_ai_assertion=False: calls.append(f"strict:{requires_ai_assertion}"))
@@ -351,7 +433,7 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
     prepared = prepare_run(
         request_id="request-ai",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "ai.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "ai.fsq.yaml"},
     )
 
     assert prepared.requires_ai_assertion is True
@@ -360,16 +442,16 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
 
 def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "wait.codex.yaml")
+    _case(settings.cases.dir / "wait.fsq.yaml")
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
     prepared = prepare_run(
         request_id="request-strict",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "wait.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "wait.fsq.yaml"},
     )
     state = ControlPlaneState()
-    request_id = state.reserve(platform="android", target_id="device", mode="strict", source={"casePath": "wait.codex.yaml"})
+    request_id = state.reserve(platform="android", target_id="device", mode="strict", source={"casePath": "wait.fsq.yaml"})
     prepared.request_id = request_id
 
     class FakeHarness:
@@ -740,7 +822,7 @@ def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(t
 
 def test_case_diagnostics_use_safe_sanitizer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    case_path = settings.cases.dir / "unsafe.codex.yaml"
+    case_path = settings.cases.dir / "unsafe.fsq.yaml"
     case_path.write_text("broken", encoding="utf-8")
     monkeypatch.setattr(
         "fsq_agent.control_plane._cases.FsqCaseLoader.load_case",
@@ -925,7 +1007,7 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
     entry.parent.mkdir(parents=True)
     entry.write_text("control plane", encoding="utf-8")
     settings = _settings(tmp_path, "web")
-    _case(settings.cases.dir / "strict.codex.yaml", platform="web", app_id=False)
+    _case(settings.cases.dir / "strict.fsq.yaml", platform="web", app_id=False)
     monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda *_args: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_runtime_settings", lambda *_args: None)
@@ -1001,7 +1083,7 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
         assert "Explore started" in sse
         assert '"terminal":true' in sse
 
-        strict = _post_json(f"{server.url}/api/control-plane/runs", {"mode": "strict", "platform": "web", "targetId": "chrome", "casePath": "strict.codex.yaml"})
+        strict = _post_json(f"{server.url}/api/control-plane/runs", {"mode": "strict", "platform": "web", "targetId": "chrome", "casePath": "strict.fsq.yaml"})
         strict_snapshot = _wait_for_terminal(f"{server.url}/api/control-plane/runs/{strict['requestId']}")
         assert strict_snapshot["status"] == "success"
         assert strict_snapshot["screenshotRevision"] > 0
