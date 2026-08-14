@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide the production FSQ Control Plane browser entry. The entry owns a reusable application shell and left sidebar plus the Devices page used to select a local platform/target, inspect readiness, run Explore or Strict Replay, follow execution, and inspect current screenshot, UI snapshot, and safe logs.
+Provide the production FSQ Control Plane browser entry. The entry owns a reusable application shell and left sidebar plus the Devices page used to select a local platform/target, inspect readiness, create a Case from a Goal or test an existing Case with optional suggestions, follow execution, and inspect current screenshot, UI snapshot, and safe logs.
 
 The entry does not own backend validation, target/case truth, execution semantics, persisted-run browsing, YAML editing, or production implementations of Overview, Workspace, Runs, Config, or Settings.
 
@@ -49,20 +49,21 @@ While idle, changing platform aborts outstanding readiness/target/case requests,
 
 During `preparing`, `running`, and `finalizing`, platform and target controls are locked to the run context.
 
-### Explore and Strict Replay
+### Case Create and Case Test
 
-The operation panel has Explore and Strict Replay modes.
+The operation panel exposes Case Create and Case Test operations aligned with the shared Application API.
 
-Explore:
+Case Create:
 
 - Accepts one non-empty natural-language goal.
 - Explains that FSQ plans, operates, captures evidence, and verifies.
 - Requires workspace, provider, target, and source readiness.
 - Does not depend on case discovery completion, case selection, or existence of the configured cases directory.
 
-Strict Replay:
+Case Test:
 
-- Lists selectable cases returned by Control Plane case discovery.
+- Lists selectable `*.fsq.yaml` Cases returned by Control Plane Case discovery and may identify temporary `*.codex.yaml` compatibility entries.
+- Offers an explicit suggestion option corresponding to `fsq case test --suggest`; the source Case remains immutable.
 - Shows case name/path, declared platform, command count, `requiresAiAssertion`, and `validated` state.
 - Never labels machine validation as human review.
 - Requires workspace, strict, target, and source readiness. It additionally requires provider readiness when the selected case has `requiresAiAssertion=true`.
@@ -116,7 +117,7 @@ Current Devices ownership:
 
 - `src/features/devices/DevicesPage.tsx`: feature composition.
 - `src/features/devices/components/TargetToolbar.tsx`: platform/target/status/refresh controls supplied to the shell title bar.
-- `src/features/devices/components/OperationComposer.tsx`: Explore/Strict source input.
+- `src/features/devices/components/OperationComposer.tsx`: Case Create/Test source input and suggestion selection.
 - `src/features/devices/components/PreflightStatus.tsx`: readiness presentation.
 - `src/features/devices/components/RunTimeline.tsx`: source, task state, contiguous phase grouping, timeline and message disclosure, timeline scroll following, result, cancel, and new-run actions.
 - `src/features/devices/components/LiveEvidencePanel.tsx`: evidence tab composition.
@@ -169,8 +170,8 @@ Empty states direct the user to select/configure a platform, connect a target, p
 
 - A clean lock-file install, TypeScript check, focused frontend tests, and Vite build validate the entry.
 - Shell tests prove one centralized sidebar can render Devices and arbitrary page outlet content without Devices imports; cover active/unavailable semantics, keyboard order, `aria-current`, narrow drawer, and focus restoration.
-- Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, contiguous timeline phase grouping/disclosure, long timeline/log message disclosure, independent near-bottom auto-follow/pause/unseen/resume behavior, timeline/cancel/terminal/new-run behavior, stream resume/fallback, evidence states, sticky Logs structure, tabs, accessible names, live announcements, and focus behavior.
-- Browser verification covers desktop viewport containment and independent panel scrolling at 1440×900 and 1280×720, narrow stacked/page-scrolling behavior around 390px, keyboard-only disclosure and Jump to latest, long-content wrapping, sticky Logs headers, all four platform unavailable/readiness presentations, and at least one available platform's Explore/Strict start, progress, evidence, cancellation, and terminal behavior. Layout changes require reviewed desktop and narrow screenshots plus a clean browser console.
+- Devices tests cover stale-request protection, derived start eligibility, Case Create/Test payloads and suggestion policy, active locks, timeline/log behavior, stream resume/fallback, evidence states, accessibility, and focus behavior.
+- Browser verification covers desktop and narrow layouts, keyboard behavior, long-content handling, all platform readiness presentations, and at least one available platform's Case Create/Test start, progress, evidence, cancellation, and terminal behavior.
 - Build/package verification proves both Vite entries are generated, existing Playground remains functional, and an isolated wheel starts Control Plane without Node.js.
 
 ## Current Invariants

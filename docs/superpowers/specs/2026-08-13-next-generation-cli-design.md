@@ -1,74 +1,59 @@
 # FSQ Next-Generation CLI Design
 
-**Status:** Confirmed design for internal review
-**Date:** 2026-08-13
+**Status:** Confirmed revision for internal review
+**Date:** 2026-08-14
 
 ## Goal
 
-Redesign FSQ's command-line interface as a stable entry point for both people and Coding Agents. The new CLI must make AI-driven testing and deterministic replay unambiguous, expose durable machine-readable results, treat execution environments as extensible providers, and share execution semantics with the Control Plane instead of creating a second orchestration path.
+Design FSQ's next-generation command-line interface as a stable entry point for people, CI, and Coding Agents, while establishing a transport-neutral Python Application API shared by the CLI, Control Plane, and future Agent-facing adapters.
+
+This revision defines the public CLI interface and the shared application boundary. It deliberately does not design the internal workflow of each command.
 
 ## Scope
 
 This design covers:
 
-- The new `fsq` executable and first-phase public command tree.
-- Separate AI Test and deterministic Replay workflows.
-- AI Intent and deterministic Workflow file contracts.
-- Local persistent Run and Batch Run resources.
-- Human, JSON, and JSONL protocols and stable exit codes.
-- Provider configuration commands and `.env` security behavior.
-- Environment Profiles and a provider lifecycle for Local, Tart, and future cloud devices.
-- Control Plane integration through shared application services.
-- Breaking command migration and temporary `*.codex.yaml` compatibility.
-- Phased delivery and verification expectations.
+- The first-phase public `fsq` command tree.
+- Goal-driven Case creation and existing Case testing.
+- The single public Case asset suffix `*.fsq.yaml`.
+- Optional AI suggestions after testing an existing Case.
+- Workspace preconditions for public commands.
+- Human, JSON, and JSONL interfaces for people and Coding Agents.
+- A real Python Application package shared by CLI, Control Plane, and future Coding Agent APIs.
+- Transport-neutral Application Operations, Request, Result, Event, and Error contracts.
+- Ownership boundaries between Application and the existing Agent, FSQ, Core, Report, and Driver modules.
+- The first-phase Provider, Run, and Environment command surfaces.
+- Breaking command and Case-file migration.
 
 ## Non-goals
 
-The first phase does not provide:
+This design does not decide:
 
+- The detailed internal workflow of `init`.
+- Whether `case create`, `case test`, and `--suggest` are implemented as separate internal use-case classes.
+- The detailed execution timing, persistence model, or failure semantics of suggestions.
+- Concrete Python class names or the final file layout inside the Application package.
+- Internal Run, Environment, Provider, or resource lifecycle algorithms.
+- A public Extension protocol or installation mechanism.
+- Public Action, Capability, or Operation discovery.
 - A daemon, background queue, remote control plane, or detached execution.
+- Parallel workers, sharding, test matrices, or cross-Case shared sessions.
+- Environment creation, deletion, inspection, or cleanup commands.
 - Run cancellation or deletion commands.
-- Parallel workers, sharding, test matrices, or cross-case shared sessions.
-- Environment create, delete, inspect, or cleanup commands.
-- Third-party Extension installation, removal, or a public Extension CLI.
-- Public Action, Capability, or Operation discovery commands.
-- Cloud device providers such as BrowserStack or Sauce Labs; their integration shape is reserved only.
-- Provider or model overrides on `fsq test`.
-- A new project-level `fsq.yaml`, project-root search, `--project`, or `--workspace`.
-- Automatic modification of source Intent or Workflow files.
+- Automatic modification of source Case files.
 
 ## Design Principles
 
-1. **User intent before implementation mode.** `test` means AI participates; `replay` means deterministic execution. No `--strict` mode switch is needed.
-2. **One public meaning per file type.** Intent describes what AI should verify; Workflow describes exact replayable steps.
-3. **Humans and Agents share one CLI.** Machine consumers select a versioned output protocol rather than using a separate command tree.
-4. **Explicit platform, safe environment default.** Platform is always named; omitted Environment always means `local`.
-5. **Entry layers stay thin.** CLI and Control Plane use shared application services and existing execution authorities.
-6. **Evidence remains first-class.** Every Run exposes reports, evidence, events, and candidate Workflow outcomes consistently.
-7. **Provider-specific details do not leak into common commands.** Tart and future cloud settings belong to Environment Profiles.
-8. **Safe automation by default.** Non-local resources require explicit selection; diagnostics do not allocate resources; source files are never silently changed.
-9. **Stable contracts are introduced deliberately.** First-phase Extension and operation discovery remain internal until their compatibility models are ready.
-
-## Primary Scenarios
-
-### Human users
-
-- Initialize an FSQ workspace in the current directory.
-- Configure and inspect an LLM Provider.
-- Diagnose whether a platform and Environment can run.
-- Run an AI test from a natural-language Goal or structured Intent.
-- Deterministically replay one Workflow or a directory of Workflows.
-- Inspect past Runs, logs, reports, Evidence, and generated candidate Workflows.
-- Use the Control Plane through one official `fsq ui` entry.
-
-### Coding Agents and CI
-
-- Invoke the same operations non-interactively.
-- Receive stable JSON results or JSONL progress without parsing human logs.
-- Distinguish product failure, invalid input, missing readiness, infrastructure failure, and FSQ defects through exit codes and stable error codes.
-- Locate report, Evidence manifest, and candidate Workflow artifacts from the final result.
-- Query prior Runs from the current workspace.
-- Set the working directory and process environment explicitly without hidden project-root discovery.
+1. **Organize commands around the Case resource.** Users create Cases from Goals and test existing Cases.
+2. **Use one public Case format.** `*.fsq.yaml` is the only new Case asset type; no separate Intent format is introduced.
+3. **Humans and Coding Agents share one CLI.** Machine consumers select a versioned output protocol rather than a separate command tree.
+4. **CLI and UI share application semantics.** Entry adapters must not independently orchestrate FSQ workflows.
+5. **Application is a real boundary, not a diagram label.** A Python Application package exposes transport-neutral operations and contracts.
+6. **Application composes existing authorities.** It does not duplicate AI planning, Case parsing, step execution, report interpretation, or platform automation rules.
+7. **Current directory is explicit context.** Commands do not search parent directories for a Workspace.
+8. **Platform remains explicit.** Relevant commands require `--platform`; omitted Environment continues to mean `local`.
+9. **Source Cases remain immutable.** AI output is written as suggestions or Run-local candidates, never silently over source files.
+10. **First-phase contracts stay intentionally small.** Extension and discovery APIs remain future work.
 
 ## Public Command Tree
 
@@ -76,8 +61,9 @@ The first phase does not provide:
 fsq [GLOBAL OPTIONS]
 ├── init
 ├── doctor
-├── test
-├── replay
+├── case
+│   ├── create
+│   └── test
 ├── ui
 ├── providers
 │   ├── list
@@ -92,477 +78,382 @@ fsq [GLOBAL OPTIONS]
     └── doctor NAME
 ```
 
-The first phase does not expose `extensions`, `inspect actions`, Environment mutation, or Run mutation commands.
+The first phase does not expose `extensions`, operation discovery, Environment mutation, or Run mutation commands.
 
-## Global Options
+## Core Case Interfaces
+
+### Create a Case from a Goal
+
+```bash
+fsq case create --platform web --goal "Verify product search"
+```
+
+Public meaning:
+
+- The user supplies a natural-language Goal.
+- AI participates in testing the real target.
+- Successful execution may produce a Run-local candidate `*.fsq.yaml`.
+- The command does not overwrite an existing Case.
+
+Important public options expected in the first phase include:
+
+- `--platform PLATFORM`: required.
+- `--goal TEXT`: required Goal input.
+- `--environment NAME`: defaults to `local`.
+- `--record/--no-record`: controls candidate Case generation; success records by default.
+- `--stream/--no-stream`: controls live event presentation.
+- `--timeout DURATION`: accepts forms such as `30s`, `5m`, and `1h`.
+- `--max-steps N`: bounds external Agent operations.
+- `--dry-run`: validates public preconditions without operating a target.
+
+The exact internal stages, internal use-case decomposition, and candidate-generation algorithm are deferred.
+
+### Test an Existing Case
+
+```bash
+fsq case test --platform web tests/search.fsq.yaml
+```
+
+Public meaning:
+
+- The input is an existing `*.fsq.yaml` Case or a directory of Cases.
+- The Case is executed as the regression-test authority.
+- The source Case is not modified.
+- An explicitly authored AI assertion remains part of the Case contract where supported.
+
+Important public options expected in the first phase include:
+
+- `CASE`: required `*.fsq.yaml`, migration-period `*.codex.yaml`, or directory.
+- `--platform PLATFORM`: required and must agree with the Case.
+- `--environment NAME`: defaults to `local`.
+- `--suggest`: requests AI analysis and optional candidate improvements without overwriting the source Case.
+- `--timeout DURATION`: bounds one Case test.
+- `--fail-fast`: stops directory testing after the first unsuccessful child.
+- `--dry-run`: validates discovery and public preconditions without operating a target.
+
+The detailed relationship between the original Case result and the suggestion result is deferred. The eventual implementation must preserve the original test facts and must not silently turn a failed Case into a pass.
+
+### Suggestion Boundary
+
+The public contract for `--suggest` is intentionally limited:
+
+- it is available only while testing an existing Case;
+- it may emit structured suggestions and a Run-local candidate Case;
+- it never overwrites the source `*.fsq.yaml`;
+- it must preserve the original Case test facts;
+- its internal timing, status model, and use-case decomposition are future design items.
+
+## Case Assets
+
+New Case assets use:
+
+```text
+*.fsq.yaml
+```
+
+No `*.intent.yaml` or `fsq.test-intent/v1` format is introduced. Natural-language intent enters through `case create --goal`. Existing Cases enter through `case test`.
+
+For one deprecation cycle, Case testing and lifecycle references may accept `*.codex.yaml`. New candidates, examples, and documentation use `*.fsq.yaml`. The system does not automatically rename old files. The exact removal release remains a release-policy decision.
+
+Directory Case discovery is recursive, contained below the requested root, does not follow directory symlinks, and uses stable relative-path ordering. Empty discovery is an input error. Duplicate new/legacy Case identification requires a precise rule during the later SPEC phase.
+
+## Workspace Preconditions
+
+With the exception of `fsq init`, public commands require the current directory to contain a valid initialized Workspace at:
+
+```text
+.fsq-agent-workspace
+```
+
+When the Workspace is missing or invalid, the command must:
+
+- fail before creating Runs, output directories, external sessions, VMs, or device actions;
+- not search parent directories;
+- not initialize automatically;
+- tell the user to run `fsq init` or change to the intended initialized Workspace directory;
+- expose stable structured error code `workspace.not_initialized`;
+- map the condition consistently in Human, JSON, JSONL, CLI exit status, and UI responses.
+
+**TODO — Init design:** This revision intentionally does not redesign `fsq init`. Its responsibilities, parameters, Workspace creation flow, idempotency, and migration behavior require a separate design discussion.
+
+## Global CLI Contracts
 
 | Option | Behavior |
 |---|---|
 | `--output human\|json\|jsonl` | Selects the output protocol; default is `human`. |
-| `--non-interactive` | Prohibits prompts, confirmation, and interactive authentication. |
-| `--quiet` | Reduces Human output to the final summary without hiding errors. |
+| `--non-interactive` | Prohibits prompts, confirmations, and interactive authentication. |
+| `--quiet` | Reduces Human output without removing required errors. |
 | `--verbose`, `-v` | Increases safe diagnostics and may be repeated. |
 | `--color auto\|always\|never` | Controls Human terminal color. |
-| `--version` | Reports FSQ version, CLI protocol version, and Python version. |
+| `--version` | Reports FSQ and protocol versions. |
 | `--help` | Provides help at every command level. |
 
-`--quiet` does not remove required JSON or JSONL protocol records. In structured modes, stdout contains protocol records only and diagnostics go to stderr.
+`json` emits one final result. `jsonl` emits versioned events and ends with a terminal command event carrying an equivalent final result. Structured stdout contains protocol records only; safe diagnostics go to stderr. Commands without meaningful progress emit one terminal JSONL record.
 
-## Command Design
+The shared result envelope includes a schema version, operation/command identity, status, timestamp, safe data, warnings, and a structured error with stable code, category, message, next action, and bounded redacted details.
 
-### `fsq init`
-
-Initializes or validates `.fsq-agent-workspace` in the current directory. It creates required internal directories and identity metadata, is idempotent, and does not select a platform, configure a Provider, create examples, modify platform configuration, or perform complete readiness diagnostics.
-
-Important options:
-
-- `--dry-run`: report safe planned workspace changes without writing.
-- `--force`: repair safely reconstructable metadata without overwriting Runs or user files.
+## Supporting Public Interfaces
 
 ### `fsq doctor`
 
-Performs comprehensive, non-provisioning readiness diagnostics.
-
-```bash
-fsq doctor --platform web
-fsq doctor --platform macos --environment macos-tart
-```
-
-Important options:
-
-- `--platform PLATFORM`: required; one of `web`, `android`, `windows`, or `macos`.
-- `--environment NAME`: defaults to `local`.
-- `--mode test|replay|all`: defaults to `all` and controls whether AI Provider readiness is required.
-- `--strict`: treats warnings as diagnostic failure.
-- `--timeout DURATION`: bounds each diagnostic.
-- `--check NAME`: runs selected checks and may be repeated.
-- `--list-checks`: lists available checks without running them.
-
-Doctor checks Workspace, Provider, platform dependencies, Driver/backend, Environment Profile, required environment names, tools/services, output paths, and internal registration health. It does not create a VM, open a cloud session, operate an application, send a model request, incur a paid resource, or fix configuration.
-
-### `fsq test`
-
-Runs an AI-participating test. Exactly one input source is required:
-
-```bash
-fsq test --platform web --goal "Verify product search"
-fsq test --platform web --goal-file goal.txt
-fsq test --platform web --intent tests/search.intent.yaml
-fsq test --platform web --intent tests/intents/
-```
-
-Inputs:
-
-- `--goal TEXT`: one natural-language Goal.
-- `--goal-file PATH`: reads one UTF-8 natural-language Goal.
-- `--intent PATH`: accepts one `*.intent.yaml` file or a directory.
-
-Important options:
-
-- `--platform PLATFORM`: required and must match each Intent.
-- `--environment NAME`: defaults to `local`.
-- `--record/--no-record`: successful Runs record by default.
-- `--stream/--no-stream`: Human and JSONL stream by default.
-- `--timeout DURATION`: bounds one test. Duration syntax supports values such as `30s`, `5m`, and `1h`.
-- `--max-steps N`: limits external Agent operations.
-- `--fail-fast`: stops directory execution after the first unsuccessful child.
-- `--dry-run`: validates input, configuration, and readiness without calling a model or device.
-
-The AI may plan, locate, recover, and verify. It does not modify Goal files or source Intent files. A successful Run attempts to create `candidate.fsq.yaml` from actually completed replayable operations. Failed and inconclusive Runs do not create candidates by default. Recording failure is reported but does not change the test outcome.
-
-`test` does not expose Provider, model, strict-mode, worker, shard, retry, detach, or Environment-provider-specific options.
-
-### `fsq replay`
-
-Deterministically executes one Workflow or directory.
-
-```bash
-fsq replay --platform web tests/search.fsq.yaml
-fsq replay --platform web tests/workflows/
-```
-
-Important arguments and options:
-
-- `WORKFLOW`: required path to `*.fsq.yaml`, migration-period `*.codex.yaml`, or a directory.
-- `--platform PLATFORM`: required and must match every Workflow.
-- `--environment NAME`: defaults to `local`.
-- `--timeout DURATION`: bounds one Workflow.
-- `--fail-fast`: stops a batch after the first unsuccessful child.
-- `--dry-run`: validates discovery, schemas, operations, secret references, and readiness without operating a target.
-
-Replay does not construct AI planning, repair, locator fallback, or recovery. An explicitly authored AI assertion is the sole Provider-backed exception. Replay never modifies its input.
+Diagnoses the selected platform and Environment without provisioning paid or remote resources. Its detailed checks remain a later command-level design topic.
 
 ### `fsq ui`
 
-Starts the official Control Plane UI.
-
-```bash
-fsq ui
-fsq ui --run RUN_ID
-```
-
-Important options:
-
-- `--host HOST`: defaults to `127.0.0.1`.
-- `--port PORT`: uses the documented FSQ local default.
-- `--open/--no-open`: controls browser opening.
-- `--run RUN_ID`: opens an existing Run.
-- `--read-only`: disables test execution and editing.
-- `--auth-token-env NAME`: reads an access token for non-loopback binding.
-
-Non-loopback binding without authentication is rejected. Control Plane terminology becomes Test and Replay and it consumes the same application services as CLI. The former Playground is no longer a public command.
+Starts the official Control Plane adapter. It must consume the same Application API as the CLI rather than reimplement Case, Run, Provider, or Environment semantics. Non-loopback security and detailed UI startup options remain governed by the later public-interface specification.
 
 ### `fsq providers`
 
-First-phase Provider commands are `list`, `configure`, and `status`. At minimum the existing GitHub Copilot and Azure OpenAI providers are exposed.
+First-phase interfaces remain:
 
-`providers list` returns supported Provider identifiers, configuration state, authentication mode, required variable names, safe status, and next actions.
+```text
+providers list
+providers configure NAME
+providers status [NAME]
+```
 
-`providers configure NAME` updates only the Provider's managed keys in current-directory `.env`, preserving unrelated lines and comments. Important options are:
-
-- `--dry-run`: lists managed variable names without values.
-- `--force`: permits replacement of existing managed values.
-- `--secret-env NAME`: securely reads a secret from a process environment variable.
-- `--set KEY=VALUE`: supplies non-secret values only; secret fields reject this form.
-
-Interactive configuration may start GitHub Copilot Device Flow or prompt for Azure values. Non-interactive configuration never prompts or starts Device Flow.
-
-`providers status [NAME]` performs a read-only local configuration and authentication check. It sends no formal model request and writes no `.env` values. A contract-approved silent refresh from existing long-lived credentials is allowed and reported safely.
-
-`fsq test` does not accept `--provider`, `--model`, or model profiles. Provider and model selection follows process environment, current-directory `.env`, platform configuration defaults, then FSQ defaults.
+Provider configuration remains current-directory-oriented and must never expose Secret values. Detailed authentication flows remain command-level design work after the shared framework is confirmed.
 
 ### `fsq runs`
 
-Runs are local persisted execution resources.
+First-phase interfaces remain:
 
-`runs list` supports `--status`, `--command test|replay`, `--platform`, `--limit`, `--since`, and `--batch`.
+```text
+runs list
+runs show RUN_ID
+runs logs RUN_ID
+```
 
-`runs show RUN_ID` returns status, source, platform, Environment, input summary, verification, failure category, report, Evidence, and candidate Workflow. It supports `--open`, `--wait`, and `--timeout`; waiting only observes local persistence in the first phase.
-
-`runs logs RUN_ID` reads structured events and supports `--tail`, `--level`, `--phase`, `--follow`, and `--since`.
-
-The first phase does not expose detach, cancel, or delete.
+They expose the same application-level Run facts to CLI and UI. Detailed persistence layout, filtering, and lifecycle behavior are deferred.
 
 ### `fsq environments`
 
-`environments list --platform PLATFORM` lists Profile name, Provider, Driver, local status, readiness summary, and whether a Profile may create paid or remote resources. `--available` restricts results to Profiles passing static diagnostics.
+First-phase interfaces remain:
 
-`environments doctor --platform PLATFORM NAME` checks one Profile without acquiring it. It supports `--strict` and `--timeout`.
-
-The first phase does not expose Environment inspect, create, delete, or cleanup.
-
-## Test and Replay Boundary
-
-| Property | Test | Replay |
-|---|---|---|
-| Inputs | Goal, Goal File, `*.intent.yaml` | `*.fsq.yaml`; temporary `*.codex.yaml` |
-| AI planning | Yes | No |
-| AI locator/recovery | Yes | No |
-| Final AI verification | Yes | Only authored AI assertion |
-| Source mutation | Never | Never |
-| Candidate Workflow | Default on success | None |
-| Deterministic step order | Advisory plan only | Required |
-
-`*.intent.yaml` and `*.fsq.yaml` are never interpreted interchangeably.
-
-## Intent Contract
-
-Intent files use `*.intent.yaml` and schema `fsq.test-intent/v1`. A representative file is:
-
-```yaml
-schemaVersion: fsq.test-intent/v1
-name: Search products
-platform: web
-goal: >
-  Search for the requested product and verify relevant results appear.
-tags:
-  - search
-  - smoke
-context:
-  startUrl: https://example.com
-  notes:
-    - Use a standard user account.
+```text
+environments list --platform PLATFORM
+environments doctor --platform PLATFORM NAME
 ```
 
-`goal` and `platform` are required. The CLI platform must match the file before Provider or Environment side effects. Intent may include bounded structured context, prerequisites, test-data references, and verification emphasis, but it does not contain mandatory deterministic command steps. Context uses a documented finite structure in v1 rather than unbounded arbitrary objects.
-
-## Workflow Contract and File Migration
-
-The new deterministic Workflow suffix is `*.fsq.yaml`. New examples, recorded candidates, reports, and lifecycle references use it.
-
-For one deprecation cycle, Replay and lifecycle `runCase` accept `*.codex.yaml`. Human output warns; JSON and JSONL use structured warnings. Inputs are never automatically renamed. Recursive discovery finds both suffixes, prefers the new suffix for an identified duplicate, and reports the compatibility decision. A later major version removes old-suffix support.
-
-## Directory and Batch Behavior
-
-`test --intent DIRECTORY` recursively discovers `*.intent.yaml`. Replay recursively discovers new and migration-period Workflow suffixes. Discovery:
-
-- does not follow directory symlinks;
-- enforces containment below the resolved input root;
-- sorts by relative path;
-- treats an empty match set as input error;
-- validates every file's platform against required `--platform`.
-
-Execution is serial in the first phase. Each file gets an isolated child Run, Agent Session where applicable, Harness context, Environment Lease, Evidence, report, and events. A Batch Run owns the ordered child IDs and aggregate outcome. Cases continue after failure unless `--fail-fast` is set.
+The public CLI selects Environment Profiles without exposing Provider-specific switches. Detailed Local/Tart lifecycle implementation remains outside this revision.
 
 ## Shared Application Architecture
 
-Python remains a Level 3 Layered Application. A shared application-service boundary is justified because the CLI and Control Plane coordinate the same configuration, Provider, Environment, execution, persistence, and reporting workflows. A daemon, database repository, and message queue would add lifecycle and recovery complexity without serving the first-phase synchronous model.
+### Decision
+
+`Shared Application Services` is both an architecture layer and a real Python package in the repository. The package is the shared, transport-neutral application boundary used by the CLI, Control Plane, and future Coding Agent adapters.
+
+The package exposes Application Operations grouped by resource domain:
+
+- Workspace Operations
+- Case Operations
+- Run Operations
+- Provider Operations
+- Environment Operations
+
+It also exposes or consistently consumes shared application contracts:
+
+- Request
+- Result
+- Event
+- Error
+- Operation status and safe artifact references where applicable
+
+This design does not require one class per operation and does not decide the final package-internal file layout.
 
 ```mermaid
 flowchart TD
-    CLI["fsq CLI"] --> App["Shared application services"]
-    UI["Control Plane / fsq ui"] --> App
-    Future["Future Coding Agent API"] --> App
-    App --> Test["AI Test service"]
-    App --> Replay["Replay service"]
-    App --> Runs["Run query service"]
-    App --> Env["Environment service"]
-    App --> Providers["Provider configuration service"]
-    Test --> Agent["Existing Agent runtime"]
-    Replay --> Core["Existing strict execution core"]
-    Test --> Store["Filesystem Run store"]
-    Replay --> Store
-    Env --> Harness["Harness and Driver"]
+    subgraph Adapters["Entry Adapters"]
+        CLI["fsq CLI"]
+        UI["Control Plane / fsq ui"]
+        AgentAPI["Future Coding Agent API"]
+    end
+
+    subgraph Application["Python Application Package"]
+        Contracts["Shared Contracts<br/>Request · Result · Event · Error"]
+        Workspace["Workspace Operations"]
+        Cases["Case Operations"]
+        Runs["Run Operations"]
+        Providers["Provider Operations"]
+        Environments["Environment Operations"]
+    end
+
+    subgraph Authorities["Existing FSQ Authorities"]
+        Agent["Agent<br/>AI planning and verification"]
+        FSQ["FSQ<br/>Case language and normalization"]
+        Core["Core<br/>step execution and evidence policy"]
+        Report["Report<br/>persisted facts to reports"]
+        Driver["Driver<br/>platform automation"]
+    end
+
+    CLI --> Contracts
+    UI --> Contracts
+    AgentAPI --> Contracts
+    Contracts --> Workspace
+    Contracts --> Cases
+    Contracts --> Runs
+    Contracts --> Providers
+    Contracts --> Environments
+    Cases --> Agent
+    Cases --> FSQ
+    Cases --> Core
+    Runs --> Report
+    Environments --> Core
+    Core --> Driver
+    Core --> Report
 ```
 
-Ownership rules:
+The arrows show permitted application composition, not mandatory direct calls for every operation and not one class per box.
 
-- CLI owns parsing, presentation protocol, and exit-code mapping only.
-- Application services own input validation, lifecycle orchestration, and unified results.
-- Agent owns AI execution and verification.
-- FSQ/Core own Workflow parsing, canonical strict steps, and deterministic execution.
-- Environment services own Profile resolution, acquisition, connection, diagnostics, and release.
-- Drivers operate already-acquired targets.
-- Run storage owns persistent indexes and safe queries.
-- Control Plane owns HTTP/UI transport and projections, not duplicate execution semantics.
+### Why a Real Package
 
-The exact package name for shared application services is resolved during SPEC work, but it must be a public entry-composition boundary rather than new domain authority. Existing package-private shared composition should be reused or migrated where it already expresses the correct ownership.
+If Application exists only as a diagram label, the CLI and Control Plane can each continue to load configuration, validate inputs, start execution, map states, and find artifacts independently. Their behavior will eventually diverge even if both call the same low-level modules.
 
-## Run and Batch Model
-
-Each task persists a Run containing identity, source, execution context, outcome, and outputs. A stable `run.json` prevents query code from guessing different dynamic and strict layouts.
-
-Run statuses are:
+A real package makes the dependency boundary enforceable:
 
 ```text
-preparing → running → finalizing → success | failed | inconclusive | cancelled | error
+CLI adapter ─────────┐
+Control Plane adapter├──> Application API ──> existing FSQ authorities
+Future Agent adapter ┘
 ```
 
-- `success`: verification passed.
-- `failed`: execution completed and product behavior or assertion failed.
-- `inconclusive`: Evidence cannot support a reliable judgment.
-- `cancelled`: reserved for user interruption and future async cancellation.
-- `error`: configuration-past-boundary, tool, Driver, Environment, or internal failure.
+CLI and UI should share application semantics, not transport objects.
 
-Run IDs and Batch IDs use uniform collision-resistant identifiers and do not reuse Case IDs. Batch Run records command, input root, ordered child IDs, counts by outcome, and aggregate status.
+### Shared vs Adapter-specific Concerns
 
-Conceptual layout:
+| Shared Application contract | CLI adapter | Control Plane adapter |
+|---|---|---|
+| Request | Click argument mapping | HTTP request mapping |
+| Result | Human/JSON/JSONL rendering | HTTP response/UI projection |
+| Event | stdout/stderr stream | SSE or equivalent transport |
+| Error | Exit-code mapping | HTTP status mapping |
+| Operation status | Process/SIGINT behavior | Browser task state |
 
-```text
-.fsq-agent-workspace/
-└── output/
-    └── runs/
-        ├── <run-id>/
-        │   ├── run.json
-        │   ├── events.jsonl
-        │   ├── report.md
-        │   ├── report.json
-        │   ├── evidence-manifest.json
-        │   ├── evidence/
-        │   └── candidate.fsq.yaml
-        └── <batch-id>/
-            └── batch.json
+Application contracts must not import or expose Click contexts, HTTP request/response types, SSE payload types, terminal formatting objects, or frontend view models.
+
+## Ownership Boundaries
+
+### What Application Owns
+
+Application owns cross-module application semantics that must be identical for all adapters:
+
+- the public operation boundary and request validation at that boundary;
+- current-Workspace context enforcement;
+- composition of existing module APIs into one user operation;
+- unified application results, events, statuses, and errors;
+- safe artifact references and adapter-independent next actions;
+- consistent behavior across CLI, Control Plane, and future adapters.
+
+### What Application Does Not Re-own
+
+Application may call the existing modules, but it does not copy, reinterpret, or replace their authoritative rules:
+
+- **Agent** continues to own AI planning, model tool-use orchestration, dynamic execution guidance, and evidence-based dynamic verification.
+- **FSQ** continues to own Case-file recognition, YAML/DSL parsing, validation, capability alias resolution, and conversion into canonical executable steps.
+- **Core** continues to own capability lookup, parameter and runtime-secret validation, deterministic step/sequence execution, evidence capture policy, Harness routing, and normalized step results.
+- **Report** continues to own transformation of persisted execution facts into standard reports and failure analysis.
+- **Driver** continues to own concrete platform automation and backend error normalization.
+
+Application owns the statement "compose the appropriate authorities for this user operation." It does not own alternative implementations of YAML parsing, tool execution, screenshot policy, report semantics, or device automation.
+
+### No Giant Facade
+
+The Application package must not collapse into a single catch-all interface such as:
+
+```python
+application.execute(command)
 ```
 
-Existing configured output roots remain authoritative. Historical Runs without `run.json` may receive a read-only compatibility projection and are not rewritten.
+or a giant service object containing every command. Operations are grouped by resource domain so adapters depend only on the capabilities they use. The exact internal use-case granularity remains deferred.
 
-## Machine Protocol
+### Adapter Dependency Rule
 
-### JSON
+New CLI and Control Plane business operations must go through the Application API. Adapters must not bypass Application to recreate shared validation, orchestration, state mapping, or artifact discovery. Narrow transport-only concerns remain in the adapter.
 
-JSON emits one final envelope:
+Existing low-level authorities must not import the Application package. Dependency direction is from adapters to Application to existing modules.
 
-```json
-{
-  "schema_version": "fsq.cli/v1",
-  "command": "test",
-  "status": "success",
-  "timestamp": "2026-08-13T10:30:00Z",
-  "data": {
-    "run_id": "run-123",
-    "platform": "web",
-    "environment": "local",
-    "report": ".fsq-agent-workspace/output/runs/run-123/report.json",
-    "evidence_manifest": ".fsq-agent-workspace/output/runs/run-123/evidence-manifest.json",
-    "candidate_workflow": ".fsq-agent-workspace/output/runs/run-123/candidate.fsq.yaml"
-  },
-  "warnings": [],
-  "error": null
-}
-```
+## Extension Boundary
 
-Errors use stable `error.code`, broad `category`, human `message`, safe next `action`, and bounded redacted `details`. Messages may improve without changing stable codes. Paths are current-directory-relative when practical.
+This revision does not define a public Extension API. It records only an architectural constraint for future work:
 
-### JSONL
+- extensions will most naturally appear below the Application layer, including Model Providers, Environment Providers, Drivers, Report exporters, and carefully governed capabilities;
+- extensions must not require CLI-only business orchestration that has no equivalent Application Operation for UI and Agent adapters;
+- extending public Application Operations is a separate future design because it requires transport-neutral schemas, compatibility, permissions, discovery, and security rules.
 
-Every line is a complete `fsq.cli-event/v1` record with sequence, type, command, timestamp, optional Run/Batch identity, and safe data. Sequence is monotonic per Run. Batch events include Batch ID and active child Run ID. Large Evidence is referenced rather than embedded. Hidden reasoning, Secrets, and unrestricted backend objects are prohibited.
+No Extension installation or discovery command is committed by this design.
 
-The last line is `command.completed` or `command.failed` and contains a result equivalent to JSON mode. Commands without meaningful progress emit one terminal JSONL record.
+## Existing Module Locations and Roles
 
-### Human output
+| Authority | Current location | Role retained beneath Application |
+|---|---|---|
+| Agent | `fsq_agent/agent/` | Goal planning, SDK tool orchestration, dynamic execution, verification |
+| FSQ | `fsq_agent/fsq/` | Case DSL parsing, validation, and canonical step adaptation |
+| Core | `fsq_agent/core/` | Capability registry, deterministic execution, evidence, Harness/Driver routing |
+| Report | `fsq_agent/report/` | Persisted facts to Markdown/JSON reports and failure analysis |
+| Drivers | `fsq_agent/core/harness/` | Concrete Playwright, UIAutomator2, Appium Mac2, and pywinauto automation |
 
-Human mode emphasizes Run ID, phase, operation result, final outcome, report, Evidence, candidate Workflow, and actionable remediation. Human, JSON, and JSONL modes have identical behavior and exit status.
+The later SPEC phase must define the Application module's public imports and verify that existing authorities remain the single rule owners.
 
-## Exit Codes
+## Machine Protocol and Exit Categories
+
+The previously agreed direction remains:
+
+- `--output human|json|jsonl` is global.
+- JSON emits one final application Result.
+- JSONL emits versioned Events and one terminal Result event.
+- stdout contains structured protocol data only in machine modes.
+- Secrets and hidden reasoning never appear in outputs.
+
+Top-level CLI exit categories remain:
 
 | Code | Meaning |
 |---:|---|
-| `0` | Command succeeded; test verification passed. |
-| `1` | Test completed but failed or was inconclusive. |
-| `2` | CLI usage, input file, discovery, or schema error. |
+| `0` | Operation succeeded; tested behavior passed where applicable. |
+| `1` | Case test completed but failed or was inconclusive. |
+| `2` | CLI usage, Case input, discovery, or schema error. |
 | `3` | Workspace, configuration, authentication, Provider, or Environment not ready. |
 | `4` | Driver, device, network, VM, or remote infrastructure failure. |
 | `5` | FSQ internal error. |
 | `130` | User interruption. |
 
-Batch exit status uses the highest encountered severity `0 < 1 < 2 < 3 < 4 < 5`; interruption remains `130`. Detailed child outcomes remain in Batch JSON.
+Application Error is the shared semantic fact. CLI maps it to an exit code; Control Plane maps it to an HTTP/status response.
 
-## Environment Provider Model
+## Compatibility and Migration
 
-Environment Provider and Driver are separate. Provider lifecycle is:
+The primary executable becomes `fsq`; `fsq-agent` may temporarily point to the same new command tree. New documentation uses `fsq`.
 
-```text
-validate → diagnose → acquire → prepare → connect → execute
-        → collect diagnostics → release or retain
-```
+Old command forms are not silently forwarded:
 
-- `validate` checks Profile structure without external action.
-- `diagnose` checks host, tools, credentials, and static availability.
-- `acquire` selects a local target or provisions a VM/cloud target.
-- `prepare` waits for Worker, Appium, browser, or device readiness.
-- `connect` returns a Driver-consumable connection description.
-- diagnostics are bounded and redacted.
-- `release` cleans up, returns, or retains according to policy.
-
-An Environment Lease carries lease ID, Provider, Profile, platform, target, connection, acquisition/expiry timestamps, cost warning, retention policy, and safe metadata. Persisted projections exclude credentials.
-
-Profiles remain in `config.<platform>.yaml`; no new project configuration file is introduced. `--platform` loads the platform preset, then `--environment` selects a Profile. Profile names are unique only within a platform. Omitted Environment always selects the built-in or explicit `local` Profile, and platform configuration cannot silently change that default.
-
-Tart template, display mode, startup timeout, and retention policy move into a macOS Profile:
-
-```yaml
-environments:
-  local:
-    provider: local
-
-  macos-tart:
-    provider: tart
-    template: fsq-macos-base
-    display: headless
-    startupTimeoutSeconds: 180
-    retention:
-      onSuccess: delete
-      onFailure: keep
-```
-
-The CLI removes Tart-specific template, UI, and retention options. First-phase Provider schema is a closed Local/Tart union with an internal API version field. The internal lifecycle reserves future Appium Grid, BrowserStack, Sauce Labs, AWS Device Farm, Kubernetes/VM, and enterprise device-farm implementations without exposing them now.
-
-Local Web, Android, Windows, and macOS execution also returns a Lease so local and managed paths share orchestration. Driver responsibilities remain session connection, operations, screenshots/UI snapshots, and normalized errors; Drivers do not provision VMs, manage cost, own Run state, select retention, or render CLI output.
-
-All terminal paths attempt bounded release. Release failure is attached without overwriting the primary error. Only resources with explicit FSQ ownership/Lease markers can be deleted. Retained resources expose safe identity and manual cleanup guidance.
-
-## Provider Configuration and Security
-
-Provider non-secret and secret values remain in current-directory `.env` for the first phase. Process environment wins over `.env`; conflicts are reported without showing values. Multiple Provider keys may coexist.
-
-Before writing Secrets, FSQ checks Git tracking. A tracked `.env` causes refusal; an indeterminate ignore state produces a high-priority warning. Writes preserve unrelated content, use restricted permissions where supported, and are atomic. Secrets never appear in Human output, JSON/JSONL, events, traces, reports, manifests, or errors. `.env` is explicitly not presented as an enterprise Secret Store; future system credential stores and Vaults remain possible.
-
-Replay checks Provider readiness before Environment acquisition only when an authored AI assertion exists. That AI call cannot alter prior steps or the Replay outcome outside its assertion contract.
-
-The internal Provider contract reserves type identity, configuration/secret fields, authentication mode, validation, session construction, and safe status summary for future OpenAI, Anthropic, Ollama, and enterprise gateways. It is not a public Extension API in this phase.
-
-## Extension, Action, and Driver Evolution
-
-The first phase exposes no `extensions` or operation discovery commands. Internally, designs preserve component API version, Provider and Driver identifiers, platform support, configuration schema, Capability Registry schemas, provenance, and conflict diagnostics. These fields are preparatory and do not constitute a stable third-party API. Public discovery and installation require a separate future design addressing compatibility, dependency isolation, trust, and arbitrary-code execution.
-
-## Compatibility and Breaking Migration
-
-The primary executable becomes `fsq`. `fsq-agent` temporarily points to the same new command tree, while new documentation uses only `fsq`.
-
-Old commands are removed without forwarding:
-
-| Removed | Replacement |
+| Removed form | New interface |
 |---|---|
-| `fsq-agent run --goal ...` | `fsq test --goal ...` |
-| `fsq-agent run --case-yaml ...` | Create an Intent and use `fsq test --intent ...` |
-| `fsq-agent run --strict --case-yaml ...` | `fsq replay ...` |
-| `fsq-agent report --run-id ...` | `fsq runs show ...` |
+| `fsq-agent run --goal ...` | `fsq case create --goal ...` |
+| `fsq-agent run --case-yaml ...` | `fsq case test CASE` or create a Case from a Goal |
+| `fsq-agent run --strict --case-yaml ...` | `fsq case test CASE` |
+| `fsq-agent report --run-id ...` | `fsq runs show RUN_ID` |
 | `fsq-agent control-plane` | `fsq ui` |
-| `fsq-agent playground` | No public replacement |
+| `fsq-agent playground` | No first-phase public replacement |
 
-Removed commands return exit code `2`, a new-command example in Human mode, and stable `cli.command_removed` in structured modes. They are not silently interpreted. This is a breaking release and requires a major version or explicitly designated breaking version.
-
-Existing `.fsq-agent-workspace` and output roots remain. Provider setup moves from `init --provider` to `providers configure`. `init` becomes platform-neutral Workspace initialization. Old raw dynamic Case input is not auto-converted because a deterministic Workflow and an AI Intent have different meaning.
-
-The `fsq-agent` executable removal version and the exact calendar/version boundary for `*.codex.yaml` are release-policy decisions documented before shipping, but compatibility is limited to one deprecation cycle rather than permanent.
-
-## Error Handling and Edge Cases
-
-- Missing or conflicting Test input returns `2` before external action.
-- Empty recursive discovery returns `2`.
-- Intent/Workflow platform mismatch returns `2` before Provider/Environment side effects.
-- Missing readiness returns `3`; acquisition/connection failure returns `4`.
-- Product failure or insufficient verification Evidence returns `1`.
-- Candidate recording failure does not change an otherwise successful Test outcome.
-- Provider-free Replay does not require model readiness.
-- Non-interactive commands fail instead of prompting.
-- Non-loopback UI binding without authentication is rejected.
-- Symlink directory traversal and escaped case paths are rejected.
-- Historical corrupt Runs return bounded safe diagnostics and are never silently repaired.
-- User interruption records cancellation where possible, releases resources, and returns `130`.
-
-## Delivery Phases
-
-### 1. Contracts and shared application services
-
-Define application services, Run/Batch, Environment Profile/Lease, result envelopes, event schemas, errors, and exit mapping. Reuse existing Agent/Core/Harness/Report authority. Make CLI and Control Plane consume the same services.
-
-### 2. New command tree
-
-Add `fsq`, point `fsq-agent` at the new tree, implement global output/non-interactive behavior, and replace old public commands without forwarding.
-
-### 3. Intent and Workflow separation
-
-Add Intent schema and inputs, new Workflow suffix, candidate generation, compatibility warnings, lifecycle reference support, and safe recursive batching.
-
-### 4. Environment Providers
-
-Implement unified Local and Tart Profiles/Leases, move Tart policy into macOS configuration, and remove Provider-specific CLI switches.
-
-### 5. Runs and official UI
-
-Add stable Run indexes and queries, align Control Plane with Test/Replay terminology and services, expose `fsq ui`, and provide read-only historical compatibility projection.
-
-### 6. Documentation and deprecation completion
-
-Update README, Quick Start, platform setup, CI/Coding Agent examples, file migration, machine protocol, and `.env` security guidance. Remove old Workflow suffix support in the announced later major version.
+Removed commands return a usage error and a migration action rather than guessing intent. Existing `.fsq-agent-workspace` and configured output roots remain migration concerns. The exact removal release for `fsq-agent` and `*.codex.yaml` remains open.
 
 ## Verification Expectations
 
-Verification must cover:
+The later implementation must verify:
 
-- Complete Click command/help structure, parameter exclusivity, working-directory rules, explicit platform, and local Environment default.
-- Equal Human/JSON/JSONL behavior, clean stdout/stderr separation, terminal JSONL records, stable errors, and all exit categories.
-- Goal, Goal File, Intent schema/platform handling, recursive batches, isolated Agent Sessions, default candidate recording, `--no-record`, and recording failure.
-- Strict new/old Workflow execution, warnings, lifecycle references, no AI planning/recovery, authored AI assertion exception, and source immutability.
-- Four local Profiles and full Tart validation/acquisition/preparation/connection/release/retention behavior.
-- No provisioning from Doctor, no resource action on mismatch, ownership-safe cleanup, and redacted Lease projections.
-- Atomic Run/Batch indexes, state evolution, query behavior for missing/corrupt/old Runs, event sequence, Evidence references, and no Secret/hidden-reasoning leakage.
-- `.env` preservation, environment precedence, tracked-file refusal, hidden input, interactive-only Device Flow, and no formal model call from Status.
-- Control Plane and CLI equivalence for Test/Replay Run outcomes and artifacts.
-- Source checkout and isolated wheel behavior.
+- the complete command/help hierarchy and public option mapping;
+- current-directory Workspace enforcement on every command except `init`;
+- no parent-directory Workspace discovery or automatic initialization;
+- Goal-to-Case and existing-Case public input separation;
+- `--suggest` never overwrites the source Case and preserves original test facts;
+- `*.fsq.yaml` discovery and migration-period legacy behavior;
+- identical Application Result, Event, and Error semantics across CLI and Control Plane adapters;
+- clean mapping from shared Application errors to CLI exit codes and UI/HTTP status;
+- no Click/HTTP/frontend types in the Application API;
+- no Application logic duplicated in CLI or Control Plane;
+- no duplicate Agent, FSQ, Core, Report, or Driver rule implementation in Application;
+- Human, JSON, and JSONL output consistency and redaction;
+- source-checkout and isolated-wheel behavior.
 
-Expected implementation checks include:
+Expected repository checks remain:
 
 ```bash
 pytest
@@ -572,60 +463,42 @@ npm test
 npm run build
 ```
 
-An isolated install must also exercise `fsq --help`, structured Doctor output, and `fsq ui --no-open`.
-
 ## Affected Specifications
 
-The later `/spec-driven` phase is expected to evaluate and update at least:
+The later `/spec-driven` phase is expected to evaluate at least:
 
-- `SPEC.md` for the public CLI, runtime configuration, file naming, Environment, and module map.
-- `fsq_agent/cli/SPEC.md` for the complete command/protocol contract.
-- `fsq_agent/models/SPEC.md` for Intent, Run, Batch, result, protocol, Profile, and Lease boundary models.
-- `fsq_agent/config/SPEC.md` for Environment Profiles, `.env`, and Provider selection.
-- `fsq_agent/environments/SPEC.md` if the module exists after synchronization, or the owning Environment module specification selected during SPEC design.
-- `fsq_agent/agent/SPEC.md` for Intent planning input and application-service delegation boundaries.
-- `fsq_agent/fsq/SPEC.md` for `*.fsq.yaml`, legacy discovery, and lifecycle references.
-- `fsq_agent/report/SPEC.md` for unified Run report references if required.
-- `fsq_agent/control_plane/SPEC.md` and `frontend/control-plane/SPEC.md` for `fsq ui`, shared services, and Test/Replay terminology.
-- `fsq_agent/providers/SPEC.md` for Provider list/configure/status behavior.
-
-The SPEC phase must verify actual current module locations before creating a new module specification.
+- `SPEC.md` for public command, module-map, dependency, and file-naming changes.
+- A new Application module `SPEC.md` if the confirmed module does not yet exist.
+- `fsq_agent/cli/SPEC.md` for the public CLI and adapter boundary.
+- `fsq_agent/models/SPEC.md` for shared serializable application boundary models where appropriate.
+- `fsq_agent/control_plane/SPEC.md` and `frontend/control-plane/SPEC.md` for Application API consumption and renamed Case operations.
+- `fsq_agent/agent/SPEC.md`, `fsq_agent/fsq/SPEC.md`, `fsq_agent/core/SPEC.md`, and `fsq_agent/report/SPEC.md` for dependency direction and retained ownership.
+- `fsq_agent/config/SPEC.md`, Provider, and Environment specifications where the public interfaces require change.
 
 ## Resolved Decisions
 
-- Test and Replay are separate public commands.
-- Test always uses AI; Replay never uses AI planning/recovery.
-- Primary executable is `fsq`; `fsq-agent` temporarily exposes the same new tree.
-- Current directory remains the explicit project context.
-- Platform is always required where relevant.
-- Intent is `*.intent.yaml`; Workflow is `*.fsq.yaml`.
-- Legacy Workflow suffix is accepted for one deprecation cycle.
-- AI never edits source Intent and creates only a Run-local candidate.
-- Successful Test records by default; `--no-record` disables it.
-- Profiles remain in `config.<platform>.yaml`; default Environment is always `local`.
-- Tart policy moves entirely into its Profile.
-- Directory discovery is recursive, stable, safe, and serial.
-- Local Runs are persisted and queryable; no daemon is introduced.
-- One versioned output system serves people and Coding Agents.
-- Batch exit code uses the highest severity.
-- Init only initializes Workspace.
-- Provider commands are list/configure/status and use current-directory `.env`.
-- Test exposes no Provider/model override.
-- Extension and operation discovery remain internal.
-- CLI and Control Plane share Level 3 application services.
+- Public Case operations are `fsq case create` and `fsq case test`.
+- `fsq case test --suggest` requests optional AI suggestions without source overwrite.
+- No `test`, `replay`, or `*.intent.yaml` public model remains.
+- `*.fsq.yaml` is the single new Case asset suffix.
+- Except for `init`, commands require an initialized Workspace in the current directory.
+- Parent-directory Workspace search and automatic initialization are prohibited.
+- `init` details are deferred as a separate TODO.
+- Shared Application Services is a real Python package and an architecture layer.
+- Application Operations are grouped by Workspace, Case, Run, Provider, and Environment.
+- CLI, Control Plane, and future Agent adapters share transport-neutral Request, Result, Event, and Error contracts.
+- Application composes but does not duplicate Agent, FSQ, Core, Report, or Driver rules.
+- Application is not a giant catch-all Facade.
+- Detailed internal use-case decomposition is deferred.
 
 ## Open Review Questions
 
-The following do not alter the confirmed first-phase behavior but require release or SPEC-level resolution:
-
-1. What exact package/module name owns the shared application services?
-2. What finite fields are allowed by `fsq.test-intent/v1.context`?
-3. Which collision-resistant Run/Batch identifier format is used?
-4. How does `providers configure --secret-env` address Providers with multiple secret fields?
-5. How long is read-only compatibility projection for old Runs supported?
-6. Which release removes the `fsq-agent` executable?
-7. Which release or date ends `*.codex.yaml` compatibility?
-8. What fixed default port is documented for `fsq ui`?
-9. What exact rule identifies duplicate new/legacy Workflow files during directory discovery?
-
-Defaults already confirmed for implementation planning are duration strings (`30s`, `5m`, `1h`), a single terminal JSONL record for non-streaming commands, Test/Replay UI terminology, fixed per-Run `candidate.fsq.yaml`, a first-phase closed Local/Tart Environment schema, and collision-resistant IDs rather than Case IDs.
+1. What exact Python package name and public import surface should carry the Application API?
+2. Which contract types belong in Application versus the neutral `models` module?
+3. What precise request/result/event/error compatibility policy applies across releases?
+4. Which existing CLI and Control Plane composition helpers migrate into Application, and which remain adapter-local?
+5. What is the exact public option set for each command after the framework is approved?
+6. How is `--suggest` represented in results without changing the original Case test facts?
+7. What exact rule identifies duplicate `*.fsq.yaml` and `*.codex.yaml` files?
+8. Which release removes the `fsq-agent` executable and legacy Case suffix?
+9. What detailed behavior should `fsq init` eventually own?

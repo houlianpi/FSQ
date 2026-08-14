@@ -11,7 +11,8 @@ from fsq_agent.models import ConfigurationError, FsqCase, FsqCaseConfig
 
 
 def is_fsq_case_file(path: str | Path) -> bool:
-    return Path(path).name.endswith(".codex.yaml")
+    name = Path(path).name
+    return name.endswith((".fsq.yaml", ".codex.yaml"))
 
 
 class FsqCaseLoader:
@@ -27,7 +28,7 @@ class FsqCaseLoader:
         root = Path(path)
         if root.is_file():
             return [self.load_case(root)]
-        candidates = sorted(root.glob("**/*.codex.yaml"))
+        candidates = sorted({*root.glob("**/*.fsq.yaml"), *root.glob("**/*.codex.yaml")})
         return [self.load_case(candidate) for candidate in candidates]
 
     def _build_case(self, path: Path, docs: list[Any]) -> FsqCase:

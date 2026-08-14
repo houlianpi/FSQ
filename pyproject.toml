@@ -43,6 +43,7 @@ macos = [
 ]
  
 [project.scripts]
+fsq = "fsq_agent.cli:main"
 fsq-agent = "fsq_agent.cli:main"
  
 [tool.hatch.build.targets.wheel]

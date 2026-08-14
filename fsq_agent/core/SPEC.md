@@ -177,7 +177,7 @@ Core must not define Pydantic models shared across modules. Shared models belong
 - Internal modules: all `_*.py` files and implementation subpackages remain private outside documented exports.
 - Domain boundaries: core owns execution orchestration and provider-neutral platform coordination. Provider construction, SDK tool creation, CLI parsing, FSQ parsing, and report generation live outside core.
 - Boundary models: all serializable contracts come from `models`; core protocols and concrete runners operate on those contracts.
-- Dependency direction: core imports `models` and `capabilities` only among project modules. Entry modules inject providers, artifact stores, runtime settings, and optional fake `HarnessInterface` instances; default runtime construction goes through public core factories instead of direct concrete harness or backend imports.
+- Dependency direction: core imports `models` and `capabilities` only among project modules and must not import `application` or transport adapters. Application injects providers, artifact stores, runtime settings, and optional Harness bindings through public core contracts; default runtime construction goes through public core factories.
 - Rationale: execution routing coordinates multiple side-effecting components and evidence flow, so Level 3 is warranted; no persistence/domain complexity justifies Clean Architecture or DDD.
 
 ## Error Handling

@@ -59,7 +59,7 @@ def record_dynamic_run_as_strict_case(
 ) -> StrictCaseRecording:
     run_dir.mkdir(parents=True, exist_ok=True)
     recording_path = run_dir / "recording.json"
-    recorded_case_path = run_dir / "recorded.codex.yaml"
+    recorded_case_path = run_dir / "recorded.fsq.yaml"
     draft = result.status != "success"
     if draft and not allow_failure:
         recording = StrictCaseRecording(
@@ -75,7 +75,7 @@ def record_dynamic_run_as_strict_case(
             status="failed",
             recording_path=recording_path,
             recorded_case_path=recorded_case_path,
-            errors=["recorded.codex.yaml already exists for this run."],
+            errors=["recorded.fsq.yaml already exists for this run."],
             draft=draft,
         )
         _write_recording(recording)

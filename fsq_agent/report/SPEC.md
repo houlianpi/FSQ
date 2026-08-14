@@ -54,7 +54,7 @@ The strict-core JSON summary should include lifecycle counts by phase: total, pa
 - Internal modules: all `_*.py` files are private report implementation modules.
 - Domain boundaries: report owns rendering, stored report lookup, evidence manifest report generation, and failure classification from persisted facts. It does not execute capabilities, read live device state, call providers, parse FSQ YAML for execution, or decide recording eligibility.
 - Boundary models: task/result/final-output/evidence/report models and normalized tool call records come from `models`.
-- Dependency direction: imports `models` only. It consumes persisted JSON/JSONL files and paths supplied by callers.
+- Dependency direction: imports `models` only and must not import `application` or transport adapters. It consumes persisted JSON/JSONL files and paths supplied by Application or other authorized callers.
 - Rationale: report generation is focused transformation from persisted data into Markdown/JSON output, so Level 2 is sufficient.
 
 ## Error Handling

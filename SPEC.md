@@ -22,23 +22,31 @@ Decorator unification is a declaration-layer concern, not an AgentTool merge. Ag
 
 Capability registry bootstrap is platform-selected. Entry layers register the active platform's inherited CommonTool capabilities plus only the configured platform's PlatformTool capability set. Android and Web PlatformTools must not be registered together in the default runtime registry, so each platform can expose native canonical names and `fsq_command` replay aliases without cross-platform ambiguity. AgentTools are exposed only to dynamic SDK agents and are excluded from strict replay registries.
 
-## Recorded Strict Case Artifacts
+## Case Creation And Testing
 
-Dynamic LLM runs may optionally record the actual successful replayable execution trace as a generated strict FSQ `.codex.yaml` artifact under the run output directory. Recording is a CLI-owned post-run behavior: the agent runtime persists normalized capability events, while the CLI recorder converts replayable non-observation capability results into a strict candidate case according to `ReplayPolicy` metadata. Observation capabilities such as Android `uiTree`/canonical `ui_snapshot`, Web/desktop `uiSnapshot`/`ui_snapshot`, and screenshot/snapshot tools may remain callable in dynamic execution and authored strict cases, but dynamic recording must not emit them as generated strict YAML commands. By-design observation skips remain available in the recording manifest audit data and must not be emitted as generated case warning metadata. Generated cases must never mutate source cases or `cases.dir`, and runtime secret values must never be written to YAML, manifests, events, or reports. Runtime-secret text inputs are recorded by environment variable name using `textType: runtimeSecret`.
+The public Case workflows are `fsq case create` and `fsq case test`. Case creation accepts a natural-language Goal, uses AI during real testing, and may write a Run-local candidate `*.fsq.yaml`. Case testing accepts an existing `*.fsq.yaml` and preserves the source file. With `--suggest`, AI may produce suggestions and a Run-local candidate while preserving original execution facts; without it, testing does not permit AI-driven Case modification. Adapters invoke both workflows through the shared Application package.
+
+`*.fsq.yaml` is canonical. `*.codex.yaml` may be accepted for one deprecation cycle with a structured warning. `*.intent.yaml` and `fsq.test-intent/v1` are unsupported. Top-level public execution commands named `test`, `replay`, or `run` are not part of the target CLI.
+
+## Recorded Case Artifacts
+
+AI-participating Case operations may record a successful replayable trace as a Run-local candidate `*.fsq.yaml`. The agent persists normalized capability events and Application coordinates conversion of replayable non-observation results according to `ReplayPolicy` metadata. Generated Cases never mutate source Cases or `cases.dir`, and secrets are never persisted.
 
 Recorded strict cases may contain runtime-secret text input references using `textType: runtimeSecret` and `waitMs` replay aliases. Strict execution bootstraps the active platform capability registry before YAML parsing, treats missing `textType` on text-entry commands as literal text for case compatibility, resolves runtime-secret text values in memory before external text-entry actions begin, and resolves `waitMs` through the registry to the inherited `wait_ms` CommonTool capability.
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
-Strict FSQ case metadata may declare optional case lifecycle hooks in the first YAML document through `onCaseStart` and `onCaseComplete`. Platform config YAML may also declare reusable strict lifecycle hooks through top-level `caseLifecycle.onCaseStart` and `caseLifecycle.onCaseComplete`. Each lifecycle field is independently optional and may contain either one hook entry mapping or an ordered list of hook entry mappings. Within one hook entry, `runCase` and `runShell` are independently optional supported actions; an entry must contain at least one supported action, may contain both, and when both are present strict execution must preserve the authored YAML key order. `runCase` executes another `.codex.yaml` case using the same strict relative path resolution policy as `--case-yaml` inputs, and recursive hook chains fail before infinite execution. `runShell` executes an operator-authored local shell command string without platform-specific command validation. Strict execution runs config `onCaseStart` hooks, case `onCaseStart` hooks, the main case commands only when before hooks pass, case `onCaseComplete` hooks, then config `onCaseComplete` hooks. Any config hook, case hook, main command, or shell hook failure fails the overall strict case. Config or case before-hook failure skips later before hooks and the main command body as appropriate, but does not skip after hooks. Dynamic LLM raw-case execution continues to treat YAML as planning input text and does not execute lifecycle hooks.
+FSQ Case metadata may declare optional deterministic lifecycle hooks through `onCaseStart` and `onCaseComplete`; platform config may declare reusable hooks through `caseLifecycle`. `runCase` executes another `*.fsq.yaml` using the same contained Case path policy, and recursive chains fail before infinite execution. Application coordinates lifecycle execution through FSQ and Core authorities; adapters do not own lifecycle semantics.
 
 ## Dynamic LLM Pre-Plan and Goal Verification
 
-Dynamic LLM `--goal`, `--case-yaml`, and `--case-dir` runs use pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional `project.md` knowledge when present, optional pre-plan page index knowledge when present, and a concise active CommonTool/PlatformTool capability summary generated from the active platform registry so planning can align with the actual executable action surface without duplicating tool tables in skills. Concrete page knowledge files referenced by the page index are read only when pre-plan asks for them through read-only knowledge tools. The pre-planner must produce structured ordered `key_actions` for the main execution loop and one `verification_goal` string for final evidence-based verification. Dynamic final verification is goal-only and has no user-configurable `verification.mode`.
+Goal-based Case creation and suggestion-enabled Case testing use pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional project/page knowledge, and the active capability summary. It produces ordered `key_actions` and one `verification_goal` before external UI actions.
 
-Dynamic LLM `--case-yaml` and `--case-dir` runs read authored case files as raw UTF-8 reference text, not as strict executable steps. The CLI-owned dynamic task construction must preserve that full raw reference in explicit planning-reference fields. Raw YAML steps are advisory only for dynamic LLM execution: they may help infer an execution flow, but they are not assumed accurate and must not be transformed into local executable steps or final verifier requirements. For raw cases, pre-plan should prefer case-level intent signals such as name, metadata, tags, properties, and human-authored goal text when summarizing `verification_goal`; step content may provide supporting context when the case-level intent is incomplete or ambiguous. Dynamic recording continues to reconstruct replayable commands only from actual run events.
+Existing-Case testing parses the Case through FSQ rather than treating YAML as untyped planning text. Suggestion-enabled testing may use the parsed Case and execution facts as AI context, but source steps remain immutable and candidate changes are Run-local artifacts.
 
 ## Runtime Configuration Defaults
+
+Except for `fsq init`, every public CLI command requires an initialized `.fsq-agent-workspace` in the current directory. Commands do not search parents or auto-initialize. A missing Workspace produces stable error code `workspace.not_initialized`. Detailed `init` redesign is deferred; current initialization behavior remains until separately specified.
 
 Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Provider selection is local environment-owned through `FSQ_LLM_PROVIDER=github_copilot|azure_openai`; when that variable is absent, GitHub Copilot remains the default. Azure OpenAI endpoint, deployment/model, and API key values come from fixed environment variable names rather than YAML fields. Repository-owned platform YAML presets are committed as `config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, and `config.macos.yaml`; `config.example.yaml` is a reference-only sample and not a runtime preset. Each platform preset owns stable, shareable platform policy and defaults such as tracing default, OpenAI Agents SDK turn limit, harness platform/backend, non-sensitive browser/base URL policy, execution post-action delay defaults, strict `caseLifecycle` hook policy, runtime secret allowlist names, agent context knowledge-root resources, workspace root, cases root, and output root. The committed presets set `openai_agents.max_turns` explicitly: Android and Windows default to 100 turns, while Web and macOS default to 50 turns. Local user values that must be set by an operator, vary per machine, contain secrets, or point to local runtime targets belong in process environment or `.env`; examples include LLM provider selection, Android app id, Android device serial, Web browser executable path, Windows application executable path, Windows pywinauto adapter mode, Windows launched-window title matcher, Windows default launch arguments, macOS Appium server URL, macOS bundle id or app path, account secrets, and Azure provider values.
 
@@ -117,9 +125,10 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Defines the shared `StepRunner` execution manager, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factory boundaries for capability definitions, drivers, and harnesses, private concrete platform backends, and evidence coordination. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
+| application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations and shared Request, Result, Event, and Error contracts. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
-| control_plane | fsq_agent/control_plane/SPEC.md | Serves the local platform-selectable Control Plane, including HTTP/static delivery, discovery/readiness, run orchestration, progress streaming, cancellation, and current evidence projection. |
-| cli | fsq_agent/cli/SPEC.md | Exposes the public `init`, `run`, `report`, `playground`, and `control-plane` commands, optional provider setup during initialization, capability registry bootstrap, strict replay including case lifecycle hook orchestration, dynamic-run recording, and thin local server startup workflows. |
+| control_plane | fsq_agent/control_plane/SPEC.md | Adapts Application operations to local HTTP/SSE/static delivery, cancellation transport, and browser evidence projection. |
+| cli | fsq_agent/cli/SPEC.md | Adapts the public `fsq` command tree to Application operations with human, JSON, and JSONL output and stable exit categories. |
 | frontend | frontend/SPEC.md | Owns the repository npm/Vite workspace, browser dependency and build policy, generated-asset boundary, and navigation to independently owned frontend application modules. |
 
 ## Frontend Build Boundary
@@ -135,15 +144,16 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 
 ```mermaid
 flowchart TD
-    CLI[cli] --> Agent[agent]
-    CLI --> Core[core]
-    CLI --> FSQ[fsq]
-    CLI --> Config[config]
-    CLI --> Providers[providers]
-    CLI --> Models[models]
-    CLI --> Report[report]
-    CLI --> Playground[playground]
+    CLI[cli] --> Application[application]
     CLI --> ControlPlane[control_plane]
+    ControlPlane --> Application
+    Application --> Agent[agent]
+    Application --> Core[core]
+    Application --> FSQ[fsq]
+    Application --> Config[config]
+    Application --> Providers[providers]
+    Application --> Models[models]
+    Application --> Report[report]
     Agent --> Core[core]
     Agent --> Config[config]
     Agent --> Providers[providers]
@@ -165,13 +175,6 @@ flowchart TD
     Core --> Models
     Capabilities[capabilities] --> Models
     Core --> Capabilities
-    ControlPlane --> Agent
-    ControlPlane --> Core
-    ControlPlane --> FSQ
-    ControlPlane --> Config
-    ControlPlane --> Providers
-    ControlPlane --> Models
-    ControlPlane --> Report
     Frontend[frontend] --> FrontendPlayground[frontend/playground]
     Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendPlayground --> Playground
@@ -204,6 +207,6 @@ flowchart TD
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
 - `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
-- `core`, `agent`, `cli`, `playground`, and `control_plane` use Level 3 Layered Application because they coordinate execution flows, external SDKs, harnesses, providers, persistence, HTTP entry points, and user entry points.
+- `core`, `agent`, `application`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

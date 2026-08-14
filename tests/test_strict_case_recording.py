@@ -75,7 +75,7 @@ def test_record_dynamic_run_writes_strict_yaml_with_runtime_secret_and_wait(tmp_
 
     assert recording.status == "recorded"
     assert recording.validation_status == "passed"
-    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    docs = list(yaml.safe_load_all((run_dir / "recorded.fsq.yaml").read_text(encoding="utf-8")))
     assert docs[0]["properties"]["recording"]["required_runtime_secret_names"] == ["TEST_ACCOUNT_PASSWORD"]
     assert docs[1] == [
         {"inputText": {"text": "TEST_ACCOUNT_PASSWORD", "textType": "runtimeSecret", "target": "Password field"}},
@@ -132,7 +132,7 @@ def test_record_dynamic_web_run_validates_against_web_registry(tmp_path: Path) -
 
     assert recording.status == "recorded"
     assert recording.validation_status == "passed"
-    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    docs = list(yaml.safe_load_all((run_dir / "recorded.fsq.yaml").read_text(encoding="utf-8")))
     assert docs[0]["platform"] == "web"
     assert "appId" not in docs[0]
     assert docs[1] == [{"clickOn": {"target": "Search"}}]
@@ -185,7 +185,7 @@ def test_record_dynamic_run_does_not_infer_replay_from_fsq_action_name(tmp_path:
     recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
 
     assert recording.status == "failed"
-    assert not (run_dir / "recorded.codex.yaml").exists()
+    assert not (run_dir / "recorded.fsq.yaml").exists()
     assert recording.skipped_tool_calls == [{"tool_name": "tap_on", "reason": "platform tool did not include fsq_command replay metadata"}]
 
 
@@ -283,7 +283,7 @@ def test_record_dynamic_run_skips_observation_capabilities(tmp_path: Path) -> No
     recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
 
     assert recording.status == "recorded"
-    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    docs = list(yaml.safe_load_all((run_dir / "recorded.fsq.yaml").read_text(encoding="utf-8")))
     assert docs[0]["properties"]["recording"]["warnings"] == []
     assert docs[1] == [{"tapOn": {"target": "Login"}}]
     assert recording.skipped_tool_calls == [{"tool_name": "ui_snapshot", "reason": "observation tool is not recorded"}]
@@ -349,7 +349,7 @@ def test_record_dynamic_android_tap_at_includes_reference_screen_size(tmp_path: 
 
     assert recording.status == "recorded"
     assert recording.validation_status == "passed"
-    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    docs = list(yaml.safe_load_all((run_dir / "recorded.fsq.yaml").read_text(encoding="utf-8")))
     assert docs[1] == [
         {
             "tapAt": {
@@ -419,7 +419,7 @@ def test_record_dynamic_android_point_swipe_includes_reference_screen_size(tmp_p
 
     assert recording.status == "recorded"
     assert recording.validation_status == "passed"
-    docs = list(yaml.safe_load_all((run_dir / "recorded.codex.yaml").read_text(encoding="utf-8")))
+    docs = list(yaml.safe_load_all((run_dir / "recorded.fsq.yaml").read_text(encoding="utf-8")))
     assert docs[1] == [
         {
             "swipe": {
