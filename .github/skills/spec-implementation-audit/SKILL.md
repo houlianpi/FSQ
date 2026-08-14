@@ -35,13 +35,19 @@ Reviewer input is limited to:
 
 - Root `SPEC.md`.
 - Relevant module `SPEC.md` files.
-- Worktree diff or commit range.
+- Complete worktree diff artifacts plus their identity manifest, or an exact commit range.
 - SPEC delta mode: `confirmed-update` or `no-delta`.
 - Minimal navigation instructions required to locate modules and public APIs.
 - Optional verification command outputs as auxiliary evidence.
 - For no-SPEC-delta work, the recorded SPEC references and neutral defect reproduction evidence as claims to verify, not accepted proof.
 
 Do not provide persuasive summaries such as "this is complete" or "tests pass, so it should be fine".
+
+## Audit Input Integrity
+
+For a worktree audit, validate the supplied artifact path, SHA-256, byte size, `diff --git` entry count, changed-path inventory, and any separate untracked-file artifacts before establishing the applicable-item inventory. Read the complete artifacts, not terminal output or overflow wrappers. If an artifact is missing, unreadable, truncated, wrapped, or inconsistent with its identity manifest, return `audit-blocked` without substituting a live diff or implementation summary.
+
+Record the validated artifact identities in the audit result. The calling `spec-driven` workflow owns the post-audit comparison between these identities and a freshly regenerated worktree snapshot; the reviewer must not claim that later worktree changes are covered. For a commit-range audit, validate and report the exact immutable base and head object ids.
 
 ## Complete Audit Scope
 
@@ -189,7 +195,7 @@ Produce a complete finding table:
 Affected SPEC items | Root cause | Evidence | Verdict | Repair owner
 ```
 
-State `coverage_complete=true|false`, `spec_delta_mode=confirmed-update|no-delta`, audited SPEC inputs, and audited complete diff or commit range. Each evidence entry must cite concrete files and, when possible, line numbers or changed symbols. If evidence is absent, say so directly.
+State `coverage_complete=true|false`, `spec_delta_mode=confirmed-update|no-delta`, audited SPEC inputs, and validated diff artifact identities or exact commit range. Each evidence entry must cite concrete files and, when possible, line numbers or changed symbols. If evidence is absent, say so directly.
 
 ## What Not To Accept
 
@@ -208,7 +214,7 @@ State `coverage_complete=true|false`, `spec_delta_mode=confirmed-update|no-delta
 Before claiming completion, state:
 
 - Which root/module `SPEC.md` files were audited.
-- Which diff or commit range was audited.
+- Which validated diff artifact identities or exact commit range was audited.
 - Which SPEC delta mode was audited and, for no-delta work, whether its classification was independently validated.
 - Whether the latest complete audit has `coverage_complete=true`.
 - Whether every applicable SPEC item has concrete evidence and verdict `implemented`.
