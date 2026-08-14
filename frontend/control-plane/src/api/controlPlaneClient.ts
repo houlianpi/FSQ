@@ -81,7 +81,7 @@ function readinessRecord(value: unknown): boolean {
 }
 function timelineEvent(value: unknown): boolean {
   if (!record(value) || !nonNegativeInteger(value.sequence)) return false;
-  return ['time', 'phase', 'stepId', 'label', 'status', 'message', 'level'].every((key) => value[key] === undefined || string(value[key]))
+  return ['time', 'phase', 'stepId', 'label', 'status', 'message', 'level', 'toolCallId'].every((key) => value[key] === undefined || string(value[key]))
     && (value.tool === undefined || nullableString(value.tool))
     && (value.durationMs === undefined || value.durationMs === null || finiteNumber(value.durationMs));
 }

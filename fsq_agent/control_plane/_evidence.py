@@ -70,11 +70,20 @@ class EvidenceProjection:
             "phase": _run_phase(event.type),
             "label": self.safe_text(event.tool_name or event.title, limit=200),
             "tool": self.safe_text(event.tool_name or "", limit=100) or None,
-            "status": status,
             "durationMs": event.duration_ms,
             "message": message,
             "level": "error" if status == "failed" else "info",
         }
+        if status:
+            projected["status"] = status
+        if event.tool_call_id:
+            projected["toolCallId"] = self.safe_text(event.tool_call_id, limit=100)
+        if event.tool_arguments is not None:
+            projected["toolArguments"] = _safe_details(event.tool_arguments, self.safe_text)
+        if event.tool_output_preview is not None:
+            projected["toolOutputPreview"] = _safe_details(event.tool_output_preview, self.safe_text)
+        if event.payload:
+            projected["payload"] = _safe_details(event.payload, self.safe_text)
         step_id = (
             _optional_str((event.payload or {}).get("runner_step_id") or (event.payload or {}).get("step_id")) if event.type in {"tool_call_completed", "tool_call_failed", "step_completed"} else None
         )
@@ -87,20 +96,20 @@ class EvidenceProjection:
         payload = event.payload or {}
         status = str(payload.get("status") or _runner_event_status(event.event_type))
         label = str(payload.get("action_name") or event.step_id or event.event_type)
-        self.state.add_event(
-            self.request_id,
-            {
-                "time": event.timestamp.isoformat(),
-                "phase": event.phase or "execution",
-                "stepId": event.step_id,
-                "label": self.safe_text(label, limit=200),
-                "tool": self.safe_text(str(payload.get("tool") or ""), limit=100) or None,
-                "status": status,
-                "durationMs": payload.get("duration_ms") if isinstance(payload.get("duration_ms"), int) else None,
-                "message": self.safe_text(str(payload.get("message") or event.event_type.replace("_", " "))),
-                "level": "error" if event.event_type == "step_error" else "info",
-            },
-        )
+        projected = {
+            "time": event.timestamp.isoformat(),
+            "phase": event.phase or "execution",
+            "stepId": event.step_id,
+            "label": self.safe_text(label, limit=200),
+            "tool": self.safe_text(str(payload.get("tool") or ""), limit=100) or None,
+            "status": status,
+            "durationMs": payload.get("duration_ms") if isinstance(payload.get("duration_ms"), int) else None,
+            "message": self.safe_text(str(payload.get("message") or event.event_type.replace("_", " "))),
+            "level": "error" if event.event_type == "step_error" else "info",
+        }
+        if payload:
+            projected["payload"] = _safe_details(payload, self.safe_text)
+        self.state.add_event(self.request_id, projected)
         if event.event_type == "artifact_captured":
             self._consider_artifact(payload, step_id=event.step_id, timestamp=event.timestamp.isoformat())
 
@@ -413,12 +422,24 @@ def _timestamp_ms(value: object) -> int | None:
         return None
 
 
-def _run_event_status(event: RunEvent) -> str:
+def _safe_details(value: Any, sanitizer, *, depth: int = 0) -> Any:
+    if depth >= 4:
+        return "[details omitted]"
+    if isinstance(value, dict):
+        return {sanitizer(str(key), limit=100): _safe_details(item, sanitizer, depth=depth + 1) for key, item in list(value.items())[:80]}
+    if isinstance(value, list):
+        return [_safe_details(item, sanitizer, depth=depth + 1) for item in value[:80]]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return sanitizer(str(value), limit=1000)
+
+
+def _run_event_status(event: RunEvent) -> str | None:
     if event.type in {"run_failed", "tool_call_failed"}:
         return "failed"
     if event.type in {"run_completed", "tool_call_completed", "step_completed"}:
         return str(event.payload.get("status") or "completed")
-    return "running"
+    return _optional_str((event.payload or {}).get("status"))
 
 
 def _run_phase(event_type: str) -> str:

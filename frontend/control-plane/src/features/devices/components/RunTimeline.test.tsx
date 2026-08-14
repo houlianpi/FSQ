@@ -4,19 +4,31 @@ import userEvent from '@testing-library/user-event';
 import type { RunSnapshot } from '../../../api/types';
 import { RunTimeline } from './RunTimeline';
 
-it('keeps truthful terminal timeline, focuses the result heading, and selects actions', async () => {
+it('keeps truthful terminal timeline, separates terminal actions, and selects actions', async () => {
   const onSelectStep = vi.fn();
   const message = 'Navigation complete with enough detail to require the disclosure control. '.repeat(4);
+  const goal = 'Verify the page and keep enough source text available for expansion. '.repeat(3).trim();
   const snapshot: RunSnapshot = {
     requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',
-    source: { goal: 'Verify the page' }, startedAt: '', completedAt: '', cancelRequested: false,
-    events: [{ sequence: 1, label: 'navigateTo', status: 'completed', message }], activeStep: null,
+    source: { goal }, startedAt: '', completedAt: '', cancelRequested: false,
+    events: [{ sequence: 1, time: '2026-08-14T10:15:30Z', label: 'navigateTo', status: 'completed', message }], activeStep: null,
     result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
     evidenceAvailable: true, reportAvailable: true, terminal: true,
   };
   render(<RunTimeline snapshot={{ ...snapshot, events: [{ ...snapshot.events[0], stepId: 'step-1' }] }} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
   expect(screen.getByText('navigateTo')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Run success' })).toHaveFocus();
+  expect(screen.getByText('Run source · Explore').closest('.run-source-summary')).not.toHaveTextContent('success');
+  expect(screen.queryByText(/Updates:/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Run success' })).not.toBeInTheDocument();
+  const sourceText = screen.getByText(goal);
+  expect(sourceText.closest('.run-source-summary')).not.toHaveClass('run-source-summary--expanded');
+  expect(screen.getByRole('button', { name: 'Expand run source' }).closest('.run-source-line')).toContainElement(sourceText);
+  await userEvent.click(screen.getByRole('button', { name: 'Expand run source' }));
+  expect(sourceText.closest('.run-source-summary')).toHaveClass('run-source-summary--expanded');
+  await userEvent.click(screen.getByRole('button', { name: 'Collapse run source' }));
+  expect(sourceText.closest('.run-source-summary')).not.toHaveClass('run-source-summary--expanded');
+  expect(screen.getByRole('button', { name: 'Select action navigateTo' })).not.toHaveTextContent(/\d{1,2}:\d{2}/);
+  expect(screen.getByRole('button', { name: 'Save yaml' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'New run' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Cancel/ })).not.toBeInTheDocument();
   const disclosure = await screen.findByRole('button', { name: 'Expand message' });
@@ -51,7 +63,7 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
       { sequence: 4, phase: 'startup', label: 'Latest startup', status: 'running', message: longMessage },
       { sequence: 2, phase: 'startup', label: 'Second startup', status: 'completed', message: 'Ready' },
       { sequence: 1, phase: 'startup', label: 'First startup', status: 'completed', message: 'Ready' },
-      { sequence: 3, phase: 'planning', label: 'Plan', status: 'completed', message: 'Planned' },
+      { sequence: 3, time: '2026-08-14T10:15:30Z', phase: 'planning', label: 'Plan', message: 'Planned' },
     ], activeStep: null, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
     evidenceAvailable: false, reportAvailable: false, terminal: false,
   };
@@ -66,6 +78,9 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
     'Latest startup',
   ]);
   expect(screen.getByText('Latest startup').closest('li')?.querySelector('.status-badge')).toHaveTextContent('running');
+  expect(screen.getByText('Plan').closest('li')?.querySelector('.status-badge')).toBeNull();
+  expect(screen.getByText('Plan').closest('li')).not.toHaveTextContent(/\d{1,2}:\d{2}/);
+  expect(screen.getByText('Plan').closest('li')).not.toHaveClass('timeline-row--running');
   const disclosure = await screen.findByRole('button', { name: 'Expand message' });
   expect(disclosure).toHaveTextContent('⌄');
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
@@ -75,6 +90,46 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
   await userEvent.click(disclosure);
   expect(disclosure).toHaveTextContent('⌄');
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+});
+
+it('highlights only the active running action and clears active highlighting after terminal selection', async () => {
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [
+      { sequence: 1, label: 'First', stepId: 'step-1', status: 'completed' },
+      { sequence: 2, label: 'Second', stepId: 'step-2', status: 'running' },
+    ], activeStep: { stepId: 'step-2', label: 'Second' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  const { rerender } = render(<RunTimeline snapshot={snapshot} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.getByText('First').closest('li')).not.toHaveClass('timeline-row--active');
+
+  rerender(<RunTimeline snapshot={{ ...snapshot, terminal: true, status: 'success', completedAt: 'now' }} connection="ended" selectedStepId="step-2" resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+  expect(screen.getByText('Second').closest('li')).not.toHaveClass('timeline-row--active');
+  expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--selected');
+});
+
+it('falls back to the latest running row or latest row when active step cannot match', () => {
+  const base: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [
+      { sequence: 1, label: 'First', status: 'completed' },
+      { sequence: 2, label: 'Second', status: 'running' },
+      { sequence: 3, label: 'Third' },
+    ], activeStep: { stepId: 'missing-step', label: 'Missing' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  const { rerender } = render(<RunTimeline snapshot={base} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.getByText('Third').closest('li')).not.toHaveClass('timeline-row--active');
+
+  rerender(<RunTimeline snapshot={{ ...base, events: base.events.map((event) => ({ ...event, status: event.status === 'running' ? undefined : event.status })) }} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+  expect(screen.getByText('Third').closest('li')).toHaveClass('timeline-row--active');
 });
 
 it('pauses timeline following and jumps to appended events', async () => {

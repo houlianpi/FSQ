@@ -78,7 +78,7 @@ Task status is `preparing`, `running`, `finalizing`, `success`, `failed`, `incon
 
 Control Plane projects existing execution facts into:
 
-- Timeline rows with sequence, time, phase, stable step id when normalized execution metadata supplies one, step/tool label, status, duration, and safe message.
+- Timeline rows with sequence, time, phase, stable step id when normalized execution metadata supplies one, step/tool label, duration, and safe message. The `status` field is included only when the source event carries an explicit result/progress status; Control Plane does not fabricate `running` for generic RunEvent updates that have no explicit status. Safe event details may include bounded/redacted `payload`, `toolCallId`, `toolArguments`, and `toolOutputPreview` fields when present on the source event.
 - Safe logs with level, phase, tool, status, and message.
 - The newest screenshot artifact reference and monotonically changing revision.
 - The newest normalized `ui_snapshot` artifact reference and monotonically changing revision.

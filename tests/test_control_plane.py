@@ -529,6 +529,43 @@ def test_evidence_projection_selects_only_dynamic_rows_with_real_runner_step_ids
     assert "stepId" not in state.snapshot(request_id)["events"][-1]
 
 
+def test_evidence_projection_does_not_fabricate_status_for_generic_run_events(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="read_knowledge_index",
+            tool_call_id="call-1",
+            tool_arguments={"query": "cats", "path": str(tmp_path / "secret" / "input.txt")},
+            payload={"tool_origin": "agent_tool", "unsafe_path": str(tmp_path / "secret" / "file.txt")},
+        )
+    )
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_completed",
+            title="Tool returned output",
+            tool_name="read_knowledge_index",
+            payload={},
+        )
+    )
+
+    events = state.snapshot(request_id)["events"]
+    assert "status" not in events[0]
+    assert events[0]["toolCallId"] == "call-1"
+    assert events[0]["toolArguments"]["query"] == "cats"
+    assert events[0]["payload"]["tool_origin"] == "agent_tool"
+    assert str(tmp_path) not in json.dumps(events[0])
+    assert events[1]["status"] == "completed"
+
+
 def test_persisted_dynamic_events_hydrate_terminal_action_step_ids(tmp_path: Path) -> None:
     state = ControlPlaneState()
     request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
