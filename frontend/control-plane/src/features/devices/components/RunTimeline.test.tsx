@@ -23,7 +23,7 @@ it('offers cancellation through finalizing and locks repeated cancellation', asy
   const onCancel = vi.fn();
   const active: RunSnapshot = {
     requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'strict', status: 'finalizing',
-    source: { casePath: 'flow.codex.yaml' }, startedAt: '', completedAt: null, cancelRequested: false,
+    source: { casePath: 'flow.fsq.yaml' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [], activeStep: null, result: null, summary: 'Finalizing', screenshotRevision: 0, uiSnapshotRevision: 0,
     evidenceAvailable: false, reportAvailable: false, terminal: false,
   };

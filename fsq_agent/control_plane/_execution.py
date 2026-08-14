@@ -95,15 +95,17 @@ def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) ->
     case_path = resolve_case(run_settings, body.get("casePath"))
     case = FsqCaseLoader().load_case(case_path)
     registry, snapshot, provider_required = build_strict_registry_context(run_settings.harness.platform)
-    lifecycle_cases = collect_strict_lifecycle_cases(case_path=case_path, case=case, settings=run_settings)
+    lifecycle_cases = collect_strict_lifecycle_cases(
+        case_path=case_path,
+        case=case,
+        settings=run_settings,
+        validate_case_path=lambda candidate: _require_strict_lifecycle_containment(candidate, run_settings.cases.dir),
+    )
     resolved_steps: dict[Path, list[ExecutableStep]] = {}
     requires_ai = False
     secret_store = RuntimeSecretStore.from_settings(run_settings.runtime_secrets)
     for lifecycle_path, lifecycle_case in lifecycle_cases:
-        try:
-            lifecycle_path.resolve().relative_to(run_settings.cases.dir.resolve())
-        except ValueError as exc:
-            raise ValueError("Strict lifecycle dependency escapes the configured cases directory.") from exc
+        _require_strict_lifecycle_containment(lifecycle_path, run_settings.cases.dir)
         _validate_case_platform(run_settings, lifecycle_case)
         _validate_android_app_id(run_settings, root_case=case, case=lifecycle_case)
         steps = FsqExecutableStepAdapter(registry_snapshot=snapshot).to_executable_steps(lifecycle_case)
@@ -126,6 +128,13 @@ def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) ->
         resolved_steps_by_path=resolved_steps,
         requires_ai_assertion=requires_ai,
     )
+
+
+def _require_strict_lifecycle_containment(case_path: Path, cases_dir: Path) -> None:
+    try:
+        case_path.resolve().relative_to(cases_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("Strict lifecycle dependency escapes the configured cases directory.") from exc
 
 
 def start_execution(prepared: PreparedRun, state: ControlPlaneState) -> ExecutionHandle:

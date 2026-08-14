@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import yaml
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ def record_dynamic_run_as_strict_case(
 ) -> StrictCaseRecording:
     run_dir.mkdir(parents=True, exist_ok=True)
     recording_path = run_dir / "recording.json"
-    recorded_case_path = run_dir / "recorded.codex.yaml"
+    recorded_case_path = run_dir / f"recorded{FSQ_CASE_SUFFIX}"
     draft = result.status != "success"
     if draft and not allow_failure:
         recording = StrictCaseRecording(
@@ -75,7 +75,7 @@ def record_dynamic_run_as_strict_case(
             status="failed",
             recording_path=recording_path,
             recorded_case_path=recorded_case_path,
-            errors=["recorded.codex.yaml already exists for this run."],
+            errors=[f"{recorded_case_path.name} already exists for this run."],
             draft=draft,
         )
         _write_recording(recording)

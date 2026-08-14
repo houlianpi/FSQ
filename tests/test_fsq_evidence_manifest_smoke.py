@@ -72,7 +72,7 @@ class SmokeHarness:
 
 
 def test_fsq_steps_sequence_runner_and_recorder_write_evidence_manifest(tmp_path: Path) -> None:
-    case_path = tmp_path / "manifest_smoke.codex.yaml"
+    case_path = tmp_path / "manifest_smoke.fsq.yaml"
     case_path.write_text(FSQ_CASE, encoding="utf-8")
     case = FsqCaseLoader().load_case(case_path)
     registry = build_capability_registry()

@@ -125,9 +125,9 @@ def test_load_settings_accepts_case_lifecycle_hooks(tmp_path: Path) -> None:
 caseLifecycle:
   onCaseStart:
     runShell: ./scripts/config-before.sh
-    runCase: hooks/config-before.codex.yaml
+    runCase: hooks/config-before.fsq.yaml
   onCaseComplete:
-    - runCase: hooks/config-after.codex.yaml
+    - runCase: hooks/config-after.fsq.yaml
     - runShell: ./scripts/config-after.sh
 """,
         ),
@@ -138,10 +138,10 @@ caseLifecycle:
 
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_start[0].actions] == [
         ["runShell", "./scripts/config-before.sh"],
-        ["runCase", "hooks/config-before.codex.yaml"],
+        ["runCase", "hooks/config-before.fsq.yaml"],
     ]
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[0].actions] == [
-        ["runCase", "hooks/config-after.codex.yaml"],
+        ["runCase", "hooks/config-after.fsq.yaml"],
     ]
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[1].actions] == [
         ["runShell", "./scripts/config-after.sh"],

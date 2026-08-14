@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from fsq_agent.fsq import is_fsq_case_file
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 
 
@@ -23,7 +23,7 @@ def resolve_case_yaml_path(path: str | Path, cases_dir: Path | None = None) -> P
     if not case_path.exists() or not case_path.is_file():
         raise ConfigurationError("Case YAML file not found.", context={"path": str(case_path)})
     if not is_fsq_case_file(case_path):
-        raise ConfigurationError("Strict FSQ case files must use the .codex.yaml suffix.", context={"path": str(case_path)})
+        raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.", context={"path": str(case_path)})
     return case_path
 
 
@@ -33,9 +33,9 @@ def discover_case_yaml_paths(path: str | Path, cases_dir: Path | None = None) ->
         return [resolve_case_yaml_path(root, cases_dir)]
     if not root.exists() or not root.is_dir():
         raise ConfigurationError("Case directory not found.", context={"path": str(root)})
-    candidates = sorted(candidate.resolve() for candidate in root.rglob("*.codex.yaml") if candidate.is_file())
+    candidates = sorted(candidate.resolve() for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}") if candidate.is_file() and is_fsq_case_file(candidate))
     if not candidates:
-        raise ConfigurationError("No .codex.yaml case files found.", context={"path": str(root)})
+        raise ConfigurationError(f"No {FSQ_CASE_SUFFIX} case files found.", context={"path": str(root)})
     return candidates
 
 

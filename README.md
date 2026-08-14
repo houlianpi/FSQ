@@ -79,7 +79,7 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 │  ► Step 3: typeText "FSQ"        📸 screenshot + UI snapshot         │
 │  ► Step 4: pressKey Enter        📸 screenshot + UI snapshot         │
 │  ► Verification: PASSED ✅ (evidence-based)                          │
-│  ► Strict YAML generated → output/case.codex.yaml                   │
+│  ► Strict YAML generated → output/case.fsq.yaml                     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -154,10 +154,10 @@ fsq-agent run --platform web \
 
 ```bash
 # Strict: Deterministic replay from YAML (no LLM needed)
-fsq-agent run --platform web --strict --case-yaml path/to/case.codex.yaml
+fsq-agent run --platform web --strict --case-yaml path/to/case.fsq.yaml
 ```
 
-**Output:** `screenshots` + `UI snapshots` + `verification report` + `replayable .codex.yaml`
+**Output:** `screenshots` + `UI snapshots` + `verification report` + `replayable .fsq.yaml`
 
 ### Control Plane
 

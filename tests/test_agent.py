@@ -516,7 +516,7 @@ async def test_agent_pre_plan_uses_explicit_raw_case_planning_reference(tmp_path
         skill_loader=_SkillLoader(),  # type: ignore[arg-type]
         runtime=runtime,  # type: ignore[arg-type]
     )
-    raw_reference = """Source path: cases/settings.codex.yaml
+    raw_reference = """Source path: cases/settings.fsq.yaml
 
 Raw case content:
 ```yaml
@@ -526,12 +526,12 @@ Raw case content:
 """
     task = Task(
         id="settings",
-        name="Case reference: settings.codex.yaml",
+        name="Case reference: settings.fsq.yaml",
         description="Run raw case content.",
         planning_reference_kind="raw_case",
         planning_reference_text=raw_reference,
-        verification_goal="Goal completed: Execute the referenced case content from settings.codex.yaml.",
-        acceptance_criteria=["Goal completed: Execute the referenced case content from settings.codex.yaml."],
+        verification_goal="Goal completed: Execute the referenced case content from settings.fsq.yaml.",
+        acceptance_criteria=["Goal completed: Execute the referenced case content from settings.fsq.yaml."],
     )
 
     result = await agent.run(task)

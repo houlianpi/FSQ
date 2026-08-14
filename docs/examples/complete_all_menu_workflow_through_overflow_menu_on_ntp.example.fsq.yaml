@@ -16,7 +16,7 @@ properties:
     - Observation snapshots are evidence/audit artifacts, not replay commands.
     - Locators are trimmed to stable fields instead of preserving null recording fields.
 onCaseStart:
-- runCase: cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.codex.yaml
+- runCase: cases/fsq-testcases/android/bottom_bar/access_downloads_through_overflow_menu.fsq.yaml
 onCaseComplete:
 - runShell: echo case complete
 ---
