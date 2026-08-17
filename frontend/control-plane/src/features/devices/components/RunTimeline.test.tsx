@@ -54,6 +54,20 @@ it('offers cancellation through finalizing and locks repeated cancellation', asy
   expect(screen.getByRole('button', { name: /Cancellation requested/ })).toBeDisabled();
 });
 
+it('shows strict replay YAML content in the run source summary', () => {
+  const yaml = 'schemaVersion: fsq.ai-test/v1\nname: Sample\n---\n- waitMs:\n    duration_ms: 1\n';
+  const active: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
+    source: { casePath: 'strict.yaml', caseContent: yaml }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [], activeStep: null, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  render(<RunTimeline snapshot={active} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('Run source · Strict Replay').closest('.run-source-summary')).toHaveTextContent('schemaVersion: fsq.ai-test/v1');
+  expect(screen.getByText('Run source · Strict Replay').closest('.run-source-summary')).not.toHaveTextContent('strict.yaml');
+});
+
 it('renders a flat sequence-ordered event list and discloses long messages', async () => {
   const longMessage = 'A detailed safe planning message '.repeat(8);
   const active: RunSnapshot = {
@@ -92,10 +106,15 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 });
 
-it('groups Strict Replay timeline rows by strict step while keeping latest step state', () => {
+it('shows Strict Replay YAML command steps instead of timeline events', () => {
   const strict: RunSnapshot = {
     requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
-    source: { casePath: 'recorded.codex.yaml' }, startedAt: '', completedAt: null, cancelRequested: false,
+    source: { casePath: 'recorded.codex.yaml', caseSteps: [
+      { stepId: 'recorded-step-001', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup' },
+      { stepId: 'recorded-step-002', index: 2, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action' },
+      { stepId: 'recorded-step-003', index: 3, authoredActionName: 'assertVisible', actionName: 'assert_visible', kind: 'assertion' },
+      { stepId: 'recorded-step-004', index: 4, authoredActionName: 'killApp', actionName: 'kill_app', kind: 'teardown' },
+    ] }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [
       { sequence: 1, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'step start' },
       { sequence: 2, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'phase start' },
@@ -112,16 +131,17 @@ it('groups Strict Replay timeline rows by strict step while keeping latest step 
 
   const rows = screen.getAllByRole('listitem');
   expect(rows.map((item) => item.querySelector('strong')?.textContent)).toEqual([
-    'recorded-step-001',
-    'recorded-step-002',
-    'recorded-step-003',
-    'recorded-step-004',
+    'launchApp',
+    'tapOn',
+    'assertVisible',
+    'killApp',
   ]);
+  expect(screen.getByLabelText('Strict Replay YAML steps')).toBeInTheDocument();
   expect(screen.queryByText('strict log without step id')).not.toBeInTheDocument();
-  expect(screen.getByText('phase finish')).toBeInTheDocument();
-  expect(screen.getByText('harness call finish')).toBeInTheDocument();
-  expect(screen.getByText('artifact captured')).toBeInTheDocument();
-  expect(screen.getByText('recorded-step-004').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.queryByText('phase finish')).not.toBeInTheDocument();
+  expect(screen.queryByText('harness call finish')).not.toBeInTheDocument();
+  expect(screen.queryByText('artifact captured')).not.toBeInTheDocument();
+  expect(screen.getByText('killApp').closest('li')).toHaveClass('strict-step-row--active');
 });
 
 it('highlights only the active running action and clears active highlighting after terminal selection', async () => {

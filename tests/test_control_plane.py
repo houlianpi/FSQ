@@ -951,6 +951,33 @@ def test_server_run_start_busy_cancel_and_snapshot(tmp_path: Path, monkeypatch: 
     assert snapshot["source"] == {"goal": "Do it"}
 
 
+def test_server_strict_run_snapshot_includes_case_yaml_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    case_path = settings.cases.dir / "strict.yaml"
+    _case(case_path)
+    case_text = case_path.read_bytes().decode("utf-8")
+    server = ControlPlaneServer(ControlPlaneServerOptions(open_browser=False))
+
+    class Handle:
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda platform, workspace: settings)
+    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.control_plane._server.start_execution", lambda prepared, state: Handle())
+
+    status, payload = server.handle_post("/api/control-plane/runs", {"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.yaml"})
+    snapshot_status, snapshot, _ = server.handle_get(f"/api/control-plane/runs/{payload['requestId']}")
+
+    assert status == 202
+    assert snapshot_status == 200
+    assert snapshot["source"] == {
+        "casePath": "strict.yaml",
+        "caseContent": case_text,
+        "caseSteps": [{"stepId": "strict-step-001", "index": 1, "authoredActionName": "waitMs", "actionName": "wait_ms", "kind": "action"}],
+    }
+
+
 def test_server_actual_http_dispatches_json(tmp_path: Path) -> None:
     static = tmp_path / "static"
     entry = static / "control-plane" / "index.html"

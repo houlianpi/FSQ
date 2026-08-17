@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from fsq_agent.models import FsqAgentError
 
-from ._cases import discover_cases
+from ._cases import discover_cases, resolve_case
 from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
 from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
@@ -27,6 +27,7 @@ from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
 
 _API_PREFIX = "/api/control-plane"
+_CASE_SOURCE_LIMIT_BYTES = 512 * 1024
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
 _MAX_BODY_BYTES = 36 * 1024 * 1024
 
@@ -283,15 +284,19 @@ class ControlPlaneServer:
         mode = body.get("mode")
         if not isinstance(platform, str) or not isinstance(target_id, str) or not isinstance(mode, str):
             return 400, _error("invalid_run", "mode, platform, and targetId are required.", "Complete the run form and retry.")
-        source = {"goal": body["goal"]} if isinstance(body.get("goal"), str) else {"casePath": body["casePath"]} if isinstance(body.get("casePath"), str) else {}
         settings = None
         try:
+            settings = self._load_settings(platform)
+            source = self._run_source(body, settings)
             request_id = self.state.reserve(platform=platform, target_id=target_id, mode=mode, source=source)
         except BusyError as exc:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
+        except (TypeError, ValueError, OSError, UnicodeDecodeError) as exc:
+            return 400, _exception_error("run_validation_failed", exc, "Refresh readiness, targets, and cases, then retry.", settings=settings)
         try:
-            settings = self._load_settings(platform)
             prepared = prepare_run(request_id=request_id, settings=settings, body=body)
+            if getattr(prepared, "mode", None) == "strict":
+                self.state.update_source(request_id, {"caseSteps": _strict_case_steps(prepared)})
             self._handles[request_id] = start_execution(prepared, self.state)
         except (TypeError, ValueError, FsqAgentError, OSError) as exc:
             self.state.abandon_preparation(request_id)
@@ -301,6 +306,17 @@ class ControlPlaneServer:
             return 500, _exception_error("run_start_failed", exc, "Inspect local configuration and retry.", unexpected=True)
         else:
             return 202, {"requestId": request_id}
+
+    def _run_source(self, body: dict[str, Any], settings) -> dict[str, str]:
+        if isinstance(body.get("goal"), str):
+            return {"goal": body["goal"]}
+        if not isinstance(body.get("casePath"), str):
+            return {}
+        case_path = resolve_case(settings, body["casePath"])
+        content_bytes = case_path.read_bytes()
+        if len(content_bytes) > _CASE_SOURCE_LIMIT_BYTES:
+            raise ValueError(f"Case YAML is too large to display ({len(content_bytes)} bytes).")
+        return {"casePath": body["casePath"], "caseContent": content_bytes.decode("utf-8")}
 
     def _hydrate_evidence(self, request_id: str) -> None:
         artifact, run_id = self.state.artifact(request_id, "screenshot")
@@ -334,6 +350,25 @@ class ControlPlaneServer:
     def _entry_path(self) -> Path | None:
         candidates = (self._static_root / "control-plane" / "index.html", self._static_root / "index.html")
         return next((path for path in candidates if path.is_file()), None)
+
+
+def _strict_case_steps(prepared) -> list[dict[str, Any]]:
+    if prepared.case_path is None:
+        return []
+    steps = prepared.resolved_steps_by_path.get(prepared.case_path.resolve(), [])
+    summaries: list[dict[str, Any]] = []
+    for index, step in enumerate(steps):
+        step_index = step.source_ref.step_index + 1 if step.source_ref is not None else index + 1
+        summaries.append(
+            {
+                "stepId": step.step_id,
+                "index": step_index,
+                "authoredActionName": step.metadata.get("authored_action_name") or step.action_name,
+                "actionName": step.action_name,
+                "kind": step.kind,
+            }
+        )
+    return summaries
 
 
 class _ControlPlaneHTTPServer(ThreadingHTTPServer):

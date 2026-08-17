@@ -87,8 +87,15 @@ export interface TimelineEvent {
   toolArguments?: unknown;
   toolOutputPreview?: unknown;
 }
+export interface StrictCaseStep {
+  stepId: string;
+  index: number;
+  authoredActionName: string;
+  actionName: string;
+  kind: string;
+}
 export interface RunSnapshot extends ActiveTaskSummary {
-  source: { goal?: string; casePath?: string };
+  source: { goal?: string; casePath?: string; caseContent?: string; caseSteps?: StrictCaseStep[] };
   startedAt: string;
   completedAt: string | null;
   cancelRequested: boolean;

@@ -36,7 +36,7 @@ class TaskRecord:
     platform: str
     target_id: str
     mode: str
-    source: dict[str, str]
+    source: dict[str, Any]
     status: TaskStatus = "preparing"
     started_at: str = field(default_factory=_now)
     completed_at: str | None = None
@@ -62,7 +62,7 @@ class ControlPlaneState:
         self._current_request_id: str | None = None
         self._tasks: dict[str, TaskRecord] = {}
 
-    def reserve(self, *, platform: str, target_id: str, mode: str, source: dict[str, str]) -> str:
+    def reserve(self, *, platform: str, target_id: str, mode: str, source: dict[str, Any]) -> str:
         with self._condition:
             if self._current_request_id is not None:
                 raise BusyError("Another Control Plane task is active.")
@@ -71,6 +71,12 @@ class ControlPlaneState:
             self._current_request_id = request_id
             self._notify()
             return request_id
+
+    def update_source(self, request_id: str, values: dict[str, Any]) -> None:
+        with self._condition:
+            task = self._require(request_id)
+            task.source.update(values)
+            self._notify()
 
     def abandon_preparation(self, request_id: str) -> None:
         with self._condition:

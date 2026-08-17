@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { RunSnapshot, TimelineEvent } from '../../../api/types';
+import type { RunSnapshot, StrictCaseStep, TimelineEvent } from '../../../api/types';
 
 const cancellable = new Set(['preparing', 'running', 'finalizing']);
 const LONG_MESSAGE_LENGTH = 140;
@@ -57,6 +57,23 @@ function EventMessage({ event }: { event: TimelineEvent }) {
   </span>;
 }
 
+function StrictStepList({ steps, activeStepId, terminal, selectedStepId, onSelectStep }: { steps: StrictCaseStep[]; activeStepId: string | null | undefined; terminal: boolean; selectedStepId: string | null; onSelectStep: (stepId: string | null) => void }) {
+  if (!steps.length) return <p className="empty-state">No YAML steps are available.</p>;
+  return <ol className="strict-step-list">
+    {steps.map((step) => {
+      const selected = terminal && selectedStepId === step.stepId;
+      const active = !terminal && activeStepId === step.stepId;
+      const selectable = terminal && Boolean(step.stepId);
+      const selectAction = () => onSelectStep(selected ? null : step.stepId);
+      return <li key={step.stepId} className={`strict-step-row${active ? ' strict-step-row--active' : ''}${selectable ? ' strict-step-row--selectable' : ''}${selected ? ' strict-step-row--selected' : ''}`} onClick={selectable ? selectAction : undefined}>
+        {selectable ? <button className="strict-step-select" type="button" aria-label={`Select YAML step ${step.authoredActionName}`} aria-pressed={selected}>
+          <span className="timeline-index">{String(step.index).padStart(2, '0')}</span><span><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span>
+        </button> : <><span className="timeline-index">{String(step.index).padStart(2, '0')}</span><span><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span></>}
+      </li>;
+    })}
+  </ol>;
+}
+
 export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
   const events = useMemo(() => [...(snapshot?.events ?? [])].sort((left, right) => left.sequence - right.sequence), [snapshot?.events]);
   const visibleEvents = useMemo(() => timelineEventsForDisplay(events, snapshot?.mode), [events, snapshot?.mode]);
@@ -68,7 +85,8 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
   const sourceRef = useRef<HTMLElement>(null);
   const [unseen, setUnseen] = useState(0);
   const lastSequence = visibleEvents.at(-1)?.sequence ?? 0;
-  const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.casePath;
+  const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.caseContent ?? snapshot?.source.casePath;
+  const strictSteps = snapshot?.mode === 'strict' ? snapshot.source.caseSteps ?? [] : [];
   useEffect(() => {
     const previous = previousLastSequence.current;
     previousLastSequence.current = lastSequence;
@@ -126,7 +144,11 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
   };
   return <div className="run-timeline">
     <div className={`run-source-summary${sourceExpanded ? ' run-source-summary--expanded' : ''}`}><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><span className="run-source-line"><small ref={sourceRef}>{source ?? 'Source unavailable'}</small>{sourceOverflowing && <button className="message-disclosure run-source-disclosure" type="button" aria-label={sourceExpanded ? 'Collapse run source' : 'Expand run source'} aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((value) => !value)}>{sourceExpanded ? '⌃' : '⌄'}</button>}</span></div>
-    <div className="timeline-history">
+    {snapshot.mode === 'strict' ? <div className="timeline-history">
+      <div className="timeline-scroll" tabIndex={-1} aria-label="Strict Replay YAML steps">
+        <StrictStepList steps={strictSteps} activeStepId={activeStepId} terminal={snapshot.terminal} selectedStepId={selectedStepId} onSelectStep={onSelectStep} />
+      </div>
+    </div> : <div className="timeline-history">
       <div className="timeline-scroll" ref={scrollRef} onScroll={onTimelineScroll} data-following={following} tabIndex={-1} aria-label="Run timeline history">
         {visibleEvents.length ? <ol className="timeline-list">
           {visibleEvents.map((event) => {
@@ -149,7 +171,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
         </ol> : <p className="empty-state">No timeline events have been emitted yet.</p>}
       </div>
       {!snapshot.terminal && !following && <button className="jump-latest" type="button" onClick={jumpToLatest}>Jump to latest{unseen ? ` · ${unseen} new` : ''}</button>}
-    </div>
+    </div>}
     {!snapshot.terminal && cancellable.has(snapshot.status) && <button className="button button--danger cancel-button" type="button" disabled={snapshot.cancelRequested} onClick={onCancel}>{snapshot.cancelRequested ? 'Cancellation requested…' : 'Cancel run'}</button>}
     {snapshot.terminal && <div className="terminal-actions" aria-label="Completed run actions">
       <button className="button" type="button" disabled title="Save yaml is not available yet">Save yaml</button>
