@@ -112,6 +112,25 @@ it('highlights only the active running action and clears active highlighting aft
   expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--selected');
 });
 
+it('moves active highlighting to newer non-step progress after an active action', () => {
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [
+      { sequence: 28, label: 'assert_with_ai', stepId: 'step-assert', status: 'completed', message: 'Tool returned output.' },
+      { sequence: 29, label: 'Agent message', message: '{"status":"success"}' },
+      { sequence: 30, label: 'Verification started', status: 'running', message: 'Running evidence-based verifier agent.' },
+      { sequence: 31, label: 'Agent updated', message: 'fsq-agent verifier' },
+    ], activeStep: { stepId: 'step-assert', label: 'assert_with_ai' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  render(<RunTimeline snapshot={snapshot} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('assert_with_ai').closest('li')).not.toHaveClass('timeline-row--active');
+  expect(screen.getByText('Verification started').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.getByText('Agent updated').closest('li')).not.toHaveClass('timeline-row--active');
+});
+
 it('falls back to the latest running row or latest row when active step cannot match', () => {
   const base: RunSnapshot = {
     requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',

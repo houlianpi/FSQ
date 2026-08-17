@@ -83,7 +83,15 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [source, sourceExpanded]);
   if (!snapshot) return <div className="run-loading" role="status"><span className="spinner" aria-hidden="true" />Preparing run details…</div>;
-  const activeStepMatched = !snapshot.terminal && Boolean(snapshot.activeStep?.stepId) && events.some((event) => event.stepId === snapshot.activeStep?.stepId);
+  const activeStepId = !snapshot.terminal ? snapshot.activeStep?.stepId : null;
+  let latestActiveStepSequence: number | null = null;
+  if (activeStepId) {
+    for (const event of events) {
+      if (event.stepId === activeStepId) latestActiveStepSequence = event.sequence;
+    }
+  }
+  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && events.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
+  const activeStepMatched = Boolean(activeStepId && latestActiveStepSequence != null && !activeStepHasNewerOutsideProgress);
   let latestRunningEvent: TimelineEvent | null = null;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index].status === 'running') { latestRunningEvent = events[index]; break; }
@@ -114,7 +122,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
             const label = event.label || event.tool || event.phase || 'Run update';
             const selectable = snapshot.terminal && Boolean(event.stepId);
             const selected = selectable && selectedStepId === event.stepId;
-            const active = !snapshot.terminal && (activeStepMatched ? event.stepId === snapshot.activeStep?.stepId : event.sequence === activeFallbackSequence);
+            const active = !snapshot.terminal && (activeStepMatched ? event.stepId === activeStepId : event.sequence === activeFallbackSequence);
             const selectAction = () => onSelectStep(selected ? null : event.stepId ?? null);
             const statusClass = event.status ? ` timeline-row--${event.status}` : '';
             const statusBadge = event.status ? <span className={`status-badge status-badge--${event.status}`}>{event.status}</span> : null;

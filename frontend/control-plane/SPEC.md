@@ -110,7 +110,7 @@ Terminal states are success, failed, inconclusive, cancelled, and error. Termina
 
 After a run becomes terminal, timeline events that identify an execution step are selectable Action cards. Selecting one step highlights every timeline row representing that step and makes the right-side Screen and UI Tree tabs inspect that step without changing the active evidence tab. Selecting the same step again or activating Show run replay clears the selection. Action selection is unavailable while execution or finalization is active and events without a step id remain non-selectable.
 
-While a run is active, current action highlighting applies to every row that can be identified as current. Rows whose `stepId` matches `activeStep.stepId` use the active highlight first. When no rendered row can be matched by `activeStep.stepId`, the latest `running` timeline row is highlighted; if no row is explicitly running, the latest timeline row is highlighted. Terminal runs do not show active highlighting; they show only selected-Action highlighting when a user selects an Action.
+While a run is active, current action highlighting follows the latest rendered progress. Rows whose `stepId` matches `activeStep.stepId` use the active highlight only when no later timeline row represents newer progress outside that step. If later non-matching or step-less events have been appended, the highlight falls back to the latest `running` timeline row; if no row is explicitly running, it falls back to the latest timeline row. Terminal runs do not show active highlighting; they show only selected-Action highlighting when a user selects an Action.
 
 ### Live evidence
 
