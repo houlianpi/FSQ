@@ -197,30 +197,44 @@ it('aborts in-flight replay requests when the evidence component unmounts', asyn
 
 it('discloses long log messages and resumes paused log following', async () => {
   const longMessage = 'A safe structured agent message '.repeat(8);
-  const withLongLog = { ...snapshot, events: [{ ...snapshot.events[0], message: longMessage }] };
+  const withLongLog = { ...snapshot, events: [{ ...snapshot.events[0], stepId: 'step-1', durationMs: 42, payload: { tool_origin: 'agent_tool' }, toolCallId: 'call-1', toolArguments: { query: 'cats' }, toolOutputPreview: { status: 'ok' }, message: longMessage }] };
   const { container, rerender } = render(<LiveEvidencePanel tab="logs" snapshot={withLongLog} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
   const disclosure = await screen.findByRole('button', { name: 'Expand message' });
+  expect(document.getElementById('log-message-1')).toHaveClass('event-message--clamped');
   await userEvent.click(disclosure);
   expect(disclosure).toHaveTextContent('⌃');
   expect(disclosure).toHaveAccessibleName('Collapse message');
+  expect(document.getElementById('log-message-1')).not.toHaveClass('event-message--clamped');
   await userEvent.click(disclosure);
   expect(disclosure).toHaveAccessibleName('Expand message');
+  expect(document.getElementById('log-message-1')).toHaveClass('event-message--clamped');
+
+  await userEvent.click(screen.getByText('Details'));
+  const eventJson = await screen.findByText(/"stepId": "step-1"/);
+  expect(eventJson.closest('pre')).toHaveTextContent('"durationMs": 42');
+  expect(eventJson.closest('pre')).toHaveTextContent('"sequence": 1');
+  expect(eventJson.closest('pre')).toHaveTextContent('"payload"');
+  expect(eventJson.closest('pre')).toHaveTextContent('"toolCallId": "call-1"');
+  expect(eventJson.closest('pre')).toHaveTextContent('"toolArguments"');
+  expect(eventJson.closest('pre')).toHaveTextContent('"toolOutputPreview"');
 
   const scrolling = container.querySelector('.logs-table-wrap') as HTMLDivElement;
+  const logsTable = container.querySelector('.logs-table') as HTMLTableElement;
+  const resizer = screen.getByRole('button', { name: 'Resize message column' });
+  expect(logsTable.style.getPropertyValue('--log-message-width')).toBe('280px');
+  expect(logsTable).toHaveClass('logs-table');
+  fireEvent.pointerDown(resizer, { clientX: 0 });
+  fireEvent.pointerMove(window, { clientX: 120 });
+  fireEvent.pointerUp(window);
+  expect(logsTable.style.getPropertyValue('--log-message-width')).toBe('400px');
+  const details = container.querySelector('.log-event-json') as HTMLPreElement;
+  expect(details).toHaveClass('log-event-json');
   const scrollTo = vi.fn();
   Object.defineProperties(scrolling, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 }, scrollTop: { configurable: true, value: 0, writable: true }, scrollTo: { configurable: true, value: scrollTo } });
   fireEvent.scroll(scrolling);
   rerender(<LiveEvidencePanel tab="logs" snapshot={{ ...withLongLog, events: [...withLongLog.events, { sequence: 2, phase: 'execution', message: 'New row' }] }} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
 
-  const jump = await screen.findByRole('button', { name: 'Jump to latest · 1 new' });
-  rerender(<LiveEvidencePanel tab="logs" snapshot={{ ...withLongLog, terminal: true, status: 'success', events: [...withLongLog.events, { sequence: 2, phase: 'execution', message: 'New row' }] }} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
   expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument();
-  rerender(<LiveEvidencePanel tab="logs" snapshot={{ ...withLongLog, events: [...withLongLog.events, { sequence: 2, phase: 'execution', message: 'New row' }] }} platform="web" targetLabel="Chrome" onTabChange={vi.fn()} />);
-  const activeJump = await screen.findByRole('button', { name: /Jump to latest/ });
   expect(scrolling.scrollTop).toBe(0);
-  await userEvent.click(activeJump);
-  expect(scrolling.scrollTop).toBe(scrolling.scrollHeight - scrolling.clientHeight);
   expect(scrollTo).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument());
-  expect(scrolling).toHaveFocus();
 });

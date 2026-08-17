@@ -47,14 +47,17 @@ function EventMessage({ event }: { event: TimelineEvent }) {
   </span>;
 }
 
-export function RunTimeline({ snapshot, connection, selectedStepId, resultHeadingRef, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
-  useEffect(() => { if (snapshot?.terminal) resultHeadingRef.current?.focus(); }, [resultHeadingRef, snapshot?.terminal]);
+export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
   const events = useMemo(() => [...(snapshot?.events ?? [])].sort((left, right) => left.sequence - right.sequence), [snapshot?.events]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousLastSequence = useRef(0);
   const [following, setFollowing] = useState(true);
+  const [sourceExpanded, setSourceExpanded] = useState(false);
+  const [sourceOverflowing, setSourceOverflowing] = useState(false);
+  const sourceRef = useRef<HTMLElement>(null);
   const [unseen, setUnseen] = useState(0);
   const lastSequence = snapshot?.events.at(-1)?.sequence ?? 0;
+  const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.casePath;
   useEffect(() => {
     const previous = previousLastSequence.current;
     previousLastSequence.current = lastSequence;
@@ -66,8 +69,26 @@ export function RunTimeline({ snapshot, connection, selectedStepId, resultHeadin
       setUnseen((value) => value + (snapshot?.events.filter((event) => event.sequence > previous).length ?? 0));
     }
   }, [following, lastSequence, snapshot?.events]);
+  useLayoutEffect(() => {
+    const element = sourceRef.current;
+    if (!element) return;
+    const measure = () => {
+      if (sourceExpanded) return;
+      setSourceOverflowing(element.clientWidth > 0 ? element.scrollWidth > element.clientWidth : Boolean(source && source.length > LONG_MESSAGE_LENGTH));
+    };
+    measure();
+    const frame = requestAnimationFrame(measure);
+    const observer = globalThis.ResizeObserver ? new ResizeObserver(measure) : null;
+    observer?.observe(element);
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
+  }, [source, sourceExpanded]);
   if (!snapshot) return <div className="run-loading" role="status"><span className="spinner" aria-hidden="true" />Preparing run details…</div>;
-  const source = snapshot.mode === 'explore' ? snapshot.source.goal : snapshot.source.casePath;
+  const activeStepMatched = !snapshot.terminal && Boolean(snapshot.activeStep?.stepId) && events.some((event) => event.stepId === snapshot.activeStep?.stepId);
+  let latestRunningEvent: TimelineEvent | null = null;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].status === 'running') { latestRunningEvent = events[index]; break; }
+  }
+  const activeFallbackSequence = !snapshot.terminal && !activeStepMatched ? (latestRunningEvent ?? events.at(-1))?.sequence : null;
   const onTimelineScroll = () => {
     const element = scrollRef.current;
     if (!element) return;
@@ -85,8 +106,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, resultHeadin
     element.focus();
   };
   return <div className="run-timeline">
-    <div className="run-source-summary"><span><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><small>{source ?? 'Source unavailable'}</small></span><span className={`status-badge status-badge--${snapshot.status}`}>{snapshot.status}</span></div>
-    <div className="stream-state" role="status">Updates: {connection}</div>
+    <div className={`run-source-summary${sourceExpanded ? ' run-source-summary--expanded' : ''}`}><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><span className="run-source-line"><small ref={sourceRef}>{source ?? 'Source unavailable'}</small>{sourceOverflowing && <button className="message-disclosure run-source-disclosure" type="button" aria-label={sourceExpanded ? 'Collapse run source' : 'Expand run source'} aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((value) => !value)}>{sourceExpanded ? '⌃' : '⌄'}</button>}</span></div>
     <div className="timeline-history">
       <div className="timeline-scroll" ref={scrollRef} onScroll={onTimelineScroll} data-following={following} tabIndex={-1} aria-label="Run timeline history">
         {events.length ? <ol className="timeline-list">
@@ -94,13 +114,16 @@ export function RunTimeline({ snapshot, connection, selectedStepId, resultHeadin
             const label = event.label || event.tool || event.phase || 'Run update';
             const selectable = snapshot.terminal && Boolean(event.stepId);
             const selected = selectable && selectedStepId === event.stepId;
+            const active = !snapshot.terminal && (activeStepMatched ? event.stepId === snapshot.activeStep?.stepId : event.sequence === activeFallbackSequence);
             const selectAction = () => onSelectStep(selected ? null : event.stepId ?? null);
-            return <li key={event.sequence} className={`timeline-row timeline-row--${event.status ?? 'running'}${selectable ? ' timeline-row--selectable' : ''}${selected ? ' timeline-row--selected' : ''}`} onClick={selectable ? selectAction : undefined}>
+            const statusClass = event.status ? ` timeline-row--${event.status}` : '';
+            const statusBadge = event.status ? <span className={`status-badge status-badge--${event.status}`}>{event.status}</span> : null;
+            return <li key={event.sequence} className={`timeline-row${statusClass}${active ? ' timeline-row--active' : ''}${selectable ? ' timeline-row--selectable' : ''}${selected ? ' timeline-row--selected' : ''}`} onClick={selectable ? selectAction : undefined}>
               {selectable ? <button className="timeline-action-select" type="button" aria-label={`Select action ${label}`} aria-pressed={selected}>
                 <span className="timeline-index">{String(event.sequence).padStart(2, '0')}</span>
                 <span className="timeline-event-title"><strong>{label}</strong></span>
-                <span className="timeline-event-meta"><span className="status-badge">{event.status ?? 'running'}</span><time dateTime={event.time}>{formatTime(event.time)}</time></span>
-              </button> : <><span className="timeline-index">{String(event.sequence).padStart(2, '0')}</span><span className="timeline-event-title"><strong>{label}</strong></span><span className="timeline-event-meta"><span className="status-badge">{event.status ?? 'running'}</span><time dateTime={event.time}>{formatTime(event.time)}</time></span></>}
+                {statusBadge && <span className="timeline-event-meta">{statusBadge}</span>}
+              </button> : <><span className="timeline-index">{String(event.sequence).padStart(2, '0')}</span><span className="timeline-event-title"><strong>{label}</strong></span>{statusBadge && <span className="timeline-event-meta">{statusBadge}</span>}</>}
               <span className="timeline-event-main"><EventMessage event={event} /></span>
             </li>;
           })}
@@ -108,11 +131,10 @@ export function RunTimeline({ snapshot, connection, selectedStepId, resultHeadin
       </div>
       {!snapshot.terminal && !following && <button className="jump-latest" type="button" onClick={jumpToLatest}>Jump to latest{unseen ? ` · ${unseen} new` : ''}</button>}
     </div>
-    {snapshot.terminal ? <section className={`result-summary result-summary--${snapshot.status}`}>
-      <h3 ref={resultHeadingRef} tabIndex={-1}>Run {snapshot.status}</h3>
-      <p>{snapshot.summary || 'The run ended without an additional summary.'}</p>
-      {snapshot.runId && <p className="mono">Run ID: {snapshot.runId}</p>}
+    {!snapshot.terminal && cancellable.has(snapshot.status) && <button className="button button--danger cancel-button" type="button" disabled={snapshot.cancelRequested} onClick={onCancel}>{snapshot.cancelRequested ? 'Cancellation requested…' : 'Cancel run'}</button>}
+    {snapshot.terminal && <div className="terminal-actions" aria-label="Completed run actions">
+      <button className="button" type="button" disabled title="Save yaml is not available yet">Save yaml</button>
       <button className="button button--primary" type="button" onClick={onNewRun}>New run</button>
-    </section> : cancellable.has(snapshot.status) && <button className="button button--danger cancel-button" type="button" disabled={snapshot.cancelRequested} onClick={onCancel}>{snapshot.cancelRequested ? 'Cancellation requested…' : 'Cancel run'}</button>}
+    </div>}
   </div>;
 }

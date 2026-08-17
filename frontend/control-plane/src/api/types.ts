@@ -82,6 +82,10 @@ export interface TimelineEvent {
   durationMs?: number | null;
   message?: string;
   level?: string;
+  payload?: unknown;
+  toolCallId?: string;
+  toolArguments?: unknown;
+  toolOutputPreview?: unknown;
 }
 export interface RunSnapshot extends ActiveTaskSummary {
   source: { goal?: string; casePath?: string };
