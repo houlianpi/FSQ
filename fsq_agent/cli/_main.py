@@ -25,7 +25,7 @@ from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.config import Settings, load_registered_workspace, load_workspace_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, load_registered_workspace, load_workspace_platform_settings, validate_strict_core_settings
 from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 from fsq_agent.core import (
     ArtifactStore,
@@ -61,6 +61,7 @@ def init(platform: str | None) -> None:
 
 @main.command()
 @click.option("--workspace", "workspace_name", required=True, metavar="NAME")
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--android-serial", default=None, metavar="SERIAL")
 @click.option("--strict", is_flag=True, default=False, show_default=True)
 @click.option("--goal", default=None)
@@ -73,6 +74,7 @@ def init(platform: str | None) -> None:
 @click.option("--tracing/--no-tracing", "tracing", default=None)
 def run(
     workspace_name: str,
+    platform: str,
     android_serial: str | None,
     strict: bool,
     goal: str | None,
@@ -93,7 +95,7 @@ def run(
             record=record,
             record_on_failure=record_on_failure,
         )
-        settings = _load_registered_workspace_settings(workspace_name)
+        settings = _load_registered_workspace_settings(workspace_name, platform)
         select_android_serial(settings, android_serial)
         if tracing is not None:
             settings.openai_agents.tracing_enabled = tracing
@@ -119,11 +121,12 @@ def run(
 
 @main.command()
 @click.option("--workspace", "workspace_name", required=True, metavar="NAME")
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--run-id", required=True)
 @click.option("--format", "report_format", type=click.Choice(["markdown", "json"]), default="markdown")
-def report(workspace_name: str, run_id: str, report_format: str) -> None:
+def report(workspace_name: str, platform: str, run_id: str, report_format: str) -> None:
     try:
-        settings = _load_registered_workspace_settings(workspace_name)
+        settings = _load_registered_workspace_settings(workspace_name, platform)
         path = resolve_report_path(Path(settings.output.runs_dir), run_id, report_format)  # type: ignore[arg-type]
         click.echo(path.read_text(encoding="utf-8"), nl=False)
     except FsqAgentError as exc:
@@ -133,17 +136,19 @@ def report(workspace_name: str, run_id: str, report_format: str) -> None:
 
 @main.command()
 @click.option("--workspace", "workspace_name", required=True, metavar="NAME")
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8765, show_default=True, type=click.IntRange(1, 65535))
 @click.option("--open-browser/--no-open-browser", "open_browser", default=True, show_default=True)
 def playground(
     workspace_name: str,
+    platform: str,
     host: str,
     port: int,
     open_browser: bool,
 ) -> None:
     try:
-        settings = _load_registered_workspace_settings(workspace_name)
+        settings = _load_registered_workspace_settings(workspace_name, platform)
         run_playground(
             settings,
             PlaygroundServerOptions(host=host, port=port, open_browser=open_browser),
@@ -167,7 +172,6 @@ def control_plane(host: str, port: int, open_browser: bool) -> None:
                 host=host,
                 port=port,
                 open_browser=open_browser,
-                workspace_path=_legacy_devices_workspace_path(),
             )
         )
     except FsqAgentError as exc:
@@ -178,13 +182,9 @@ def control_plane(host: str, port: int, open_browser: bool) -> None:
         raise click.Abort() from exc
 
 
-def _load_registered_workspace_settings(workspace_name: str) -> Settings:
-    workspace = load_registered_workspace(workspace_name)
-    return load_workspace_settings(workspace.root_path)
-
-
-def _legacy_devices_workspace_path() -> Path:
-    return Path.cwd() / ".fsq-agent-workspace"
+def _load_registered_workspace_settings(workspace_name: str, platform: str) -> Settings:
+    workspace = load_registered_workspace(workspace_name, platform)
+    return load_workspace_platform_settings(workspace.root_path, platform)
 
 
 def _validate_run_inputs(

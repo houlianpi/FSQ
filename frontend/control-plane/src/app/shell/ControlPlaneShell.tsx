@@ -7,6 +7,7 @@ interface ControlPlaneShellProps {
   activePage: ControlPlanePageId;
   title: string;
   description: string;
+  titleContent?: ReactNode;
   titleActions?: ReactNode;
   children: ReactNode;
   workspaces?: readonly WorkspaceNavigationItem[];
@@ -19,7 +20,7 @@ interface ControlPlaneShellProps {
   onSelectWorkspace?: (workspaceId: string) => void;
 }
 
-export function ControlPlaneShell({ activePage, title, description, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneShellProps) {
+export function ControlPlaneShell({ activePage, title, description, titleContent, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -101,7 +102,7 @@ export function ControlPlaneShell({ activePage, title, description, titleActions
       </aside>
       <div className="cp-main-column">
         <header className="cp-titlebar">
-          <div className="cp-title-context"><strong>{title}</strong><small>{description}</small></div>
+          {titleContent ?? <div className="cp-title-context"><strong>{title}</strong><small>{description}</small></div>}
           {titleActions && <div className="cp-title-actions">{titleActions}</div>}
         </header>
         <main className="cp-page-outlet" id="main-content">{children}</main>

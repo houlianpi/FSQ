@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Own the authored browser application for the local FSQ-Agent Playground. The application presents runtime status, platform session setup where applicable, dynamic and strict execution controls, YAML views and lifecycle editing, progress, screenshots, replay video, reports, existing-run loading, and completed-step artifacts.
+Own the authored browser application for the local FSQ-Agent Playground. The application presents runtime status for the server's fixed CLI-selected workspace/platform, platform session setup where applicable, dynamic and strict execution controls, YAML views and lifecycle editing, progress, screenshots, replay video, reports, existing-run loading, and completed-step artifacts.
 
 This module owns browser-local state, rendering, interaction, and browser-side replay generation. It consumes the HTTP contracts owned by `fsq_agent/playground/SPEC.md` and does not own Python execution, filesystem safety, route semantics, production static serving, or wheel packaging.
 
@@ -17,9 +17,10 @@ This module owns browser-local state, rendering, interaction, and browser-side r
 
 - Source entry: `index.html` loads `playground.js` as an ES module and `playground.css` as the authored stylesheet.
 - Run modes: Goal, YAML, and Strict YAML preserve their corresponding server execution semantics.
+- Runtime context: Displays server-provided workspace/platform metadata where supplied and does not offer workspace or platform switching.
 - Workspace views: Source YAML, Generated YAML, Progress, Preview, and Report expose mode-appropriate state without changing execution semantics.
 - Session controls: Android session setup is visible only when the active platform requires it.
-- Existing-run loading: Goal mode can load one server-validated completed run and reuse the normal Progress, Report, replay, generated-YAML, and step-artifact surfaces.
+- Existing-run loading: Goal mode can load one server-validated completed run from the fixed selected platform run root and reuse the normal Progress, Report, replay, generated-YAML, and step-artifact surfaces.
 - Input lifecycle editing: Source YAML exposes case-level `onCaseStart` and `onCaseComplete` action drafts while metadata and case steps remain read-only.
 - Artifact navigation: Completed Strict Input and Generated YAML step cards can select step artifacts in Preview; selecting the case title returns to replay preview.
 
@@ -94,4 +95,5 @@ The browser consumes endpoint contracts from `fsq_agent/playground/SPEC.md`. End
 
 - Authored browser source and browser dependencies are owned by the frontend workspace; generated bundles are untracked package data.
 - The Python Playground server owns all endpoint semantics and production static serving. Browser code treats server responses as transport contracts and does not reproduce server validation or filesystem policy.
+- Workspace/platform selection belongs to CLI startup; browser code neither infers nor changes it.
 - The module remains vanilla JavaScript until a confirmed module SPEC changes its framework and source-language contract.

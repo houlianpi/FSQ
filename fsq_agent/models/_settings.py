@@ -416,7 +416,7 @@ WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspace
 class WorkspaceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[1]
+    version: Literal[2]
     name: str = Field(min_length=1, max_length=128)
     root_path: Path
     platform: Literal["android", "web", "windows", "macos"]
@@ -484,27 +484,43 @@ class WorkspaceRegistryEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    config_path: Path
+    root_path: Path
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
         return _normalize_workspace_name(value)
 
-    @field_validator("config_path")
+    @field_validator("root_path")
     @classmethod
-    def validate_config_path(cls, value: Path) -> Path:
+    def validate_root_path(cls, value: Path) -> Path:
         expanded = value.expanduser()
         if not expanded.is_absolute():
-            raise ValueError("workspace config_path must be absolute")
-        metadata_path = expanded.parent
-        workspace_root = metadata_path.parent
-        if expanded.is_symlink() or metadata_path.is_symlink() or workspace_root.is_symlink():
-            raise ValueError("workspace config_path must not traverse symbolic links")
-        normalized = expanded.resolve()
-        if normalized.name != "config.yaml" or normalized.parent.name != ".fsq":
-            raise ValueError("workspace config_path must identify .fsq/config.yaml")
-        return normalized
+            raise ValueError("workspace root_path must be absolute")
+        if expanded.is_symlink():
+            raise ValueError("workspace root_path must not be a symbolic link")
+        return expanded.resolve()
+
+
+class WorkspacePlatformStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal["android", "web", "windows", "macos"]
+    config_path: Path
+    status: Literal["available", "unavailable"]
+    message: str
+    action: str | None = None
+
+
+class WorkspaceStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    root_path: Path
+    status: Literal["available", "partial", "unavailable"]
+    message: str
+    action: str | None = None
+    platforms: list[WorkspacePlatformStatus] = Field(default_factory=list)
 
 
 class CaseSettings(BaseModel):

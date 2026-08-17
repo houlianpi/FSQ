@@ -20,10 +20,10 @@ export interface ApiErrorBody {
 }
 
 export interface PlatformOption { id: PlatformId; label: string }
-export interface WorkspaceSummary { name: string; initialized: boolean }
 export interface ActiveTaskSummary {
   requestId: string;
   runId: string | null;
+  workspaceName: string;
   platform: PlatformId;
   targetId: string;
   mode: RunMode;
@@ -32,7 +32,6 @@ export interface ActiveTaskSummary {
 export interface BootstrapResponse {
   apiVersion: string;
   platforms: PlatformOption[];
-  workspace: WorkspaceSummary;
   busy: boolean;
   activeTask: ActiveTaskSummary | null;
 }
@@ -40,8 +39,10 @@ export interface BootstrapResponse {
 export type ReadinessStatus = 'ready' | 'unavailable' | 'error';
 export interface ReadinessRecord { status: ReadinessStatus; message: string; action: string }
 export interface ReadinessResponse {
-  platform: PlatformId;
+  workspaceName: string;
+  platformId: PlatformId;
   workspace: ReadinessRecord;
+  platform: ReadinessRecord;
   provider: ReadinessRecord;
   target: ReadinessRecord;
   strict: ReadinessRecord;
@@ -103,8 +104,8 @@ export interface RunSnapshot extends ActiveTaskSummary {
   terminal: boolean;
 }
 export type StartRunPayload =
-  | { mode: 'explore'; platform: PlatformId; targetId: string; goal: string }
-  | { mode: 'strict'; platform: PlatformId; targetId: string; casePath: string };
+  | { mode: 'explore'; workspaceName: string; platform: PlatformId; targetId: string; goal: string }
+  | { mode: 'strict'; workspaceName: string; platform: PlatformId; targetId: string; casePath: string };
 export interface StartRunResponse { requestId: string }
 export interface UiSnapshotResponse {
   revision: number;
@@ -186,25 +187,34 @@ export interface WindowsWorkspaceTarget { appPath: string; windowTitleRe?: strin
 export interface MacOSWorkspaceTarget { bundleId?: string; appPath?: string }
 export type WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget;
 
-interface WorkspaceRegistryBase {
+interface WorkspaceStatusBase {
   name: string;
-  configPath: string;
   rootPath: string;
+  status: 'available' | 'partial' | 'unavailable';
+  message: string;
+  action?: string;
+}
+interface WorkspacePlatformStatusBase {
+  platform: PlatformId;
+  configPath: string;
   status: 'available' | 'unavailable';
   message: string;
+  action?: string;
 }
-export interface AvailableWorkspaceRegistryEntry extends WorkspaceRegistryBase {
-  status: 'available';
-  platform: PlatformId;
+export interface WorkspaceRegistryEntry extends WorkspaceStatusBase {
+  platforms: WorkspacePlatformStatusBase[];
 }
-export interface UnavailableWorkspaceRegistryEntry extends WorkspaceRegistryBase {
-  status: 'unavailable';
-  action: string;
-}
-export type WorkspaceRegistryEntry = AvailableWorkspaceRegistryEntry | UnavailableWorkspaceRegistryEntry;
 export interface WorkspaceListResponse { workspaces: WorkspaceRegistryEntry[] }
 
-export interface WorkspaceDetail {
+export interface WorkspacePlatformSummary extends WorkspacePlatformStatusBase {
+  target?: WorkspaceTarget;
+  env?: { name: string; configured: true }[];
+  revision?: string;
+}
+export interface WorkspaceDetail extends WorkspaceStatusBase {
+  platforms: WorkspacePlatformSummary[];
+}
+export interface WorkspacePlatformDetail {
   name: string;
   rootPath: string;
   configPath: string;
@@ -216,14 +226,21 @@ export interface WorkspaceDetail {
 export interface CreateWorkspacePayload {
   name: string;
   parentPath: string;
+  platforms: { platform: PlatformId; target: WorkspaceTarget; env: Record<string, string> }[];
+}
+export interface AddWorkspacePlatformPayload {
   platform: PlatformId;
   target: WorkspaceTarget;
   env: Record<string, string>;
 }
-export interface UpdateWorkspacePayload {
+export interface UpdateWorkspacePlatformPayload {
   target: WorkspaceTarget;
   env: Record<string, string>;
   expectedRevision: string;
+}
+export interface WorkspacePlatformMutationResponse {
+  workspace: WorkspaceDetail;
+  platform: WorkspacePlatformDetail;
 }
 export interface WorkspaceEntry {
   path: string;

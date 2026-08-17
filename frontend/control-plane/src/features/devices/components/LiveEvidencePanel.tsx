@@ -14,7 +14,7 @@ interface LiveEvidencePanelProps {
   tab: EvidenceTab;
   snapshot: RunSnapshot | null;
   selectedStepId?: string | null;
-  platform: PlatformId;
+  platform: PlatformId | null;
   targetLabel: string;
   onTabChange: (tab: EvidenceTab) => void;
   onClearStep?: () => void;
@@ -29,7 +29,7 @@ export function LiveEvidencePanel({ tab, snapshot, selectedStepId = null, platfo
     document.getElementById(`evidence-tab-${tabs[next].id}`)?.focus();
   };
   return <section className="evidence-card" aria-labelledby="live-evidence-title">
-    <header className="card-header evidence-header"><div><h2 id="live-evidence-title">Live evidence</h2><p>{platform} · {selectedStepId ? `Action ${selectedStepId}` : targetLabel || 'No target selected'}</p></div>
+    <header className="card-header evidence-header"><div><h2 id="live-evidence-title">Live evidence</h2><p>{platform ?? 'No platform'} · {selectedStepId ? `Action ${selectedStepId}` : targetLabel || 'No target selected'}</p></div>
       {selectedStepId && <button className="button evidence-replay-button" type="button" onClick={onClearStep}>Show run replay</button>}
       <div className="evidence-tabs" role="tablist" aria-label="Live evidence views">
         {tabs.map((item, index) => <button id={`evidence-tab-${item.id}`} key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`evidence-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => onTabChange(item.id)} onKeyDown={(event) => onTabKeyDown(event, index)}>{item.label}</button>)}

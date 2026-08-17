@@ -18,7 +18,6 @@ def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
     return ControlPlaneServer(
         ControlPlaneServerOptions(
             host=host,
-            workspace_path=tmp_path / "workspace",
             static_path=tmp_path / "static",
             user_config_root=tmp_path / "user",
             open_browser=False,
@@ -90,7 +89,7 @@ def test_config_rejects_nonloopback_bind_peer_and_cross_origin_write(tmp_path: P
 
 def test_device_flow_is_independent_from_run_state_and_cancels_idempotently(tmp_path: Path) -> None:
     server = _server(tmp_path)
-    server.state.reserve(platform="web", target_id="chrome", mode="explore", source={"goal": "active"})
+    server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "active"})
     worker_started = Event()
 
     def complete(_device_code, *, model, cancel_requested, user_config_root):
@@ -199,8 +198,8 @@ def test_control_plane_run_start_loads_latest_provider_from_configured_user_root
     settings = Settings(harness={"platform": "web"})
     captured: dict[str, object] = {}
 
-    def load(platform, workspace, user_config_root=None):
-        captured.update(platform=platform, workspace=workspace, user_config_root=user_config_root)
+    def load(workspace_name, platform, user_config_root=None):
+        captured.update(workspace_name=workspace_name, platform=platform, user_config_root=user_config_root)
         return settings
 
     monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", load)
@@ -209,13 +208,13 @@ def test_control_plane_run_start_loads_latest_provider_from_configured_user_root
 
     status, _ = server.handle_post(
         "/api/control-plane/runs",
-        {"mode": "explore", "platform": "web", "targetId": "chrome", "goal": "Do it"},
+        {"mode": "explore", "workspaceName": "checkout", "platform": "web", "targetId": "chrome", "goal": "Do it"},
     )
 
     assert status == 202
     assert captured == {
+        "workspace_name": "checkout",
         "platform": "web",
-        "workspace": tmp_path / "workspace",
         "user_config_root": tmp_path / "user",
     }
 
@@ -228,7 +227,6 @@ def test_actual_http_config_transport_supports_put_and_rejects_cross_origin(tmp_
     server.options = ControlPlaneServerOptions(
         host="127.0.0.1",
         port=0,
-        workspace_path=tmp_path / "workspace",
         static_path=tmp_path / "static",
         user_config_root=tmp_path / "user",
         open_browser=False,

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Generate human-readable and machine-readable reports inside the active workspace's unique direct run directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, strict lifecycle phase summaries, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide one lookup path so CLI can print a stored LLM or strict-core report by run id from workspace `cases/`.
+Generate human-readable and machine-readable reports inside the selected workspace platform's unique direct run directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, strict lifecycle phase summaries, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide one lookup path so CLI can print a stored LLM or strict-core report by run id from that platform's run root.
 
 ## Dependencies
 
@@ -70,7 +70,7 @@ Stored report lookup raises `ReportGenerationError` when no report exists for th
 - Reports treat capability and AgentTool metadata as persisted execution evidence, not as live decorator state. Report generation must not depend on the module that originally declared a capability. Reports may display replay aliases from persisted `ReplayPolicy` metadata, but they must not expect `CapabilityDefinition.aliases` or per-capability schema strictness fields in persisted capability metadata. Automatic and explicit runner evidence uses normalized `ui_snapshot` artifacts across platforms, and reports render those artifacts uniformly.
 - Reports must preserve AI assertion evidence emitted by backend PlatformTools. For Android/Web/Windows/macOS `assert_with_ai`/`assertWithAI`, reports should include the prompt summary, verdict status, explanation, provider/model metadata safe for display, latency/token diagnostics when safe, screenshot artifact references, and any evaluator error. Reports must not re-inspect screenshot pixels or include hidden model reasoning.
 - Sensitive runtime-secret text input values must be redacted in reports. Reports may show safe metadata such as requested workspace secret name, text source type, allowlist/presence status, capability name, and replay alias, but never private values. Historical `get_runtime_secret` dependency events are not part of the target runtime-secret input path and need not be treated as active recording dependencies.
-- Report artifacts are stored below `<workspace>/cases/<run-id>`, equivalent to `output.runs_dir/<run-id>` after workspace settings composition. Report does not create a separate workspace `output/` root or write in an arbitrary caller directory.
+- Report artifacts are stored below `<workspace>/.fsq/runs/<platform>/<run-id>`, equivalent to `output.runs_dir/<run-id>` after workspace-platform settings composition. Report does not discover workspace layout or write in an arbitrary caller directory.
 - LLM and strict-core reports intentionally keep separate internal shapes. CLI unifies only lookup and printing through `resolve_report_path`.
 - HTML report generation is intentionally out of scope.
 - Failure analysis is rule-assisted. Provider-side incomplete response failures such as OpenAI Agents SDK `response.incomplete` with `content_filter` must be classified as provider failures, not tool usage errors.

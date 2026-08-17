@@ -8,7 +8,7 @@ interface Props {
   requestId: string;
   stepId: string;
   kind: 'screen' | 'ui-tree';
-  platform: PlatformId;
+  platform: PlatformId | null;
 }
 
 function preferred(artifacts: StepArtifact[], phase: 'before' | 'after') {

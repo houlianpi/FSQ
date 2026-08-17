@@ -21,7 +21,10 @@ import type {
   WorkspaceFileResponse,
   WorkspaceListResponse,
   CreateWorkspacePayload,
-  UpdateWorkspacePayload,
+  AddWorkspacePlatformPayload,
+  UpdateWorkspacePlatformPayload,
+  WorkspacePlatformDetail,
+  WorkspacePlatformMutationResponse,
 } from './types';
 
 const API_BASE = '/api/control-plane';
@@ -79,7 +82,7 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 }
 
 function activeTask(value: unknown): boolean {
-  return record(value) && string(value.requestId) && nullableString(value.runId) && platform(value.platform)
+  return record(value) && string(value.requestId) && nullableString(value.runId) && string(value.workspaceName) && platform(value.platform)
     && string(value.targetId) && string(value.mode) && modes.has(value.mode) && string(value.status) && statuses.has(value.status);
 }
 function readinessRecord(value: unknown): boolean {
@@ -113,12 +116,12 @@ export function validateRunSnapshot(value: unknown, path = 'run snapshot'): RunS
 function validateBootstrap(value: unknown): BootstrapResponse {
   if (!record(value) || !string(value.apiVersion)
     || !arrayOf(value.platforms, (item) => record(item) && platform(item.id) && string(item.label))
-    || !record(value.workspace) || !string(value.workspace.name) || !bool(value.workspace.initialized)
     || !bool(value.busy) || !(value.activeTask === null || activeTask(value.activeTask))) invalidResponse('bootstrap', 'Invalid bootstrap fields.');
   return value as unknown as BootstrapResponse;
 }
 function validateReadiness(value: unknown): ReadinessResponse {
-  if (!record(value) || !platform(value.platform) || !readinessRecord(value.workspace) || !readinessRecord(value.provider)
+  if (!record(value) || !string(value.workspaceName) || !platform(value.platformId)
+    || !readinessRecord(value.workspace) || !readinessRecord(value.platform) || !readinessRecord(value.provider)
     || !readinessRecord(value.target) || !readinessRecord(value.strict)) invalidResponse('readiness', 'Invalid readiness fields.');
   return value as unknown as ReadinessResponse;
 }
@@ -218,29 +221,55 @@ function workspaceTarget(value: unknown, platformId: PlatformId): boolean {
     && Boolean(value.bundleId || value.appPath);
 }
 
+function workspacePlatformStatus(value: unknown, summary: boolean): boolean {
+  if (!record(value) || !platform(value.platform) || !string(value.configPath) || !string(value.status) || !string(value.message)) return false;
+  if (value.status === 'unavailable') {
+    return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message', 'action']) && string(value.action);
+  }
+  if (value.status !== 'available') return false;
+  if (!summary) return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message']);
+  return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message', 'target', 'env', 'revision'])
+    && workspaceTarget(value.target, value.platform)
+    && arrayOf(value.env, (item) => record(item) && hasOnlyKeys(item, ['name', 'configured']) && string(item.name) && item.configured === true)
+    && string(value.revision) && value.revision.startsWith('sha256:');
+}
+
+function workspaceStatus(value: unknown, summary: boolean): value is WorkspaceDetail {
+  if (!record(value) || !string(value.name) || !string(value.rootPath) || !string(value.status)
+    || !['available', 'partial', 'unavailable'].includes(value.status) || !string(value.message)
+    || !arrayOf(value.platforms, (item) => workspacePlatformStatus(item, summary))) return false;
+  const keys = value.action === undefined
+    ? ['name', 'rootPath', 'status', 'message', 'platforms']
+    : ['name', 'rootPath', 'status', 'message', 'action', 'platforms'];
+  return hasOnlyKeys(value, keys) && (value.action === undefined || string(value.action));
+}
+
 function validateWorkspaceList(value: unknown): WorkspaceListResponse {
-  const entry = (item: unknown) => {
-    if (!record(item) || !string(item.name) || !string(item.configPath) || !string(item.rootPath)
-      || !string(item.status) || !string(item.message)) return false;
-    if (item.status === 'available') {
-      return hasOnlyKeys(item, ['name', 'configPath', 'rootPath', 'status', 'message', 'platform']) && platform(item.platform);
-    }
-    return item.status === 'unavailable'
-      && hasOnlyKeys(item, ['name', 'configPath', 'rootPath', 'status', 'message', 'action'])
-      && string(item.action);
-  };
-  if (!record(value) || !arrayOf(value.workspaces, entry)) invalidResponse('workspaces', 'Invalid workspace registry fields.');
+  if (!record(value) || !arrayOf(value.workspaces, (item) => workspaceStatus(item, false))) invalidResponse('workspaces', 'Invalid workspace registry fields.');
   return value as unknown as WorkspaceListResponse;
 }
 
 function validateWorkspaceDetail(value: unknown): WorkspaceDetail {
-  if (!record(value) || !string(value.name) || !string(value.rootPath) || !string(value.configPath)
-    || !platform(value.platform) || !workspaceTarget(value.target, value.platform)
+  if (!workspaceStatus(value, true)) invalidResponse('workspace detail', 'Invalid workspace summary fields.');
+  return value;
+}
+
+function validateWorkspacePlatformDetail(value: unknown): WorkspacePlatformDetail {
+  if (!record(value) || !hasOnlyKeys(value, ['name', 'rootPath', 'configPath', 'platform', 'target', 'env', 'revision'])
+    || !string(value.name) || !string(value.rootPath) || !string(value.configPath) || !platform(value.platform)
+    || !workspaceTarget(value.target, value.platform)
     || !record(value.env) || !Object.entries(value.env).every(([name, secret]) => Boolean(name) && string(secret))
     || !string(value.revision) || !value.revision.startsWith('sha256:')) {
-    invalidResponse('workspace detail', 'Invalid workspace configuration fields.');
+    invalidResponse('workspace platform detail', 'Invalid workspace platform configuration fields.');
   }
-  return value as unknown as WorkspaceDetail;
+  return value as unknown as WorkspacePlatformDetail;
+}
+
+function validateWorkspacePlatformMutation(value: unknown): WorkspacePlatformMutationResponse {
+  if (!record(value) || !hasOnlyKeys(value, ['workspace', 'platform']) || !workspaceStatus(value.workspace, true)) {
+    invalidResponse('workspace platform mutation', 'Invalid workspace platform mutation fields.');
+  }
+  return { workspace: value.workspace, platform: validateWorkspacePlatformDetail(value.platform) };
 }
 
 function validateWorkspaceEntries(value: unknown): WorkspaceEntriesResponse {
@@ -287,12 +316,12 @@ export function toApiError(error: unknown): ApiErrorBody {
 
 export const controlPlaneClient = {
   bootstrap: (signal?: AbortSignal) => jsonRequest('/bootstrap', validateBootstrap, { signal }),
-  readiness: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/readiness?platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
-  targets: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/targets?platform=${encodeURIComponent(platform)}`, validateTargets, { signal }),
-  cases: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/cases?platform=${encodeURIComponent(platform)}`, validateCases, { signal }),
+  readiness: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/readiness?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
+  targets: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/targets?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateTargets, { signal }),
+  cases: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/cases?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateCases, { signal }),
   startRun: (payload: StartRunPayload) => jsonRequest('/runs', validateStart, { method: 'POST', body: JSON.stringify(payload) }),
   cancelRun: (requestId: string) => jsonRequest(`/runs/${encodeURIComponent(requestId)}/cancel`, (value) => validateRunSnapshot(value, 'cancel run'), { method: 'POST', body: '{}' }),
   runSnapshot: (requestId: string, signal?: AbortSignal) => jsonRequest(`/runs/${encodeURIComponent(requestId)}`, validateRunSnapshot, { signal }),
@@ -333,10 +362,14 @@ export const controlPlaneClient = {
   workspaces: (signal?: AbortSignal) => jsonRequest('/workspaces', validateWorkspaceList, { signal }),
   workspace: (name: string, signal?: AbortSignal) =>
     jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),
+  workspacePlatform: (name: string, platformId: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformDetail, { signal }),
   createWorkspace: (payload: CreateWorkspacePayload, signal?: AbortSignal) =>
     jsonRequest('/workspaces', validateWorkspaceDetail, { method: 'POST', body: JSON.stringify(payload), signal }),
-  updateWorkspace: (name: string, payload: UpdateWorkspacePayload, signal?: AbortSignal) =>
-    jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { method: 'PUT', body: JSON.stringify(payload), signal }),
+  addWorkspacePlatform: (name: string, payload: AddWorkspacePlatformPayload, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms`, validateWorkspacePlatformMutation, { method: 'POST', body: JSON.stringify(payload), signal }),
+  updateWorkspacePlatform: (name: string, platformId: PlatformId, payload: UpdateWorkspacePlatformPayload, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformMutation, { method: 'PUT', body: JSON.stringify(payload), signal }),
   workspaceEntries: (name: string, path: string, signal?: AbortSignal) =>
     jsonRequest(`/workspaces/${encodeURIComponent(name)}/entries?path=${encodeURIComponent(path)}`, validateWorkspaceEntries, { signal }),
   workspaceFile: (name: string, path: string, signal?: AbortSignal) =>

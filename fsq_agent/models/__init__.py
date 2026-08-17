@@ -170,8 +170,10 @@ from fsq_agent.models._settings import (
     WindowsHarnessSettings,
     WindowsWorkspaceTarget,
     WorkspaceConfig,
+    WorkspacePlatformStatus,
     WorkspaceRegistryEntry,
     WorkspaceSettings,
+    WorkspaceStatus,
 )
 from fsq_agent.models._skills import SkillBundle, SkillConfig
 from fsq_agent.models._task import (
@@ -396,6 +398,8 @@ __all__ = [
     "WindowsUiSnapshotParams",
     "WindowsWorkspaceTarget",
     "WorkspaceConfig",
+    "WorkspacePlatformStatus",
     "WorkspaceRegistryEntry",
     "WorkspaceSettings",
+    "WorkspaceStatus",
 ]

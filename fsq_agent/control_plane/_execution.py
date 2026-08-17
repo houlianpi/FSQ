@@ -15,7 +15,7 @@ from fsq_agent._capability_bootstrap import steps_require_provider
 from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.agent import FsqAgent
-from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings, workspace_revision
 from fsq_agent.core import ArtifactStore, EvidenceRecorder, HarnessFactory, RuntimeSecretStore
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ExecutableStep, FsqCase, RunnerEvent, RunnerStepResult, Task
@@ -32,6 +32,8 @@ from ._targets import validate_target
 class PreparedRun:
     request_id: str
     settings: Settings
+    workspace_name: str
+    platform_revision: str
     mode: str
     target_id: str
     goal: str | None = None
@@ -67,14 +69,24 @@ class ExecutionHandle:
 
 def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) -> PreparedRun:
     mode = body.get("mode")
+    workspace_name = body.get("workspaceName")
     platform = body.get("platform")
     target_id = body.get("targetId")
     if mode not in {"explore", "strict"}:
         raise ValueError("mode must be explore or strict.")
+    expected_fields = {"mode", "workspaceName", "platform", "targetId", "goal" if mode == "explore" else "casePath"}
+    if set(body) != expected_fields:
+        raise ValueError(f"{mode} run fields must be exactly {', '.join(sorted(expected_fields))}.")
+    if not isinstance(workspace_name, str) or not workspace_name.strip():
+        raise TypeError("workspaceName is required.")
     if not isinstance(platform, str) or platform != settings.harness.platform:
         raise ValueError("platform does not match the loaded platform preset.")
     if not isinstance(target_id, str):
         raise TypeError("targetId is required.")
+    config_path = settings.workspace.config_path
+    if not isinstance(config_path, Path):
+        raise ValueError("Selected workspace platform configuration is unavailable.")
+    platform_revision = workspace_revision(config_path)
     validate_target(settings, target_id)
     run_settings = settings.model_copy(deep=True)
     if platform == "android":
@@ -88,7 +100,15 @@ def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) ->
             raise ValueError("Explore runs must not include casePath.")
         validate_runtime_settings(run_settings)
         require_provider(run_settings)
-        return PreparedRun(request_id=request_id, settings=run_settings, mode=mode, target_id=target_id, goal=" ".join(goal.split()))
+        return PreparedRun(
+            request_id=request_id,
+            settings=run_settings,
+            workspace_name=workspace_name.strip(),
+            platform_revision=platform_revision,
+            mode=mode,
+            target_id=target_id,
+            goal=" ".join(goal.split()),
+        )
 
     if body.get("goal") is not None:
         raise ValueError("Strict runs must not include goal.")
@@ -118,6 +138,8 @@ def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) ->
     return PreparedRun(
         request_id=request_id,
         settings=run_settings,
+        workspace_name=workspace_name.strip(),
+        platform_revision=platform_revision,
         mode=mode,
         target_id=target_id,
         case_path=case_path,

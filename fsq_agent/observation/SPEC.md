@@ -27,5 +27,5 @@ Event logging failures are treated as I/O errors from the underlying filesystem.
 ## Current Invariants
 
 - The observation module does not implement screenshot, UI tree, or page-source capture. Current platform observations should be requested through active PlatformTools or harness runtime services; dynamic historical artifact lookup should use AgentTools. If no active capability exposes an observation type, that observation type is unavailable for the run.
-- Live run event timelines are persisted as `<workspace>/cases/<run-id>/events.jsonl`, equivalent to `output.runs_dir/<run-id>/events.jsonl` after workspace settings composition, so interrupted or long-running tasks can be inspected before final reports are generated.
-- Event timelines, reports, and tool artifacts must remain inside the unique current run directory, a direct child of workspace `cases/`; observation never creates a separate workspace `output/` root.
+- Live run event timelines are persisted as `<workspace>/.fsq/runs/<platform>/<run-id>/events.jsonl`, equivalent to `output.runs_dir/<run-id>/events.jsonl` after workspace-platform settings composition, so interrupted or long-running tasks can be inspected before final reports are generated.
+- Event timelines, reports, and tool artifacts must remain inside the unique current run directory, a direct child of the selected platform run root; observation never discovers or constructs workspace paths.

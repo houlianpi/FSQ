@@ -9,7 +9,7 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
   const message = 'Navigation complete with enough detail to require the disclosure control. '.repeat(4);
   const goal = 'Verify the page and keep enough source text available for expansion. '.repeat(3).trim();
   const snapshot: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',
     source: { goal }, startedAt: '', completedAt: '', cancelRequested: false,
     events: [{ sequence: 1, time: '2026-08-14T10:15:30Z', label: 'navigateTo', status: 'completed', message }], activeStep: null,
     result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
@@ -42,7 +42,7 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
 it('offers cancellation through finalizing and locks repeated cancellation', async () => {
   const onCancel = vi.fn();
   const active: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'strict', status: 'finalizing',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'strict', status: 'finalizing',
     source: { casePath: 'flow.fsq.yaml' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [], activeStep: null, result: null, summary: 'Finalizing', screenshotRevision: 0, uiSnapshotRevision: 0,
     evidenceAvailable: false, reportAvailable: false, terminal: false,
@@ -57,7 +57,7 @@ it('offers cancellation through finalizing and locks repeated cancellation', asy
 it('renders a flat sequence-ordered event list and discloses long messages', async () => {
   const longMessage = 'A detailed safe planning message '.repeat(8);
   const active: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
     source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [
       { sequence: 4, phase: 'startup', label: 'Latest startup', status: 'running', message: longMessage },
@@ -94,7 +94,7 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
 
 it('highlights only the active running action and clears active highlighting after terminal selection', async () => {
   const snapshot: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
     source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [
       { sequence: 1, label: 'First', stepId: 'step-1', status: 'completed' },
@@ -114,7 +114,7 @@ it('highlights only the active running action and clears active highlighting aft
 
 it('falls back to the latest running row or latest row when active step cannot match', () => {
   const base: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
     source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [
       { sequence: 1, label: 'First', status: 'completed' },
@@ -134,7 +134,7 @@ it('falls back to the latest running row or latest row when active step cannot m
 
 it('pauses timeline following and jumps to appended events', async () => {
   const active: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
     source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
     events: [{ sequence: 1, phase: 'run', label: 'Started', status: 'running' }], activeStep: null,
     result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false,

@@ -12,10 +12,12 @@ from fsq_agent.config import (
     AndroidWorkspaceTarget,
     MacOSWorkspaceTarget,
     WorkspaceConfig,
+    add_workspace_platform,
     create_workspace,
+    inspect_registered_workspace,
     list_workspace_registry,
     load_registered_workspace,
-    update_workspace,
+    update_workspace_platform,
 )
 from fsq_agent.config._workspace import load_workspace_config
 from fsq_agent.models import ConfigurationError
@@ -23,7 +25,7 @@ from fsq_agent.models import ConfigurationError
 
 def _android_workspace(parent: Path, name: str = "checkout") -> WorkspaceConfig:
     return WorkspaceConfig(
-        version=1,
+        version=2,
         name=name,
         root_path=(parent / name).resolve(),
         platform="android",
@@ -42,29 +44,34 @@ def test_create_workspace_commits_minimal_layout_and_registry(tmp_path: Path) ->
     user_root = tmp_path / "user"
     candidate = _android_workspace(parent)
 
-    created = create_workspace(parent_path=parent, config=candidate, user_config_root=user_root)
+    created = create_workspace(parent_path=parent, configs=[candidate], user_config_root=user_root)
 
-    config_path = candidate.root_path / ".fsq" / "config.yaml"
-    assert created == candidate
+    config_path = candidate.root_path / ".fsq" / "config" / "config.android.yaml"
+    assert created.status == "available"
+    assert [status.platform for status in created.platforms] == ["android"]
     assert config_path.is_file()
-    assert (candidate.root_path / "cases").is_dir()
-    assert (candidate.root_path / "knowledge" / "project.md").read_text(encoding="utf-8") == ""
+    assert (candidate.root_path / "cases" / "android").is_dir()
+    assert (candidate.root_path / ".fsq" / "runs" / "android").is_dir()
+    assert (candidate.root_path / "knowledge" / "android" / "project.md").read_text(encoding="utf-8") == ""
     assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["env"] == {"TEST_PASSWORD": "initial-secret"}
-    assert [(entry.name, entry.config_path) for entry in list_workspace_registry(user_root)] == [("checkout", config_path.resolve())]
-    assert load_registered_workspace("CHECKOUT", user_root) == candidate
+    assert [(entry.name, entry.root_path) for entry in list_workspace_registry(user_root)] == [
+        ("checkout", candidate.root_path)
+    ]
+    assert load_registered_workspace("CHECKOUT", "android", user_root) == candidate
 
 
-def test_update_workspace_requires_current_revision_and_preserves_identity(tmp_path: Path) -> None:
+def test_update_workspace_platform_requires_current_revision_and_preserves_identity(tmp_path: Path) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     user_root = tmp_path / "user"
     candidate = _android_workspace(parent)
-    create_workspace(parent_path=parent, config=candidate, user_config_root=user_root)
-    config_path = candidate.root_path / ".fsq" / "config.yaml"
+    create_workspace(parent_path=parent, configs=[candidate], user_config_root=user_root)
+    config_path = candidate.root_path / ".fsq" / "config" / "config.android.yaml"
     original_revision = _revision(config_path)
 
-    updated = update_workspace(
+    updated = update_workspace_platform(
         name="checkout",
+        platform="android",
         target={"app_id": "com.example.changed"},
         env={"TEST_PASSWORD": "replacement-secret"},
         expected_revision=original_revision,
@@ -77,14 +84,74 @@ def test_update_workspace_requires_current_revision_and_preserves_identity(tmp_p
     assert updated.target == AndroidWorkspaceTarget(app_id="com.example.changed")
     assert updated.env == {"TEST_PASSWORD": "replacement-secret"}
     with pytest.raises(ConfigurationError, match="changed since it was loaded"):
-        update_workspace(
+        update_workspace_platform(
             name="checkout",
+            platform="android",
             target={"app_id": "com.example.stale"},
             env={},
             expected_revision=original_revision,
             user_config_root=user_root,
         )
-    assert load_registered_workspace("checkout", user_root) == updated
+    assert load_registered_workspace("checkout", "android", user_root) == updated
+
+
+def test_add_workspace_platform_preserves_existing_platform_content(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    android = _android_workspace(parent)
+    create_workspace(parent_path=parent, configs=[android], user_config_root=user_root)
+    existing_project = android.root_path / "knowledge" / "macos" / "project.md"
+    existing_project.parent.mkdir(parents=True)
+    existing_project.write_text("keep", encoding="utf-8")
+
+    added = add_workspace_platform(
+        name="checkout",
+        platform="macos",
+        target={"bundle_id": "com.example.checkout"},
+        env={"TEST_ACCOUNT": "local"},
+        user_config_root=user_root,
+    )
+
+    assert added.version == 2
+    assert added.platform == "macos"
+    assert existing_project.read_text(encoding="utf-8") == "keep"
+    assert (android.root_path / "cases" / "macos").is_dir()
+    assert (android.root_path / ".fsq" / "runs" / "macos").is_dir()
+    assert [status.platform for status in inspect_registered_workspace("checkout", user_root).platforms] == [
+        "android",
+        "macos",
+    ]
+
+    with pytest.raises(ConfigurationError, match="already exists"):
+        add_workspace_platform(
+            name="checkout",
+            platform="macos",
+            target={"bundle_id": "com.example.changed"},
+            env={},
+            user_config_root=user_root,
+        )
+
+
+def test_inspect_registered_workspace_reports_invalid_sibling_as_partial(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    candidate = _android_workspace(parent)
+    create_workspace(parent_path=parent, configs=[candidate], user_config_root=user_root)
+    invalid_path = candidate.root_path / ".fsq" / "config" / "config.web.yaml"
+    invalid_path.write_text("version: 2\nname: [invalid]\n", encoding="utf-8")
+
+    status = inspect_registered_workspace("checkout", user_root)
+
+    assert status.status == "partial"
+    assert [(item.platform, item.status) for item in status.platforms] == [
+        ("android", "available"),
+        ("web", "unavailable"),
+    ]
+    assert load_registered_workspace("checkout", "android", user_root) == candidate
+    with pytest.raises(ConfigurationError, match="unavailable"):
+        load_registered_workspace("checkout", "web", user_root)
 
 
 def test_create_workspace_rejects_non_empty_final_root_without_changes(tmp_path: Path) -> None:
@@ -96,7 +163,7 @@ def test_create_workspace_rejects_non_empty_final_root_without_changes(tmp_path:
     user_root = tmp_path / "user"
 
     with pytest.raises(ConfigurationError, match="empty"):
-        create_workspace(parent_path=parent, config=_android_workspace(parent), user_config_root=user_root)
+        create_workspace(parent_path=parent, configs=[_android_workspace(parent)], user_config_root=user_root)
 
     assert user_file.read_text(encoding="utf-8") == "keep"
     assert list_workspace_registry(user_root) == []
@@ -115,13 +182,65 @@ def test_create_workspace_rejects_symlinked_final_root_without_changes(tmp_path:
     user_root = tmp_path / "user"
 
     with pytest.raises(ConfigurationError, match="symbolic link"):
-        create_workspace(parent_path=parent, config=_android_workspace(parent), user_config_root=user_root)
+        create_workspace(parent_path=parent, configs=[_android_workspace(parent)], user_config_root=user_root)
 
     assert list(outside.iterdir()) == []
     assert list_workspace_registry(user_root) == []
 
 
-@pytest.mark.parametrize("linked_part", ["metadata", "config"])
+def test_create_workspace_rolls_back_implicitly_created_parent_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    final_root = parent / "checkout"
+    final_root.mkdir(parents=True)
+    user_root = tmp_path / "user"
+
+    def fail_write(path: Path, content: bytes) -> None:
+        if path.name == "config.android.yaml":
+            raise OSError("injected write failure")
+        path.write_bytes(content)
+
+    monkeypatch.setattr("fsq_agent.config._workspace._atomic_write", fail_write)
+
+    with pytest.raises(OSError, match="injected write failure"):
+        create_workspace(parent_path=parent, configs=[_android_workspace(parent)], user_config_root=user_root)
+
+    assert list(final_root.iterdir()) == []
+    assert list_workspace_registry(user_root) == []
+
+
+def test_add_workspace_platform_rejects_symlinked_managed_directory(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    android = _android_workspace(parent)
+    create_workspace(parent_path=parent, configs=[android], user_config_root=user_root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"")
+    linked_cases = android.root_path / "cases" / "web"
+    try:
+        linked_cases.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ConfigurationError, match="managed directory"):
+        add_workspace_platform(
+            name="checkout",
+            platform="web",
+            target={"browser_executable_path": str(chrome)},
+            env={},
+            user_config_root=user_root,
+        )
+
+    assert list(outside.iterdir()) == []
+    assert not (android.root_path / ".fsq" / "config" / "config.web.yaml").exists()
+
+
+@pytest.mark.parametrize("linked_part", ["metadata", "config_directory", "config"])
 def test_load_workspace_config_rejects_symlinked_metadata(tmp_path: Path, linked_part: str) -> None:
     root = tmp_path / "workspace"
     root.mkdir()
@@ -130,16 +249,26 @@ def test_load_workspace_config_rejects_symlinked_metadata(tmp_path: Path, linked
     config = _android_workspace(tmp_path, name="workspace")
     source = yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
     if linked_part == "metadata":
-        (outside / "config.yaml").write_text(source, encoding="utf-8")
+        config_directory = outside / "config"
+        config_directory.mkdir()
+        (config_directory / "config.android.yaml").write_text(source, encoding="utf-8")
         link = root / ".fsq"
         target = outside
         target_is_directory = True
-    else:
+    elif linked_part == "config_directory":
         metadata = root / ".fsq"
         metadata.mkdir()
-        target = outside / "config.yaml"
+        target = outside / "config"
+        target.mkdir()
+        (target / "config.android.yaml").write_text(source, encoding="utf-8")
+        link = metadata / "config"
+        target_is_directory = True
+    else:
+        config_directory = root / ".fsq" / "config"
+        config_directory.mkdir(parents=True)
+        target = outside / "config.android.yaml"
         target.write_text(source, encoding="utf-8")
-        link = metadata / "config.yaml"
+        link = config_directory / "config.android.yaml"
         target_is_directory = False
     try:
         link.symlink_to(target, target_is_directory=target_is_directory)
@@ -147,15 +276,15 @@ def test_load_workspace_config_rejects_symlinked_metadata(tmp_path: Path, linked
         pytest.skip(f"Symlink creation is unavailable: {exc}")
 
     with pytest.raises(ConfigurationError, match="not an FSQ workspace"):
-        load_workspace_config(root)
+        load_workspace_config(root, "android")
 
 
 def test_load_workspace_config_rejects_symlinked_workspace_root(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    metadata = root / ".fsq"
+    metadata = root / ".fsq" / "config"
     metadata.mkdir(parents=True)
     config = _android_workspace(tmp_path, name="workspace")
-    (metadata / "config.yaml").write_text(
+    (metadata / "config.android.yaml").write_text(
         yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False),
         encoding="utf-8",
     )
@@ -166,19 +295,19 @@ def test_load_workspace_config_rejects_symlinked_workspace_root(tmp_path: Path) 
         pytest.skip(f"Symlink creation is unavailable: {exc}")
 
     with pytest.raises(ConfigurationError, match="symbolic link"):
-        load_workspace_config(link)
+        load_workspace_config(link, "android")
 
 
 def test_workspace_validation_errors_do_not_include_secret_input_values(tmp_path: Path) -> None:
     marker = "never-echo-this-secret"
     root = tmp_path / "workspace"
-    config_dir = root / ".fsq"
+    config_dir = root / ".fsq" / "config"
     config_dir.mkdir(parents=True)
-    config_path = config_dir / "config.yaml"
+    config_path = config_dir / "config.android.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
-                "version": 1,
+                "version": 2,
                 "name": "workspace",
                 "root_path": str(root),
                 "platform": "android",
@@ -191,7 +320,7 @@ def test_workspace_validation_errors_do_not_include_secret_input_values(tmp_path
     )
 
     with pytest.raises(ConfigurationError) as load_error:
-        load_workspace_config(root)
+        load_workspace_config(root, "android")
 
     assert marker not in json.dumps(load_error.value.context)
 
@@ -199,13 +328,14 @@ def test_workspace_validation_errors_do_not_include_secret_input_values(tmp_path
     parent.mkdir()
     user_root = tmp_path / "user"
     candidate = _android_workspace(parent)
-    create_workspace(parent_path=parent, config=candidate, user_config_root=user_root)
+    create_workspace(parent_path=parent, configs=[candidate], user_config_root=user_root)
     with pytest.raises(ConfigurationError) as update_error:
-        update_workspace(
+        update_workspace_platform(
             name=candidate.name,
+            platform="android",
             target={"app_id": "com.example.app"},
             env={"API_KEY": [marker]},  # type: ignore[dict-item]
-            expected_revision=_revision(candidate.root_path / ".fsq" / "config.yaml"),
+            expected_revision=_revision(candidate.root_path / ".fsq" / "config" / "config.android.yaml"),
             user_config_root=user_root,
         )
 
@@ -218,7 +348,7 @@ def test_create_workspace_rejects_macos_app_path_that_is_not_bundle_or_executabl
     invalid_app_path = tmp_path / "ordinary-directory"
     invalid_app_path.mkdir()
     candidate = WorkspaceConfig(
-        version=1,
+        version=2,
         name="checkout",
         root_path=(parent / "checkout").resolve(),
         platform="macos",
@@ -226,7 +356,7 @@ def test_create_workspace_rejects_macos_app_path_that_is_not_bundle_or_executabl
     )
 
     with pytest.raises(ConfigurationError, match="app bundle or executable"):
-        create_workspace(parent_path=parent, config=candidate, user_config_root=tmp_path / "user")
+        create_workspace(parent_path=parent, configs=[candidate], user_config_root=tmp_path / "user")
 
     app_bundle = tmp_path / "Checkout.app"
     app_bundle.mkdir()
@@ -235,8 +365,9 @@ def test_create_workspace_rejects_macos_app_path_that_is_not_bundle_or_executabl
     assert (
         create_workspace(
             parent_path=parent,
-            config=valid_candidate,
+            configs=[valid_candidate],
             user_config_root=tmp_path / "valid-user",
         )
-        == valid_candidate
+        .status
+        == "available"
     )

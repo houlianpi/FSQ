@@ -11,13 +11,15 @@ from pydantic import ValidationError
 
 from fsq_agent.config import (
     WorkspaceConfig,
+    add_workspace_platform,
     create_workspace,
+    inspect_registered_workspace,
     list_workspace_registry,
     load_registered_workspace,
-    update_workspace,
+    update_workspace_platform,
     workspace_revision,
 )
-from fsq_agent.models import ConfigurationError
+from fsq_agent.models import ConfigurationError, WorkspaceStatus
 
 
 @dataclass(frozen=True)
@@ -31,64 +33,67 @@ class WorkspaceAPIError(Exception):
 def list_workspaces(user_config_root: Path | None) -> dict[str, list[dict[str, Any]]]:
     workspaces: list[dict[str, Any]] = []
     for entry in list_workspace_registry(user_config_root):
-        config_path = entry.config_path.resolve()
-        root_path = config_path.parent.parent
         try:
-            config = load_registered_workspace(entry.name, user_config_root)
+            status = inspect_registered_workspace(entry.name, user_config_root)
         except (ConfigurationError, OSError):
             workspaces.append(
                 {
                     "name": entry.name,
-                    "configPath": str(config_path),
-                    "rootPath": str(root_path),
+                    "rootPath": str(entry.root_path),
                     "status": "unavailable",
                     "message": "Workspace configuration is unavailable.",
-                    "action": "Repair the registered .fsq/config.yaml file or create a replacement workspace.",
+                    "action": "Restore or repair the registered workspace root.",
+                    "platforms": [],
                 }
             )
             continue
-        workspaces.append(
-            {
-                "name": config.name,
-                "configPath": str(config_path),
-                "rootPath": str(config.root_path.resolve()),
-                "platform": config.platform,
-                "status": "available",
-                "message": "Workspace is available.",
-            }
-        )
+        workspaces.append(_status_projection(status))
     return {"workspaces": workspaces}
 
 
 def get_workspace(name: str, user_config_root: Path | None) -> dict[str, Any]:
-    config = _load_exact_workspace(name, user_config_root)
-    return _detail(config)
+    status = inspect_registered_workspace(name, user_config_root)
+    result = _status_projection(status)
+    result["platforms"] = [
+        _platform_summary(name, platform.platform, user_config_root)
+        if platform.status == "available"
+        else _platform_status_projection(platform)
+        for platform in status.platforms
+    ]
+    return result
 
 
 def create_workspace_request(body: dict[str, Any], user_config_root: Path | None) -> dict[str, Any]:
-    _require_exact_fields(body, {"name", "parentPath", "platform", "target", "env"})
+    _require_exact_fields(body, {"name", "parentPath", "platforms"})
     name = body["name"]
     parent_path = body["parentPath"]
-    platform = body["platform"]
-    if not isinstance(name, str) or not isinstance(parent_path, str) or not isinstance(platform, str):
+    platforms = body["platforms"]
+    if not isinstance(name, str) or not isinstance(parent_path, str) or not isinstance(platforms, list) or not platforms:
         raise WorkspaceAPIError(
             400,
             "invalid_workspace",
-            "name, parentPath, and platform must be strings.",
+            "name and parentPath must be strings and platforms must be a non-empty array.",
             "Correct the workspace fields and retry.",
         )
     parent = Path(parent_path).expanduser().resolve()
     try:
-        config = WorkspaceConfig.model_validate(
-            {
-                "version": 1,
-                "name": name,
-                "root_path": parent / name,
-                "platform": platform,
-                "target": _target_input(body["target"]),
-                "env": body["env"],
-            }
-        )
+        configs: list[WorkspaceConfig] = []
+        for item in platforms:
+            if not isinstance(item, dict):
+                raise TypeError("platform item must be an object")
+            _require_exact_fields(item, {"platform", "target", "env"})
+            configs.append(
+                WorkspaceConfig.model_validate(
+                    {
+                        "version": 2,
+                        "name": name,
+                        "root_path": parent / name,
+                        "platform": item["platform"],
+                        "target": _target_input(item["target"]),
+                        "env": item["env"],
+                    }
+                )
+            )
     except (ValidationError, TypeError, ValueError) as exc:
         raise WorkspaceAPIError(
             400,
@@ -96,11 +101,46 @@ def create_workspace_request(body: dict[str, Any], user_config_root: Path | None
             "Workspace configuration is invalid.",
             "Correct the workspace fields and retry.",
         ) from exc
-    created = create_workspace(parent_path=parent, config=config, user_config_root=user_config_root)
-    return _detail(created)
+    create_workspace(parent_path=parent, configs=configs, user_config_root=user_config_root)
+    return get_workspace(name, user_config_root)
 
 
-def update_workspace_request(name: str, body: dict[str, Any], user_config_root: Path | None) -> dict[str, Any]:
+def get_workspace_platform(name: str, platform: str, user_config_root: Path | None) -> dict[str, Any]:
+    config = _load_exact_workspace_platform(name, platform, user_config_root)
+    return _detail(config)
+
+
+def add_workspace_platform_request(name: str, body: dict[str, Any], user_config_root: Path | None) -> dict[str, Any]:
+    _require_exact_fields(body, {"platform", "target", "env"})
+    platform = body["platform"]
+    target = body["target"]
+    env = body["env"]
+    if not isinstance(platform, str) or not isinstance(target, dict) or not _valid_env(env):
+        raise WorkspaceAPIError(
+            400,
+            "invalid_workspace",
+            "platform must be a string, target must be an object, and env must contain string names and values.",
+            "Correct the workspace fields and retry.",
+        )
+    add_workspace_platform(
+        name=name,
+        platform=platform,
+        target=_target_input(target),
+        env=env,
+        user_config_root=user_config_root,
+    )
+    return {
+        "workspace": get_workspace(name, user_config_root),
+        "platform": get_workspace_platform(name, platform, user_config_root),
+    }
+
+
+def update_workspace_platform_request(
+    name: str,
+    platform: str,
+    body: dict[str, Any],
+    user_config_root: Path | None,
+) -> dict[str, Any]:
     _require_exact_fields(body, {"target", "env", "expectedRevision"})
     expected_revision = body["expectedRevision"]
     if not isinstance(expected_revision, str) or not expected_revision:
@@ -112,22 +152,26 @@ def update_workspace_request(name: str, body: dict[str, Any], user_config_root: 
         )
     target = body["target"]
     env = body["env"]
-    if not isinstance(target, dict) or not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
+    if not isinstance(target, dict) or not _valid_env(env):
         raise WorkspaceAPIError(
             400,
             "invalid_workspace",
             "target must be an object and env must contain string names and values.",
             "Correct the workspace fields and retry.",
         )
-    _load_exact_workspace(name, user_config_root)
-    updated = update_workspace(
+    _load_exact_workspace_platform(name, platform, user_config_root)
+    update_workspace_platform(
         name=name,
+        platform=platform,
         target=_target_input(target),
         env=env,
         expected_revision=expected_revision,
         user_config_root=user_config_root,
     )
-    return _detail(updated)
+    return {
+        "workspace": get_workspace(name, user_config_root),
+        "platform": get_workspace_platform(name, platform, user_config_root),
+    }
 
 
 def map_workspace_exception(exc: BaseException) -> WorkspaceAPIError:
@@ -155,7 +199,7 @@ def map_workspace_exception(exc: BaseException) -> WorkspaceAPIError:
     return WorkspaceAPIError(500, "workspace_internal_error", "An unexpected workspace error occurred.", "Retry or inspect the local server logs.")
 
 
-def _load_exact_workspace(name: str, user_config_root: Path | None) -> WorkspaceConfig:
+def _load_exact_workspace_platform(name: str, platform: str, user_config_root: Path | None) -> WorkspaceConfig:
     if not isinstance(name, str) or not name:
         raise WorkspaceAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.")
     normalized_name = name.casefold()
@@ -166,7 +210,7 @@ def _load_exact_workspace(name: str, user_config_root: Path | None) -> Workspace
     if entry is None:
         raise WorkspaceAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.")
     try:
-        return load_registered_workspace(entry.name, user_config_root)
+        return load_registered_workspace(entry.name, platform, user_config_root)
     except ConfigurationError as exc:
         raise WorkspaceAPIError(
             409,
@@ -184,7 +228,7 @@ def _load_exact_workspace(name: str, user_config_root: Path | None) -> Workspace
 
 
 def _detail(config: WorkspaceConfig) -> dict[str, Any]:
-    config_path = config.root_path.resolve() / ".fsq" / "config.yaml"
+    config_path = config.root_path.resolve() / ".fsq" / "config" / f"config.{config.platform}.yaml"
     return {
         "name": config.name,
         "rootPath": str(config.root_path.resolve()),
@@ -194,6 +238,48 @@ def _detail(config: WorkspaceConfig) -> dict[str, Any]:
         "env": dict(config.env),
         "revision": workspace_revision(config_path),
     }
+
+
+def _platform_summary(name: str, platform: str, user_config_root: Path | None) -> dict[str, Any]:
+    detail = get_workspace_platform(name, platform, user_config_root)
+    return {
+        "platform": platform,
+        "configPath": detail["configPath"],
+        "status": "available",
+        "message": "Platform configuration is available.",
+        "target": detail["target"],
+        "env": [{"name": env_name, "configured": True} for env_name in sorted(detail["env"])],
+        "revision": detail["revision"],
+    }
+
+
+def _status_projection(status: WorkspaceStatus) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "name": status.name,
+        "rootPath": str(status.root_path),
+        "status": status.status,
+        "message": status.message,
+        "platforms": [_platform_status_projection(platform) for platform in status.platforms],
+    }
+    if status.action is not None:
+        result["action"] = status.action
+    return result
+
+
+def _platform_status_projection(status: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "platform": status.platform,
+        "configPath": str(status.config_path),
+        "status": status.status,
+        "message": status.message,
+    }
+    if status.action is not None:
+        result["action"] = status.action
+    return result
+
+
+def _valid_env(value: object) -> bool:
+    return isinstance(value, dict) and all(isinstance(key, str) and isinstance(item, str) for key, item in value.items())
 
 
 def _target_projection(config: WorkspaceConfig) -> dict[str, Any]:
@@ -236,9 +322,11 @@ def _require_exact_fields(body: dict[str, Any], expected: set[str]) -> None:
 
 __all__ = [
     "WorkspaceAPIError",
+    "add_workspace_platform_request",
     "create_workspace_request",
     "get_workspace",
+    "get_workspace_platform",
     "list_workspaces",
     "map_workspace_exception",
-    "update_workspace_request",
+    "update_workspace_platform_request",
 ]

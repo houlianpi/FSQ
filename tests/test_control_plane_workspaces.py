@@ -12,7 +12,6 @@ def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
     return ControlPlaneServer(
         ControlPlaneServerOptions(
             host=host,
-            workspace_path=tmp_path / "legacy-devices",
             static_path=tmp_path / "static",
             user_config_root=tmp_path / "user",
             open_browser=False,
@@ -34,9 +33,13 @@ def _create(
         {
             "name": name,
             "parentPath": str(parent),
-            "platform": platform,
-            "target": target or {"appId": "com.example.checkout"},
-            "env": env or {"TEST_PASSWORD": "private-value"},
+            "platforms": [
+                {
+                    "platform": platform,
+                    "target": target or {"appId": "com.example.checkout"},
+                    "env": env or {"TEST_PASSWORD": "private-value"},
+                }
+            ],
         },
         peer_host="127.0.0.1",
     )
@@ -50,27 +53,39 @@ def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tm
     create_status, created = _create(server, parent)
     list_status, listed, headers = server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
     detail_status, detail, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
+    platform_status, platform_detail, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/platforms/android",
+        peer_host="127.0.0.1",
+    )
 
     assert create_status == 201
-    assert list_status == detail_status == 200
+    assert list_status == detail_status == platform_status == 200
     assert headers["Cache-Control"] == "no-store"
     assert listed == {
         "workspaces": [
             {
                 "name": "checkout",
-                "configPath": str((parent / "checkout" / ".fsq" / "config.yaml").resolve()),
                 "rootPath": str((parent / "checkout").resolve()),
-                "platform": "android",
                 "status": "available",
                 "message": "Workspace is available.",
+                "platforms": [
+                    {
+                        "platform": "android",
+                        "configPath": str((parent / "checkout" / ".fsq" / "config" / "config.android.yaml").resolve()),
+                        "status": "available",
+                        "message": "Platform configuration is available.",
+                    }
+                ],
             }
         ]
     }
     assert "private-value" not in str(listed)
     assert created == detail
-    assert detail["target"] == {"appId": "com.example.checkout"}
-    assert detail["env"] == {"TEST_PASSWORD": "private-value"}
-    assert str(detail["revision"]).startswith("sha256:")
+    assert detail["platforms"][0]["target"] == {"appId": "com.example.checkout"}
+    assert detail["platforms"][0]["env"] == [{"name": "TEST_PASSWORD", "configured": True}]
+    assert "private-value" not in str(detail)
+    assert platform_detail["env"] == {"TEST_PASSWORD": "private-value"}
+    assert str(platform_detail["revision"]).startswith("sha256:")
 
 
 def test_workspace_routes_use_case_insensitive_registry_identity(tmp_path: Path) -> None:
@@ -90,6 +105,70 @@ def test_workspace_routes_use_case_insensitive_registry_identity(tmp_path: Path)
     assert [entry["path"] for entry in entries["entries"]] == ["cases", "knowledge"]
 
 
+def test_devices_cases_require_and_resolve_registered_workspace_platform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _create(server, parent)
+    captured: dict[str, Path] = {}
+
+    def capture_cases(settings):
+        captured["workspace"] = settings.workspace.root_dir
+        captured["cases"] = settings.cases.dir
+        return {"platform": settings.harness.platform, "cases": [], "truncated": False}
+
+    monkeypatch.setattr("fsq_agent.control_plane._server.discover_cases", capture_cases)
+
+    status, payload, _ = server.handle_get(
+        "/api/control-plane/cases",
+        {"workspace": ["CHECKOUT"], "platform": ["android"]},
+    )
+    missing_status, missing, _ = server.handle_get(
+        "/api/control-plane/cases",
+        {"platform": ["android"]},
+    )
+
+    assert status == 200
+    assert payload == {"platform": "android", "cases": [], "truncated": False}
+    assert captured == {
+        "workspace": (parent / "checkout").resolve(),
+        "cases": (parent / "checkout" / "cases" / "android").resolve(),
+    }
+    assert (missing_status, missing["code"]) == (400, "invalid_request")
+
+
+def test_devices_readiness_keeps_workspace_ready_when_selected_platform_is_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _create(server, parent)
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._readiness.provider_readiness",
+        lambda _settings: pytest.fail("provider readiness must not run for an absent platform"),
+    )
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._readiness.target_readiness",
+        lambda _settings: pytest.fail("target readiness must not run for an absent platform"),
+    )
+
+    status, payload, _ = server.handle_get(
+        "/api/control-plane/readiness",
+        {"workspace": ["CHECKOUT"], "platform": ["web"]},
+    )
+
+    assert status == 200
+    assert payload["workspaceName"] == "checkout"
+    assert payload["platformId"] == "web"
+    assert payload["workspace"]["status"] == "ready"
+    assert {payload[key]["status"] for key in ("platform", "provider", "target", "strict")} == {"unavailable"}
+
+
 @pytest.mark.parametrize("platform", ["web", "windows", "macos"])
 def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str) -> None:
     parent = tmp_path / "projects"
@@ -107,8 +186,8 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
     status, detail = _create(server, parent, platform=platform, target=targets[platform])
 
     assert status == 201
-    assert detail["platform"] == platform
-    assert detail["target"] == targets[platform]
+    assert detail["platforms"][0]["platform"] == platform
+    assert detail["platforms"][0]["target"] == targets[platform]
 
 
 def test_workspace_create_rejects_web_executable_incompatible_with_preset_channel(tmp_path: Path) -> None:
@@ -134,10 +213,14 @@ def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
-    _, created = _create(server, parent)
+    _create(server, parent)
+    _, created, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/platforms/android",
+        peer_host="127.0.0.1",
+    )
 
     update_status, updated = server.handle_put(
-        "/api/control-plane/workspaces/checkout",
+        "/api/control-plane/workspaces/checkout/platforms/android",
         {
             "target": {"appId": "com.example.changed"},
             "env": {"TOKEN": "replacement"},
@@ -146,7 +229,7 @@ def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path
         peer_host="127.0.0.1",
     )
     conflict_status, conflict = server.handle_put(
-        "/api/control-plane/workspaces/checkout",
+        "/api/control-plane/workspaces/checkout/platforms/android",
         {
             "target": {"appId": "com.example.unsaved"},
             "env": {"TOKEN": "unsaved"},
@@ -154,14 +237,44 @@ def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path
         },
         peer_host="127.0.0.1",
     )
-    _, loaded, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
+    _, loaded, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/platforms/android",
+        peer_host="127.0.0.1",
+    )
 
     assert update_status == 200
-    assert updated["target"] == {"appId": "com.example.changed"}
+    assert updated["platform"]["target"] == {"appId": "com.example.changed"}
     assert conflict_status == 409
     assert conflict["code"] == "workspace_conflict"
     assert "unsaved" not in str(conflict)
-    assert loaded == updated
+    assert loaded == updated["platform"]
+
+
+def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _create(server, parent)
+
+    status, payload = server.handle_post(
+        "/api/control-plane/workspaces/checkout/platforms",
+        {
+            "platform": "macos",
+            "target": {"bundleId": "com.example.Checkout"},
+            "env": {"MAC_TOKEN": "private-mac-token"},
+        },
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 201
+    assert [item["platform"] for item in payload["workspace"]["platforms"]] == ["android", "macos"]
+    assert "private-mac-token" not in str(payload["workspace"])
+    assert payload["platform"]["env"] == {"MAC_TOKEN": "private-mac-token"}
+    delete_status, _ = server.handle_delete(
+        "/api/control-plane/workspaces/checkout/platforms/macos",
+        peer_host="127.0.0.1",
+    )
+    assert delete_status == 404
 
 
 def test_workspace_list_retains_unavailable_registry_entry_without_env(tmp_path: Path) -> None:
@@ -169,7 +282,7 @@ def test_workspace_list_retains_unavailable_registry_entry_without_env(tmp_path:
     parent.mkdir()
     server = _server(tmp_path)
     _, created = _create(server, parent)
-    config_path = Path(str(created["configPath"]))
+    config_path = Path(str(created["platforms"][0]["configPath"]))
     config_path.unlink()
 
     status, payload, _ = server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
@@ -185,12 +298,12 @@ def test_workspace_detail_maps_missing_registered_config_to_unavailable(tmp_path
     parent.mkdir()
     server = _server(tmp_path)
     _, created = _create(server, parent)
-    Path(str(created["configPath"])).unlink()
+    Path(str(created["platforms"][0]["configPath"])).unlink()
 
     status, payload, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
 
-    assert status == 409
-    assert payload["code"] == "workspace_unavailable"
+    assert status == 200
+    assert payload["status"] == "unavailable"
     assert "private-value" not in str(payload)
 
 
@@ -199,7 +312,11 @@ def test_workspace_update_rejects_malformed_target_and_env(tmp_path: Path, field
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
-    _, created = _create(server, parent)
+    _create(server, parent)
+    _, created, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/platforms/android",
+        peer_host="127.0.0.1",
+    )
     payload: dict[str, object] = {
         "target": {"appId": "com.example.changed"},
         "env": {"TOKEN": "replacement"},
@@ -208,7 +325,7 @@ def test_workspace_update_rejects_malformed_target_and_env(tmp_path: Path, field
     payload[field] = value
 
     status, error = server.handle_put(
-        "/api/control-plane/workspaces/checkout",
+        "/api/control-plane/workspaces/checkout/platforms/android",
         payload,
         peer_host="127.0.0.1",
     )
@@ -231,9 +348,13 @@ def test_workspace_routes_require_loopback_and_same_origin(tmp_path: Path) -> No
         {
             "name": "checkout",
             "parentPath": str(origin_parent),
-            "platform": "android",
-            "target": {"appId": "com.example.checkout"},
-            "env": {"TOKEN": "secret"},
+            "platforms": [
+                {
+                    "platform": "android",
+                    "target": {"appId": "com.example.checkout"},
+                    "env": {"TOKEN": "secret"},
+                }
+            ],
         },
         peer_host="127.0.0.1",
         origin="https://evil.example",
@@ -252,9 +373,9 @@ def test_workspace_file_browser_exposes_only_managed_text_content(tmp_path: Path
     server = _server(tmp_path)
     _, created = _create(server, parent)
     root = Path(str(created["rootPath"]))
-    markdown = root / "knowledge" / "project.md"
+    markdown = root / "knowledge" / "android" / "project.md"
     markdown.write_text("# Checkout\n\nProject notes.\n", encoding="utf-8")
-    (root / "cases" / "sample.fsq.yaml").write_text("platform: android\n", encoding="utf-8")
+    (root / "cases" / "android" / "sample.fsq.yaml").write_text("platform: android\n", encoding="utf-8")
 
     root_status, root_entries, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/entries",
@@ -262,18 +383,18 @@ def test_workspace_file_browser_exposes_only_managed_text_content(tmp_path: Path
     )
     entries_status, entries, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/entries",
-        {"path": ["knowledge"]},
+        {"path": ["knowledge/android"]},
         peer_host="127.0.0.1",
     )
     file_status, file_payload, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/file",
-        {"path": ["knowledge/project.md"]},
+        {"path": ["knowledge/android/project.md"]},
         peer_host="127.0.0.1",
     )
 
     assert root_status == entries_status == file_status == 200
     assert [entry["path"] for entry in root_entries["entries"]] == ["cases", "knowledge"]
-    assert entries["entries"][0]["path"] == "knowledge/project.md"
+    assert entries["entries"][0]["path"] == "knowledge/android/project.md"
     assert file_payload["presentation"] == "markdown"
     assert file_payload["lineCount"] == 3
     assert file_payload["content"] == markdown.read_bytes().decode("utf-8")
@@ -285,6 +406,7 @@ def test_workspace_file_browser_keeps_deleted_cases_as_empty_virtual_root(tmp_pa
     server = _server(tmp_path)
     _, created = _create(server, parent)
     cases_dir = Path(str(created["rootPath"])) / "cases"
+    (cases_dir / "android").rmdir()
     cases_dir.rmdir()
 
     root_status, root_payload, _ = server.handle_get(
@@ -309,9 +431,9 @@ def test_workspace_file_browser_rejects_private_traversal_binary_and_oversized_f
     server = _server(tmp_path)
     _, created = _create(server, parent)
     root = Path(str(created["rootPath"]))
-    binary = root / "cases" / "binary.dat"
+    binary = root / "cases" / "android" / "binary.dat"
     binary.write_bytes(b"\x00\xff")
-    oversized = root / "cases" / "large.txt"
+    oversized = root / "cases" / "android" / "large.txt"
     oversized.write_bytes(b"x" * (1024 * 1024 + 1))
 
     private_status, private, _ = server.handle_get(
@@ -326,12 +448,12 @@ def test_workspace_file_browser_rejects_private_traversal_binary_and_oversized_f
     )
     binary_status, binary_error, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/file",
-        {"path": ["cases/binary.dat"]},
+        {"path": ["cases/android/binary.dat"]},
         peer_host="127.0.0.1",
     )
     oversized_status, oversized_error, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/file",
-        {"path": ["cases/large.txt"]},
+        {"path": ["cases/android/large.txt"]},
         peer_host="127.0.0.1",
     )
 
@@ -351,7 +473,7 @@ def test_workspace_file_browser_rejects_symlink_escape_when_supported(tmp_path: 
     root = Path(str(created["rootPath"]))
     outside = tmp_path / "private.txt"
     outside.write_text("private", encoding="utf-8")
-    link = root / "cases" / "outside.txt"
+    link = root / "cases" / "android" / "outside.txt"
     try:
         link.symlink_to(outside)
     except OSError as exc:
@@ -359,7 +481,7 @@ def test_workspace_file_browser_rejects_symlink_escape_when_supported(tmp_path: 
 
     status, error, _ = server.handle_get(
         "/api/control-plane/workspaces/checkout/entries",
-        {"path": ["cases"]},
+        {"path": ["cases/android"]},
         peer_host="127.0.0.1",
     )
 
@@ -375,6 +497,7 @@ def test_workspace_file_browser_rejects_symlinked_managed_root_when_supported(tm
     _, created = _create(server, parent)
     root = Path(str(created["rootPath"]))
     cases_dir = root / "cases"
+    (cases_dir / "android").rmdir()
     cases_dir.rmdir()
     outside = tmp_path / "outside-cases"
     outside.mkdir()

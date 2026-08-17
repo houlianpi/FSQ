@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import type { PlatformOption } from '../../api/types';
+import { useMemo, useRef } from 'react';
+import type { PlatformId, PlatformOption, WorkspaceRegistryEntry } from '../../api/types';
 import { LiveEvidencePanel } from './components/LiveEvidencePanel';
 import { OperationComposer } from './components/OperationComposer';
 import { RunTimeline } from './components/RunTimeline';
@@ -7,14 +7,26 @@ import { TargetToolbar } from './components/TargetToolbar';
 import { useDeviceWorkspace } from './hooks/useDeviceWorkspace';
 
 interface DevicesPageProps {
+  workspaces: readonly WorkspaceRegistryEntry[];
+  selectedWorkspaceName: string | null;
+  onWorkspaceChange: (workspaceName: string | null) => void;
   renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode;
 }
 
-export function DevicesPage({ renderShell }: DevicesPageProps) {
-  const workspace = useDeviceWorkspace();
+const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'Web', windows: 'Windows', macos: 'macOS' };
+
+export function DevicesPage({ workspaces, selectedWorkspaceName, onWorkspaceChange, renderShell }: DevicesPageProps) {
+  const selectedWorkspace = workspaces.find((item) => item.name === selectedWorkspaceName) ?? null;
+  const platforms = useMemo<PlatformOption[]>(() => (selectedWorkspace?.platforms ?? [])
+    .filter((item) => item.status === 'available')
+    .map((item) => ({ id: item.platform, label: platformLabels[item.platform] })), [selectedWorkspace]);
+  const workspace = useDeviceWorkspace({
+    workspaceName: selectedWorkspaceName,
+    platforms,
+    onWorkspaceChange,
+  });
   const primaryInputRef = useRef<HTMLTextAreaElement | HTMLSelectElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
-  const platforms: PlatformOption[] = workspace.bootstrap.data?.platforms ?? [];
   const terminal = workspace.snapshot?.terminal === true;
   const hasRun = Boolean(workspace.requestId);
   const pageError = workspace.bootstrap.error || workspace.readiness.error || workspace.targets.error || workspace.cases.error || workspace.streamError;
@@ -24,9 +36,9 @@ export function DevicesPage({ renderShell }: DevicesPageProps) {
   };
 
   const toolbar = <TargetToolbar
-    platforms={platforms} platform={workspace.platform} targetId={workspace.targetId} targets={workspace.targets.data}
+    workspaces={workspaces} workspaceName={selectedWorkspaceName ?? ''} platforms={platforms} platform={workspace.platform} targetId={workspace.targetId} targets={workspace.targets.data}
     locked={workspace.controlsLocked} loading={workspace.targets.state === 'loading'} connectionLabel={workspace.connectionLabel}
-    onPlatformChange={workspace.setPlatform} onTargetChange={workspace.setTargetId} onRefresh={workspace.refresh}
+    onWorkspaceChange={(name) => onWorkspaceChange(name || null)} onPlatformChange={workspace.setPlatform} onTargetChange={workspace.setTargetId} onRefresh={workspace.refresh}
   />;
   const content = <>
     <div className="visually-hidden" aria-live="polite" aria-atomic="true">
@@ -48,7 +60,7 @@ export function DevicesPage({ renderShell }: DevicesPageProps) {
           />}
         </div>
       </section>
-      <LiveEvidencePanel tab={workspace.evidenceTab} snapshot={workspace.snapshot} selectedStepId={workspace.selectedStepId} platform={workspace.platform} targetLabel={workspace.selectedTarget?.label ?? workspace.targetId} onTabChange={workspace.setEvidenceTab} onClearStep={() => workspace.setSelectedStepId(null)} />
+      <LiveEvidencePanel tab={workspace.evidenceTab} snapshot={workspace.snapshot} selectedStepId={workspace.selectedStepId} platform={workspace.platform || null} targetLabel={workspace.selectedTarget?.label ?? workspace.targetId} onTabChange={workspace.setEvidenceTab} onClearStep={() => workspace.setSelectedStepId(null)} />
     </div>
   </>;
   return <>{renderShell(toolbar, content)}</>;
