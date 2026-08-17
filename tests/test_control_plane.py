@@ -220,17 +220,27 @@ def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatc
 
 def test_case_discovery_is_recursive_sorted_validated_and_platform_filtered(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
+    _case(settings.cases.dir / "plain.yaml")
+    _case(settings.cases.dir / "recorded.codex2.yaml")
     _case(settings.cases.dir / "z.codex.yaml")
     _case(settings.cases.dir / "nested" / "a.codex.yaml")
     _case(settings.cases.dir / "wrong.codex.yaml", platform="web", app_id=False)
     (settings.cases.dir / "broken.codex.yaml").write_text("not: valid: yaml", encoding="utf-8")
+    (settings.cases.dir / "ignored.yml").write_text("not discovered", encoding="utf-8")
 
     payload = discover_cases(settings)
 
-    assert [entry["path"] for entry in payload["cases"]] == ["broken.codex.yaml", "nested/a.codex.yaml", "wrong.codex.yaml", "z.codex.yaml"]
+    assert [entry["path"] for entry in payload["cases"]] == [
+        "broken.codex.yaml",
+        "nested/a.codex.yaml",
+        "plain.yaml",
+        "recorded.codex2.yaml",
+        "wrong.codex.yaml",
+        "z.codex.yaml",
+    ]
     assert payload["cases"][1]["validationStatus"] == "validated"
     assert payload["cases"][1]["commandCount"] == 1
-    assert payload["cases"][2]["selectable"] is False
+    assert payload["cases"][4]["selectable"] is False
     assert payload["cases"][0]["diagnostics"]
 
 
@@ -244,10 +254,14 @@ def test_case_discovery_limit_and_contained_resolution(tmp_path: Path) -> None:
     assert len(payload["cases"]) == 2
     assert payload["truncated"] is True
     assert resolve_case(settings, "0.codex.yaml") == (settings.cases.dir / "0.codex.yaml").resolve()
+    _case(settings.cases.dir / "plain.yaml")
+    assert resolve_case(settings, "plain.yaml") == (settings.cases.dir / "plain.yaml").resolve()
     with pytest.raises(ValueError, match="contained"):
         resolve_case(settings, "../outside.codex.yaml")
     with pytest.raises(ValueError, match="relative"):
         resolve_case(settings, str((settings.cases.dir / "0.codex.yaml").resolve()))
+    with pytest.raises(ValueError, match=r"\.yaml"):
+        resolve_case(settings, "not-a-case.yml")
 
 
 def test_case_discovery_derives_ai_requirement_from_registry_snapshots(tmp_path: Path) -> None:

@@ -105,7 +105,7 @@ openai_agents:
     assert settings.output.root_dir == tmp_path / "workspace" / "output"
     assert settings.output.runs_dir == tmp_path / "workspace" / "output" / "runs"
     assert settings.output.runs_dir.exists()
-    assert settings.cases.dir == tmp_path / "cases"
+    assert settings.cases.dir == tmp_path / "workspace" / "cases"
     assert not hasattr(settings, "pre_plan")
     assert settings.execution.post_action_delay_seconds.platform == 1.0
     assert settings.execution.post_action_delay_seconds.common == 0.0
@@ -292,6 +292,28 @@ output:
     assert (expected_workspace / ".fsq-agent-workspace").exists()
     assert settings.output.root_dir == expected_workspace / "output"
     assert settings.output.runs_dir == expected_workspace / "output" / "runs"
+    assert settings.cases.dir == expected_workspace / "cases"
+
+
+def test_load_settings_preserves_absolute_cases_dir(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "authored-cases"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""
+workspace:
+  root_dir: {tmp_path.as_posix()}/workspace
+cases:
+  dir: {cases_dir.as_posix()}
+output:
+  root_dir: output
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(config_path)
+
+    assert settings.workspace.root_dir == tmp_path / "workspace"
+    assert settings.cases.dir == cases_dir
 
 
 def test_load_settings_rejects_non_empty_unmarked_workspace(tmp_path: Path) -> None:

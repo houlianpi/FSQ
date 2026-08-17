@@ -28,7 +28,7 @@ def discover_cases(settings: Settings, *, limit: int = CASE_LIMIT) -> dict[str, 
     root = settings.cases.dir.resolve()
     if not root.is_dir():
         return {"platform": settings.harness.platform, "cases": [], "truncated": False}
-    candidates = sorted((path for path in root.rglob("*.codex.yaml") if path.is_file()), key=lambda path: path.relative_to(root).as_posix().casefold())
+    candidates = sorted((path for path in root.rglob("*.yaml") if path.is_file()), key=lambda path: path.relative_to(root).as_posix().casefold())
     truncated = len(candidates) > limit
     _, registry_snapshot, provider_required = build_strict_registry_context(settings.harness.platform)
     entries = [_case_summary(path, root, settings, registry_snapshot, provider_required) for path in candidates[:limit]]
@@ -43,8 +43,8 @@ def resolve_case(settings: Settings, path_text: str) -> Path:
         raise ValueError("casePath must be relative to the configured cases directory.")
     root = settings.cases.dir.resolve()
     resolved = (root / requested).resolve()
-    if not _is_relative_to(resolved, root) or not resolved.name.endswith(".codex.yaml"):
-        raise ValueError("casePath must identify a contained .codex.yaml case.")
+    if not _is_relative_to(resolved, root) or resolved.suffix != ".yaml":
+        raise ValueError("casePath must identify a contained .yaml case.")
     if not resolved.is_file():
         raise ValueError("The selected strict case no longer exists.")
     return resolved
@@ -78,7 +78,7 @@ def _case_summary(path: Path, root: Path, settings: Settings, registry_snapshot:
     except Exception as exc:  # noqa: BLE001 - one malformed case must not hide other cases.
         return {
             "path": relative,
-            "id": path.name.removesuffix(".codex.yaml"),
+            "id": path.name.removesuffix(".yaml"),
             "name": path.name,
             "platform": None,
             "commandCount": 0,

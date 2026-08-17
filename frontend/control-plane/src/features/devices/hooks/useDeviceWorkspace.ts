@@ -59,7 +59,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
     void client.cases(selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setCases({ state: 'ready', data, error: null });
-      setCasePath((current) => data.cases.some((item) => item.path === current && item.selectable) ? current : (data.cases.find((item) => item.selectable)?.path ?? ''));
+      setCasePath((current) => data.cases.some((item) => item.path === current && item.selectable) ? current : '');
     }).catch((error) => { if (applies()) setCases({ state: 'error', data: null, error: toApiError(error) }); });
   }, [client]);
 

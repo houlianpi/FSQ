@@ -5,6 +5,16 @@ const cancellable = new Set(['preparing', 'running', 'finalizing']);
 const LONG_MESSAGE_LENGTH = 140;
 const FOLLOW_THRESHOLD = 32;
 
+function timelineEventsForDisplay(events: TimelineEvent[], mode?: string) {
+  if (mode !== 'strict') return events;
+  const byStep = new Map<string, TimelineEvent>();
+  for (const event of events) {
+    if (!event.stepId) continue;
+    byStep.set(event.stepId, event);
+  }
+  return [...byStep.values()].sort((left, right) => left.sequence - right.sequence);
+}
+
 interface RunTimelineProps {
   snapshot: RunSnapshot | null;
   connection: string;
@@ -49,6 +59,7 @@ function EventMessage({ event }: { event: TimelineEvent }) {
 
 export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
   const events = useMemo(() => [...(snapshot?.events ?? [])].sort((left, right) => left.sequence - right.sequence), [snapshot?.events]);
+  const visibleEvents = useMemo(() => timelineEventsForDisplay(events, snapshot?.mode), [events, snapshot?.mode]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousLastSequence = useRef(0);
   const [following, setFollowing] = useState(true);
@@ -56,7 +67,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
   const [sourceOverflowing, setSourceOverflowing] = useState(false);
   const sourceRef = useRef<HTMLElement>(null);
   const [unseen, setUnseen] = useState(0);
-  const lastSequence = snapshot?.events.at(-1)?.sequence ?? 0;
+  const lastSequence = visibleEvents.at(-1)?.sequence ?? 0;
   const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.casePath;
   useEffect(() => {
     const previous = previousLastSequence.current;
@@ -66,9 +77,9 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
       scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'auto' });
       setUnseen(0);
     } else {
-      setUnseen((value) => value + (snapshot?.events.filter((event) => event.sequence > previous).length ?? 0));
+      setUnseen((value) => value + visibleEvents.filter((event) => event.sequence > previous).length);
     }
-  }, [following, lastSequence, snapshot?.events]);
+  }, [following, lastSequence, visibleEvents]);
   useLayoutEffect(() => {
     const element = sourceRef.current;
     if (!element) return;
@@ -90,13 +101,13 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
       if (event.stepId === activeStepId) latestActiveStepSequence = event.sequence;
     }
   }
-  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && events.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
+  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && visibleEvents.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
   const activeStepMatched = Boolean(activeStepId && latestActiveStepSequence != null && !activeStepHasNewerOutsideProgress);
   let latestRunningEvent: TimelineEvent | null = null;
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index].status === 'running') { latestRunningEvent = events[index]; break; }
+  for (let index = visibleEvents.length - 1; index >= 0; index -= 1) {
+    if (visibleEvents[index].status === 'running') { latestRunningEvent = visibleEvents[index]; break; }
   }
-  const activeFallbackSequence = !snapshot.terminal && !activeStepMatched ? (latestRunningEvent ?? events.at(-1))?.sequence : null;
+  const activeFallbackSequence = !snapshot.terminal && !activeStepMatched ? (latestRunningEvent ?? visibleEvents.at(-1))?.sequence : null;
   const onTimelineScroll = () => {
     const element = scrollRef.current;
     if (!element) return;
@@ -117,8 +128,8 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     <div className={`run-source-summary${sourceExpanded ? ' run-source-summary--expanded' : ''}`}><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><span className="run-source-line"><small ref={sourceRef}>{source ?? 'Source unavailable'}</small>{sourceOverflowing && <button className="message-disclosure run-source-disclosure" type="button" aria-label={sourceExpanded ? 'Collapse run source' : 'Expand run source'} aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((value) => !value)}>{sourceExpanded ? '⌃' : '⌄'}</button>}</span></div>
     <div className="timeline-history">
       <div className="timeline-scroll" ref={scrollRef} onScroll={onTimelineScroll} data-following={following} tabIndex={-1} aria-label="Run timeline history">
-        {events.length ? <ol className="timeline-list">
-          {events.map((event) => {
+        {visibleEvents.length ? <ol className="timeline-list">
+          {visibleEvents.map((event) => {
             const label = event.label || event.tool || event.phase || 'Run update';
             const selectable = snapshot.terminal && Boolean(event.stepId);
             const selected = selectable && selectedStepId === event.stepId;

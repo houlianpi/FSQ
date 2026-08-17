@@ -12,7 +12,7 @@ interface DevicesPageProps {
 
 export function DevicesPage({ renderShell }: DevicesPageProps) {
   const workspace = useDeviceWorkspace();
-  const primaryInputRef = useRef<HTMLTextAreaElement | HTMLSelectElement>(null);
+  const primaryInputRef = useRef<HTMLElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const platforms: PlatformOption[] = workspace.bootstrap.data?.platforms ?? [];
   const terminal = workspace.snapshot?.terminal === true;

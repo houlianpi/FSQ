@@ -92,6 +92,38 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 });
 
+it('groups Strict Replay timeline rows by strict step while keeping latest step state', () => {
+  const strict: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
+    source: { casePath: 'recorded.codex.yaml' }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [
+      { sequence: 1, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'step start' },
+      { sequence: 2, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'phase start' },
+      { sequence: 3, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'passed', message: 'phase finish' },
+      { sequence: 4, label: 'recorded-step-002', stepId: 'recorded-step-002', status: 'running', message: 'phase start' },
+      { sequence: 5, label: 'recorded-step-002', stepId: 'recorded-step-002', status: 'completed', message: 'harness call finish' },
+      { sequence: 6, label: 'recorded-step-003', stepId: 'recorded-step-003', status: 'running', message: 'artifact captured' },
+      { sequence: 7, label: 'recorded-step-004', stepId: 'recorded-step-004', status: 'running', message: 'step start' },
+      { sequence: 8, label: 'Run update', message: 'strict log without step id' },
+    ], activeStep: { stepId: 'recorded-step-004', label: 'recorded-step-004' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  render(<RunTimeline snapshot={strict} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  const rows = screen.getAllByRole('listitem');
+  expect(rows.map((item) => item.querySelector('strong')?.textContent)).toEqual([
+    'recorded-step-001',
+    'recorded-step-002',
+    'recorded-step-003',
+    'recorded-step-004',
+  ]);
+  expect(screen.queryByText('strict log without step id')).not.toBeInTheDocument();
+  expect(screen.getByText('phase finish')).toBeInTheDocument();
+  expect(screen.getByText('harness call finish')).toBeInTheDocument();
+  expect(screen.getByText('artifact captured')).toBeInTheDocument();
+  expect(screen.getByText('recorded-step-004').closest('li')).toHaveClass('timeline-row--active');
+});
+
 it('highlights only the active running action and clears active highlighting after terminal selection', async () => {
   const snapshot: RunSnapshot = {
     requestId: 'request', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
