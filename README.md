@@ -71,7 +71,7 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ $ fsq-agent run --platform web --goal "Search for FSQ on Bing"       │
+│ $ fsq-agent run --workspace web-demo --goal "Search for FSQ on Bing" │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ► Planning: 3 key actions identified                                │
 │  ► Step 1: startBrowser          📸 screenshot + UI snapshot         │
@@ -123,17 +123,15 @@ uv sync --extra dev --extra web
 
 </details>
 
-### 2. Initialize
-
-```bash
-fsq-agent init --platform web
-```
-
-### 3. Configure a Provider
+### 2. Create a Workspace
 
 ```bash
 fsq-agent control-plane
 ```
+
+Open **Workspace**, create a workspace for the application under test, and give it a unique name such as `web-demo`. CLI commands select this registered name and can run outside the workspace directory.
+
+### 3. Configure a Provider
 
 Open **Config**, select **Add configuration**, and configure one active Provider:
 
@@ -148,13 +146,13 @@ Provider configuration is stored under `~/.fsq` and is used by the next complete
 
 ```bash
 # Dynamic: AI-driven exploration with full evidence
-fsq-agent run --platform web \
+fsq-agent run --workspace web-demo \
   --goal "Open https://www.bing.com, search for 'FSQ automation', verify results appear."
 ```
 
 ```bash
 # Strict: Deterministic replay from YAML (no LLM needed)
-fsq-agent run --platform web --strict --case-yaml path/to/case.fsq.yaml
+fsq-agent run --workspace web-demo --strict --case-yaml path/to/case.fsq.yaml
 ```
 
 **Output:** `screenshots` + `UI snapshots` + `verification report` + `replayable .fsq.yaml`
@@ -206,28 +204,33 @@ All platforms share the same `HarnessInterface`, evidence model, and FSQ YAML fo
 <details>
 <summary><b>Platform setup details</b></summary>
 
-**Web** — Set browser path in `.env`:
-```dotenv
-FSQ_WEB_BROWSER_EXECUTABLE_PATH=/usr/bin/google-chrome
+**Web** — Set the browser executable in the workspace `.fsq/config.yaml` target:
+```yaml
+target:
+  browser_executable_path: /usr/bin/google-chrome
 ```
 
-**Android** — Connect device via ADB:
-```dotenv
-FSQ_ANDROID_APP_ID=com.example.app
-FSQ_ANDROID_SERIAL=emulator-5554
+**Android** — Set the app ID in the workspace target, then select a connected ADB device per run:
+```yaml
+target:
+  app_id: com.example.app
+```
+```bash
+fsq-agent run --workspace my-android-workspace --android-serial emulator-5554 --goal "Open the app"
+```
+When exactly one device is online, `--android-serial` may be omitted.
+
+**Windows** — Keep `backend_kind` in `config.windows.yaml`; set app-specific values in the workspace target:
+```yaml
+target:
+  app_path: C:\Program Files\MyApp\app.exe
+  window_title_re: .*MyApp.*
 ```
 
-**Windows** — Point to target app:
-```dotenv
-FSQ_WINDOWS_APP_PATH=C:\Program Files\MyApp\app.exe
-FSQ_WINDOWS_BACKEND_KIND=uia
-FSQ_WINDOWS_WINDOW_TITLE_RE=.*MyApp.*
-```
-
-**macOS** — Start Appium Mac2 server:
-```dotenv
-FSQ_MACOS_APPIUM_SERVER_URL=http://127.0.0.1:4723
-FSQ_MACOS_BUNDLE_ID=com.example.app
+**macOS** — Keep `appium_server_url` in `config.macos.yaml`; set the app identity in the workspace target:
+```yaml
+target:
+  bundle_id: com.example.app
 ```
 
 </details>

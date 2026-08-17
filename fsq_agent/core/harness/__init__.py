@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from fsq_agent.core.harness._android_devices import AndroidDeviceDiscovery
 from fsq_agent.core.harness._android_driver import AndroidDriverInterface
 from fsq_agent.core.harness._factory import (
     DriverFactory,
@@ -13,6 +14,7 @@ from fsq_agent.core.harness._windows_driver import WindowsDriverInterface
 
 __all__ = [
     "AIAssertionEvaluatorProtocol",
+    "AndroidDeviceDiscovery",
     "AndroidDriverInterface",
     "DriverFactory",
     "DriverObservationInterface",

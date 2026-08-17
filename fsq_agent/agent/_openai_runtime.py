@@ -497,7 +497,7 @@ class OpenAIAgentsRuntime:
                 {
                     "backend": android.backend,
                     "app_id_configured": bool(android.app_id),
-                    "serial_configured": bool(android.serial),
+                    "serial_selected": bool(android.serial),
                 }
             )
         if self.settings.harness.platform == "web":

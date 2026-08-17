@@ -287,6 +287,8 @@ async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: py
     harness_started = events[titles.index("Harness setup started")]
     assert harness_started.payload["timeout_seconds"] == 60
     assert harness_started.payload["app_id_configured"] is False
+    assert harness_started.payload["serial_selected"] is False
+    assert "serial_configured" not in harness_started.payload
     harness_completed = events[titles.index("Harness setup completed")]
     assert harness_completed.payload["harness_class"] == "_FakeHarness"
     assert "driver_class" not in harness_completed.payload

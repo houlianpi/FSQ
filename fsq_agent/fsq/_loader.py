@@ -7,7 +7,6 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from fsq_agent._workspace_paths import resolve_discovered_case_path
 from fsq_agent.models import ConfigurationError, FsqCase, FsqCaseConfig
 
 FSQ_CASE_SUFFIX = ".fsq.yaml"
@@ -15,6 +14,19 @@ FSQ_CASE_SUFFIX = ".fsq.yaml"
 
 def is_fsq_case_file(path: str | Path) -> bool:
     return Path(path).name.endswith(FSQ_CASE_SUFFIX)
+
+
+def _resolve_discovered_case_path(path: str | Path, discovery_root: Path) -> Path:
+    root = discovery_root.expanduser().resolve()
+    resolved = Path(path).expanduser().resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "Discovered case path must stay within the case directory.",
+            context={"path": str(path)},
+        ) from exc
+    return resolved
 
 
 class FsqCaseLoader:
@@ -35,11 +47,7 @@ class FsqCaseLoader:
         root = Path(path).expanduser().resolve()
         if root.is_file():
             return [self.load_case(root)]
-        candidates = sorted(
-            resolve_discovered_case_path(candidate, root)
-            for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}")
-            if candidate.is_file() and is_fsq_case_file(candidate)
-        )
+        candidates = sorted(_resolve_discovered_case_path(candidate, root) for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}") if candidate.is_file() and is_fsq_case_file(candidate))
         return [self.load_case(candidate) for candidate in candidates]
 
     def _build_case(self, path: Path, docs: list[Any]) -> FsqCase:

@@ -26,9 +26,7 @@ CHROME_EXECUTABLE_NAMES = {"chrome", "chrome.exe", "google chrome", "google-chro
 
 
 def _is_macos_app_bundle_or_executable(path: Path) -> bool:
-    return (path.is_dir() and path.suffix.casefold() == ".app") or (
-        path.is_file() and (os.name == "nt" or os.access(path, os.X_OK))
-    )
+    return (path.is_dir() and path.suffix.casefold() == ".app") or (path.is_file() and (os.name == "nt" or os.access(path, os.X_OK)))
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -64,7 +62,7 @@ def load_workspace_config(workspace: str | Path | None = None) -> tuple[Workspac
             context={"workspace": str(workspace_root), "config_path": str(config_path)},
         )
     try:
-        data = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
+        data = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys.
     except ConfigurationError:
         raise
     except (OSError, UnicodeError, yaml.YAMLError) as exc:

@@ -6,6 +6,7 @@ harness:
   platform: windows
   windows:
     backend: pywinauto
+    backend_kind: uia
 
 execution:
   post_action_delay_seconds:

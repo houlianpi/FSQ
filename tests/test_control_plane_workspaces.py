@@ -221,7 +221,7 @@ def test_workspace_update_rejects_malformed_target_and_env(tmp_path: Path, field
 def test_workspace_routes_require_loopback_and_same_origin(tmp_path: Path) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
-    nonloopback_server = _server(tmp_path / "bind", host="0.0.0.0")
+    nonloopback_server = _server(tmp_path / "bind", host="0.0.0.0")  # noqa: S104 - verifies rejection of non-loopback binds.
     bind_status, bind_error, _ = nonloopback_server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
     server = _server(tmp_path / "origin")
     origin_parent = tmp_path / "origin" / "projects"

@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from pathlib import Path
 import os
 import re
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
@@ -177,20 +177,20 @@ class MacOSHarnessSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: Literal["appium_mac2"] = "appium_mac2"
+    appium_server_url: str | None = None
     page_source_max_depth: int = Field(default=12, ge=1)
     action_timeout_seconds: int = Field(default=10, ge=1)
     new_command_timeout_seconds: int = Field(default=300, ge=1)
-    _appium_server_url: str | None = PrivateAttr(default=None)
     _bundle_id: str | None = PrivateAttr(default=None)
     _app_path: Path | None = PrivateAttr(default=None)
 
-    @property
-    def appium_server_url(self) -> str | None:
-        return self._appium_server_url
-
-    @appium_server_url.setter
-    def appium_server_url(self, value: str | None) -> None:
-        self._appium_server_url = value.strip() if isinstance(value, str) and value.strip() else None
+    @field_validator("appium_server_url")
+    @classmethod
+    def _normalize_appium_server_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @property
     def bundle_id(self) -> str | None:
@@ -343,7 +343,7 @@ def _normalize_workspace_name(value: str) -> str:
     normalized = value.strip()
     if not normalized or normalized in {".", ".."}:
         raise ValueError("workspace name must be a non-empty directory name")
-    if any(ord(character) < 32 or character in '/\\' for character in normalized):
+    if any(ord(character) < 32 or character in "/\\" for character in normalized):
         raise ValueError("workspace name cannot contain path separators or control characters")
     if os.name == "nt":
         if any(character in '<>:"|?*' for character in normalized) or normalized.endswith((".", " ")):
@@ -476,7 +476,7 @@ class WorkspaceConfig(BaseModel):
             "macos": MacOSWorkspaceTarget,
         }
         if not isinstance(self.target, expected_types[self.platform]):
-            raise ValueError("workspace target does not match platform")
+            raise ValueError("workspace target does not match platform")  # noqa: TRY004 - Pydantic validators require ValueError.
         return self
 
 

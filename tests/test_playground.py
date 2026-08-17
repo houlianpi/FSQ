@@ -17,8 +17,20 @@ import yaml
 
 from fsq_agent.config import Settings, save_azure_openai_provider
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import ConfigurationError, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
-from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
+from fsq_agent.models import (
+    AndroidDevice,
+    AndroidDeviceDiscoveryResult,
+    ConfigurationError,
+    HarnessActionResult,
+    HarnessArtifactRef,
+    HarnessContext,
+    ReportArtifact,
+    RunEvent,
+    RunnerEvent,
+    TaskResult,
+    VerificationResult,
+)
+from fsq_agent.playground._android import AndroidTarget, discover_adb_targets, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, _event_sink, _PlaygroundEvidenceRecorder, _run_dynamic_task, task_from_case_yaml, task_from_goal
 from fsq_agent.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
 from fsq_agent.playground._state import BusyError, PlaygroundState
@@ -52,18 +64,41 @@ def _preview_token(run_id: str, step_id: str) -> str:
     return f"{run_id}:{step_id}"
 
 
-def test_parse_adb_devices_discovers_default_device() -> None:
-    output = """List of devices attached
-emulator-5554 device product:sdk_gphone64_x86_64 model:sdk_gphone64_x86_64 device:emu64xa transport_id:1
-offline-1 offline
-"""
+def test_android_discovery_projects_default_online_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(
+            devices=[
+                AndroidDevice(
+                    serial="emulator-5554",
+                    state="device",
+                    metadata={"product": "sdk_gphone64_x86_64", "model": "sdk_gphone64_x86_64", "device": "emu64xa"},
+                ),
+                AndroidDevice(serial="offline-1", state="offline"),
+            ]
+        ),
+    )
 
-    targets = parse_adb_devices(output)
+    targets, error = discover_adb_targets()
 
+    assert error is None
     assert len(targets) == 1
     assert targets[0].id == "emulator-5554"
     assert targets[0].is_default is True
     assert "sdk gphone64 x86 64" in targets[0].description
+
+
+def test_android_discovery_has_no_default_when_multiple_devices_are_online(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
+    )
+
+    targets, error = discover_adb_targets()
+
+    assert error is None
+    assert [target.id for target in targets] == ["device-1", "device-2"]
+    assert not any(target.is_default for target in targets)
 
 
 def test_task_from_goal_matches_dynamic_goal_contract() -> None:
@@ -123,7 +158,7 @@ def test_playground_case_inputs_reject_paths_outside_workspace_cases(tmp_path: P
     assert "workspace cases" in payload["error"]
 
 
-def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
+def test_auto_session_ignores_settings_serial_when_multiple_devices_are_online(monkeypatch) -> None:
     settings = Settings()
     settings.harness.android.serial = "device-2"
     monkeypatch.setattr(
@@ -139,24 +174,9 @@ def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
 
     session, info = resolve_auto_session(settings)
 
-    assert session is not None
-    assert session.device_id == "device-2"
-    assert info["reason"] == "configured_serial"
-
-
-def test_auto_session_reports_configured_serial_offline(monkeypatch) -> None:
-    settings = Settings()
-    settings.harness.android.serial = "missing-device"
-    monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
-        lambda: ([AndroidTarget(id="device-1", label="device-1", is_default=True)], None),
-    )
-
-    session, info = resolve_auto_session(settings)
-
     assert session is None
-    assert info["reason"] == "configured_serial_offline"
-    assert info["configuredSerial"] == "missing-device"
+    assert info["reason"] == "multiple_devices"
+    assert "configuredSerial" not in info
 
 
 def test_auto_session_uses_single_online_device(monkeypatch) -> None:
@@ -197,6 +217,17 @@ def test_auto_session_reports_no_devices(monkeypatch) -> None:
 
     assert session is None
     assert info["reason"] == "no_devices"
+
+
+def test_android_runtime_info_omits_configured_serial() -> None:
+    settings = Settings()
+    settings.harness.android.serial = "stale-device"
+    server = PlaygroundServer(settings)
+
+    status, payload = server.handle_get("/runtime-info", {})
+
+    assert status == 200
+    assert "configuredSerial" not in payload["metadata"]
 
 
 def test_playground_state_locks_concurrent_tasks(tmp_path: Path) -> None:

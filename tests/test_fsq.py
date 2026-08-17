@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -228,6 +229,20 @@ def test_fsq_case_loader_rejects_discovered_symlink_escape(tmp_path: Path) -> No
 
     with pytest.raises(ConfigurationError, match="case directory"):
         FsqCaseLoader().load_cases(cases_dir)
+
+
+def test_fsq_module_does_not_import_root_private_modules() -> None:
+    package_root = Path(__file__).resolve().parents[1] / "fsq_agent" / "fsq"
+    imports: set[str] = set()
+    for source_path in package_root.glob("*.py"):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+
+    assert not {module for module in imports if module.startswith("fsq_agent._")}
 
 
 def test_resolve_case_yaml_path_uses_cases_dir_and_requires_suffix(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ The entry must not import Playground source, Python-generated static assets, bac
 The entry renders one application-level `ControlPlaneShell` containing:
 
 - FSQ/Control Plane identity.
-- Centralized primary navigation metadata for Overview, Workspace, Devices, and Runs.
+- Centralized navigation metadata rendered in the exact top-to-bottom order Overview, Workspace, Devices, Runs, Config, and Settings.
 - Optional workspace navigation supplied through typed shell props.
 - Bottom Config and Settings navigation.
 - A fixed page title/context bar.
@@ -41,9 +41,11 @@ The sidebar is persistent on desktop. At narrow widths the shell owns one access
 
 ### Overview
 
-Overview is the default available page and makes no data requests. It presents a static Start a run heading with Dynamic and Strict entry panels, the five-step FSQ workflow, a recent-activity sample layout, and an environment sample layout. These samples are illustrative rather than runtime truth and are not clickable no-op controls.
+Overview is the default available page and makes no data requests. Its content is a faithful implementation of the Overview in the [FSQ Control Plane Product UX prototype source](https://github.com/microsoft/FSQ/blob/houlianpi-design-fsq-control-plane-ux/docs/ux/fsq-control-plane-product-ux.html), without redesign, renamed content, substituted samples, or additional presentation. The shell keeps the prototype's empty Overview context bar so the page begins with the `Start a run` panel rather than duplicate page context.
 
-Dynamic and Strict navigate to Devices. Open workspace navigates to the Workspace no-selection page. Manage config navigates to Config. How FSQ works opens a static accessible disclosure/dialog. Overview does not fabricate workspace, run, provider, target, or activity state.
+The static page preserves the prototype's visual hierarchy, copy, and sample values: the `Start a run` header and introduction; `How FSQ works`; the `01 / DYNAMIC LOOP` / `Explore with AI` and `02 / STRICT LOOP` / `Replay a Case` launch cards; the Explore, Capture, Verify, Save Case, and Replay strip; the three-row `Recent activity` sample with its original names, metadata, and outcomes; and the three-of-three `Environment` sample with its original Provider, Platform, and Workspace readiness details. These samples are illustrative rather than runtime truth.
+
+Dynamic, Strict, and each recent-activity row navigate to Devices. Open workspace navigates to the Workspace no-selection page. Manage config navigates to Config. As in the prototype, How FSQ works scrolls the five-step workflow into view. Overview does not fabricate workspace, run, provider, target, or activity state beyond the prototype's explicitly illustrative samples.
 
 ### Workspace navigation and creation
 
@@ -155,18 +157,17 @@ Current application/shell ownership:
 
 Current Overview ownership:
 
-- `src/features/overview/OverviewPage.tsx`: static Overview composition and navigation commands.
-- `src/features/overview/components/`: Start a run, workflow, recent-activity sample, environment sample, and How FSQ works presentation.
+- `src/features/overview/OverviewPage.tsx`: static Start a run, workflow, recent-activity sample, environment sample, and navigation-command composition.
+- `src/features/overview/overview.css`: Overview-local prototype presentation and responsive layout.
 
 Current Workspace ownership:
 
-- `src/features/workspaces/WorkspacePage.tsx`: selected/no-selection, configuration banner, edit, and file-browser composition.
-- `src/features/workspaces/CreateWorkspacePage.tsx`: creation form, final-path preview, platform target/env drafts, validation, and focus handoff.
-- `src/features/workspaces/components/WorkspaceNavigation.tsx`: expanded registry group, create action, availability status, and selection presentation supplied to the shell.
-- `src/features/workspaces/components/WorkspaceConfigBanner.tsx` and `WorkspaceFormFields.tsx`: immutable identity, target/env display, shared create/edit controls, secret visibility, and revision-conflict actions.
-- `src/features/workspaces/components/WorkspaceFileBrowser.tsx`, `WorkspaceTree.tsx`, and `WorkspaceFileView.tsx`: bounded on-demand tree, breadcrumb/metadata, Markdown Preview/Code tabs, and escaped text display.
-- `src/features/workspaces/hooks/useWorkspaceRegistry.ts`: registry request state, stale-request cancellation, create command, and refresh.
-- `src/features/workspaces/hooks/useWorkspaceDetail.ts`: selected detail/revision, complete update command, directory/file requests, stale selection protection, and private-draft cleanup.
+- `src/app/ControlPlaneApp.tsx`: workspace registry request state, refresh, available selection, create initiation, and shell navigation projection.
+- `src/app/shell/ControlPlaneSidebar.tsx`: expanded registry group, create action, availability status, and selection presentation.
+- `src/features/workspace/WorkspacePage.tsx`: selected/no-selection state, detail loading, configuration banner, edit composition, and file-browser composition.
+- `src/features/workspace/WorkspaceForm.tsx`: shared create/edit form, final-path preview, platform target/env drafts, validation, secret visibility, persistence, and revision-conflict actions.
+- `src/features/workspace/WorkspaceBrowser.tsx`: bounded on-demand tree, breadcrumb/metadata, Markdown Preview/Code tabs, escaped text display, request cancellation, and stale-selection protection.
+- `src/features/workspace/workspace.css`: Workspace form, banner, and file-browser presentation and responsive layout.
 
 Current Devices ownership:
 
@@ -242,7 +243,7 @@ Empty states direct the user to create/select a workspace, add a Provider, selec
 - Status is communicated by text/icon as well as color. A restrained live region announces connection, start, cancellation, and terminal results.
 - Tab behavior uses standard selected/tab-panel relationships. Icon-only controls have accessible names.
 - Live updates preserve focus. Drawer/result/new-run focus transitions are explicit.
-- Overview information plus Config choice/auth/result dialogs have labelled dialog/disclosure semantics, contained Tab order where modal, Escape cancellation where allowed, logical initial focus, and focus restoration. Copy-code and every secret-visibility icon control have accessible names and tooltips.
+- Config choice/auth/result dialogs have labelled dialog/disclosure semantics, contained Tab order where modal, Escape cancellation where allowed, logical initial focus, and focus restoration. Copy-code and every secret-visibility icon control have accessible names and tooltips.
 - Phase and message disclosure plus Jump to latest use native keyboard-operable buttons with visible focus, accessible names, `aria-expanded`/`aria-controls` where applicable, and unseen-event text that does not rely on color.
 - Motion respects `prefers-reduced-motion`; functionality does not depend on animation.
 - Screenshot alternative text identifies platform/target and evidence state.
@@ -251,7 +252,7 @@ Empty states direct the user to create/select a workspace, add a Provider, selec
 ## Verification Scope
 
 - A clean lock-file install, TypeScript check, focused frontend tests, and Vite build validate the entry.
-- Shell/Overview tests prove one centralized sidebar renders Overview, expanded Workspace navigation, Devices, and Config without feature imports; cover Overview default/reload reset, available/unavailable semantics, registry order, selection, keyboard order, `aria-current`, narrow drawer, navigation commands, static sample semantics, dialog/disclosure, and focus restoration.
+- Shell/Overview tests prove one centralized sidebar renders Overview, expanded Workspace navigation, Devices, Runs, Config, and Settings in the specified order without feature imports; cover Overview default/reload reset, available/unavailable semantics, registry order, selection, keyboard order, `aria-current`, narrow drawer, navigation commands, exact prototype copy and sample semantics, workflow scrolling, and focus restoration.
 - Workspace tests cover malformed-response rejection; registry loading/empty/partial/error/retry; all four creation target forms; platform-draft clearing; final-path preview; collapsed env rows; secret visibility; validation/submission locking; create conflict/error/focus; post-create selection; immutable detail; clean/dirty/pending/success/failure/revision-conflict update; private-value cleanup; on-demand bounded tree state; file metadata; Markdown Preview/Code safety; escaped text; missing/binary/invalid-UTF-8/oversized failures; `.fsq` absence; and stale-request cancellation.
 - Devices tests cover stale-request protection, derived start eligibility, Explore/Strict payloads, active locks, contiguous timeline phase grouping/disclosure, long timeline/log message disclosure, independent near-bottom auto-follow/pause/unseen/resume behavior, timeline/cancel/terminal/new-run behavior, stream resume/fallback, evidence states, sticky Logs structure, tabs, accessible names, live announcements, and focus behavior.
 - Config tests cover malformed-response rejection, loading/empty/configured/unavailable states, complete Azure save and key visibility, dirty-state discard behavior, provider replacement preservation, device-flow request/poll/success/failure/retry/cancel cleanup, saved-only Test connection eligibility/results, dialog keyboard/focus behavior, and secret-safe presentation.

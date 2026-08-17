@@ -49,12 +49,8 @@ def test_create_workspace_commits_minimal_layout_and_registry(tmp_path: Path) ->
     assert config_path.is_file()
     assert (candidate.root_path / "cases").is_dir()
     assert (candidate.root_path / "knowledge" / "project.md").read_text(encoding="utf-8") == ""
-    assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["env"] == {
-        "TEST_PASSWORD": "initial-secret"
-    }
-    assert [(entry.name, entry.config_path) for entry in list_workspace_registry(user_root)] == [
-        ("checkout", config_path.resolve())
-    ]
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["env"] == {"TEST_PASSWORD": "initial-secret"}
+    assert [(entry.name, entry.config_path) for entry in list_workspace_registry(user_root)] == [("checkout", config_path.resolve())]
     assert load_registered_workspace("CHECKOUT", user_root) == candidate
 
 
@@ -236,8 +232,11 @@ def test_create_workspace_rejects_macos_app_path_that_is_not_bundle_or_executabl
     app_bundle.mkdir()
     valid_candidate = candidate.model_copy(update={"target": MacOSWorkspaceTarget(app_path=app_bundle)})
 
-    assert create_workspace(
-        parent_path=parent,
-        config=valid_candidate,
-        user_config_root=tmp_path / "valid-user",
-    ) == valid_candidate
+    assert (
+        create_workspace(
+            parent_path=parent,
+            config=valid_candidate,
+            user_config_root=tmp_path / "valid-user",
+        )
+        == valid_candidate
+    )

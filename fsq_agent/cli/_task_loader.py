@@ -30,11 +30,7 @@ def discover_case_yaml_paths(path: str | Path, cases_dir: Path | None = None) ->
         return [resolve_case_yaml_path(root, cases_dir)]
     if not root.exists() or not root.is_dir():
         raise ConfigurationError("Case directory not found.", context={"path": str(root)})
-    candidates = sorted(
-        resolve_discovered_case_path(candidate, root)
-        for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}")
-        if candidate.is_file() and is_fsq_case_file(candidate)
-    )
+    candidates = sorted(resolve_discovered_case_path(candidate, root) for candidate in root.rglob(f"*{FSQ_CASE_SUFFIX}") if candidate.is_file() and is_fsq_case_file(candidate))
     if not candidates:
         raise ConfigurationError(f"No {FSQ_CASE_SUFFIX} case files found.", context={"path": str(root)})
     return candidates

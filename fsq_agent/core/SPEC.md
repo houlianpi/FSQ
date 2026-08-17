@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the shared execution-core orchestration layer for FSQ-Agent. The core module owns `StepRunner` as the single execution manager for canonical CommonTool and PlatformTool invocations, runner-owned post-action delay resolution/application, `StepSequenceRunner` ordering, harness and driver protocols, factory boundaries for default capability definitions, driver selection, harness construction, platform CommonTool providers, backend driver capability exposure, and evidence-recording coordination points used by strict replay and dynamic execution.
+Define the shared execution-core orchestration layer for FSQ-Agent. The core module owns `StepRunner` as the single execution manager for canonical CommonTool and PlatformTool invocations, runner-owned post-action delay resolution/application, `StepSequenceRunner` ordering, bounded Android device discovery, harness and driver protocols, factory boundaries for default capability definitions, driver selection, harness construction, platform CommonTool providers, backend driver capability exposure, and evidence-recording coordination points used by strict replay and dynamic execution.
 
 The module does not parse CLI arguments, parse FSQ YAML, construct provider sessions, construct OpenAI Agents SDK tools, own dynamic-only AgentTools, or generate reports. Entry modules build settings, providers, artifact stores, and registries, then request `HarnessInterface` and driver protocol implementations through public core factory classes instead of importing concrete platform harness or backend driver classes.
 
@@ -25,6 +25,7 @@ Current `__init__.py` exports via `__all__`:
 - `DriverFactory`: Concrete factory class for selecting private concrete backend drivers from config-owned platform backend settings. It exposes typed `create_android_driver`, `create_web_driver`, `create_windows_driver`, and `create_macos_driver` methods, each returning the corresponding public driver protocol. It is not named `Default` because config selects the backend implementation; additional platform driver implementations belong behind this config-selected factory boundary.
 - `HarnessFactory`: Concrete factory class for constructing runtime harnesses. Each supported platform has one built-in harness implementation; this factory is a convenience composition boundary that creates the configured driver through `DriverFactory` and wraps it in the private concrete platform harness. It returns `HarnessInterface` and accepts the active platform, `HarnessSettings`, optional `ArtifactStore`, optional `AIAssertionEvaluatorProtocol`, runtime secret settings, and Android app/serial overrides used by strict cases and playground device selection.
 - `RuntimeSecretStore`: Process-local runtime-secret resolver built from the names and private values in `RuntimeSecretSettings`. It exposes safe available names, resolves values only in memory, never reads workspace secrets from `os.environ`, and never persists values.
+- `AndroidDeviceDiscovery`: Stable service class that resolves ADB from `PATH`, executes only the fixed bounded `adb devices -l` command, parses every well-formed device state and safe metadata field into model-owned contracts, and returns expected discovery failures as `AndroidDeviceDiscoveryResult`. It does not select a device or emit CLI/HTTP response wording.
 - `HarnessInterface`: Protocol describing platform capabilities required by StepRunner. Concrete Android, Web, iOS, and fake harnesses may satisfy the protocol structurally.
 - `StepRunner`: Executes one canonical `ExecutableStep` or capability invocation by looking up metadata in `CapabilityRegistry`, validating params with the declared model, applying evidence, post-action delay, and sensitivity policy, invoking the active `HarnessInterface`, normalizing backend/provider output, emitting structured safe events, and returning `RunnerStepResult`.
 - `StepSequenceRunner`: Executes ordered `ExecutableStep` records with `StepRunner`, records events and step results, stops normal execution on blocking failures, and always executes supplied teardown steps. It does not own configured sleep or pacing behavior; post-action stabilization is handled inside `StepRunner`.
@@ -38,7 +39,7 @@ Current `__init__.py` exports via `__all__`:
 - `WindowsDriverInterface`: Protocol describing typed Windows desktop backend driver methods that Windows driver capabilities may call.
 - `MacOSDriverInterface`: Protocol describing typed macOS desktop backend driver methods that macOS driver capabilities may call.
 
-Core root and subpackage public exports expose only interfaces/protocols, abstract classes, stable execution-core service classes, approved factory classes, and SPEC-approved provider classes such as `CommonPlatformTools`. Concrete platform harnesses, concrete backend drivers, function-style helpers, decorators, and discovery utilities are internal unless this SPEC records a named exception. There are no public helper or concrete platform implementation exceptions.
+Core root and subpackage public exports expose only interfaces/protocols, abstract classes, stable execution-core service classes, approved factory classes, and SPEC-approved provider classes such as `CommonPlatformTools`. `AndroidDeviceDiscovery` is the approved stable service class for shared bounded ADB discovery. Concrete platform harnesses, concrete backend drivers, function-style helpers, decorators, and other discovery utilities are internal unless this SPEC records a named exception. There are no public helper or concrete platform implementation exceptions.
 
 Current subpackage exports:
 
@@ -151,6 +152,7 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `harness/__init__.py`: Harness subpackage exports only. It exports harness and driver protocols plus public factory classes, not concrete platform harnesses or backend drivers.
 - `harness/_interface.py`: `HarnessInterface` and `AIAssertionEvaluatorProtocol` protocols.
 - `harness/_android.py`: Built-in `AndroidHarness` implementation and Android runtime-service delegation.
+- `harness/_android_devices.py`: `AndroidDeviceDiscovery` service implementation plus private fixed-command parsing helpers.
 - `harness/_android_driver.py`: `AndroidDriverInterface` protocol and driver-owned contracts.
 - `harness/_web.py`: Built-in `WebHarness` implementation and Web runtime-service delegation.
 - `harness/_web_driver.py`: `WebDriverInterface` protocol and driver-owned contracts.
@@ -173,7 +175,7 @@ Core must not define Pydantic models shared across modules. Shared models belong
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
-- Public API: capability registry, capability definition factory class, driver factory class, harness factory class, CommonTool provider class, runner, sequence runner, harness protocol, Android/Web/Windows/macOS driver protocols, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files. Public exports are limited to interfaces/protocols, abstract classes, stable execution-core service classes, approved provider classes, and approved factory classes; there are no helper-function, decorator, concrete platform harness, or concrete backend driver exceptions.
+- Public API: capability registry, capability definition factory class, driver factory class, harness factory class, Android device discovery service class, CommonTool provider class, runner, sequence runner, harness protocol, Android/Web/Windows/macOS driver protocols, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files. Public exports are limited to interfaces/protocols, abstract classes, stable execution-core service classes, approved provider classes, and approved factory classes; there are no helper-function, decorator, concrete platform harness, or concrete backend driver exceptions.
 - Internal modules: all `_*.py` files and implementation subpackages remain private outside documented exports.
 - Domain boundaries: core owns execution orchestration and provider-neutral platform coordination. Provider construction, SDK tool creation, CLI parsing, FSQ parsing, and report generation live outside core.
 - Boundary models: all serializable contracts come from `models`; core protocols and concrete runners operate on those contracts.
@@ -198,6 +200,7 @@ Sensitive capabilities must return values in the standard normalized shape `outp
 
 - Verification covers registry validation and alias resolution, factory platform/backend selection, `StepRunner` routing through `HarnessInterface.invoke_action`, centralized evidence capture, post-action delay, runtime-secret resolution, sensitivity redaction, structured events, sequence teardown, and CommonTool/PlatformTool dispatch.
 - Boundary verification ensures registry/bootstrap does not connect to real devices or launch apps/browsers, strict registries exclude AgentTools, public exports exclude concrete harness/backend implementations, and non-core modules do not import core internals.
+- Android discovery verification covers missing ADB, timeout, process-start failure, nonzero exit, empty output, online/offline/unauthorized states, metadata parsing, and fixed-command invocation. Entry-layer tests separately cover selection and transport projection.
 
 ## Current Invariants
 

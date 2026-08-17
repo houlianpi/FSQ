@@ -112,9 +112,7 @@ def update_workspace_request(name: str, body: dict[str, Any], user_config_root: 
         )
     target = body["target"]
     env = body["env"]
-    if not isinstance(target, dict) or not isinstance(env, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) for key, value in env.items()
-    ):
+    if not isinstance(target, dict) or not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
         raise WorkspaceAPIError(
             400,
             "invalid_workspace",

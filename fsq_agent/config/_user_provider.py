@@ -99,7 +99,7 @@ class UserProviderConfig(BaseModel):
     _provider_token: dict[str, object] | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
-    def _validate_workspace_uniqueness(self) -> "UserProviderConfig":
+    def _validate_workspace_uniqueness(self) -> UserProviderConfig:
         names: set[str] = set()
         paths: set[str] = set()
         for workspace in self.workspaces:

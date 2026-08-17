@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import mimetypes
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -31,10 +31,7 @@ def list_workspace_entries(name: str, relative_path: str, user_config_root: Path
     workspace_root = config.root_path.resolve()
     normalized = _normalize_relative_path(relative_path, allow_root=True)
     if not normalized.parts:
-        entries = [
-            _managed_root_projection(workspace_root, root_name)
-            for root_name in sorted(_ALLOWED_ROOTS)
-        ]
+        entries = [_managed_root_projection(workspace_root, root_name) for root_name in sorted(_ALLOWED_ROOTS)]
         return {"path": "", "entries": entries, "truncated": False}
 
     managed_path = workspace_root / normalized.parts[0]
@@ -70,11 +67,12 @@ def read_workspace_file(name: str, relative_path: str, user_config_root: Path | 
         raise WorkspaceFileAPIError(400, "workspace_path_not_file", "Workspace path is not a regular file.", "Select a file and retry.")
     try:
         stat = file_path.stat()
-        if stat.st_size > _MAX_FILE_BYTES:
-            raise WorkspaceFileAPIError(413, "workspace_file_too_large", "Workspace file is too large to display.", "Open the file in the local editor.")
+    except OSError as exc:
+        raise WorkspaceFileAPIError(409, "workspace_file_unavailable", "Workspace file is unavailable.", "Retry or select another file.") from exc
+    if stat.st_size > _MAX_FILE_BYTES:
+        raise WorkspaceFileAPIError(413, "workspace_file_too_large", "Workspace file is too large to display.", "Open the file in the local editor.")
+    try:
         source = file_path.read_bytes()
-    except WorkspaceFileAPIError:
-        raise
     except OSError as exc:
         raise WorkspaceFileAPIError(409, "workspace_file_unavailable", "Workspace file is unavailable.", "Retry or select another file.") from exc
     if len(source) > _MAX_FILE_BYTES:
@@ -145,12 +143,13 @@ def _resolve_allowed_path(workspace_root: Path, relative_path: PurePosixPath) ->
 def _entry_projection(path: Path, workspace_root: Path, managed_root: Path, fallback_name: str) -> dict[str, Any]:
     try:
         resolved = path.resolve(strict=True)
-        if not resolved.is_relative_to(managed_root):
-            raise WorkspaceFileAPIError(400, "invalid_workspace_path", "Workspace entry escapes its managed root.", "Remove the unsafe link or select another directory.")
-        stat = resolved.stat()
-    except WorkspaceFileAPIError:
-        raise
     except (OSError, RuntimeError) as exc:
+        raise WorkspaceFileAPIError(409, "workspace_entry_unavailable", "Workspace entry is unavailable.", "Refresh the workspace browser.") from exc
+    if not resolved.is_relative_to(managed_root):
+        raise WorkspaceFileAPIError(400, "invalid_workspace_path", "Workspace entry escapes its managed root.", "Remove the unsafe link or select another directory.")
+    try:
+        stat = resolved.stat()
+    except OSError as exc:
         raise WorkspaceFileAPIError(409, "workspace_entry_unavailable", "Workspace entry is unavailable.", "Refresh the workspace browser.") from exc
     if resolved.is_dir():
         kind = "directory"
@@ -189,7 +188,7 @@ def _managed_root_projection(workspace_root: Path, root_name: str) -> dict[str, 
 
 
 def _modified_time(value: float) -> str:
-    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(value, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 __all__ = ["WorkspaceFileAPIError", "list_workspace_entries", "read_workspace_file"]

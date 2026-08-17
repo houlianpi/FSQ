@@ -8,9 +8,11 @@ import pytest
 from click.testing import CliRunner
 
 from fsq_agent._strict_case_recording import StrictCaseRecording
+from fsq_agent.cli._android_devices import select_android_serial
 from fsq_agent.cli._main import _task_from_goal, _task_from_raw_case_source, main
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.models import ConfigurationError, ReportArtifact, Task, TaskResult, VerificationResult
+from fsq_agent.config import PLATFORM_CONFIG_PATHS, Settings
+from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult, ConfigurationError, ReportArtifact, Task, TaskResult, VerificationResult
 
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
@@ -95,13 +97,28 @@ env: {{}}
 """,
         encoding="utf-8",
     )
+    user_config_root = Path.home() / ".fsq"
+    user_config_root.mkdir(parents=True, exist_ok=True)
+    (user_config_root / "config.yaml").write_text(
+        f"""
+version: 2
+provider: null
+workspaces:
+  - name: test-workspace
+    config_path: {json.dumps(str((fsq_dir / "config.yaml").resolve()))}
+""",
+        encoding="utf-8",
+    )
     config_path = tmp_path / f"config.{platform}.yaml"
-    preset = body or f"""
+    preset = (
+        body
+        or f"""
 harness:
   platform: {platform}
   {platform}:
     backend: {"uiautomator2" if platform == "android" else "playwright" if platform == "web" else "pywinauto" if platform == "windows" else "appium_mac2"}
 """
+    )
     config_path.write_text(
         preset,
         encoding="utf-8",
@@ -150,11 +167,17 @@ def _write_fake_core_report(output_dir: Path, run_id: str, status: str = "passed
 
 
 @pytest.fixture(autouse=True)
-def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_user_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    for platform in PLATFORM_CONFIG_PATHS:
+        monkeypatch.setitem(PLATFORM_CONFIG_PATHS, platform, tmp_path / f"config.{platform}.yaml")
     user_home = tmp_path / "user-home"
     monkeypatch.setenv("HOME", str(user_home))
     monkeypatch.setenv("USERPROFILE", str(user_home))
+    monkeypatch.setattr(
+        "fsq_agent.cli._android_devices.AndroidDeviceDiscovery.discover",
+        lambda _self: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device")]),
+    )
     for name in ("FSQ_LLM_PROVIDER", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
@@ -252,11 +275,11 @@ def test_run_rejects_missing_or_conflicting_sources(tmp_path: Path) -> None:
     _config(tmp_path)
     runner = CliRunner()
 
-    missing = runner.invoke(main, ["run"])
-    conflicting = runner.invoke(main, ["run", "--goal", "Do it", "--case-yaml", "case.fsq.yaml"])
-    strict_goal = runner.invoke(main, ["run", "--strict", "--goal", "Do it"])
-    record_on_failure_without_record = runner.invoke(main, ["run", "--goal", "Do it", "--record-on-failure"])
-    strict_record = runner.invoke(main, ["run", "--strict", "--case-yaml", "case.fsq.yaml", "--record"])
+    missing = runner.invoke(main, ["run", "--workspace", "test-workspace"])
+    conflicting = runner.invoke(main, ["run", "--workspace", "test-workspace", "--goal", "Do it", "--case-yaml", "case.fsq.yaml"])
+    strict_goal = runner.invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--goal", "Do it"])
+    record_on_failure_without_record = runner.invoke(main, ["run", "--workspace", "test-workspace", "--goal", "Do it", "--record-on-failure"])
+    strict_record = runner.invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "case.fsq.yaml", "--record"])
 
     assert missing.exit_code != 0
     assert "Exactly one" in missing.output
@@ -273,11 +296,162 @@ def test_run_rejects_removed_config_option() -> None:
     assert "No such option: --config" in result.output
 
 
-def test_run_rejects_removed_workspace_option() -> None:
-    result = CliRunner().invoke(main, ["run", "--workspace", "workspace", "--goal", "Do it"])
+def test_select_android_serial_uses_only_online_device() -> None:
+    settings = Settings()
+
+    selected = select_android_serial(settings, None)
+
+    assert selected == "device-1"
+    assert settings.harness.android.serial == "device-1"
+
+
+def test_select_android_serial_rejects_multiple_online_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    monkeypatch.setattr(
+        "fsq_agent.cli._android_devices.AndroidDeviceDiscovery.discover",
+        lambda _self: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
+    )
+
+    with pytest.raises(ConfigurationError, match=r"Multiple online Android devices.*--android-serial"):
+        select_android_serial(settings, None)
+
+
+def test_select_android_serial_rejects_no_online_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    monkeypatch.setattr(
+        "fsq_agent.cli._android_devices.AndroidDeviceDiscovery.discover",
+        lambda _self: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="offline")]),
+    )
+
+    with pytest.raises(ConfigurationError, match="No online Android devices"):
+        select_android_serial(settings, None)
+
+
+def test_select_android_serial_rejects_explicit_offline_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    monkeypatch.setattr(
+        "fsq_agent.cli._android_devices.AndroidDeviceDiscovery.discover",
+        lambda _self: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="offline")]),
+    )
+
+    with pytest.raises(ConfigurationError, match=r"device-1.*not online.*offline"):
+        select_android_serial(settings, "device-1")
+
+
+def test_select_android_serial_rejects_option_for_non_android_without_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    settings.harness.platform = "web"
+    monkeypatch.setattr(
+        "fsq_agent.cli._android_devices.AndroidDeviceDiscovery.discover",
+        lambda _self: pytest.fail("ADB discovery must not run for a non-Android workspace"),
+    )
+
+    with pytest.raises(ConfigurationError, match="only supported for Android"):
+        select_android_serial(settings, "device-1")
+
+
+@pytest.mark.parametrize(
+    ("source_args", "execution_name"),
+    [
+        (["--goal", "Do it"], "dynamic"),
+        (["--strict", "--case-yaml", "case.fsq.yaml"], "strict"),
+    ],
+)
+def test_run_selects_explicit_android_serial_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_args: list[str],
+    execution_name: str,
+) -> None:
+    _config(tmp_path)
+    events: list[tuple[str, str | None]] = []
+
+    def fake_select(_settings: Settings, requested_serial: str | None) -> str:
+        events.append(("select", requested_serial))
+        return requested_serial or "device-1"
+
+    def fake_dynamic(_settings: Settings, **_kwargs) -> None:
+        events.append(("dynamic", None))
+
+    def fake_strict(_settings: Settings, **_kwargs) -> None:
+        events.append(("strict", None))
+
+    monkeypatch.setattr("fsq_agent.cli._main.select_android_serial", fake_select)
+    monkeypatch.setattr("fsq_agent.cli._main._run_dynamic", fake_dynamic)
+    monkeypatch.setattr("fsq_agent.cli._main._run_strict", fake_strict)
+
+    result = CliRunner().invoke(
+        main,
+        ["run", "--workspace", "test-workspace", "--android-serial", "device-2", *source_args],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert events == [("select", "device-2"), (execution_name, None)]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["run", "--goal", "Do it"],
+        ["report", "--run-id", "run-1"],
+        ["playground", "--no-open-browser"],
+    ],
+)
+def test_workspace_commands_require_workspace_name(args: list[str]) -> None:
+    result = CliRunner().invoke(main, args)
 
     assert result.exit_code != 0
-    assert "No such option: --workspace" in result.output
+    assert "Missing option '--workspace'" in result.output
+
+
+def test_run_resolves_registered_workspace_case_insensitively_without_using_current_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "registered-workspace"
+    workspace.mkdir()
+    _config(workspace)
+    invocation_dir = tmp_path / "invocation"
+    invocation_dir.mkdir()
+    monkeypatch.chdir(invocation_dir)
+    captured: dict[str, object] = {}
+    sentinel_settings = Settings()
+
+    def fake_load_workspace_settings(workspace_path: Path):
+        captured["workspace_path"] = workspace_path
+        return sentinel_settings
+
+    def fake_run_dynamic(settings, **_kwargs) -> None:
+        captured["settings"] = settings
+
+    monkeypatch.setattr("fsq_agent.cli._main.load_workspace_settings", fake_load_workspace_settings)
+    monkeypatch.setattr("fsq_agent.cli._main._run_dynamic", fake_run_dynamic)
+
+    result = CliRunner().invoke(main, ["run", "--workspace", "TEST-WORKSPACE", "--goal", "Do it"])
+
+    assert result.exit_code == 0, result.output
+    assert captured == {
+        "workspace_path": workspace.resolve(),
+        "settings": sentinel_settings,
+    }
+
+
+def test_run_rejects_unregistered_workspace_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed = False
+    errors: list[str] = []
+
+    def fail_execution(*_args, **_kwargs) -> None:
+        nonlocal executed
+        executed = True
+
+    monkeypatch.setattr("fsq_agent.cli._main._run_dynamic", fail_execution)
+    monkeypatch.setattr("fsq_agent.cli._main._log_cli_error", lambda message, *args: errors.append(message % args))
+
+    result = CliRunner().invoke(main, ["run", "--workspace", "missing", "--goal", "Do it"])
+
+    assert result.exit_code != 0
+    assert executed is False
+    assert any("not registered" in error for error in errors)
 
 
 def test_run_rejects_removed_platform_option() -> None:
@@ -325,7 +499,7 @@ def test_run_case_yaml_uses_raw_file_content_without_fsq_parsing(tmp_path: Path,
     monkeypatch.setattr("fsq_agent.cli._main.FsqAgent.from_settings", fake_agent_from_settings)
     monkeypatch.setattr("fsq_agent.cli._main.FsqCaseLoader", RaisingLoader)
 
-    result = CliRunner().invoke(main, ["run", "--case-yaml", "raw.fsq.yaml", "--no-stream", "--no-tracing"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--case-yaml", "raw.fsq.yaml", "--no-stream", "--no-tracing"])
 
     assert result.exit_code == 0, result.output
     assert captured["tracing_enabled"] is False
@@ -344,7 +518,7 @@ def test_run_case_yaml_rejects_wrong_suffix_before_dynamic_execution(tmp_path: P
     monkeypatch.setattr("fsq_agent.cli._main._run_dynamic_task", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("fsq_agent.cli._main._log_cli_error", lambda message, *args: errors.append(message % args))
 
-    result = CliRunner().invoke(main, ["run", "--case-yaml", "case.yaml", "--no-stream", "--no-tracing"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--case-yaml", "case.yaml", "--no-stream", "--no-tracing"])
 
     assert result.exit_code != 0
     assert any(".fsq.yaml" in error for error in errors)
@@ -373,7 +547,7 @@ def test_run_goal_record_invokes_strict_case_recorder(tmp_path: Path, monkeypatc
     monkeypatch.setattr("fsq_agent.cli._main.FsqAgent.from_settings", lambda _settings: FakeAgent())
     monkeypatch.setattr("fsq_agent.cli._main.record_dynamic_run_as_strict_case", fake_record_dynamic_run_as_strict_case)
 
-    result = CliRunner().invoke(main, ["run", "--goal", "Do it", "--record", "--no-stream"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--goal", "Do it", "--record", "--no-stream"])
 
     assert result.exit_code == 0, result.output
     assert captured["run_dir"] == tmp_path / "cases" / "recorded-run"
@@ -381,9 +555,7 @@ def test_run_goal_record_invokes_strict_case_recorder(tmp_path: Path, monkeypatc
     assert "Recorded strict case" in result.output
 
 
-def test_run_strict_case_builds_android_harness_from_env_and_reports_paths(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.config")
-    monkeypatch.setenv("FSQ_ANDROID_SERIAL", "device-1")
+def test_run_strict_case_builds_android_harness_from_workspace_and_reports_paths(tmp_path: Path, monkeypatch) -> None:
     _config(
         tmp_path,
         """
@@ -414,7 +586,7 @@ execution:
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "strict_cli.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "strict_cli.fsq.yaml"])
 
     assert result.exit_code == 0, result.output
     assert calls["driver"] == {"app_id": "com.example.config", "serial": "device-1"}
@@ -482,10 +654,10 @@ onCaseStart:
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_lifecycle_case", fake_run_strict_fsq_lifecycle_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "strict_hooked.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "strict_hooked.fsq.yaml"])
 
     assert result.exit_code == 0, result.output
-    assert calls["driver"] == {"app_id": "com.example.config", "serial": None}
+    assert calls["driver"] == {"app_id": "com.example.config", "serial": "device-1"}
     assert calls["lifecycle"]["case_path"] == case_path.resolve()
     assert calls["lifecycle"]["case"].config.on_case_start
     assert calls["lifecycle"]["run_id"].startswith("strict_hooked-")
@@ -493,7 +665,6 @@ onCaseStart:
 
 
 def test_run_strict_single_case_exits_nonzero_when_report_fails(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.config")
     _config(
         tmp_path,
         """
@@ -524,14 +695,13 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", str(case_path)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", str(case_path)])
 
     assert result.exit_code == 1, result.output
     assert "core-report.md" in result.output
 
 
 def test_run_strict_case_prefers_workspace_app_id(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_SERIAL", "device-1")
     _config(
         tmp_path,
         """
@@ -555,7 +725,7 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", str(case_path)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", str(case_path)])
 
     assert result.exit_code == 0, result.output
     assert calls["driver"] == {"app_id": "com.example.config", "serial": "device-1"}
@@ -582,7 +752,7 @@ env: {{}}
 
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", fail_driver)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", str(case_path)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", str(case_path)])
 
     assert result.exit_code != 0
 
@@ -591,7 +761,6 @@ def test_run_strict_web_case_builds_web_harness_without_android_app_id(tmp_path:
     chrome_path = tmp_path / "chrome.exe"
     chrome_path.write_text("", encoding="utf-8")
     chrome_path.chmod(0o755)
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(chrome_path))
     _config(
         tmp_path,
         """
@@ -622,7 +791,7 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", FakeWebDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "strict_web.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "strict_web.fsq.yaml"])
 
     assert result.exit_code == 0, result.output
     assert calls["driver"] == {
@@ -640,10 +809,7 @@ harness:
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
 
-def test_run_strict_macos_case_builds_macos_harness_from_env_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
-    monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
-    monkeypatch.delenv("FSQ_MACOS_APP_PATH", raising=False)
+def test_run_strict_macos_case_builds_macos_harness_from_preset_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
     _config(
         tmp_path,
         """
@@ -651,6 +817,7 @@ harness:
   platform: macos
   macos:
     backend: appium_mac2
+    appium_server_url: http://127.0.0.1:4723
     page_source_max_depth: 7
     action_timeout_seconds: 11
 """,
@@ -671,7 +838,7 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.AppiumMac2Driver", FakeMacOSDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "strict_macos.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "strict_macos.fsq.yaml"])
 
     assert result.exit_code == 0, result.output
     assert calls["driver"] == {
@@ -694,13 +861,8 @@ harness:
     assert calls["strict"]["registry"].resolve("tapOn") is None
 
 
-def test_run_strict_windows_case_builds_windows_harness_from_env_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
+def test_run_strict_windows_case_builds_windows_harness_from_preset_without_android_app_id(tmp_path: Path, monkeypatch) -> None:
     app_path = tmp_path / "windows-app.exe"
-    app_path.write_text("", encoding="utf-8")
-    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
-    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "win32")
-    monkeypatch.setenv("FSQ_WINDOWS_WINDOW_TITLE_RE", ".*Legacy App")
-    monkeypatch.setenv("FSQ_WINDOWS_LAUNCH_ARGS", '--flag "two words"')
     _config(
         tmp_path,
         """
@@ -708,6 +870,7 @@ harness:
   platform: windows
   windows:
     backend: pywinauto
+    backend_kind: win32
 """,
         platform="windows",
     )
@@ -726,7 +889,7 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.PywinautoWindowsDriver", FakeWindowsDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "strict_windows.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "strict_windows.fsq.yaml"])
 
     assert result.exit_code == 0, result.output
     assert calls["driver"] == {
@@ -761,15 +924,13 @@ harness:
 
     monkeypatch.setattr("fsq_agent.core.harness._factory.PlaywrightWebDriver", fail_driver)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-yaml", "android_case.fsq.yaml"])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-yaml", "android_case.fsq.yaml"])
 
     assert result.exit_code != 0
     assert constructed is False
 
 
 def test_run_strict_case_dir_continues_and_writes_summary(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.config")
-    monkeypatch.setenv("FSQ_ANDROID_SERIAL", "device-1")
     _config(
         tmp_path,
         """
@@ -807,7 +968,7 @@ harness:
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_core_case", fake_run_strict_fsq_core_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-dir", str(cases_dir)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-dir", str(cases_dir)])
 
     assert result.exit_code == 1, result.output
     assert [call["case_path"].name for call in calls] == ["first.fsq.yaml", "second.fsq.yaml"]
@@ -825,7 +986,6 @@ harness:
 
 
 def test_run_strict_case_dir_excludes_hook_dependencies_from_top_level_summary(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.config")
     _config(
         tmp_path,
         """
@@ -880,7 +1040,7 @@ platform: android
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_lifecycle_case", fake_run_strict_fsq_lifecycle_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-dir", str(cases_dir)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-dir", str(cases_dir)])
 
     assert result.exit_code == 0, result.output
     assert [call["case_path"].name for call in calls] == ["root.fsq.yaml"]
@@ -892,7 +1052,6 @@ platform: android
 
 
 def test_run_strict_case_dir_excludes_config_hook_dependencies_from_top_level_summary(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.config")
     _config(
         tmp_path,
         """
@@ -932,7 +1091,7 @@ platform: android
     monkeypatch.setattr("fsq_agent.core.harness._factory.UiAutomator2AndroidDriver", FakeDriver)
     monkeypatch.setattr("fsq_agent.cli._main.run_strict_fsq_lifecycle_case", fake_run_strict_fsq_lifecycle_case)
 
-    result = CliRunner().invoke(main, ["run", "--strict", "--case-dir", str(cases_dir)])
+    result = CliRunner().invoke(main, ["run", "--workspace", "test-workspace", "--strict", "--case-dir", str(cases_dir)])
 
     assert result.exit_code == 0, result.output
     assert [call["case_path"].name for call in calls] == ["root.fsq.yaml"]
@@ -949,13 +1108,41 @@ def test_report_command_resolves_llm_and_strict_reports(tmp_path: Path) -> None:
     (strict_dir / "core-report.md").write_text("strict report", encoding="utf-8")
     runner = CliRunner()
 
-    llm_result = runner.invoke(main, ["report", "--run-id", "llm-run"])
-    strict_result = runner.invoke(main, ["report", "--run-id", "strict-run"])
+    llm_result = runner.invoke(main, ["report", "--workspace", "test-workspace", "--run-id", "llm-run"])
+    strict_result = runner.invoke(main, ["report", "--workspace", "test-workspace", "--run-id", "strict-run"])
 
     assert llm_result.exit_code == 0, llm_result.output
     assert "llm report" in llm_result.output
     assert strict_result.exit_code == 0, strict_result.output
     assert "strict report" in strict_result.output
+
+
+def test_playground_command_loads_registered_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_playground(settings, options) -> None:
+        captured.update(
+            workspace_path=settings.workspace.root_dir,
+            host=options.host,
+            port=options.port,
+            open_browser=options.open_browser,
+        )
+
+    monkeypatch.setattr("fsq_agent.cli._main.run_playground", fake_run_playground)
+
+    result = CliRunner().invoke(
+        main,
+        ["playground", "--workspace", "TEST-WORKSPACE", "--host", "localhost", "--port", "9001", "--no-open-browser"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured == {
+        "workspace_path": tmp_path.resolve(),
+        "host": "localhost",
+        "port": 9001,
+        "open_browser": False,
+    }
 
 
 def test_task_from_goal_creates_goal_only_task() -> None:

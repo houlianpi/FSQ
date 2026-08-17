@@ -43,8 +43,8 @@ export function ControlPlaneShell({ activePage, title, description, titleActions
     drawerFocusTarget.current = null;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        toggleRef.current?.focus();
         setDrawerOpen(false);
-        requestAnimationFrame(() => toggleRef.current?.focus());
         return;
       }
       if (event.key !== 'Tab' || !focusable?.length) return;
@@ -58,8 +58,8 @@ export function ControlPlaneShell({ activePage, title, description, titleActions
   }, [drawerOpen]);
 
   const closeDrawer = () => {
+    if (drawerOpen) toggleRef.current?.focus();
     setDrawerOpen(false);
-    requestAnimationFrame(() => toggleRef.current?.focus());
   };
 
   const restoreWorkspaceCreateFocus = () => {

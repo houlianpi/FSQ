@@ -132,7 +132,7 @@ export function ControlPlaneApp() {
   };
 
   if (activePage === 'overview') return <ControlPlaneShell
-    activePage="overview" title="Overview" description="Choose a run path, understand the workflow, and open the local resources FSQ needs."
+    activePage="overview" title="" description=""
     onNavigate={navigate} {...shellWorkspaceProps}
   ><OverviewPage onNavigate={navigate} /></ControlPlaneShell>;
 

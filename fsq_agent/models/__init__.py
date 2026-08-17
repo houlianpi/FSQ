@@ -116,6 +116,7 @@ from fsq_agent.models._core import (
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
+from fsq_agent.models._devices import AndroidDevice, AndroidDeviceDiscoveryResult
 from fsq_agent.models._events import RunEvent, RunEventSink
 from fsq_agent.models._exceptions import (
     ConfigurationError,
@@ -148,8 +149,8 @@ from fsq_agent.models._settings import (
     AgentContextSettings,
     AgentKnowledgeSettings,
     AgentSettings,
-    AndroidWorkspaceTarget,
     AndroidHarnessSettings,
+    AndroidWorkspaceTarget,
     CaseSettings,
     ContextTrimmingSettings,
     ExecutionSettings,
@@ -228,6 +229,8 @@ __all__ = [
     "AndroidAssertStateParams",
     "AndroidAssertVisibleParams",
     "AndroidAssertWithAIParams",
+    "AndroidDevice",
+    "AndroidDeviceDiscoveryResult",
     "AndroidElementState",
     "AndroidHarnessSettings",
     "AndroidInputTextParams",

@@ -563,7 +563,6 @@ class PlaygroundServer:
             "session": self.state.session.to_json(),
             "metadata": {
                 "appIdPresent": bool(self.settings.harness.android.app_id),
-                "configuredSerial": self.settings.harness.android.serial,
                 "selectedDeviceId": self.state.session.device_id,
                 "busy": self.state.current_request_id is not None,
                 "lastRun": self.state.last_run,

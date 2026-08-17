@@ -103,17 +103,25 @@ class ControlPlaneServer:
                 if workspace_suffix == "":
                     return 200, get_workspace(workspace_name, self.options.user_config_root), dict(_JSON_HEADERS)
                 if workspace_suffix == "/entries":
-                    return 200, list_workspace_entries(
-                        workspace_name,
-                        _workspace_path_query(query, required=False),
-                        self.options.user_config_root,
-                    ), dict(_JSON_HEADERS)
+                    return (
+                        200,
+                        list_workspace_entries(
+                            workspace_name,
+                            _workspace_path_query(query, required=False),
+                            self.options.user_config_root,
+                        ),
+                        dict(_JSON_HEADERS),
+                    )
                 if workspace_suffix == "/file":
-                    return 200, read_workspace_file(
-                        workspace_name,
-                        _workspace_path_query(query, required=True),
-                        self.options.user_config_root,
-                    ), dict(_JSON_HEADERS)
+                    return (
+                        200,
+                        read_workspace_file(
+                            workspace_name,
+                            _workspace_path_query(query, required=True),
+                            self.options.user_config_root,
+                        ),
+                        dict(_JSON_HEADERS),
+                    )
                 return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
             auth_request_id = _device_flow_route_or_none(path)
             if auth_request_id is not None:
