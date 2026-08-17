@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,13 +15,13 @@ class RuntimeSecretStore:
     def __init__(self, allowed_names: Iterable[str] = (), values: dict[str, str] | None = None) -> None:
         self._allowed_names = tuple(dict.fromkeys(name.strip() for name in allowed_names if isinstance(name, str) and name.strip()))
         self._allowed = set(self._allowed_names)
-        source_values = values if values is not None else os.environ
+        source_values = values or {}
         self._values = {name: str(source_values.get(name) or "") for name in self._allowed_names}
         self._warnings = tuple(f"Runtime secret {name} is configured but not set." for name in self._allowed_names if not self._values.get(name))
 
     @classmethod
     def from_settings(cls, settings: RuntimeSecretSettings) -> RuntimeSecretStore:
-        return cls(settings.allowed_env_names)
+        return cls(settings.allowed_names, settings.private_values())
 
     @classmethod
     def empty(cls) -> RuntimeSecretStore:

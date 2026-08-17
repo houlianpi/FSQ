@@ -4,7 +4,6 @@
 import asyncio
 import base64
 import json
-import subprocess
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -24,7 +23,7 @@ from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
 from fsq_agent.fsq import FsqCaseLoader
-from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
+from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 
 
 def _settings(tmp_path: Path, platform: str = "android") -> Settings:
@@ -161,15 +160,16 @@ def test_state_cancel_on_terminal_task_is_idempotent_and_does_not_mutate() -> No
 
 def test_android_target_discovery_normalizes_online_offline_and_unauthorized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    settings.harness.android.serial = "emulator-5554"
-    completed = subprocess.CompletedProcess(
-        ["adb"],
-        0,
-        "List of devices attached\nemulator-5554 device product:sdk model:Pixel_8 transport_id:1\noffline-1 offline\nlocked-1 unauthorized\n",
-        "",
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(
+            devices=[
+                AndroidDevice(serial="emulator-5554", state="device", metadata={"product": "sdk", "model": "Pixel_8", "transport_id": "1"}),
+                AndroidDevice(serial="offline-1", state="offline"),
+                AndroidDevice(serial="locked-1", state="unauthorized"),
+            ]
+        ),
     )
-    monkeypatch.setattr("fsq_agent.control_plane._targets.shutil.which", lambda _name: "C:/tools/adb.exe")
-    monkeypatch.setattr("fsq_agent.control_plane._targets.subprocess.run", lambda *args, **kwargs: completed)
 
     payload = discover_targets(settings)
 
@@ -183,22 +183,36 @@ def test_android_target_discovery_normalizes_online_offline_and_unauthorized(tmp
     assert payload["targets"][0]["metadata"]["model"] == "Pixel_8"
 
 
+def test_android_target_discovery_has_no_default_with_multiple_online_devices(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
+    )
+
+    payload = discover_targets(settings)
+
+    assert not any(target["isDefault"] for target in payload["targets"])
+
+
 @pytest.mark.parametrize(
-    ("exception", "target_id", "status"),
+    ("error_code", "target_id", "status"),
     [
-        (FileNotFoundError(), "adb-missing", "missing"),
-        (subprocess.TimeoutExpired("adb", 5), "adb-timeout", "timeout"),
-        (OSError(), "adb-error", "error"),
+        ("adb_missing", "adb-missing", "missing"),
+        ("adb_timeout", "adb-timeout", "timeout"),
+        ("adb_start_failed", "adb-error", "error"),
+        ("adb_failed", "adb-error", "error"),
     ],
 )
-def test_android_target_discovery_reports_command_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exception: BaseException, target_id: str, status: str) -> None:
+def test_android_target_discovery_reports_command_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_code: str, target_id: str, status: str) -> None:
     settings = _settings(tmp_path)
-    monkeypatch.setattr("fsq_agent.control_plane._targets.shutil.which", lambda _name: "C:/tools/adb.exe")
-
-    def fail(*args, **kwargs):
-        raise exception
-
-    monkeypatch.setattr("fsq_agent.control_plane._targets.subprocess.run", fail)
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(error_code=error_code, error_message="Discovery failed."),
+    )
     target = discover_targets(settings)["targets"][0]
     assert (target["id"], target["status"], target["selectable"]) == (target_id, status, False)
 
@@ -842,7 +856,7 @@ def test_server_terminal_evidence_and_replay_routes(tmp_path: Path, monkeypatch:
 def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTROL_PLANE_TEST_SECRET", "runtime-secret-value")
     settings = _settings(tmp_path)
-    settings.runtime_secrets.allowed_env_names = ["CONTROL_PLANE_TEST_SECRET"]
+    settings.runtime_secrets.set_values({"CONTROL_PLANE_TEST_SECRET": "runtime-secret-value"})
     message = safe_exception_message(
         ValueError(f"Failed at {tmp_path / 'private' / 'case.yaml'} with Bearer abc123 api_key=key-value and runtime-secret-value"),
         settings=settings,

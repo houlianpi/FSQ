@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING, Any, Never
 from pydantic import ValidationError
 
 from fsq_agent._capability_bootstrap import build_capability_registry
+from fsq_agent._run_ids import new_run_id
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
+from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
@@ -162,16 +164,9 @@ def _read_case_yaml_text(path_text: str, settings: Settings) -> tuple[Path, str]
     requested = Path(path_text.strip())
     if not is_fsq_case_file(requested):
         raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
-    candidates = []
-    if requested.is_absolute():
-        candidates.append(requested)
-    else:
-        candidates.append(settings.cases.dir / requested)
-        candidates.append(Path.cwd() / requested)
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            resolved = candidate.resolve()
-            return resolved, resolved.read_text(encoding="utf-8")
+    resolved = resolve_workspace_cases_path(requested, settings.cases.dir)
+    if resolved.exists() and resolved.is_file():
+        return resolved, resolved.read_text(encoding="utf-8")
     raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
 
@@ -347,8 +342,9 @@ def _run_strict_case_yaml(
         for lifecycle_path, lifecycle_case in lifecycle_cases
     }
     validate_strict_core_settings(settings, requires_ai_assertion=requires_ai_assertion)
-    run_id = case.id
+    run_id = new_run_id(case.id)
     run_dir = Path(settings.output.runs_dir) / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
     state.add_event(
         request_id,
         RunEvent(run_id=run_id, task_id=case.id, type="run_started", title="Strict YAML started", message=str(case_path)),
@@ -436,10 +432,9 @@ def _resolve_case_yaml_path(path_text: str, settings: Settings) -> Path:
     requested = Path(path_text.strip())
     if not is_fsq_case_file(requested):
         raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
-    candidates = [requested] if requested.is_absolute() else [settings.cases.dir / requested, Path.cwd() / requested]
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate.resolve()
+    resolved = resolve_workspace_cases_path(requested, settings.cases.dir)
+    if resolved.exists() and resolved.is_file():
+        return resolved
     raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
 

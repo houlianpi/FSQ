@@ -225,6 +225,19 @@ After required project SPEC confirmation or a recorded no-SPEC-delta decision:
 
 After project implementation verification, `spec-driven` starts a complete project audit. Every audit pass must independently establish the full applicable-item inventory from the current SPEC inputs and complete current diff, then inspect every item before returning. Finding the first blocker must not end the pass, and implementation repair must not begin while the audit is still in progress.
 
+### Audit Artifact And Identity Gate
+
+For a worktree audit, create the complete tracked diff as a file directly through Git, such as `git diff HEAD --no-ext-diff --binary --output=<artifact>`. Never use terminal-captured stdout or a tool's overflow wrapper as the audit artifact.
+
+Before starting the reviewer:
+
+1. Record the artifact's absolute path, SHA-256, byte size, and `diff --git` entry count.
+2. Record Git's complete changed-path inventory and verify its count and paths agree with the artifact.
+3. Verify that no in-scope untracked project file is omitted. Include each such file as a separate complete artifact with its path and SHA-256, or stop as `audit-blocked`.
+4. Give the reviewer the artifact identities and require it to validate them before auditing. A missing, truncated, wrapped, mismatched, or unreadable artifact is `audit-blocked`; do not substitute a live diff or an implementation summary.
+
+Treat the verified artifact identities as the audit snapshot. Do not intentionally edit in-scope project files while the audit is running. After a passing audit and immediately before claiming completion, regenerate the worktree artifacts with the same commands and compare their SHA-256 values and path inventory with the audited snapshot. Any mismatch makes the prior pass stale and requires verification plus a new complete audit. For an audited commit range, record the exact immutable base and head object ids instead of a worktree artifact hash.
+
 Each audit result must contain precise SPEC references, concrete diff evidence, verdicts, repair ownership, one complete coverage table, and the full finding set. The only allowed early return is `audit-blocked` when required authority inputs, tools, or artifacts are unavailable. `audit-blocked` is not a passing verdict and does not consume a repair round.
 
 After the complete result returns:
@@ -276,6 +289,7 @@ If project SPEC itself needs correction, stop project implementation, update and
 Do not claim completion while any blocking finding remains. Completion also requires:
 
 - a complete latest audit pass over the current SPEC inputs and complete current diff;
+- a matching post-audit artifact identity check proving the current worktree or immutable commit range is exactly the audited snapshot;
 - a complete applicable-item inventory;
 - concrete diff evidence and a current verdict for every item;
 - no implementation-fixable blocking finding in the latest independent audit;
@@ -290,5 +304,5 @@ End with:
 - Project specs updated and confirmed, or the no-SPEC-delta decision with precise SPEC and defect evidence.
 - Files implemented.
 - Verification commands run and results.
-- Audited SPEC inputs, diff or commit range, and latest complete-audit status.
+- Audited SPEC inputs, diff artifact identities or exact commit range, post-audit identity result, and latest complete-audit status.
 - Complete current finding status, repair rounds performed, and any accepted human decisions.

@@ -12,16 +12,16 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
-from fsq_agent.models import ConfigurationError
+from fsq_agent.models import ConfigurationError, WorkspaceRegistryEntry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from fsq_agent.config._settings import Settings
 
-USER_CONFIG_VERSION = 1
+USER_CONFIG_VERSION = 2
 USER_CONFIG_FILENAME = "config.yaml"
 AUTH_DIRECTORY = "auth"
 AZURE_AUTH_FILENAME = "azure-openai.json"
@@ -91,11 +91,27 @@ _ProviderRecord = Annotated[
 class UserProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[1] = USER_CONFIG_VERSION
+    version: Literal[2] = USER_CONFIG_VERSION
     provider: _ProviderRecord | None = None
+    workspaces: list[WorkspaceRegistryEntry] = Field(default_factory=list)
     _api_key: str = PrivateAttr(default="")
     _github_token: dict[str, object] | None = PrivateAttr(default=None)
     _provider_token: dict[str, object] | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _validate_workspace_uniqueness(self) -> UserProviderConfig:
+        names: set[str] = set()
+        paths: set[str] = set()
+        for workspace in self.workspaces:
+            normalized_name = workspace.name.casefold()
+            normalized_path = os.path.normcase(str(workspace.config_path.resolve()))
+            if normalized_name in names:
+                raise ValueError("workspace names must be unique")
+            if normalized_path in paths:
+                raise ValueError("workspace config paths must be unique")
+            names.add(normalized_name)
+            paths.add(normalized_path)
+        return self
 
     @property
     def api_key(self) -> str:
@@ -110,20 +126,17 @@ class UserProviderConfig(BaseModel):
         return dict(self._provider_token) if self._provider_token is not None else None
 
 
+class _UserProviderConfigV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    provider: _ProviderRecord | None = None
+
+
 def load_user_provider_config(user_config_root: str | Path | None = None) -> UserProviderConfig:
     root = _user_config_root(user_config_root)
     with _WRITE_LOCK:
-        config_path, auth_dir = _ensure_layout(root)
-        try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
-            raise ConfigurationError("Unable to read user Provider configuration.", context={"path": str(config_path)}) from exc
-        if not isinstance(data, dict):
-            raise ConfigurationError("User Provider configuration must contain a YAML mapping.", context={"path": str(config_path)})
-        try:
-            config = UserProviderConfig.model_validate(data)
-        except ValidationError as exc:
-            raise ConfigurationError("Invalid user Provider configuration.", context={"path": str(config_path), "errors": exc.errors()}) from exc
+        config, _, auth_dir = _load_user_document(root)
         if config.provider is None:
             return config
         if config.provider.type == "azure_openai":
@@ -139,6 +152,36 @@ def load_user_provider_config(user_config_root: str | Path | None = None) -> Use
         _credential_text(config._provider_token, "token", "GitHub Copilot provider token")
         _credential_text(config._provider_token, "plan", "GitHub Copilot plan")
         return config
+
+
+def list_workspace_registry(user_config_root: str | Path | None = None) -> list[WorkspaceRegistryEntry]:
+    root = _user_config_root(user_config_root)
+    with _WRITE_LOCK:
+        config, _, _ = _load_user_document(root)
+        return [entry.model_copy(deep=True) for entry in config.workspaces]
+
+
+def _register_workspace(entry: WorkspaceRegistryEntry, user_config_root: str | Path | None = None) -> None:
+    root = _user_config_root(user_config_root)
+    with _WRITE_LOCK:
+        config, config_path, _ = _load_user_document(root)
+        normalized_name = entry.name.casefold()
+        normalized_path = os.path.normcase(str(entry.config_path.resolve()))
+        if any(existing.name.casefold() == normalized_name for existing in config.workspaces):
+            raise ConfigurationError(
+                "A workspace with this name is already registered.",
+                context={"name": entry.name},
+            )
+        if any(os.path.normcase(str(existing.config_path.resolve())) == normalized_path for existing in config.workspaces):
+            raise ConfigurationError(
+                "This workspace path is already registered.",
+                context={"config_path": str(entry.config_path)},
+            )
+        updated = config.model_copy(update={"workspaces": [*config.workspaces, entry]})
+        try:
+            _atomic_write(config_path, _yaml_bytes(updated))
+        except OSError as exc:
+            raise ConfigurationError("Unable to register workspace.", context={"name": entry.name}) from exc
 
 
 def save_azure_openai_provider(
@@ -158,10 +201,10 @@ def save_azure_openai_provider(
         raise ConfigurationError(str(exc)) from exc
     if normalized_api_key.lower().startswith("replace-with"):
         raise ConfigurationError("Azure OpenAI API key still contains a placeholder value.")
-    config = UserProviderConfig(provider=provider)
     root = _user_config_root(user_config_root)
     with _WRITE_LOCK:
-        config_path, auth_dir = _ensure_layout(root)
+        current, config_path, auth_dir = _load_user_document(root)
+        config = current.model_copy(update={"provider": provider})
         _commit_replacement(
             {
                 auth_dir / AZURE_AUTH_FILENAME: _json_bytes({"api_key": normalized_api_key}),
@@ -188,10 +231,10 @@ def activate_github_copilot_provider(
         _credential_text(provider_payload, "plan", "GitHub Copilot plan")
     except (ValidationError, ValueError) as exc:
         raise ConfigurationError("Invalid GitHub Copilot Provider configuration.", context={"error": str(exc)}) from exc
-    config = UserProviderConfig(provider=provider)
     root = _user_config_root(user_config_root)
     with _WRITE_LOCK:
-        config_path, auth_dir = _ensure_layout(root)
+        current, config_path, auth_dir = _load_user_document(root)
+        config = current.model_copy(update={"provider": provider})
         _commit_replacement(
             {
                 auth_dir / GITHUB_AUTH_FILENAME: _json_bytes(github_payload),
@@ -236,6 +279,41 @@ def _ensure_layout(root: Path) -> tuple[Path, Path]:
     except OSError as exc:
         raise ConfigurationError("Unable to initialize user Provider configuration.", context={"path": str(root)}) from exc
     return config_path, auth_dir
+
+
+def _load_user_document(root: Path) -> tuple[UserProviderConfig, Path, Path]:
+    config_path, auth_dir = _ensure_layout(root)
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfigurationError("Unable to read user Provider configuration.", context={"path": str(config_path)}) from exc
+    if not isinstance(data, dict):
+        raise ConfigurationError("User Provider configuration must contain a YAML mapping.", context={"path": str(config_path)})
+    if data.get("version") == 1:
+        try:
+            legacy = _UserProviderConfigV1.model_validate(data)
+        except ValidationError as exc:
+            raise ConfigurationError(
+                "Invalid user Provider configuration.",
+                context={"path": str(config_path), "errors": exc.errors()},
+            ) from exc
+        upgraded = UserProviderConfig(provider=legacy.provider)
+        try:
+            _atomic_write(config_path, _yaml_bytes(upgraded))
+        except OSError as exc:
+            raise ConfigurationError(
+                "Unable to upgrade user Provider configuration.",
+                context={"path": str(config_path)},
+            ) from exc
+        return upgraded, config_path, auth_dir
+    try:
+        config = UserProviderConfig.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigurationError(
+            "Invalid user Provider configuration.",
+            context={"path": str(config_path), "errors": exc.errors()},
+        ) from exc
+    return config, config_path, auth_dir
 
 
 def _read_json_object(path: Path, description: str) -> dict[str, object]:

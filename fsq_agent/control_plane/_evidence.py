@@ -6,7 +6,6 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -30,8 +29,10 @@ def configured_secret_values(settings: Any | None) -> tuple[str, ...]:
     if settings is None:
         return ()
     runtime_secrets = getattr(settings, "runtime_secrets", None)
-    names = getattr(runtime_secrets, "allowed_env_names", ())
-    return tuple(value for name in names if (value := os.getenv(name)))
+    private_values = getattr(runtime_secrets, "private_values", None)
+    if not callable(private_values):
+        return ()
+    return tuple(value for value in private_values().values() if value)
 
 
 def safe_text(value: object, *, secret_values: tuple[str, ...] = (), limit: int = 1000) -> str:

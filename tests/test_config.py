@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.config import (
+    PLATFORM_CONFIG_PATHS,
     activate_github_copilot_provider,
     load_platform_settings,
     load_settings,
+    load_workspace_settings,
     save_azure_openai_provider,
     validate_provider_settings,
     validate_runtime_settings,
@@ -41,6 +43,107 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
     app_path = tmp_path / name
     app_path.write_text("", encoding="utf-8")
     return app_path
+
+
+def test_load_workspace_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
+    workspace = tmp_path / "checkout-android"
+    config_dir = workspace / ".fsq"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        f"""
+version: 1
+name: checkout-android
+root_path: {workspace.as_posix()}
+platform: android
+target:
+    app_id: com.example.checkout
+env:
+    TEST_ACCOUNT_PASSWORD: local-secret
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_workspace_settings(workspace)
+
+    assert settings.workspace.root_dir == workspace
+    assert settings.workspace.config_path == config_dir / "config.yaml"
+    assert settings.harness.platform == "android"
+    assert settings.harness.android.app_id == "com.example.checkout"
+    assert settings.runtime_secrets.allowed_names == ["TEST_ACCOUNT_PASSWORD"]
+    assert settings.runtime_secrets.resolve("TEST_ACCOUNT_PASSWORD") == "local-secret"
+    assert settings.cases.dir == workspace / "cases"
+    assert settings.output.root_dir == workspace / "cases"
+    assert settings.output.runs_dir == workspace / "cases"
+    assert settings.agent_context.knowledge.root_dir == workspace / "knowledge"
+    assert not (workspace / "cases").exists()
+    assert not (workspace / "knowledge").exists()
+
+
+def test_load_workspace_settings_uses_committed_preset_outside_repository_cwd(tmp_path: Path) -> None:
+    workspace = tmp_path / "registered-android"
+    config_dir = workspace / ".fsq"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        f"""
+version: 1
+name: registered-android
+root_path: {workspace.as_posix()}
+platform: android
+target:
+    app_id: com.example.registered
+env: {{}}
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_workspace_settings(workspace)
+
+    assert settings.harness.platform == "android"
+    assert settings.harness.android.backend == "uiautomator2"
+    assert settings.harness.android.app_id == "com.example.registered"
+    assert settings.openai_agents.max_turns == 100
+    assert settings.agent_context.knowledge.skills.dir == Path(__file__).parents[1] / "knowledge" / "skills"
+
+
+def test_validate_runtime_settings_rejects_workspace_macos_path_that_is_not_bundle_or_executable(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "checkout-macos"
+    config_dir = workspace / ".fsq"
+    config_dir.mkdir(parents=True)
+    invalid_app_path = tmp_path / "ordinary-directory"
+    invalid_app_path.mkdir()
+    (tmp_path / "config.macos.yaml").write_text(
+        """
+harness:
+ platform: macos
+ macos: {backend: appium_mac2, appium_server_url: "http://127.0.0.1:4723"}
+""",
+        encoding="utf-8",
+    )
+    (config_dir / "config.yaml").write_text(
+        f"""
+version: 1
+name: checkout-macos
+root_path: {workspace.as_posix()}
+platform: macos
+target:
+  app_path: {invalid_app_path.as_posix()}
+env: {{}}
+""",
+        encoding="utf-8",
+    )
+    user_root = tmp_path / "user"
+    save_azure_openai_provider(
+        base_url="https://example.openai.azure.com",
+        model="test-model",
+        api_key="test-key",
+        user_config_root=user_root,
+    )
+    settings = load_workspace_settings(workspace, user_config_root=user_root)
+
+    with pytest.raises(ConfigurationError, match="application bundle or executable"):
+        validate_runtime_settings(settings)
 
 
 @pytest.fixture(autouse=True)
@@ -223,36 +326,28 @@ caseLifecycle:
 
 
 def test_load_platform_settings_loads_committed_platform_preset(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.web.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-harness:
-  platform: web
-  web:
-    backend: playwright
-    base_url: https://www.bing.com
-""",
-        ),
-        encoding="utf-8",
-    )
-
-    settings = load_platform_settings("web")
+    settings = load_platform_settings("web", workspace=tmp_path / "legacy-web")
 
     assert settings.harness.platform == "web"
     assert settings.harness.web.backend == "playwright"
-    assert settings.harness.web.base_url == "https://www.bing.com"
+    assert settings.harness.web.base_url is None
+    assert settings.openai_agents.max_turns == 50
+    skills = settings.agent_context.knowledge.skills
+    assert skills.dir == Path(__file__).parents[1] / "knowledge" / "skills"
+    assert all(item.path is not None and (skills.dir / item.path).is_file() for item in skills.items)
 
 
-def test_load_platform_settings_rejects_missing_platform_preset() -> None:
+def test_load_platform_settings_rejects_missing_platform_preset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing_path = tmp_path / "missing.windows.yaml"
+    monkeypatch.setitem(PLATFORM_CONFIG_PATHS, "windows", missing_path)
+
     with pytest.raises(ConfigurationError, match="Platform configuration file is missing") as exc_info:
         load_platform_settings("windows")
 
-    assert exc_info.value.context == {"platform": "windows", "path": "config.windows.yaml"}
+    assert exc_info.value.context == {"platform": "windows", "path": str(missing_path)}
 
 
-def test_load_platform_settings_rejects_platform_mismatch(tmp_path: Path) -> None:
+def test_load_platform_settings_rejects_platform_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "config.web.yaml"
     config_path.write_text(
         _base_config(
@@ -264,6 +359,7 @@ harness:
         ),
         encoding="utf-8",
     )
+    monkeypatch.setitem(PLATFORM_CONFIG_PATHS, "web", config_path)
 
     with pytest.raises(ConfigurationError, match="does not match requested platform") as exc_info:
         load_platform_settings("web")
@@ -305,9 +401,17 @@ def test_load_settings_rejects_non_empty_unmarked_workspace(tmp_path: Path) -> N
         load_settings(config_path)
 
 
-def test_load_settings_accepts_android_backend_and_env_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_ignores_fsq_process_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FSQ_ANDROID_APP_ID", "com.example.app")
     monkeypatch.setenv("FSQ_ANDROID_SERIAL", "emulator-5554")
+    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(tmp_path / "chrome.exe"))
+    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(tmp_path / "app.exe"))
+    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "win32")
+    monkeypatch.setenv("FSQ_WINDOWS_WINDOW_TITLE_RE", ".*Legacy App")
+    monkeypatch.setenv("FSQ_WINDOWS_LAUNCH_ARGS", "--legacy")
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://legacy.example:4723")
+    monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.Legacy")
+    monkeypatch.setenv("FSQ_MACOS_APP_PATH", str(tmp_path / "Legacy.app"))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -326,13 +430,20 @@ harness:
 
     assert settings.harness.platform == "android"
     assert settings.harness.android.backend == "uiautomator2"
-    assert settings.harness.android.app_id == "com.example.app"
-    assert settings.harness.android.serial == "emulator-5554"
+    assert settings.harness.android.app_id is None
+    assert settings.harness.android.serial is None
+    assert settings.harness.web.browser_executable_path is None
+    assert settings.harness.windows.app_path is None
+    assert settings.harness.windows.backend_kind == "uia"
+    assert settings.harness.windows.window_title_re is None
+    assert settings.harness.windows.launch_args == []
+    assert settings.harness.macos.appium_server_url is None
+    assert settings.harness.macos.bundle_id is None
+    assert settings.harness.macos.app_path is None
 
 
 def test_load_settings_accepts_web_harness_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     chrome_path = _chrome_executable(tmp_path)
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(chrome_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -353,6 +464,7 @@ harness:
     )
 
     settings = load_settings(config_path)
+    settings.harness.web.browser_executable_path = chrome_path
 
     validate_runtime_settings(settings)
     validate_strict_core_settings(settings)
@@ -368,7 +480,6 @@ harness:
 
 def test_load_settings_accepts_web_chrome_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     chrome_path = _chrome_executable(tmp_path)
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(chrome_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -385,35 +496,31 @@ harness:
     )
 
     settings = load_settings(config_path)
+    settings.harness.web.browser_executable_path = chrome_path
 
     validate_runtime_settings(settings)
     assert settings.harness.web.channel == "chrome"
     assert settings.harness.web.browser_executable_path == chrome_path
 
 
-def test_load_settings_accepts_windows_env_backed_adapter_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_accepts_windows_yaml_adapter_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_path = _windows_executable(tmp_path)
-    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
-    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "win32")
-    monkeypatch.setenv("FSQ_WINDOWS_WINDOW_TITLE_RE", ".*Legacy App")
-    monkeypatch.setenv(
-        "FSQ_WINDOWS_LAUNCH_ARGS",
-        r'--flag "two words" --profile="C:\Temp\Edge Profile" --kv=value',
-    )
+    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "uia")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
             tmp_path,
-            """
+            f"""
 harness:
   platform: windows
   windows:
     backend: pywinauto
-    backend_kind: uia
-    app_path: C:/Old/app.exe
-    window_title_re: Old Title
+    backend_kind: win32
+    app_path: {app_path.as_posix()}
+    window_title_re: .*Configured App
     launch_args:
-      - --old
+      - --flag
+      - two words
 """,
         ),
         encoding="utf-8",
@@ -426,40 +533,33 @@ harness:
     assert settings.harness.windows.backend == "pywinauto"
     assert settings.harness.windows.app_path == app_path
     assert settings.harness.windows.backend_kind == "win32"
-    assert settings.harness.windows.window_title_re == ".*Legacy App"
-    assert settings.harness.windows.launch_args == [
-        "--flag",
-        "two words",
-        r"--profile=C:\Temp\Edge Profile",
-        "--kv=value",
-    ]
+    assert settings.harness.windows.window_title_re == ".*Configured App"
+    assert settings.harness.windows.launch_args == ["--flag", "two words"]
 
 
-def test_load_settings_rejects_invalid_windows_backend_kind_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_rejects_invalid_windows_backend_kind_yaml(tmp_path: Path) -> None:
     app_path = _windows_executable(tmp_path)
-    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
-    monkeypatch.setenv("FSQ_WINDOWS_BACKEND_KIND", "uia2")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
             tmp_path,
-            """
+            f"""
 harness:
   platform: windows
   windows:
     backend: pywinauto
+    backend_kind: uia2
+    app_path: {app_path.as_posix()}
 """,
         ),
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_BACKEND_KIND"):
+    with pytest.raises(ConfigurationError, match="Invalid configuration"):
         load_settings(config_path)
 
 
-def test_load_settings_rejects_invalid_windows_launch_args_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    app_path = _windows_executable(tmp_path)
-    monkeypatch.setenv("FSQ_WINDOWS_APP_PATH", str(app_path))
+def test_load_settings_ignores_windows_launch_args_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FSQ_WINDOWS_LAUNCH_ARGS", '"unterminated')
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
@@ -470,16 +570,18 @@ harness:
   platform: windows
   windows:
     backend: pywinauto
+    launch_args: [--configured]
 """,
         ),
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_LAUNCH_ARGS"):
-        load_settings(config_path)
+    settings = load_settings(config_path)
+
+    assert settings.harness.windows.launch_args == ["--configured"]
 
 
-def test_validate_runtime_settings_rejects_missing_windows_app_path_env(tmp_path: Path) -> None:
+def test_validate_runtime_settings_rejects_missing_windows_app_path(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -495,16 +597,13 @@ harness:
     )
     settings = load_settings(config_path)
 
-    with pytest.raises(ConfigurationError, match="FSQ_WINDOWS_APP_PATH"):
+    with pytest.raises(ConfigurationError, match="Windows app path is not configured"):
         validate_runtime_settings(settings)
 
 
-def test_load_settings_accepts_macos_harness_settings_and_env_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_accepts_macos_harness_yaml_and_runtime_target(tmp_path: Path) -> None:
     app_path = tmp_path / "Example.app"
     app_path.mkdir()
-    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://127.0.0.1:4723")
-    monkeypatch.setenv("FSQ_MACOS_BUNDLE_ID", "com.example.MacApp")
-    monkeypatch.setenv("FSQ_MACOS_APP_PATH", str(app_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -514,6 +613,7 @@ harness:
   platform: macos
   macos:
     backend: appium_mac2
+    appium_server_url: "http://127.0.0.1:4723"
     page_source_max_depth: 8
     action_timeout_seconds: 15
     new_command_timeout_seconds: 420
@@ -523,6 +623,8 @@ harness:
     )
 
     settings = load_settings(config_path)
+    settings.harness.macos.bundle_id = "com.example.MacApp"
+    settings.harness.macos.app_path = app_path
 
     validate_runtime_settings(settings)
     validate_strict_core_settings(settings)
@@ -536,7 +638,7 @@ harness:
     assert settings.harness.macos.app_path == app_path
 
 
-def test_load_settings_rejects_macos_env_backed_values_in_yaml(tmp_path: Path) -> None:
+def test_load_settings_accepts_macos_appium_server_url_from_yaml(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -547,20 +649,17 @@ harness:
   macos:
     backend: appium_mac2
     appium_server_url: http://127.0.0.1:4723
-    bundle_id: com.example.MacApp
 """,
         ),
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigurationError, match="Invalid configuration"):
-        load_settings(config_path)
+    settings = load_settings(config_path)
+
+    assert settings.harness.macos.appium_server_url == "http://127.0.0.1:4723"
 
 
-def test_validate_runtime_settings_rejects_missing_macos_env_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FSQ_MACOS_APPIUM_SERVER_URL", raising=False)
-    monkeypatch.delenv("FSQ_MACOS_BUNDLE_ID", raising=False)
-    monkeypatch.delenv("FSQ_MACOS_APP_PATH", raising=False)
+def test_validate_runtime_settings_rejects_missing_macos_settings(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -576,7 +675,7 @@ harness:
     )
     settings = load_settings(config_path)
 
-    with pytest.raises(ConfigurationError, match="Appium server URL"):
+    with pytest.raises(ConfigurationError, match=r"harness\.macos\.appium_server_url"):
         validate_runtime_settings(settings)
 
     settings.harness.macos.appium_server_url = "http://127.0.0.1:4723"
@@ -601,13 +700,12 @@ harness:
     )
     settings = load_settings(config_path)
 
-    with pytest.raises(ConfigurationError, match="executable path environment variable is not set"):
+    with pytest.raises(ConfigurationError, match="browser executable path is not configured"):
         validate_runtime_settings(settings)
 
 
 def test_validate_runtime_settings_rejects_missing_web_browser_executable_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     missing_path = tmp_path / "chrome.exe"
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(missing_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -623,13 +721,13 @@ harness:
         encoding="utf-8",
     )
     settings = load_settings(config_path)
+    settings.harness.web.browser_executable_path = missing_path
 
     with pytest.raises(ConfigurationError, match="does not exist"):
         validate_runtime_settings(settings)
 
 
 def test_validate_runtime_settings_rejects_web_browser_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(tmp_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -645,6 +743,7 @@ harness:
         encoding="utf-8",
     )
     settings = load_settings(config_path)
+    settings.harness.web.browser_executable_path = tmp_path
 
     with pytest.raises(ConfigurationError, match="browser executable file"):
         validate_runtime_settings(settings)
@@ -653,7 +752,6 @@ harness:
 def test_validate_runtime_settings_rejects_web_browser_path_that_does_not_match_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     firefox_path = tmp_path / "firefox.exe"
     firefox_path.write_text("", encoding="utf-8")
-    monkeypatch.setenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", str(firefox_path))
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -669,6 +767,7 @@ harness:
         encoding="utf-8",
     )
     settings = load_settings(config_path)
+    settings.harness.web.browser_executable_path = firefox_path
 
     with pytest.raises(ConfigurationError, match="does not match"):
         validate_runtime_settings(settings)
@@ -934,12 +1033,7 @@ def test_load_settings_ignores_invalid_fsq_llm_provider_env(
     assert settings.openai_agents.provider == "github_copilot"
 
 
-def test_validate_provider_settings_does_not_require_platform_harness_env(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FSQ_LLM_PROVIDER", "github_copilot")
-    monkeypatch.delenv("FSQ_WEB_BROWSER_EXECUTABLE_PATH", raising=False)
+def test_validate_provider_settings_does_not_require_platform_target(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -958,7 +1052,7 @@ harness:
     settings = load_settings(config_path)
 
     validate_provider_settings(settings)
-    with pytest.raises(ConfigurationError, match="Web browser executable path environment variable"):
+    with pytest.raises(ConfigurationError, match="Web browser executable path is not configured"):
         validate_runtime_settings(settings)
 
 
@@ -1229,38 +1323,39 @@ output:
         load_settings(config_path)
 
 
-def test_load_settings_loads_dotenv_from_config_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FSQ_ANDROID_APP_ID", raising=False)
+def test_load_settings_ignores_dotenv_from_config_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FSQ_ANDROID_SERIAL", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     (tmp_path / ".env").write_text(
-        "FSQ_ANDROID_APP_ID=com.example.from-dotenv\n",
+        "FSQ_ANDROID_SERIAL=device-from-dotenv\n",
         encoding="utf-8",
     )
 
     settings = load_settings(config_path)
 
-    assert settings.harness.android.app_id == "com.example.from-dotenv"
+    assert settings.harness.android.serial is None
+    assert "FSQ_ANDROID_SERIAL" not in os.environ
 
 
-def test_load_settings_dotenv_does_not_override_existing_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "from-process")
+def test_load_settings_does_not_parse_repository_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FSQ_WINDOWS_BACKEND_KIND", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
-    (tmp_path / ".env").write_text("FSQ_ANDROID_APP_ID=from-dotenv\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("FSQ_WINDOWS_BACKEND_KIND=win32\n", encoding="utf-8")
 
-    load_settings(config_path)
+    settings = load_settings(config_path)
 
-    assert os.environ["FSQ_ANDROID_APP_ID"] == "from-process"
+    assert settings.harness.windows.backend_kind == "uia"
+    assert "FSQ_WINDOWS_BACKEND_KIND" not in os.environ
 
 
-def test_load_settings_rejects_invalid_dotenv_line(tmp_path: Path) -> None:
+def test_load_settings_ignores_invalid_dotenv_line(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     (tmp_path / ".env").write_text("not-a-key-value-line\n", encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match=r"Invalid \.env line"):
-        load_settings(config_path)
+    load_settings(config_path)
 
 
 def test_validate_runtime_settings_rejects_placeholder_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

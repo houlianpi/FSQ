@@ -49,6 +49,13 @@ fsq-agent = "fsq_agent.cli:main"
 packages = ["fsq_agent"]
 artifacts = ["fsq_agent/playground/static", "fsq_agent/control_plane/static"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"config.android.yaml" = "fsq_agent/resources/config.android.yaml"
+"config.web.yaml" = "fsq_agent/resources/config.web.yaml"
+"config.windows.yaml" = "fsq_agent/resources/config.windows.yaml"
+"config.macos.yaml" = "fsq_agent/resources/config.macos.yaml"
+"knowledge/skills" = "fsq_agent/resources/knowledge/skills"
+
 [[tool.uv.index]]
 name = "microsoft-cfs"
 url = "https://packagefeedproxy.microsoft.io/pypi/simple"

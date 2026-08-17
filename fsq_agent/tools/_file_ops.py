@@ -20,6 +20,9 @@ class FileOps:
         self.read_roots = [path.resolve() for path in (read_roots or [default_root])]
         self.write_root = (write_root or default_root).resolve()
 
+    def configure_write_root(self, write_root: Path) -> None:
+        self.write_root = write_root.resolve()
+
     def _is_inside(self, path: Path, root: Path) -> bool:
         return root in (path, *path.parents)
 

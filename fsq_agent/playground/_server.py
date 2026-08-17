@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
+from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
@@ -562,7 +563,6 @@ class PlaygroundServer:
             "session": self.state.session.to_json(),
             "metadata": {
                 "appIdPresent": bool(self.settings.harness.android.app_id),
-                "configuredSerial": self.settings.harness.android.serial,
                 "selectedDeviceId": self.state.session.device_id,
                 "busy": self.state.current_request_id is not None,
                 "lastRun": self.state.last_run,
@@ -645,6 +645,8 @@ class PlaygroundServer:
             return 404, {"available": False, "error": f"Case YAML not found: {path_text}"}
         except UnicodeDecodeError:
             return 400, {"available": False, "error": f"Case YAML must be UTF-8 text: {path_text}"}
+        except ConfigurationError as exc:
+            return 400, {"available": False, "error": str(exc)}
         except (TypeError, ValueError) as exc:
             return 400, {"available": False, "error": str(exc) or "Unable to parse YAML for display."}
         except OSError as exc:
@@ -675,13 +677,12 @@ class PlaygroundServer:
         requested = Path(path_text.strip())
         if not is_fsq_case_file(requested):
             raise ValueError(f"Case YAML files must use the {FSQ_CASE_SUFFIX} suffix.")
-        candidates = [requested] if requested.is_absolute() else [self.settings.cases.dir / requested, Path.cwd() / requested]
-        for candidate in candidates:
-            if candidate.exists():
-                if candidate.is_dir():
-                    raise IsADirectoryError(str(candidate))
-                if candidate.is_file():
-                    return candidate.resolve()
+        resolved = resolve_workspace_cases_path(requested, self.settings.cases.dir)
+        if resolved.exists():
+            if resolved.is_dir():
+                raise IsADirectoryError(str(resolved))
+            if resolved.is_file():
+                return resolved
         raise FileNotFoundError(path_text)
 
     def _yaml_recorded_response(self, yaml_id: str) -> tuple[int, object]:
@@ -1595,10 +1596,9 @@ class PlaygroundServer:
         requested = Path(path_text.strip())
         if not is_fsq_case_file(requested):
             raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
-        candidates = [requested] if requested.is_absolute() else [self.settings.cases.dir / requested, Path.cwd() / requested]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_file():
-                return candidate.resolve()
+        resolved = resolve_workspace_cases_path(requested, self.settings.cases.dir)
+        if resolved.exists() and resolved.is_file():
+            return resolved
         raise FileNotFoundError(path_text)
 
 

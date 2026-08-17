@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
@@ -551,11 +552,18 @@ class _LifecycleRecorder:
 
 def _resolve_case_yaml_path(path_text: str, cases_dir: Path | None) -> Path:
     requested = Path(path_text.strip())
+    if cases_dir is not None:
+        try:
+            candidate = resolve_workspace_cases_path(requested, cases_dir)
+        except ConfigurationError as exc:
+            raise ValueError("Case lifecycle dependency escapes the workspace cases directory.") from exc
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        raise FileNotFoundError(f"Case YAML not found: {path_text}")
     candidates = (
         [requested]
         if requested.is_absolute()
         else [
-            *([cases_dir / requested] if cases_dir is not None else []),
             Path.cwd() / requested,
         ]
     )

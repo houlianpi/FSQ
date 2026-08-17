@@ -1,0 +1,394 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+from pathlib import Path
+
+import pytest
+
+from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
+
+
+def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
+    return ControlPlaneServer(
+        ControlPlaneServerOptions(
+            host=host,
+            workspace_path=tmp_path / "legacy-devices",
+            static_path=tmp_path / "static",
+            user_config_root=tmp_path / "user",
+            open_browser=False,
+        )
+    )
+
+
+def _create(
+    server: ControlPlaneServer,
+    parent: Path,
+    *,
+    name: str = "checkout",
+    platform: str = "android",
+    target: dict[str, object] | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[int, dict[str, object]]:
+    return server.handle_post(
+        "/api/control-plane/workspaces",
+        {
+            "name": name,
+            "parentPath": str(parent),
+            "platform": platform,
+            "target": target or {"appId": "com.example.checkout"},
+            "env": env or {"TEST_PASSWORD": "private-value"},
+        },
+        peer_host="127.0.0.1",
+    )
+
+
+def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+
+    create_status, created = _create(server, parent)
+    list_status, listed, headers = server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
+    detail_status, detail, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
+
+    assert create_status == 201
+    assert list_status == detail_status == 200
+    assert headers["Cache-Control"] == "no-store"
+    assert listed == {
+        "workspaces": [
+            {
+                "name": "checkout",
+                "configPath": str((parent / "checkout" / ".fsq" / "config.yaml").resolve()),
+                "rootPath": str((parent / "checkout").resolve()),
+                "platform": "android",
+                "status": "available",
+                "message": "Workspace is available.",
+            }
+        ]
+    }
+    assert "private-value" not in str(listed)
+    assert created == detail
+    assert detail["target"] == {"appId": "com.example.checkout"}
+    assert detail["env"] == {"TEST_PASSWORD": "private-value"}
+    assert str(detail["revision"]).startswith("sha256:")
+
+
+def test_workspace_routes_use_case_insensitive_registry_identity(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _create(server, parent)
+
+    detail_status, detail, _ = server.handle_get("/api/control-plane/workspaces/CHECKOUT", peer_host="127.0.0.1")
+    entries_status, entries, _ = server.handle_get(
+        "/api/control-plane/workspaces/CHECKOUT/entries",
+        peer_host="127.0.0.1",
+    )
+
+    assert detail_status == entries_status == 200
+    assert detail["name"] == "checkout"
+    assert [entry["path"] for entry in entries["entries"]] == ["cases", "knowledge"]
+
+
+@pytest.mark.parametrize("platform", ["web", "windows", "macos"])
+def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    executable = tmp_path / ("chrome.exe" if platform == "web" else "target.exe")
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    targets: dict[str, dict[str, object]] = {
+        "web": {"browserExecutablePath": str(executable)},
+        "windows": {"appPath": str(executable), "windowTitleRe": ".*Checkout", "launchArgs": '--mode "test run"'},
+        "macos": {"bundleId": "com.example.Checkout"},
+    }
+
+    status, detail = _create(server, parent, platform=platform, target=targets[platform])
+
+    assert status == 201
+    assert detail["platform"] == platform
+    assert detail["target"] == targets[platform]
+
+
+def test_workspace_create_rejects_web_executable_incompatible_with_preset_channel(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    firefox = tmp_path / "firefox.exe"
+    firefox.write_text("", encoding="utf-8")
+    server = _server(tmp_path)
+
+    status, error = _create(
+        server,
+        parent,
+        platform="web",
+        target={"browserExecutablePath": str(firefox)},
+    )
+
+    assert status == 400
+    assert error["code"] == "invalid_workspace"
+    assert "preset channel" in error["message"]
+
+
+def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+
+    update_status, updated = server.handle_put(
+        "/api/control-plane/workspaces/checkout",
+        {
+            "target": {"appId": "com.example.changed"},
+            "env": {"TOKEN": "replacement"},
+            "expectedRevision": created["revision"],
+        },
+        peer_host="127.0.0.1",
+    )
+    conflict_status, conflict = server.handle_put(
+        "/api/control-plane/workspaces/checkout",
+        {
+            "target": {"appId": "com.example.unsaved"},
+            "env": {"TOKEN": "unsaved"},
+            "expectedRevision": created["revision"],
+        },
+        peer_host="127.0.0.1",
+    )
+    _, loaded, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
+
+    assert update_status == 200
+    assert updated["target"] == {"appId": "com.example.changed"}
+    assert conflict_status == 409
+    assert conflict["code"] == "workspace_conflict"
+    assert "unsaved" not in str(conflict)
+    assert loaded == updated
+
+
+def test_workspace_list_retains_unavailable_registry_entry_without_env(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    config_path = Path(str(created["configPath"]))
+    config_path.unlink()
+
+    status, payload, _ = server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
+
+    assert status == 200
+    assert payload["workspaces"][0]["status"] == "unavailable"
+    assert payload["workspaces"][0]["name"] == "checkout"
+    assert "private-value" not in str(payload)
+
+
+def test_workspace_detail_maps_missing_registered_config_to_unavailable(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    Path(str(created["configPath"])).unlink()
+
+    status, payload, _ = server.handle_get("/api/control-plane/workspaces/checkout", peer_host="127.0.0.1")
+
+    assert status == 409
+    assert payload["code"] == "workspace_unavailable"
+    assert "private-value" not in str(payload)
+
+
+@pytest.mark.parametrize(("field", "value"), [("target", None), ("target", []), ("env", None), ("env", ["TOKEN"])])
+def test_workspace_update_rejects_malformed_target_and_env(tmp_path: Path, field: str, value: object) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    payload: dict[str, object] = {
+        "target": {"appId": "com.example.changed"},
+        "env": {"TOKEN": "replacement"},
+        "expectedRevision": created["revision"],
+    }
+    payload[field] = value
+
+    status, error = server.handle_put(
+        "/api/control-plane/workspaces/checkout",
+        payload,
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 400
+    assert error["code"] == "invalid_workspace"
+    assert "replacement" not in str(error)
+
+
+def test_workspace_routes_require_loopback_and_same_origin(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    nonloopback_server = _server(tmp_path / "bind", host="0.0.0.0")  # noqa: S104 - verifies rejection of non-loopback binds.
+    bind_status, bind_error, _ = nonloopback_server.handle_get("/api/control-plane/workspaces", peer_host="127.0.0.1")
+    server = _server(tmp_path / "origin")
+    origin_parent = tmp_path / "origin" / "projects"
+    origin_parent.mkdir(parents=True)
+    origin_status, origin_error = server.handle_post(
+        "/api/control-plane/workspaces",
+        {
+            "name": "checkout",
+            "parentPath": str(origin_parent),
+            "platform": "android",
+            "target": {"appId": "com.example.checkout"},
+            "env": {"TOKEN": "secret"},
+        },
+        peer_host="127.0.0.1",
+        origin="https://evil.example",
+        host="127.0.0.1:8879",
+    )
+
+    assert bind_status == origin_status == 403
+    assert bind_error["code"] == "config_unavailable"
+    assert origin_error["code"] == "cross_origin_forbidden"
+    assert "secret" not in str(origin_error)
+
+
+def test_workspace_file_browser_exposes_only_managed_text_content(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    root = Path(str(created["rootPath"]))
+    markdown = root / "knowledge" / "project.md"
+    markdown.write_text("# Checkout\n\nProject notes.\n", encoding="utf-8")
+    (root / "cases" / "sample.fsq.yaml").write_text("platform: android\n", encoding="utf-8")
+
+    root_status, root_entries, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        peer_host="127.0.0.1",
+    )
+    entries_status, entries, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        {"path": ["knowledge"]},
+        peer_host="127.0.0.1",
+    )
+    file_status, file_payload, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/file",
+        {"path": ["knowledge/project.md"]},
+        peer_host="127.0.0.1",
+    )
+
+    assert root_status == entries_status == file_status == 200
+    assert [entry["path"] for entry in root_entries["entries"]] == ["cases", "knowledge"]
+    assert entries["entries"][0]["path"] == "knowledge/project.md"
+    assert file_payload["presentation"] == "markdown"
+    assert file_payload["lineCount"] == 3
+    assert file_payload["content"] == markdown.read_bytes().decode("utf-8")
+
+
+def test_workspace_file_browser_keeps_deleted_cases_as_empty_virtual_root(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    cases_dir = Path(str(created["rootPath"])) / "cases"
+    cases_dir.rmdir()
+
+    root_status, root_payload, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        peer_host="127.0.0.1",
+    )
+    cases_status, cases_payload, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        {"path": ["cases"]},
+        peer_host="127.0.0.1",
+    )
+
+    assert root_status == cases_status == 200
+    assert [entry["path"] for entry in root_payload["entries"]] == ["cases", "knowledge"]
+    assert next(entry for entry in root_payload["entries"] if entry["path"] == "cases")["kind"] == "directory"
+    assert cases_payload == {"path": "cases", "entries": [], "truncated": False}
+
+
+def test_workspace_file_browser_rejects_private_traversal_binary_and_oversized_files(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    root = Path(str(created["rootPath"]))
+    binary = root / "cases" / "binary.dat"
+    binary.write_bytes(b"\x00\xff")
+    oversized = root / "cases" / "large.txt"
+    oversized.write_bytes(b"x" * (1024 * 1024 + 1))
+
+    private_status, private, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/file",
+        {"path": [".fsq/config.yaml"]},
+        peer_host="127.0.0.1",
+    )
+    traversal_status, traversal, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/file",
+        {"path": ["cases/../.fsq/config.yaml"]},
+        peer_host="127.0.0.1",
+    )
+    binary_status, binary_error, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/file",
+        {"path": ["cases/binary.dat"]},
+        peer_host="127.0.0.1",
+    )
+    oversized_status, oversized_error, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/file",
+        {"path": ["cases/large.txt"]},
+        peer_host="127.0.0.1",
+    )
+
+    assert private_status == traversal_status == 400
+    assert private["code"] == traversal["code"] == "invalid_workspace_path"
+    assert binary_status == 415
+    assert binary_error["code"] == "workspace_file_not_text"
+    assert oversized_status == 413
+    assert oversized_error["code"] == "workspace_file_too_large"
+
+
+def test_workspace_file_browser_rejects_symlink_escape_when_supported(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    root = Path(str(created["rootPath"]))
+    outside = tmp_path / "private.txt"
+    outside.write_text("private", encoding="utf-8")
+    link = root / "cases" / "outside.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    status, error, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        {"path": ["cases"]},
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 400
+    assert error["code"] == "invalid_workspace_path"
+    assert "private" not in str(error)
+
+
+def test_workspace_file_browser_rejects_symlinked_managed_root_when_supported(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    server = _server(tmp_path)
+    _, created = _create(server, parent)
+    root = Path(str(created["rootPath"]))
+    cases_dir = root / "cases"
+    cases_dir.rmdir()
+    outside = tmp_path / "outside-cases"
+    outside.mkdir()
+    (outside / "private.txt").write_text("private", encoding="utf-8")
+    try:
+        cases_dir.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    status, error, _ = server.handle_get(
+        "/api/control-plane/workspaces/checkout/entries",
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 400
+    assert error["code"] == "invalid_workspace_path"
+    assert "private" not in str(error)

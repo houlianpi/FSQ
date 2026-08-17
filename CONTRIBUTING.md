@@ -90,12 +90,13 @@ uv run --frozen --all-extras python -m pytest
 Use the selected platform extra when running the CLI from a source checkout:
 
 ```powershell
+$workspace = "workspace-name"
 uv run --frozen --extra dev --extra $platform fsq-agent --help
-uv run --frozen --extra dev --extra $platform fsq-agent init --platform $platform
-uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --goal "Describe the task"
-uv run --frozen --extra dev --extra $platform fsq-agent run --platform $platform --strict --case-yaml "path/to/case.fsq.yaml"
-uv run --frozen --extra dev --extra $platform fsq-agent report --platform $platform --run-id "run-id" --format markdown
-uv run --frozen --extra dev --extra $platform fsq-agent playground --platform $platform
+uv run --frozen --extra dev --extra $platform fsq-agent control-plane
+uv run --frozen --extra dev --extra $platform fsq-agent run --workspace $workspace --goal "Describe the task"
+uv run --frozen --extra dev --extra $platform fsq-agent run --workspace $workspace --strict --case-yaml "path/to/case.fsq.yaml"
+uv run --frozen --extra dev --extra $platform fsq-agent report --workspace $workspace --run-id "run-id" --format markdown
+uv run --frozen --extra dev --extra $platform fsq-agent playground --workspace $workspace
 ```
 
 Build the browser Playground assets before starting the normal Python-served Playground from a source checkout:
@@ -109,7 +110,7 @@ For live frontend development, run the Python API and Vite in separate terminals
 
 ```powershell
 # Terminal 1: Vite proxies API requests to port 8878.
-uv run --frozen --extra dev --extra $platform fsq-agent playground --platform $platform --port 8878 --no-open-browser
+uv run --frozen --extra dev --extra $platform fsq-agent playground --workspace $workspace --port 8878 --no-open-browser
 
 # Terminal 2
 npm run dev

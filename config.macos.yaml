@@ -6,6 +6,7 @@ harness:
   platform: macos
   macos:
     backend: appium_mac2
+    appium_server_url: http://127.0.0.1:4723
     page_source_max_depth: 12
     action_timeout_seconds: 10
     new_command_timeout_seconds: 300
@@ -15,16 +16,10 @@ execution:
     platform: 1.0
     common: 0.0
 
-runtime_secrets:
-  allowed_env_names:
-    - TEST_ACCOUNT_EMAIL
-    - TEST_ACCOUNT_PASSWORD
-
 agent_context:
   knowledge:
-    root_dir: ./knowledge
     skills:
-      dir: skills
+      dir: knowledge/skills
       items:
         - name: automation-basics
           description: Semantic action and evidence guidance for local runs.

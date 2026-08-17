@@ -2,17 +2,17 @@
 
 ## Purpose
 
-Serve the local, single-user FSQ Control Plane browser application. The module owns Control Plane HTTP and static delivery, loopback-only Provider configuration transport, GitHub device-flow task state, connection-test orchestration, safe workspace bootstrap data, per-request platform context, platform readiness, local target discovery, strict-case discovery, one-active-run state, cancellation, resumable progress streaming, current and per-step evidence projection, persisted screenshot replay frames, and replay-video storage/range transport for the Devices page.
+Serve the local, single-user FSQ Control Plane browser application. The module owns Control Plane HTTP and static delivery; trusted-local Provider and workspace-management transport; GitHub device-flow task state; connection-test orchestration; registry-backed workspace list/create/detail/update and bounded read-only browsing; and the temporarily isolated legacy Devices per-request platform context, readiness, target/case discovery, one-active-run state, cancellation, resumable progress streaming, current and per-step evidence projection, persisted screenshot replay frames, and replay-video storage/range transport.
 
 The module is an entry-layer application. It composes existing configuration, dynamic-agent, strict FSQ, execution-core, provider, evidence, recording, and report contracts. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, evidence schema, report generator, platform driver, or Playground behavior.
 
 ## Dependencies
 
 - `models`: Uses shared task, result, run-event, runner-event, evidence, report, configuration-error, and capability-registry contracts.
-- `config`: Loads/saves the user-level active provider, refreshes Config presentation, loads one committed platform preset per request or run, resolves the current directory workspace, and validates provider, dynamic, and strict readiness.
+- `config`: Loads/saves the user-level active provider and workspace registry, creates/updates registered workspace configurations, resolves explicit registered paths, loads one committed preset plus legacy Devices settings where applicable, and validates provider, workspace, dynamic, and strict readiness.
 - `agent`: Runs Explore tasks through `FsqAgent` and emits existing safe `RunEvent` values.
 - `fsq`: Discovers and validates strict cases through `FsqCaseLoader` and adapts validated commands through the active registry snapshot.
-- `core`: Builds active platform harnesses through public factories and executes canonical strict steps through the shared runner/evidence contracts.
+- `core`: Supplies shared Android device discovery, builds active platform harnesses through public factories, and executes canonical strict steps through the shared runner/evidence contracts.
 - `providers`: Uses non-interactive provider preparation for readiness, observable GitHub device-flow operations for Config, live connection testing, and public AI-assertion evaluator construction where Explore or authored `assertWithAI` requires a provider.
 - `report`: Uses existing report generation and report-artifact contracts.
 - Package-private entry composition: may use `fsq_agent._capability_bootstrap`, `fsq_agent._strict_lifecycle`, and `fsq_agent._strict_case_recording` as shared entry-layer composition used by CLI/Playground/Control Plane. These helpers compose owning-module public APIs and do not expose a Control Plane public contract.
@@ -24,17 +24,17 @@ The module must not import `playground`, `cli`, `capabilities`, module-private `
 
 Current `__init__.py` exports via explicit `__all__`:
 
-- `ControlPlaneServer`: Local HTTP/static server wrapper bound to one current-directory FSQ workspace and one in-memory task state.
-- `ControlPlaneServerOptions`: Host, port, open-browser flag, workspace path, optional static-path override, and optional user-config-root override used by tests.
+- `ControlPlaneServer`: Local HTTP/static server wrapper with registry-backed workspace management and one isolated legacy Devices in-memory task state.
+- `ControlPlaneServerOptions`: Host, port, open-browser flag, startup-directory path retained for legacy Devices, optional static-path override, and optional user-config-root override used by tests.
 - `run_control_plane(options: ControlPlaneServerOptions) -> None`: Blocking server entry used by CLI.
 
 The public HTTP prefix is `/api/control-plane`.
 
 ### Bootstrap and discovery
 
-- `GET /api/control-plane/bootstrap`: Returns API version, supported platform ids/labels, safe workspace summary, busy state, and the active in-memory task summary when present.
+- `GET /api/control-plane/bootstrap`: Returns API version, supported platform ids/labels, safe legacy Devices workspace summary, busy state, and the active in-memory Devices task summary when present. New workspace registry state comes only from the workspace APIs.
 - `GET /api/control-plane/readiness?platform=<id>`: Loads the selected platform preset and returns independent `workspace`, `provider`, `target`, and provider-independent `strict` records with `ready`, `unavailable`, or `error`, plus safe messages/actions. Workspace readiness reflects the initialized resolved workspace root and does not depend on the configured cases directory. Strict readiness reflects strict runtime/configuration validation and does not depend on whether authored cases currently exist. Provider readiness uses non-interactive provider preparation, may silently refresh a provider token from a valid cached GitHub OAuth token, never starts device-code authentication, and does not send a model request or expose secret values.
-- `GET /api/control-plane/targets?platform=<id>`: Returns normalized local target records containing `id`, `label`, `description`, `status`, `selectable`, `isDefault`, and safe metadata. Android uses bounded ADB discovery. Web represents the configured Chrome target. Windows represents the configured application/pywinauto target. macOS represents the configured Appium Mac2 application target.
+- `GET /api/control-plane/targets?platform=<id>`: Returns normalized local target records containing `id`, `label`, `description`, `status`, `selectable`, `isDefault`, and safe metadata. Android uses bounded ADB discovery, has no configured serial, and may mark only a sole online selectable device as the unambiguous default. Web represents the configured Chrome target. Windows represents the configured application/pywinauto target. macOS represents the configured Appium Mac2 application target.
 - `GET /api/control-plane/cases?platform=<id>`: Recursively discovers only exact lowercase `*.fsq.yaml` files under the selected preset's resolved `cases.dir`, enforces root containment, returns at most 500 sorted entries plus a `truncated` indicator, validates through `FsqCaseLoader` and the active registry, and returns safe metadata including path, id/name, platform, command count, `requiresAiAssertion`, validation status, selectability, and diagnostics. An absent configured cases directory is a successful empty discovery result with `cases=[]` and `truncated=false`; Control Plane does not create the directory. The endpoint does not return full source, execute hooks, or resolve runtime secrets. Strict run `casePath` values must identify a contained `.fsq.yaml` case.
 
 Target labels are platform-specific presentation metadata: Android uses Device, Web uses Browser, and Windows/macOS use Application. Missing tools, offline/unauthorized Android targets, invalid local paths, unavailable backend packages, and unusable Appium settings remain visible unselectable discovery/readiness results rather than success-shaped empty data.
@@ -52,9 +52,26 @@ Config JSON keys use camelCase. Every Config response uses `Cache-Control: no-st
 
 Device-flow state is independent of run state. One model run and one device flow may coexist because configuration changes affect only subsequently constructed complete tasks. The server permits one waiting device flow, bounds retained terminal authentication records, and cancels active polling during shutdown.
 
-Config endpoints are available only when the configured bind host resolves exclusively to loopback and the requesting peer is loopback. Other access receives a structured unavailable/forbidden response and no editable Provider data. Cross-origin Config writes are rejected, CORS is not enabled, and non-Config Control Plane APIs retain their existing bind/access behavior.
+Provider Config and workspace-management endpoints are available only when the configured bind host resolves exclusively to loopback and the requesting peer is loopback. Other access receives a structured unavailable/forbidden response and no editable Provider/workspace data. Cross-origin writes are rejected, CORS is not enabled, and every response uses `Cache-Control: no-store`.
 
-### Runs
+### Workspace management
+
+Workspace JSON keys use camelCase. All routes below re-read registry/config truth for the request and never accept a client-supplied workspace root. List responses omit workspace `env` values; detail/update responses may contain complete values only through this trusted-local boundary. Values never appear in URLs, errors, logs, SSE, readiness, directory metadata, or file content.
+
+- `GET /api/control-plane/workspaces`: Returns registered entries in user-config order. Available entries include immutable `name`, normalized absolute `configPath`, derived `rootPath`, `platform`, `status="available"`, and a safe message. Missing, unreadable, invalid, unsupported-version, or name-mismatched entries remain in place as `status="unavailable"`, retain only registry identity plus safe path metadata, and include concise repair guidance without parser internals or config values.
+- `POST /api/control-plane/workspaces`: Accepts exactly `name`, `parentPath`, `platform`, complete platform-discriminated `target`, and complete `env`. The final root is exactly `<parentPath>/<name>`. Before writing, validate request shape, workspace/registry name uniqueness, parent and final paths, target fields and required local files, and env names/string values. The final path must not exist or must be an empty directory; non-empty roots, legacy markers, and existing `.fsq` are rejected without merge or overwrite. Creation stages managed directories/config, writes empty UTF-8 `knowledge/project.md`, atomically commits `.fsq/config.yaml`, then atomically appends the registry entry while preserving Provider state. Ordinary failure rolls back request-created content, leaves a pre-existing empty root empty, removes a request-created root only when empty, and never removes a user-owned parent. Cross-file process-crash atomicity is not promised; config commit precedes registry commit so a crash may leave a complete unregistered workspace but not a registry entry for a partial workspace. Success returns workspace detail and revision.
+- `GET /api/control-plane/workspaces/{workspaceName}`: Resolves the exact registry entry and returns immutable `name`, `rootPath`, `configPath`, `platform`, complete target, complete env values, and opaque `revision="sha256:..."` derived from exact config bytes. A registry/config name mismatch is unavailable rather than silently rebound.
+- `PUT /api/control-plane/workspaces/{workspaceName}`: Accepts exactly complete `target`, complete `env`, and `expectedRevision`; identity changes are not accepted. Reload and validate registry/config truth, compare the exact-content revision, validate the complete replacement, and atomically replace only `.fsq/config.yaml`. A mismatch returns `409 workspace_conflict` and preserves both disk state and unsaved client values.
+- `GET /api/control-plane/workspaces/{workspaceName}/entries?path=<relative>`: A root request exposes exactly the virtual `cases/` and `knowledge/` roots. Descendant requests return only direct children, with bounded depth/result count and stable directory-first/name sorting, using relative path, name, kind, safe size, and safe modified time. Absolute paths, `..`, `.fsq`, containment escapes, and symlink escapes are rejected. Disappearing entries produce a scoped unavailable response.
+- `GET /api/control-plane/workspaces/{workspaceName}/file?path=<relative>`: Reads one contained regular file below `cases/` or `knowledge/`, checks a fixed byte limit before decoding, requires UTF-8 text, and returns relative path, media/presentation kind, byte size, optional line count, safe modified time, and content. Directories, binary/invalid UTF-8/oversized content, `.fsq`, absolute/traversing paths, and path/symlink escapes return explicit safe errors.
+
+There are no workspace import, unregister, delete, rename, move, platform-change, file-write, file-create, file-delete, search, download, or raw-root APIs.
+
+### Legacy Devices boundary
+
+Control Plane may start from any directory. Workspace management always uses the user registry and explicit registered config paths; startup directory never selects a new workspace. For this cycle only, existing Devices endpoints and execution remain bound to `<startup-directory>/.fsq-agent-workspace/output/runs/<run-id>/` and the committed platform presets. Devices does not consume selected workspace state, registry target/env values, or new workspace run directories. This exception is isolated to Devices and must not leak into workspace APIs or CLI workspace loading.
+
+### Legacy Devices runs
 
 - `POST /api/control-plane/runs`: Accepts exactly one discriminated source. Explore uses `mode="explore"`, `platform`, `targetId`, and non-empty `goal`. Strict uses `mode="strict"`, `platform`, `targetId`, and contained `casePath`. The server reloads platform settings, revalidates readiness and target, and for Strict re-resolves/reloads the case and determines provider-backed AI assertion requirements before external actions. Success returns `202` and a request id.
 - `POST /api/control-plane/runs/{request_id}/cancel`: Requests cooperative cancellation and idempotently returns the current run snapshot.
@@ -96,8 +113,10 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - `_state.py`: Thread-safe one-task state machine, sequence/revision coordination, cancellation state, reconnect snapshots, and wait/notification behavior.
 - `_config.py`: Config response projection, loopback/cross-origin checks, Azure save and connection-test orchestration, and safe error mapping.
 - `_provider_auth.py`: One-active-device-flow state, background polling/cancellation, bounded terminal record retention, and shutdown cleanup.
+- `_workspaces.py`: Trusted-local registry list/detail projection, workspace creation/update orchestration, revision checks, atomic handoff to `config`, rollback coordination, and safe error mapping.
+- `_workspace_files.py`: Registry-resolved, bounded, contained, symlink-safe workspace directory metadata and UTF-8 file reads.
 - `_readiness.py`: Per-platform settings loading and safe workspace/provider/target/strict readiness projection.
-- `_targets.py`: Independent Android ADB discovery and normalized Web/Windows/macOS local target projection.
+- `_targets.py`: Control Plane target/error projection over shared `core` Android discovery plus normalized Web/Windows/macOS local target projection.
 - `_cases.py`: Contained recursive strict-case discovery, stable sorting, bounded results, `FsqCaseLoader` validation, and safe summaries.
 - `_execution.py`: Explore and Strict entry orchestration through existing agent/core/FSQ/provider/report and package-private shared entry-composition contracts.
 - `_evidence.py`: Safe event normalization, latest contained evidence projection, persisted per-step artifact lookup, and replay-frame discovery.
@@ -110,10 +129,10 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - Architecture level: Level 3 Layered Application.
 - Public API: `ControlPlaneServer`, `ControlPlaneServerOptions`, `run_control_plane`, and the documented local HTTP endpoints.
 - Internal modules: all `_*.py` files and generated `static` content are private implementation details.
-- Domain boundaries: Control Plane owns local HTTP/UI entry orchestration, loopback Config transport, device-flow task lifecycle, discovery, in-memory run state, safe evidence presentation projections, and Control Plane replay-video transport. Config owns Provider files; providers owns protocol/client behavior; other owning modules retain execution, parsing, capability, evidence, recording, and report semantics; browser code owns video generation.
+- Domain boundaries: Control Plane owns local HTTP/UI entry orchestration, trusted-local Provider/workspace transport, workspace-operation sequencing and safe projections, device-flow task lifecycle, isolated legacy Devices discovery/run state, safe evidence presentation projections, and Control Plane replay-video transport. Config owns user Provider/registry/workspace config persistence and settings composition; providers owns protocol/client behavior; other owning modules retain execution, parsing, capability, evidence, recording, and report semantics; browser code owns video generation.
 - Boundary models: HTTP request/response dictionaries and private immutable discovery/projection records sit at the transport boundary; shared runtime facts use `models` contracts.
 - Dependency direction: CLI may import Control Plane public APIs; Control Plane imports owning module public APIs and named package-private entry-composition helpers; owning modules and Playground do not import Control Plane.
-- Rationale: The module coordinates transport, configuration, external local targets, two execution paths, state streaming, evidence persistence, and static delivery, so Level 3 is required. Additional repository/domain layers would only pass data through.
+- Rationale: The module coordinates trusted local transport, multi-file workspace creation, read-only filesystem browsing, Provider configuration, external local targets, two legacy Devices execution paths, state streaming, evidence persistence, and static delivery, so Level 3 is required. Additional repository/domain layers would only pass data through.
 
 ## Error Handling
 
@@ -121,7 +140,9 @@ Unsupported platforms, malformed query/body values, missing targets, stale/disap
 
 Config errors distinguish unconfigured state, missing/invalid fields, file IO/validation failure, non-loopback access, cross-origin writes, an active device flow, device-code request/poll failure, denial, expiration, cancellation, Copilot plan/token exchange failure, provider authorization, unavailable model/deployment, rate limiting, malformed provider response, and timeout. Failed Azure saves and incomplete GitHub flows preserve the previous provider. Config errors and responses never expose GitHub tokens, authorization headers, tracebacks, or hidden reasoning.
 
-ADB discovery is bounded and reports missing executable, timeout, nonzero exit, offline, and unauthorized states safely. Provider/auth failures identify safe configuration actions and never return tokens, keys, runtime-secret values, or hidden model reasoning. Unexpected boundary exceptions are normalized without tracebacks.
+Workspace errors distinguish untrusted access, malformed fields, invalid/duplicate names, invalid parent/final paths, non-empty/existing managed roots, legacy-format conflicts, invalid/unsupported configs, registry/config identity mismatch, unavailable target files, invalid env names/values, revision conflict, atomic-write/registry failure, rollback failure, missing/disappearing entries, traversal/containment/symlink escape, forbidden `.fsq`, excessive depth/results/bytes, directories, binary content, and invalid UTF-8. Validation failures happen before mutation; ordinary create failures perform bounded rollback; update conflicts and failures preserve the previous file. Safe errors never include env values, raw YAML/parser internals, arbitrary file content, or tracebacks.
+
+Shared `core` ADB discovery is bounded; Control Plane projects missing executable, timeout, process-start, nonzero exit, offline, and unauthorized states safely. Provider/auth failures identify safe configuration actions and never return tokens, keys, runtime-secret values, or hidden model reasoning. Unexpected boundary exceptions are normalized without tracebacks.
 
 SSE disconnection does not mutate execution status. Clients may resume by sequence and fall back to snapshots. A process restart does not recreate an in-memory active task; bootstrap reports only the new process state. Persisted run browsing is not a Devices-page responsibility.
 
@@ -129,18 +150,22 @@ Static serving rejects path traversal and cross-entry fallback. Missing generate
 
 ## Verification Scope
 
-- Verification covers the Config routes and methods, required field/response validation, no-store behavior, loopback/cross-origin gates, independent device-flow lifecycle and shutdown, saved-only connection testing, four-platform readiness/target discovery, safe case discovery, Explore/Strict validation and delegation, strict AI-assertion provider gating, one-task locking, state transitions, cancellation, SSE resume, latest and per-step evidence projection, replay-frame ordering, replay-video validation/storage/range reads, safe errors, static serving, and isolated-wheel startup.
-- Security boundaries cover loopback-only Config data, path containment, exact server-issued step ids, bounded artifact/frame/video reads and writes, atomic video replacement, secret/reasoning redaction, no browser-supplied artifact paths, and no imports from Playground or module-private implementation files.
+- Verification covers Provider Config plus workspace route methods/shapes, registry-order list projection, all four platform creation/update variants, immutable identity, exact revisions/conflicts, atomic writes, rollback, unavailable registry entries, bounded tree/file browsing, no-store behavior, loopback/same-origin gates, independent device-flow lifecycle and shutdown, saved-only connection testing, four-platform readiness/target discovery, safe case discovery, Explore/Strict validation and delegation, strict AI-assertion provider gating, one-task locking, state transitions, cancellation, SSE resume, latest and per-step evidence projection, replay-frame ordering, replay-video validation/storage/range reads, safe errors, static serving, and isolated-wheel startup.
+- Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, exact server-issued step ids, bounded reads/discovery and artifact/frame/video IO, atomic video replacement, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from Playground or module-private implementation files.
+- Compatibility verification proves Control Plane can start outside a new workspace, workspace APIs use only registry paths, and Devices alone continues writing under the startup directory's legacy `.fsq-agent-workspace/output/runs` root without consuming selected workspace state.
 - Integration verification proves at least one available platform can start Explore and Strict runs, emit progress/evidence, switch evidence views through the API, cancel, reach a truthful terminal state, retrieve one step's Before/After artifacts, enumerate replay frames, upload a generated WebM, and seek its stored range response.
 
 ## Current Invariants
 
 - Control Plane is independent from Playground and does not delegate to it.
 - Control Plane composes shared execution authority; it never implements a second agent loop, strict runner, parser, lifecycle engine, capability table, evidence schema, recorder, or report generator.
-- Config transport never owns Provider file paths, GitHub protocol behavior, token exchange, or model invocation. It delegates those responsibilities to `config` and `providers`.
-- Config APIs require both a loopback bind and loopback peer, reject cross-origin writes, disable caching, and never return GitHub tokens. The complete Azure key is returned only through this trusted local surface.
+- Control Plane transport never owns Provider/registry/config file formats, GitHub protocol behavior, token exchange, or model invocation. It delegates persistence/settings rules to `config` and provider protocols to `providers`.
+- Provider Config and workspace APIs require a loopback bind and peer, reject cross-origin writes, disable caching, and do not enable CORS. The complete Azure key and workspace env values are returned only through their documented trusted-local detail surfaces; GitHub tokens are never returned.
+- Workspace list results preserve registry order and never expose env values. Detail/update resolve by registry identity on every request; browser-supplied roots are never trusted.
+- Workspace name, root path, config path, and platform are immutable after creation. Update replaces only complete target/env content after exact revision comparison.
+- Workspace browsing exposes only bounded read-only UTF-8 content under `cases/` and `knowledge/`; `.fsq`, path escapes, symlink escapes, writes, and raw workspace access are forbidden.
 - Exactly one GitHub device flow may wait at a time. Device-flow state is independent of the one-active-run state, and only a complete successful flow changes Provider configuration.
-- Each request names a platform; settings are reloaded from the committed platform preset and frozen per run.
+- Each legacy Devices run request names a platform; settings are reloaded from the committed preset and frozen per run. New workspace selection/configuration does not mutate Devices state.
 - Exactly one task may be active across preparation, execution, and finalization.
 - Run-start validation is authoritative even when discovery/readiness data was previously returned to a client.
 - Provider readiness blocks Explore and Strict cases containing `assertWithAI`, but not provider-free Strict cases.
@@ -148,4 +173,5 @@ Static serving rejects path traversal and cross-entry fallback. Missing generate
 - Per-step comparison and replay use persisted artifact metadata without changing automatic capture policy or inventing evidence.
 - Control Plane stores browser-generated replay videos but does not generate or transcode media in Python.
 - Browser-visible events and errors are safe projections, not raw internal objects.
+- Only the legacy Devices runtime derives files from the Control Plane startup directory. New workspace operations use explicit registered config paths and do not require the server to start inside a workspace.
 - Generated frontend assets are build artifacts, not source files.

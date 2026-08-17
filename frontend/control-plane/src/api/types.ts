@@ -180,6 +180,74 @@ export interface ConnectionTestResponse {
   durationMs: number;
 }
 
+export interface AndroidWorkspaceTarget { appId: string }
+export interface WebWorkspaceTarget { browserExecutablePath: string }
+export interface WindowsWorkspaceTarget { appPath: string; windowTitleRe?: string; launchArgs: string }
+export interface MacOSWorkspaceTarget { bundleId?: string; appPath?: string }
+export type WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget;
+
+interface WorkspaceRegistryBase {
+  name: string;
+  configPath: string;
+  rootPath: string;
+  status: 'available' | 'unavailable';
+  message: string;
+}
+export interface AvailableWorkspaceRegistryEntry extends WorkspaceRegistryBase {
+  status: 'available';
+  platform: PlatformId;
+}
+export interface UnavailableWorkspaceRegistryEntry extends WorkspaceRegistryBase {
+  status: 'unavailable';
+  action: string;
+}
+export type WorkspaceRegistryEntry = AvailableWorkspaceRegistryEntry | UnavailableWorkspaceRegistryEntry;
+export interface WorkspaceListResponse { workspaces: WorkspaceRegistryEntry[] }
+
+export interface WorkspaceDetail {
+  name: string;
+  rootPath: string;
+  configPath: string;
+  platform: PlatformId;
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+  revision: string;
+}
+export interface CreateWorkspacePayload {
+  name: string;
+  parentPath: string;
+  platform: PlatformId;
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+}
+export interface UpdateWorkspacePayload {
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+  expectedRevision: string;
+}
+export interface WorkspaceEntry {
+  path: string;
+  name: string;
+  kind: 'directory' | 'file';
+  size: number | null;
+  modifiedTime: string;
+}
+export interface WorkspaceEntriesResponse {
+  path: string;
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+}
+export interface WorkspaceFileResponse {
+  path: string;
+  name: string;
+  mediaType: string;
+  presentation: 'markdown' | 'code';
+  size: number;
+  lineCount: number;
+  modifiedTime: string;
+  content: string;
+}
+
 export interface RequestResource<T> {
   state: LoadState;
   data: T | null;

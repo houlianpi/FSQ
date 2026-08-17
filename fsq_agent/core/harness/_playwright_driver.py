@@ -392,7 +392,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         if self.executable_path is None:
             raise ConfigurationError(
                 "Web browser executable path is required for PlaywrightWebDriver.",
-                context={"executable_path_env": "FSQ_WEB_BROWSER_EXECUTABLE_PATH", "channel": self.channel},
+                context={"config_key": "target.browser_executable_path", "channel": self.channel},
             )
         launch_kwargs: dict[str, object] = {"headless": self.headless, "executable_path": self.executable_path}
         browser = browser_factory.launch(**launch_kwargs)

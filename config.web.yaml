@@ -15,16 +15,10 @@ execution:
     platform: 1.0
     common: 0.0
 
-runtime_secrets:
-  allowed_env_names:
-    - TEST_ACCOUNT_EMAIL
-    - TEST_ACCOUNT_PASSWORD
-
 agent_context:
   knowledge:
-    root_dir: ./knowledge
     skills:
-      dir: skills
+      dir: knowledge/skills
       items:
         - name: automation-basics
           description: Semantic action and evidence guidance for local runs.

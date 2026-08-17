@@ -32,9 +32,7 @@ platform: android
 
 def test_resolve_strict_replay_steps_preserves_runtime_secret_ref_for_core_resolution(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TEST_ACCOUNT_PASSWORD", "super-secret")
     settings = Settings(runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_PASSWORD"]))
     steps = _secret_case_steps(tmp_path)
 

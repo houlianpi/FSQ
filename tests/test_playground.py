@@ -17,8 +17,20 @@ import yaml
 
 from fsq_agent.config import Settings, save_azure_openai_provider
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import ConfigurationError, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
-from fsq_agent.playground._android import AndroidTarget, parse_adb_devices, resolve_auto_session
+from fsq_agent.models import (
+    AndroidDevice,
+    AndroidDeviceDiscoveryResult,
+    ConfigurationError,
+    HarnessActionResult,
+    HarnessArtifactRef,
+    HarnessContext,
+    ReportArtifact,
+    RunEvent,
+    RunnerEvent,
+    TaskResult,
+    VerificationResult,
+)
+from fsq_agent.playground._android import AndroidTarget, discover_adb_targets, resolve_auto_session
 from fsq_agent.playground._execution import PlaygroundExecutionHandle, _event_sink, _PlaygroundEvidenceRecorder, _run_dynamic_task, task_from_case_yaml, task_from_goal
 from fsq_agent.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
 from fsq_agent.playground._state import BusyError, PlaygroundState
@@ -52,18 +64,41 @@ def _preview_token(run_id: str, step_id: str) -> str:
     return f"{run_id}:{step_id}"
 
 
-def test_parse_adb_devices_discovers_default_device() -> None:
-    output = """List of devices attached
-emulator-5554 device product:sdk_gphone64_x86_64 model:sdk_gphone64_x86_64 device:emu64xa transport_id:1
-offline-1 offline
-"""
+def test_android_discovery_projects_default_online_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(
+            devices=[
+                AndroidDevice(
+                    serial="emulator-5554",
+                    state="device",
+                    metadata={"product": "sdk_gphone64_x86_64", "model": "sdk_gphone64_x86_64", "device": "emu64xa"},
+                ),
+                AndroidDevice(serial="offline-1", state="offline"),
+            ]
+        ),
+    )
 
-    targets = parse_adb_devices(output)
+    targets, error = discover_adb_targets()
 
+    assert error is None
     assert len(targets) == 1
     assert targets[0].id == "emulator-5554"
     assert targets[0].is_default is True
     assert "sdk gphone64 x86 64" in targets[0].description
+
+
+def test_android_discovery_has_no_default_when_multiple_devices_are_online(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
+    )
+
+    targets, error = discover_adb_targets()
+
+    assert error is None
+    assert [target.id for target in targets] == ["device-1", "device-2"]
+    assert not any(target.is_default for target in targets)
 
 
 def test_task_from_goal_matches_dynamic_goal_contract() -> None:
@@ -105,7 +140,25 @@ def test_task_from_case_yaml_rejects_wrong_suffix(tmp_path: Path) -> None:
         task_from_case_yaml("sample.yaml", settings)
 
 
-def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
+def test_playground_case_inputs_reject_paths_outside_workspace_cases(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text("schemaVersion: fsq.ai-test/v1\nname: Outside\n---\n- launchApp\n", encoding="utf-8")
+    settings = Settings()
+    settings.cases.dir = cases_dir
+    server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
+
+    with pytest.raises(ConfigurationError, match="workspace cases"):
+        task_from_case_yaml(str(outside), settings)
+    status, payload = server.handle_get("/yaml/input", {"path": [str(outside)]})
+
+    assert status == 400
+    assert payload["available"] is False
+    assert "workspace cases" in payload["error"]
+
+
+def test_auto_session_ignores_settings_serial_when_multiple_devices_are_online(monkeypatch) -> None:
     settings = Settings()
     settings.harness.android.serial = "device-2"
     monkeypatch.setattr(
@@ -121,24 +174,9 @@ def test_auto_session_uses_configured_serial_when_online(monkeypatch) -> None:
 
     session, info = resolve_auto_session(settings)
 
-    assert session is not None
-    assert session.device_id == "device-2"
-    assert info["reason"] == "configured_serial"
-
-
-def test_auto_session_reports_configured_serial_offline(monkeypatch) -> None:
-    settings = Settings()
-    settings.harness.android.serial = "missing-device"
-    monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
-        lambda: ([AndroidTarget(id="device-1", label="device-1", is_default=True)], None),
-    )
-
-    session, info = resolve_auto_session(settings)
-
     assert session is None
-    assert info["reason"] == "configured_serial_offline"
-    assert info["configuredSerial"] == "missing-device"
+    assert info["reason"] == "multiple_devices"
+    assert "configuredSerial" not in info
 
 
 def test_auto_session_uses_single_online_device(monkeypatch) -> None:
@@ -179,6 +217,17 @@ def test_auto_session_reports_no_devices(monkeypatch) -> None:
 
     assert session is None
     assert info["reason"] == "no_devices"
+
+
+def test_android_runtime_info_omits_configured_serial() -> None:
+    settings = Settings()
+    settings.harness.android.serial = "stale-device"
+    server = PlaygroundServer(settings)
+
+    status, payload = server.handle_get("/runtime-info", {})
+
+    assert status == 200
+    assert "configuredSerial" not in payload["metadata"]
 
 
 def test_playground_state_locks_concurrent_tasks(tmp_path: Path) -> None:
@@ -766,17 +815,14 @@ def test_playground_server_lifecycle_save_uses_input_path_resolution_policy(tmp_
     settings = Settings()
     settings.cases.dir = tmp_path / "cases"
     settings.cases.dir.mkdir()
-    cwd = tmp_path / "cwd"
-    cwd.mkdir()
-    cwd_case = cwd / "cwd.fsq.yaml"
-    absolute_case = tmp_path / "absolute.fsq.yaml"
+    relative_case = settings.cases.dir / "relative.fsq.yaml"
+    absolute_case = settings.cases.dir / "absolute.fsq.yaml"
     content = "schemaVersion: fsq.ai-test/v1\nname: Path\nplatform: android\n---\n- launchApp: {}\n"
-    cwd_case.write_text(content, encoding="utf-8")
+    relative_case.write_text(content, encoding="utf-8")
     absolute_case.write_text(content, encoding="utf-8")
-    monkeypatch.chdir(cwd)
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
 
-    for path_text in ("cwd.fsq.yaml", str(absolute_case)):
+    for path_text in (relative_case.name, str(absolute_case)):
         _status, loaded = server.handle_get("/yaml/input", {"path": [path_text]})
         status, _payload = server.handle_put(
             "/yaml/input/lifecycle",
@@ -2551,6 +2597,7 @@ appId: com.microsoft.emmx
     def fake_run_strict_lifecycle_case(**kwargs):
         steps = FsqExecutableStepAdapter(registry_snapshot=kwargs["registry_snapshot"]).to_executable_steps(kwargs["case"])
         captured["steps"] = kwargs["resolve_steps"](steps, kwargs["case"])
+        captured["run_id"] = kwargs["run_id"]
         output_dir = kwargs["output_dir"]
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "core-report.md"
@@ -2580,6 +2627,8 @@ appId: com.microsoft.emmx
     assert progress is not None
     assert progress["result"]["status"] == "success"
     assert captured["driver"] == {"app_id": "com.microsoft.emmx", "serial": "device-1"}
+    assert captured["run_id"].startswith("strict_case-")
+    assert (settings.output.runs_dir / captured["run_id"]).parent == settings.output.runs_dir
     assert captured["steps"][0].action_name == "launch_app"
     assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"
 
@@ -2663,10 +2712,10 @@ def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, m
     )
 
     progress = state.get_task(request_id)
-    manifest_path = settings.output.runs_dir / "strict_lifecycle" / "evidence-manifest.json"
+    assert progress is not None
+    manifest_path = settings.output.runs_dir / progress["result"]["runId"] / "evidence-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     commands = [step["metadata"].get("command") for step in manifest["steps"] if step["metadata"].get("command")]
-    assert progress is not None
     assert progress["result"]["status"] == "success"
     assert actions == ["launch_app"]
     assert commands == ["echo config-before", "echo case-before", "echo case-after", "echo config-after"]
@@ -2849,7 +2898,9 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
         record_on_failure=True,
     )
 
-    manifest_path = settings.output.runs_dir / "root-child" / "evidence-manifest.json"
+    progress = state.get_task(request_id)
+    assert progress is not None
+    manifest_path = settings.output.runs_dir / progress["result"]["runId"] / "evidence-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     parent_index = next(index for index, step_id in enumerate(active_ids) if "hook-run-case" in step_id)
     child_index = next(index for index, step_id in enumerate(active_ids) if step_id.startswith("child-case-step"))
