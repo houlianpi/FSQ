@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Serve the local, single-user FSQ Control Plane browser application. The module owns Control Plane HTTP and static delivery; trusted-local Provider and workspace-management transport; GitHub device-flow task state; connection-test orchestration; registry-backed workspace list/create/detail/update and bounded read-only browsing; and the temporarily isolated legacy Devices readiness, discovery, run, cancellation, streaming, and evidence projections.
+Serve the local, single-user FSQ Control Plane browser application. The module owns Control Plane HTTP and static delivery; trusted-local Provider and workspace-management transport; GitHub device-flow task state; connection-test orchestration; registry-backed workspace list/create/detail/update and bounded read-only browsing; and the temporarily isolated legacy Devices per-request platform context, readiness, target/case discovery, one-active-run state, cancellation, resumable progress streaming, current and per-step evidence projection, persisted screenshot replay frames, and replay-video storage/range transport.
 
 The module is an entry-layer application. It composes existing configuration, dynamic-agent, strict FSQ, execution-core, provider, evidence, recording, and report contracts. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, evidence schema, report generator, platform driver, or Playground behavior.
 
@@ -16,7 +16,7 @@ The module is an entry-layer application. It composes existing configuration, dy
 - `providers`: Uses non-interactive provider preparation for readiness, observable GitHub device-flow operations for Config, live connection testing, and public AI-assertion evaluator construction where Explore or authored `assertWithAI` requires a provider.
 - `report`: Uses existing report generation and report-artifact contracts.
 - Package-private entry composition: may use `fsq_agent._capability_bootstrap`, `fsq_agent._strict_lifecycle`, and `fsq_agent._strict_case_recording` as shared entry-layer composition used by CLI/Playground/Control Plane. These helpers compose owning-module public APIs and do not expose a Control Plane public contract.
-- External dependencies: Python standard-library HTTP, threading, path, MIME, JSON, and browser-opening facilities. Optional platform backend dependencies remain lazy runtime concerns of their owning modules.
+- External dependencies: Python standard-library HTTP, threading, subprocess, path, MIME, JSON, base64, and browser-opening facilities. Optional platform backend dependencies remain lazy runtime concerns of their owning modules.
 
 The module must not import `playground`, `cli`, `capabilities`, module-private `_*.py` files from another public module, concrete private harnesses/drivers, OpenAI Agents SDK runtime types, or frontend source. Other domain/runtime modules must not import `control_plane`; `cli` may import its public server API.
 
@@ -79,6 +79,11 @@ Control Plane may start from any directory. Workspace management always uses the
 - `GET /api/control-plane/runs/{request_id}/stream?afterSequence=<n>`: Streams SSE snapshots containing status, new normalized timeline/log events, active step, run/result summary, and latest screenshot/UI-snapshot revisions. It resumes after the supplied sequence and closes after a terminal state.
 - `GET /api/control-plane/runs/{request_id}/screen`: Returns the latest contained screenshot bytes with MIME type, ETag/revision, timestamp, and safe step/platform metadata, or an explicit unavailable response.
 - `GET /api/control-plane/runs/{request_id}/ui-snapshot`: Returns the latest contained normalized `ui_snapshot` text with revision, MIME/format, timestamp, and safe step metadata. It enforces a 512 KiB text-size limit and reports oversized/unreadable evidence without changing task status.
+- `GET /api/control-plane/runs/{request_id}/step-artifacts/{step_id}`: For a terminal run, resolves the exact non-empty server-issued step id against contained persisted evidence and returns safe ordered screenshot and normalized `ui_snapshot` artifacts for that step. Each item includes kind, capture phase, timestamp, MIME/format, and either bounded base64 image content or bounded UTF-8 text/error metadata. Browser-supplied paths and numeric evidence indices are not accepted.
+- `GET /api/control-plane/runs/{request_id}/replay`: For a terminal run, returns contained persisted screenshot frames in chronological capture order with index, timestamp, MIME type, and bounded base64 image content. Duplicate paths are returned once. A known run with no readable frames returns `200` with `available=false`; frame read failures are reported per frame without exposing paths.
+- `GET /api/control-plane/runs/{request_id}/replay-video`: Returns metadata and the request-scoped stored-video URL when a contained run-local Control Plane replay WebM exists.
+- `POST /api/control-plane/runs/{request_id}/replay-video`: Accepts one bounded `video/webm` or `video/webm;codecs=...` base64 payload only after the run is terminal, atomically stores it as `control-plane-replay/replay.webm` below the frozen run directory, and returns the stored-video URL. A second valid upload replaces the same Control Plane replay file rather than creating arbitrary files.
+- `GET /api/control-plane/runs/{request_id}/replay-video/file`: Returns stored WebM bytes and honors one valid HTTP byte range with `206`, `Content-Range`, and `Accept-Ranges: bytes` so native playback can seek.
 
 Explore delegates to the existing dynamic agent, pre-plan, harness, verification, event persistence, dynamic recording, and report paths. Strict delegates to active-platform capability bootstrap, `FsqCaseLoader`, shared strict lifecycle composition, `StepRunner`/`StepSequenceRunner`, evidence recording, runtime-secret resolution, optional provider-backed `assertWithAI`, and strict report generation. Control Plane does not infer replayability, evidence policy, lifecycle order, or capability semantics from action names.
 
@@ -90,12 +95,14 @@ Task status is `preparing`, `running`, `finalizing`, `success`, `failed`, `incon
 
 Control Plane projects existing execution facts into:
 
-- Timeline rows with sequence, time, phase, step/tool label, status, duration, and safe message.
+- Timeline rows with sequence, time, phase, stable step id when normalized execution metadata supplies one, step/tool label, duration, and safe message. The `status` field is included only when the source event carries an explicit result/progress status; Control Plane does not fabricate `running` for generic RunEvent updates that have no explicit status. Safe event details may include bounded/redacted `payload`, `toolCallId`, `toolArguments`, and `toolOutputPreview` fields when present on the source event.
 - Safe logs with level, phase, tool, status, and message.
 - The newest screenshot artifact reference and monotonically changing revision.
 - The newest normalized `ui_snapshot` artifact reference and monotonically changing revision.
+- A contained ordered per-step evidence index sourced from persisted event artifact references and `evidence-manifest.json`.
+- A contained chronological screenshot-frame sequence used only by the explicit replay endpoint.
 
-SSE payloads do not embed screenshot bytes, large UI snapshots, hidden reasoning, secret values, or unrestricted backend objects. Artifact paths are resolved only below the frozen run directory. Evidence absence or read failure is explicit and does not imply run success or failure.
+SSE payloads do not embed screenshot bytes, large UI snapshots, replay frames/video, hidden reasoning, secret values, or unrestricted backend objects. Artifact paths are resolved only below the frozen run directory. Evidence absence or read failure is explicit and does not imply run success or failure. Control Plane replay storage is independent of Playground replay storage and neither module imports or delegates to the other.
 
 All API errors use `code`, `message`, `action`, and optional safe `details`.
 
@@ -112,7 +119,8 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - `_targets.py`: Control Plane target/error projection over shared `core` Android discovery plus normalized Web/Windows/macOS local target projection.
 - `_cases.py`: Contained recursive strict-case discovery, stable sorting, bounded results, `FsqCaseLoader` validation, and safe summaries.
 - `_execution.py`: Explore and Strict entry orchestration through existing agent/core/FSQ/provider/report and package-private shared entry-composition contracts.
-- `_evidence.py`: Safe event normalization and latest contained screenshot/UI-snapshot projection.
+- `_evidence.py`: Safe event normalization, latest contained evidence projection, persisted per-step artifact lookup, and replay-frame discovery.
+- `_replay.py`: Bounded Control Plane replay-video validation, atomic run-local persistence, metadata lookup, and HTTP byte-range reads.
 - `static/`: Untracked Vite-generated Control Plane assets included in the wheel.
 - `SPEC.md`: Module contract.
 
@@ -121,14 +129,14 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - Architecture level: Level 3 Layered Application.
 - Public API: `ControlPlaneServer`, `ControlPlaneServerOptions`, `run_control_plane`, and the documented local HTTP endpoints.
 - Internal modules: all `_*.py` files and generated `static` content are private implementation details.
-- Domain boundaries: Control Plane owns local HTTP/UI entry orchestration, trusted-local Provider/workspace transport, workspace-operation sequencing and safe projections, device-flow task lifecycle, and isolated legacy Devices discovery/run state. Config owns user Provider/registry/workspace config persistence and settings composition; providers owns protocol/client behavior; other owning modules retain execution, parsing, capability, evidence, recording, and report semantics.
+- Domain boundaries: Control Plane owns local HTTP/UI entry orchestration, trusted-local Provider/workspace transport, workspace-operation sequencing and safe projections, device-flow task lifecycle, isolated legacy Devices discovery/run state, safe evidence presentation projections, and Control Plane replay-video transport. Config owns user Provider/registry/workspace config persistence and settings composition; providers owns protocol/client behavior; other owning modules retain execution, parsing, capability, evidence, recording, and report semantics; browser code owns video generation.
 - Boundary models: HTTP request/response dictionaries and private immutable discovery/projection records sit at the transport boundary; shared runtime facts use `models` contracts.
 - Dependency direction: CLI may import Control Plane public APIs; Control Plane imports owning module public APIs and named package-private entry-composition helpers; owning modules and Playground do not import Control Plane.
 - Rationale: The module coordinates trusted local transport, multi-file workspace creation, read-only filesystem browsing, Provider configuration, external local targets, two legacy Devices execution paths, state streaming, evidence persistence, and static delivery, so Level 3 is required. Additional repository/domain layers would only pass data through.
 
 ## Error Handling
 
-Unsupported platforms, malformed query/body values, missing targets, stale/disappeared targets, invalid or escaped case paths, changed or malformed cases, missing readiness, and ambiguous execution sources fail before external actions. Run busy conflicts return `409`. Missing requests/evidence return `404` or an explicit unavailable payload according to endpoint semantics. Oversized UI snapshots return `413` without changing run status.
+Unsupported platforms, malformed query/body values, missing targets, stale/disappeared targets, invalid or escaped case paths, changed or malformed cases, missing readiness, and ambiguous execution sources fail before external actions. Run busy conflicts return `409`. Missing requests/evidence/video return `404` or an explicit unavailable payload according to endpoint semantics. Oversized UI snapshots, artifact text/images, replay frames, request bodies, and replay videos return bounded errors without changing run status. Step-artifact requests and replay-video mutations made before terminal state return `409`.
 
 Config errors distinguish unconfigured state, missing/invalid fields, file IO/validation failure, non-loopback access, cross-origin writes, an active device flow, device-code request/poll failure, denial, expiration, cancellation, Copilot plan/token exchange failure, provider authorization, unavailable model/deployment, rate limiting, malformed provider response, and timeout. Failed Azure saves and incomplete GitHub flows preserve the previous provider. Config errors and responses never expose GitHub tokens, authorization headers, tracebacks, or hidden reasoning.
 
@@ -142,10 +150,10 @@ Static serving rejects path traversal and cross-entry fallback. Missing generate
 
 ## Verification Scope
 
-- Verification covers Provider Config plus workspace route methods/shapes, registry-order list projection, all four platform creation/update variants, immutable identity, exact revisions/conflicts, atomic writes, rollback, unavailable registry entries, bounded tree/file browsing, no-store behavior, loopback/same-origin gates, independent device-flow lifecycle, saved-only connection testing, retained Devices discovery/execution, static serving, and isolated-wheel startup.
-- Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, bounded reads/discovery, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from Playground or module-private implementation files.
+- Verification covers Provider Config plus workspace route methods/shapes, registry-order list projection, all four platform creation/update variants, immutable identity, exact revisions/conflicts, atomic writes, rollback, unavailable registry entries, bounded tree/file browsing, no-store behavior, loopback/same-origin gates, independent device-flow lifecycle and shutdown, saved-only connection testing, four-platform readiness/target discovery, safe case discovery, Explore/Strict validation and delegation, strict AI-assertion provider gating, one-task locking, state transitions, cancellation, SSE resume, latest and per-step evidence projection, replay-frame ordering, replay-video validation/storage/range reads, safe errors, static serving, and isolated-wheel startup.
+- Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, exact server-issued step ids, bounded reads/discovery and artifact/frame/video IO, atomic video replacement, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from Playground or module-private implementation files.
 - Compatibility verification proves Control Plane can start outside a new workspace, workspace APIs use only registry paths, and Devices alone continues writing under the startup directory's legacy `.fsq-agent-workspace/output/runs` root without consuming selected workspace state.
-- Integration verification proves at least one available platform can start Explore and Strict runs, emit progress/evidence, switch evidence views through the API, cancel, and reach a truthful terminal state.
+- Integration verification proves at least one available platform can start Explore and Strict runs, emit progress/evidence, switch evidence views through the API, cancel, reach a truthful terminal state, retrieve one step's Before/After artifacts, enumerate replay frames, upload a generated WebM, and seek its stored range response.
 
 ## Current Invariants
 
@@ -162,6 +170,8 @@ Static serving rejects path traversal and cross-entry fallback. Missing generate
 - Run-start validation is authoritative even when discovery/readiness data was previously returned to a client.
 - Provider readiness blocks Explore and Strict cases containing `assertWithAI`, but not provider-free Strict cases.
 - Automatic live evidence uses `screenshot` and normalized `ui_snapshot`; UI labels do not change artifact semantics.
+- Per-step comparison and replay use persisted artifact metadata without changing automatic capture policy or inventing evidence.
+- Control Plane stores browser-generated replay videos but does not generate or transcode media in Python.
 - Browser-visible events and errors are safe projections, not raw internal objects.
 - Only the legacy Devices runtime derives files from the Control Plane startup directory. New workspace operations use explicit registered config paths and do not require the server to start inside a workspace.
 - Generated frontend assets are build artifacts, not source files.

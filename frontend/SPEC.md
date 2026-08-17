@@ -11,7 +11,7 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - The root `package.json` and `package-lock.json` own exact npm dependencies and the single lock-file dependency graph.
 - Supported Node.js versions are `^20.19.0 || >=22.12.0`.
 - Vite is the frontend development and production build tool.
-- `ts-ebml` is the current browser runtime dependency used by the Playground child module.
+- `ts-ebml` is the current browser runtime dependency used by the Playground and Control Plane child modules for seekable WebM replay generation.
 - `react-markdown` is the current browser runtime dependency used by the Control Plane child module for safe Markdown preview without raw HTML support.
 - The workspace consumes Python Playground and Control Plane HTTP origins only through Vite development proxy configuration and browser HTTP requests. Frontend source does not import Python modules.
 

@@ -82,6 +82,10 @@ export interface TimelineEvent {
   durationMs?: number | null;
   message?: string;
   level?: string;
+  payload?: unknown;
+  toolCallId?: string;
+  toolArguments?: unknown;
+  toolOutputPreview?: unknown;
 }
 export interface RunSnapshot extends ActiveTaskSummary {
   source: { goal?: string; casePath?: string };
@@ -109,6 +113,38 @@ export interface UiSnapshotResponse {
   mimeType: string;
   format: string;
   content: string;
+}
+export interface StepArtifact {
+  kind: 'screenshot' | 'ui_snapshot';
+  phase: string;
+  timestamp: string | null;
+  mimeType: string;
+  format?: string;
+  contentBase64?: string;
+  content?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface StepArtifactsResponse {
+  available: boolean;
+  stepId: string;
+  artifacts: StepArtifact[];
+  message: string | null;
+}
+export interface ReplayFrame {
+  index: number;
+  timestamp: number | null;
+  mimeType: string;
+  contentBase64?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface ReplayFramesResponse { available: boolean; frames: ReplayFrame[]; message: string | null }
+export interface ReplayVideoResponse {
+  available: boolean;
+  videoUrl: string | null;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 export interface AzureProviderConfig {
