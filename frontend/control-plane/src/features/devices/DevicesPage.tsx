@@ -40,7 +40,7 @@ export function DevicesPage({ renderShell }: DevicesPageProps) {
       <section className="operation-card" aria-labelledby="operation-title">
         <header className="card-header"><div><h1 id="operation-title">FSQ operation</h1><p>Target: {workspace.selectedTarget?.label ?? 'Not selected'}</p></div><span className={`status-badge status-badge--${workspace.snapshot?.status ?? 'idle'}`}>{workspace.snapshot?.status ?? 'idle'}</span></header>
         <div className="operation-body">
-          {hasRun ? <RunTimeline snapshot={workspace.snapshot} connection={workspace.connection} resultHeadingRef={resultHeadingRef} onCancel={() => void workspace.cancel()} onNewRun={newRun} /> : <OperationComposer
+          {hasRun ? <RunTimeline snapshot={workspace.snapshot} connection={workspace.connection} selectedStepId={workspace.selectedStepId} resultHeadingRef={resultHeadingRef} onSelectStep={workspace.setSelectedStepId} onCancel={() => void workspace.cancel()} onNewRun={newRun} /> : <OperationComposer
             mode={workspace.mode} goal={workspace.goal} casePath={workspace.casePath} cases={workspace.cases.data?.cases ?? []} casesState={workspace.cases.state}
             readiness={workspace.readiness.data} discoveryLoading={workspace.readiness.state === 'loading' || workspace.targets.state === 'loading' || workspace.cases.state === 'loading'}
             canStart={workspace.canStart} errorMessage={workspace.startError?.message} errorAction={workspace.startError?.action} primaryInputRef={primaryInputRef}
@@ -48,7 +48,7 @@ export function DevicesPage({ renderShell }: DevicesPageProps) {
           />}
         </div>
       </section>
-      <LiveEvidencePanel tab={workspace.evidenceTab} snapshot={workspace.snapshot} platform={workspace.platform} targetLabel={workspace.selectedTarget?.label ?? workspace.targetId} onTabChange={workspace.setEvidenceTab} />
+      <LiveEvidencePanel tab={workspace.evidenceTab} snapshot={workspace.snapshot} selectedStepId={workspace.selectedStepId} platform={workspace.platform} targetLabel={workspace.selectedTarget?.label ?? workspace.targetId} onTabChange={workspace.setEvidenceTab} onClearStep={() => workspace.setSelectedStepId(null)} />
     </div>
   </>;
   return <>{renderShell(toolbar, content)}</>;

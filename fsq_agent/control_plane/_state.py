@@ -41,6 +41,7 @@ class TaskRecord:
     started_at: str = field(default_factory=_now)
     completed_at: str | None = None
     run_id: str | None = None
+    run_dir: Any | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     active_step: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
@@ -98,10 +99,12 @@ class ControlPlaneState:
                     self._current_request_id = None
             self._notify()
 
-    def bind_run(self, request_id: str, run_id: str) -> None:
+    def bind_run(self, request_id: str, run_id: str, run_dir: Any | None = None) -> None:
         with self._condition:
             task = self._require(request_id)
             task.run_id = run_id
+            if run_dir is not None:
+                task.run_dir = run_dir
             self._notify()
 
     def add_event(self, request_id: str, event: dict[str, Any]) -> None:
@@ -115,6 +118,17 @@ class ControlPlaneState:
             if normalized.get("stepId"):
                 task.active_step = {"stepId": normalized["stepId"], "label": normalized.get("label")}
             self._notify()
+
+    def annotate_event_step(self, request_id: str, sequence: int, step_id: str) -> None:
+        if sequence <= 0 or not step_id:
+            return
+        with self._condition:
+            task = self._require(request_id)
+            for event in task.events:
+                if event.get("sequence") == sequence and event.get("stepId") != step_id:
+                    event["stepId"] = step_id
+                    self._notify()
+                    return
 
     def set_artifact(self, request_id: str, kind: str, artifact: dict[str, Any]) -> None:
         with self._condition:
@@ -207,14 +221,19 @@ class ControlPlaneState:
             value = task.screenshot if kind == "screenshot" else task.ui_snapshot
             return (dict(value) if value else None), task.run_id
 
+    def run_directory(self, request_id: str):
+        with self._condition:
+            return self._require(request_id).run_dir
+
     def _snapshot(self, task: TaskRecord, *, after_sequence: int = 0) -> dict[str, Any]:
+        events_after = 0 if task.status in _TERMINAL_STATUSES else after_sequence
         return {
             **self._summary(task),
             "source": dict(task.source),
             "startedAt": task.started_at,
             "completedAt": task.completed_at,
             "cancelRequested": task.cancel_requested,
-            "events": [dict(event) for event in task.events if event["sequence"] > after_sequence],
+            "events": [dict(event) for event in task.events if event["sequence"] > events_after],
             "activeStep": dict(task.active_step) if task.active_step else None,
             "result": dict(task.result) if task.result else None,
             "summary": task.summary,

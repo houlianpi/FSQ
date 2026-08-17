@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from fsq_agent.config._paths import resolve_runtime_paths
 from fsq_agent.config._settings import Settings
+from fsq_agent.config._user_provider import refresh_provider_settings
 from fsq_agent.models import ConfigurationError
 
 DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
@@ -30,11 +31,6 @@ WINDOWS_LAUNCH_ARGS_ENV = "FSQ_WINDOWS_LAUNCH_ARGS"
 MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
 MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
 MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
-LLM_PROVIDER_ENV = "FSQ_LLM_PROVIDER"
-AZURE_OPENAI_BASE_URL_ENV = "AZURE_OPENAI_BASE_URL"
-AZURE_OPENAI_MODEL_ENV = "AZURE_OPENAI_MODEL"
-AZURE_OPENAI_API_KEY_ENV = "AZURE_OPENAI_API_KEY"
-GITHUB_COPILOT_MODEL = "gpt-5.5"
 SUPPORTED_LLM_PROVIDERS = ("github_copilot", "azure_openai")
 CHROME_EXECUTABLE_NAMES = {"chrome", "chrome.exe", "google chrome", "google-chrome", "google-chrome-stable"}
 
@@ -57,7 +53,11 @@ def _find_default_config() -> Path | None:
     return None
 
 
-def load_settings(path: str | Path | None = None, workspace: str | Path | None = None) -> Settings:
+def load_settings(
+    path: str | Path | None = None,
+    workspace: str | Path | None = None,
+    user_config_root: str | Path | None = None,
+) -> Settings:
     config_path = Path(path) if path is not None else _find_default_config()
     _load_env_files(config_path)
     data = _read_yaml(config_path) if config_path else {}
@@ -69,6 +69,7 @@ def load_settings(path: str | Path | None = None, workspace: str | Path | None =
     if workspace is not None:
         settings.workspace.root_dir = Path(workspace)
     _apply_environment_settings(settings)
+    settings = refresh_provider_settings(settings, user_config_root)
     base_dir = config_path.parent if config_path is not None else Path.cwd()
     resolve_runtime_paths(settings, base_dir)
     return settings
@@ -90,9 +91,13 @@ def resolve_platform_config_path(platform: str) -> Path:
     return config_path
 
 
-def load_platform_settings(platform: str, workspace: str | Path | None = None) -> Settings:
+def load_platform_settings(
+    platform: str,
+    workspace: str | Path | None = None,
+    user_config_root: str | Path | None = None,
+) -> Settings:
     platform_id = platform.strip().lower()
-    settings = load_settings(resolve_platform_config_path(platform_id), workspace)
+    settings = load_settings(resolve_platform_config_path(platform_id), workspace, user_config_root)
     if settings.harness.platform != platform_id:
         raise ConfigurationError(
             "Platform configuration does not match requested platform.",
@@ -116,6 +121,11 @@ def _reject_obsolete_settings(data: dict[str, Any]) -> None:
     openai_agents = data.get("openai_agents")
     if not isinstance(openai_agents, dict):
         return
+    if "provider" in openai_agents:
+        raise ConfigurationError(
+            "Invalid configuration.",
+            context={"config_key": "openai_agents.provider", "provider_source": "user_config"},
+        )
     prompt = openai_agents.get("prompt")
     if not isinstance(prompt, dict):
         return
@@ -172,16 +182,6 @@ def _strip_env_value(value: str) -> str:
 
 
 def _apply_environment_settings(settings: Settings) -> None:
-    provider = _env_value(LLM_PROVIDER_ENV)
-    if provider:
-        normalized_provider = provider.strip().lower()
-        if normalized_provider not in SUPPORTED_LLM_PROVIDERS:
-            raise ConfigurationError(
-                f"LLM provider environment variable {LLM_PROVIDER_ENV} is invalid.",
-                context={"provider_env": LLM_PROVIDER_ENV, "value": provider, "supported": list(SUPPORTED_LLM_PROVIDERS)},
-            )
-        settings.openai_agents.provider = normalized_provider  # type: ignore[assignment]
-
     app_id = _env_value(ANDROID_APP_ID_ENV)
     serial = _env_value(ANDROID_SERIAL_ENV)
     if app_id:
@@ -212,21 +212,6 @@ def _apply_environment_settings(settings: Settings) -> None:
         settings.harness.macos.bundle_id = macos_bundle_id
     if macos_app_path:
         settings.harness.macos.app_path = macos_app_path
-
-    if settings.openai_agents.provider == "github_copilot":
-        settings.openai_agents.model = GITHUB_COPILOT_MODEL
-        settings.openai_agents.base_url = ""
-        return
-
-    settings.openai_agents.model = _env_value(AZURE_OPENAI_MODEL_ENV) or ""
-    base_url = _env_value(AZURE_OPENAI_BASE_URL_ENV) or ""
-    if "/openai/responses" in base_url:
-        base_url = base_url.split("/openai/responses", 1)[0] + "/openai/v1/"
-    elif "/openai/v1" in base_url:
-        base_url = base_url.split("/openai/v1", 1)[0] + "/openai/v1/"
-    elif base_url.endswith((".openai.azure.com", ".cognitiveservices.azure.com")):
-        base_url = base_url.rstrip("/") + "/openai/v1/"
-    settings.openai_agents.base_url = base_url
 
 
 def _env_value(name: str) -> str | None:
@@ -321,32 +306,28 @@ def validate_strict_core_settings(settings: Settings, requires_ai_assertion: boo
 
 
 def _validate_openai_provider_settings(settings: Settings) -> None:
+    if settings.openai_agents.provider is None:
+        raise ConfigurationError("Model Provider is not configured. Add a Provider in Control Plane Config.")
     if settings.openai_agents.provider not in SUPPORTED_LLM_PROVIDERS:
         raise ConfigurationError(
             "OpenAI Agents SDK provider is unsupported.",
-            context={"provider_env": LLM_PROVIDER_ENV, "provider": settings.openai_agents.provider, "supported": list(SUPPORTED_LLM_PROVIDERS)},
+            context={"provider": settings.openai_agents.provider, "supported": list(SUPPORTED_LLM_PROVIDERS)},
         )
     if not settings.openai_agents.model.strip():
         raise ConfigurationError(
             "OpenAI Agents SDK model deployment name is required.",
-            context={"model_env": AZURE_OPENAI_MODEL_ENV if settings.openai_agents.provider == "azure_openai" else None},
+            context={"provider": settings.openai_agents.provider},
         )
     if settings.openai_agents.provider == "azure_openai" and not settings.openai_agents.base_url.endswith("/openai/v1/"):
         raise ConfigurationError(
             "Azure OpenAI base URL must use the /openai/v1/ form.",
-            context={"base_url_env": AZURE_OPENAI_BASE_URL_ENV, "base_url": settings.openai_agents.base_url},
+            context={"base_url": settings.openai_agents.base_url},
         )
-    api_key = os.getenv(AZURE_OPENAI_API_KEY_ENV)
+    api_key = settings.openai_agents.api_key
     if settings.openai_agents.provider == "azure_openai" and not api_key:
-        raise ConfigurationError(
-            "Azure OpenAI API key environment variable is not set.",
-            context={"api_key_env": AZURE_OPENAI_API_KEY_ENV},
-        )
+        raise ConfigurationError("Azure OpenAI API key is not configured.")
     if settings.openai_agents.provider == "azure_openai" and api_key and api_key.lower().startswith("replace-with"):
-        raise ConfigurationError(
-            "Azure OpenAI API key environment variable still contains a placeholder value.",
-            context={"api_key_env": AZURE_OPENAI_API_KEY_ENV},
-        )
+        raise ConfigurationError("Azure OpenAI API key still contains a placeholder value.")
 
 
 def _validate_harness_settings(settings: Settings) -> None:

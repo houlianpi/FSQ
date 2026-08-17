@@ -161,7 +161,7 @@ class CliCoreHarness:
 
 
 def test_run_fsq_core_case_writes_manifest_and_returns_bundle(tmp_path: Path) -> None:
-    case_path = tmp_path / "core_cli.codex.yaml"
+    case_path = tmp_path / "core_cli.fsq.yaml"
     case_path.write_text(FSQ_CASE, encoding="utf-8")
     harness = CliCoreHarness()
 
@@ -204,7 +204,7 @@ def test_run_fsq_core_case_passes_post_action_delay_to_step_runner(tmp_path: Pat
     monkeypatch.setattr("fsq_agent.cli._core_execution.StepSequenceRunner", FakeSequenceRunner)
 
     bundle = run_fsq_core_case(
-        case_path=tmp_path / "unused.codex.yaml",
+        case_path=tmp_path / "unused.fsq.yaml",
         harness=CliCoreHarness(),
         output_dir=tmp_path / "runs" / "run-1",
         run_id="run-1",
@@ -217,7 +217,7 @@ def test_run_fsq_core_case_passes_post_action_delay_to_step_runner(tmp_path: Pat
 
 
 def test_run_fsq_core_case_runs_trailing_teardown_after_failure(tmp_path: Path) -> None:
-    case_path = tmp_path / "core_cli_teardown.codex.yaml"
+    case_path = tmp_path / "core_cli_teardown.fsq.yaml"
     case_path.write_text(FSQ_CASE_WITH_TEARDOWN, encoding="utf-8")
     harness = CliCoreHarness(fail_action="tap_on")
 
@@ -249,7 +249,7 @@ def test_run_fsq_core_case_runs_trailing_teardown_after_failure(tmp_path: Path) 
 
 
 def test_run_fsq_core_case_runs_trailing_web_close_browser_after_failure(tmp_path: Path) -> None:
-    case_path = tmp_path / "core_web_teardown.codex.yaml"
+    case_path = tmp_path / "core_web_teardown.fsq.yaml"
     case_path.write_text(WEB_FSQ_CASE_WITH_TEARDOWN, encoding="utf-8")
     harness = CliCoreHarness(fail_action="navigate_to")
 
@@ -271,7 +271,7 @@ def test_run_fsq_core_case_runs_trailing_web_close_browser_after_failure(tmp_pat
 
 
 def test_run_strict_fsq_core_case_writes_evidence_and_core_report(tmp_path: Path) -> None:
-    case_path = tmp_path / "strict_core.codex.yaml"
+    case_path = tmp_path / "strict_core.fsq.yaml"
     case_path.write_text(FSQ_CASE, encoding="utf-8")
     run_dir = tmp_path / "runs" / "strict-run-1"
 
@@ -300,7 +300,7 @@ def test_run_strict_fsq_lifecycle_case_preserves_combined_hook_action_order(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    hook_path = tmp_path / "hook.codex.yaml"
+    hook_path = tmp_path / "hook.fsq.yaml"
     hook_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -312,7 +312,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_path = tmp_path / "root.codex.yaml"
+    case_path = tmp_path / "root.fsq.yaml"
     case_path.write_text(
         f"""
 schemaVersion: fsq.ai-test/v1
@@ -321,7 +321,7 @@ platform: android
 appId: com.microsoft.emmx
 onCaseStart:
   runShell: '{_python_exit_command(0)}'
-  runCase: hook.codex.yaml
+  runCase: hook.fsq.yaml
 ---
 - launchApp
 """,
@@ -354,14 +354,14 @@ onCaseStart:
     assert manifest["steps"][1]["source_ref"]["source_id"] == str(hook_path.resolve())
     assert manifest["steps"][1]["source_ref"]["metadata"]["parent_hook_action"]["hook_action_name"] == "runCase"
     assert manifest["steps"][2]["metadata"]["hook_action_name"] == "runCase"
-    assert manifest["steps"][2]["metadata"]["target"] == "hook.codex.yaml"
+    assert manifest["steps"][2]["metadata"]["target"] == "hook.fsq.yaml"
     messages = [record.getMessage() for record in caplog.records]
     assert sum("Strict phase before case: start" in message for message in messages) == 1
-    assert any("Strict before case action runCase: hook.codex.yaml" in message and "passed" in message for message in messages)
+    assert any("Strict before case action runCase: hook.fsq.yaml" in message and "passed" in message for message in messages)
 
 
 def test_run_strict_fsq_lifecycle_case_logs_phase_and_action_status(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    case_path = tmp_path / "root_logs.codex.yaml"
+    case_path = tmp_path / "root_logs.fsq.yaml"
     case_path.write_text(
         f"""
 schemaVersion: fsq.ai-test/v1
@@ -402,7 +402,7 @@ onCaseComplete:
 
 
 def test_run_strict_fsq_lifecycle_case_runs_config_hooks_around_case_hooks(tmp_path: Path) -> None:
-    case_before = tmp_path / "case_before.codex.yaml"
+    case_before = tmp_path / "case_before.fsq.yaml"
     case_before.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -414,7 +414,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_after = tmp_path / "case_after.codex.yaml"
+    case_after = tmp_path / "case_after.fsq.yaml"
     case_after.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -426,7 +426,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    config_before = tmp_path / "config_before.codex.yaml"
+    config_before = tmp_path / "config_before.fsq.yaml"
     config_before.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -438,7 +438,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    config_after = tmp_path / "config_after.codex.yaml"
+    config_after = tmp_path / "config_after.fsq.yaml"
     config_after.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -450,7 +450,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_path = tmp_path / "root_config_hooks.codex.yaml"
+    case_path = tmp_path / "root_config_hooks.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -458,9 +458,9 @@ name: Root Config Hooks
 platform: android
 appId: com.microsoft.emmx
 onCaseStart:
-  runCase: case_before.codex.yaml
+  runCase: case_before.fsq.yaml
 onCaseComplete:
-  runCase: case_after.codex.yaml
+  runCase: case_after.fsq.yaml
 ---
 - launchApp
 """,
@@ -470,8 +470,8 @@ onCaseComplete:
     settings = Settings(
         cases={"dir": tmp_path},
         case_lifecycle={
-            "on_case_start": [{"runCase": "config_before.codex.yaml"}],
-            "on_case_complete": [{"runCase": "config_after.codex.yaml"}],
+            "on_case_start": [{"runCase": "config_before.fsq.yaml"}],
+            "on_case_complete": [{"runCase": "config_after.fsq.yaml"}],
         },
     )
     harness = CliCoreHarness()
@@ -495,7 +495,7 @@ onCaseComplete:
 
 
 def test_run_strict_fsq_lifecycle_case_config_before_failure_skips_case_before_and_main(tmp_path: Path) -> None:
-    case_before = tmp_path / "case_before.codex.yaml"
+    case_before = tmp_path / "case_before.fsq.yaml"
     case_before.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -507,7 +507,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_after = tmp_path / "case_after.codex.yaml"
+    case_after = tmp_path / "case_after.fsq.yaml"
     case_after.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -518,7 +518,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_path = tmp_path / "root_config_before_failure.codex.yaml"
+    case_path = tmp_path / "root_config_before_failure.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -526,9 +526,9 @@ name: Root Config Before Failure
 platform: android
 appId: com.microsoft.emmx
 onCaseStart:
-  runCase: case_before.codex.yaml
+  runCase: case_before.fsq.yaml
 onCaseComplete:
-  runCase: case_after.codex.yaml
+  runCase: case_after.fsq.yaml
 ---
 - launchApp
 """,
@@ -562,7 +562,7 @@ onCaseComplete:
 
 
 def test_run_strict_fsq_lifecycle_case_config_after_failure_fails_overall(tmp_path: Path) -> None:
-    case_path = tmp_path / "root_config_after_failure.codex.yaml"
+    case_path = tmp_path / "root_config_after_failure.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -600,7 +600,7 @@ appId: com.microsoft.emmx
 
 
 def test_run_strict_fsq_lifecycle_case_rejects_config_hook_recursion(tmp_path: Path) -> None:
-    case_path = tmp_path / "root_config_recursion.codex.yaml"
+    case_path = tmp_path / "root_config_recursion.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -615,7 +615,7 @@ appId: com.microsoft.emmx
     case = FsqCaseLoader().load_case(case_path)
     settings = Settings(
         cases={"dir": tmp_path},
-        case_lifecycle={"on_case_start": [{"runCase": "root_config_recursion.codex.yaml"}]},
+        case_lifecycle={"on_case_start": [{"runCase": "root_config_recursion.fsq.yaml"}]},
     )
 
     with pytest.raises(ConfigurationError, match="Recursive lifecycle hook runCase"):
@@ -632,7 +632,7 @@ appId: com.microsoft.emmx
 
 
 def test_run_strict_fsq_lifecycle_case_runs_complete_hook_after_start_failure(tmp_path: Path) -> None:
-    cleanup_path = tmp_path / "cleanup.codex.yaml"
+    cleanup_path = tmp_path / "cleanup.fsq.yaml"
     cleanup_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -643,7 +643,7 @@ platform: android
 """,
         encoding="utf-8",
     )
-    case_path = tmp_path / "root_failure.codex.yaml"
+    case_path = tmp_path / "root_failure.fsq.yaml"
     case_path.write_text(
         f"""
 schemaVersion: fsq.ai-test/v1
@@ -653,7 +653,7 @@ appId: com.microsoft.emmx
 onCaseStart:
   runShell: '{_python_exit_command(7)}'
 onCaseComplete:
-  runCase: cleanup.codex.yaml
+  runCase: cleanup.fsq.yaml
 ---
 - launchApp
 """,

@@ -17,15 +17,22 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases
-from ._evidence import EvidenceProjection, read_screenshot, read_ui_snapshot, safe_exception_message, safe_text
+from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
+from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
+from ._provider_auth import ProviderAuthState
 from ._readiness import load_control_plane_settings, readiness
+from ._replay import read_replay_video, replay_video_metadata, store_replay_video
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
 
 _API_PREFIX = "/api/control-plane"
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
-_MAX_BODY_BYTES = 1024 * 1024
+_MAX_BODY_BYTES = 36 * 1024 * 1024
+
+
+class _RunNotTerminalError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -35,6 +42,7 @@ class ControlPlaneServerOptions:
     open_browser: bool = True
     workspace_path: Path = field(default_factory=lambda: Path.cwd() / ".fsq-agent-workspace")
     static_path: Path | None = None
+    user_config_root: Path | None = None
 
 
 class ControlPlaneServer:
@@ -45,6 +53,7 @@ class ControlPlaneServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
         self._handles: dict[str, ExecutionHandle] = {}
+        self._provider_auth = ProviderAuthState(self.options.user_config_root)
 
     @property
     def port(self) -> int:
@@ -64,6 +73,7 @@ class ControlPlaneServer:
         self._thread.start()
 
     def stop(self) -> None:
+        self._provider_auth.shutdown()
         httpd = self._httpd
         self._httpd = None
         if httpd is None:
@@ -74,23 +84,32 @@ class ControlPlaneServer:
             self._thread.join(timeout=5)
         self._thread = None
 
-    def handle_get(self, path: str, query: dict[str, list[str]] | None = None) -> tuple[int, Any, dict[str, str]]:
+    def handle_get(self, path: str, query: dict[str, list[str]] | None = None, *, peer_host: str | None = "127.0.0.1") -> tuple[int, Any, dict[str, str]]:
         query = query or {}
         try:
+            if path == f"{_API_PREFIX}/config":
+                self._require_config_access(peer_host)
+                return 200, get_config(self.options.user_config_root), dict(_JSON_HEADERS)
+            auth_request_id = _device_flow_route_or_none(path)
+            if auth_request_id is not None:
+                self._require_config_access(peer_host)
+                return 200, self._provider_auth.get(auth_request_id), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/bootstrap":
                 initialized = self.options.workspace_path.is_dir() and (self.options.workspace_path / ".fsq-agent-workspace").is_file()
                 return 200, self.state.bootstrap(self.options.workspace_path.name, initialized=initialized), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/readiness":
                 platform = _platform_query(query)
-                return 200, readiness(platform, self.options.workspace_path), dict(_JSON_HEADERS)
+                return 200, self._readiness(platform), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/targets":
-                settings = load_control_plane_settings(_platform_query(query), self.options.workspace_path)
+                settings = self._load_settings(_platform_query(query))
                 return 200, discover_targets(settings), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/cases":
-                settings = load_control_plane_settings(_platform_query(query), self.options.workspace_path)
+                settings = self._load_settings(_platform_query(query))
                 return 200, discover_cases(settings), dict(_JSON_HEADERS)
             request_id, suffix = _run_route(path)
             if suffix == "":
+                if self.state.snapshot(request_id).get("terminal"):
+                    self._hydrate_evidence(request_id)
                 return 200, self.state.snapshot(request_id), dict(_JSON_HEADERS)
             if suffix == "/screen":
                 self._hydrate_evidence(request_id)
@@ -103,15 +122,28 @@ class ControlPlaneServer:
                 artifact, _ = self.state.artifact(request_id, "ui_snapshot")
                 payload, headers = read_ui_snapshot(artifact)
                 return 200, payload, {**_JSON_HEADERS, **headers}
+            if suffix.startswith("/step-artifacts/"):
+                run_dir = self._terminal_run_dir(request_id)
+                step_id = unquote(suffix.removeprefix("/step-artifacts/")).strip()
+                return 200, read_step_artifacts(run_dir, step_id), dict(_JSON_HEADERS)
+            if suffix == "/replay":
+                return 200, read_replay_frames(self._terminal_run_dir(request_id)), dict(_JSON_HEADERS)
+            if suffix == "/replay-video":
+                video_url = f"{_API_PREFIX}/runs/{request_id}/replay-video/file"
+                return 200, replay_video_metadata(self._terminal_run_dir(request_id), video_url), dict(_JSON_HEADERS)
             if suffix == "/stream":
                 return 400, _error("sse_required", "Use an SSE client for the stream endpoint.", "Connect with EventSource."), dict(_JSON_HEADERS)
             return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path."), dict(_JSON_HEADERS)
+        except ConfigAPIError as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action), dict(_JSON_HEADERS)
         except RequestNotFoundError:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request."), dict(_JSON_HEADERS)
         except FileNotFoundError as exc:
             return 404, _error("evidence_unavailable", str(exc), "Wait for evidence capture or select another evidence view."), dict(_JSON_HEADERS)
         except OverflowError as exc:
             return 413, _error("evidence_too_large", str(exc), "Inspect the persisted artifact outside the Control Plane display."), dict(_JSON_HEADERS)
+        except _RunNotTerminalError as exc:
+            return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish."), dict(_JSON_HEADERS)
         except (ValueError, FsqAgentError) as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry."), dict(_JSON_HEADERS)
         except OSError as exc:
@@ -119,11 +151,24 @@ class ControlPlaneServer:
         except Exception as exc:  # noqa: BLE001 - HTTP boundary does not expose tracebacks.
             return 500, _exception_error("internal_error", exc, "Retry or inspect the local server logs.", unexpected=True), dict(_JSON_HEADERS)
 
-    def handle_post(self, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def handle_post(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        if path.startswith(f"{_API_PREFIX}/config/"):
+            return self._handle_config_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         if path == f"{_API_PREFIX}/runs":
             return self._start_run(body)
         try:
             request_id, suffix = _run_route(path)
+            if suffix == "/replay-video":
+                stored = store_replay_video(self._terminal_run_dir(request_id), body.get("mimeType"), body.get("videoBase64"))
+                return 200, {**stored, "videoUrl": f"{_API_PREFIX}/runs/{request_id}/replay-video/file"}
             if suffix != "/cancel":
                 return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path.")
             snapshot = self.state.request_cancel(request_id)
@@ -134,8 +179,76 @@ class ControlPlaneServer:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request.")
         except ValueError as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry.")
+        except OverflowError as exc:
+            return 413, _exception_error("body_too_large", exc, "Upload a smaller replay video.")
+        except _RunNotTerminalError as exc:
+            return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish.")
         else:
             return 200, snapshot
+
+    def handle_replay_video_file(self, request_id: str, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
+        return read_replay_video(self._terminal_run_dir(request_id), range_header)
+
+    def handle_put(
+        self,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return self._handle_config_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
+
+    def handle_delete(
+        self,
+        path: str,
+        *,
+        peer_host: str | None = "127.0.0.1",
+        origin: str | None = None,
+        host: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return self._handle_config_write("DELETE", path, {}, peer_host=peer_host, origin=origin, host=host)
+
+    def _handle_config_write(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        *,
+        peer_host: str | None,
+        origin: str | None,
+        host: str | None,
+    ) -> tuple[int, dict[str, Any]]:
+        try:
+            self._require_config_access(peer_host)
+            require_same_origin_write(origin, host)
+            if method == "PUT" and path == f"{_API_PREFIX}/config/azure":
+                return 200, save_azure_config(body, self.options.user_config_root)
+            if method == "POST" and path == f"{_API_PREFIX}/config/github/device-flow":
+                return 202, self._provider_auth.start(body)
+            if method == "POST" and path == f"{_API_PREFIX}/config/test-connection":
+                return 200, test_saved_connection(body, self.options.user_config_root)
+            auth_request_id = _device_flow_route_or_none(path)
+            if method == "DELETE" and auth_request_id is not None:
+                return 200, self._provider_auth.cancel(auth_request_id)
+            return 404, _error("not_found", "Control Plane Config endpoint not found.", "Check the API path and method.")
+        except Exception as exc:  # noqa: BLE001 - Config boundary maps safe errors.
+            mapped = map_config_exception(exc)
+            return mapped.status, _error(mapped.code, mapped.message, mapped.action)
+
+    def _require_config_access(self, peer_host: str | None) -> None:
+        require_config_access(self.options.host, peer_host)
+
+    def _load_settings(self, platform: str) -> Any:
+        if self.options.user_config_root is None:
+            return load_control_plane_settings(platform, self.options.workspace_path)
+        return load_control_plane_settings(platform, self.options.workspace_path, self.options.user_config_root)
+
+    def _readiness(self, platform: str) -> dict[str, Any]:
+        if self.options.user_config_root is None:
+            return readiness(platform, self.options.workspace_path)
+        return readiness(platform, self.options.workspace_path, self.options.user_config_root)
 
     def sse_snapshots(self, request_id: str, *, after_sequence: int = 0, timeout: float = 15.0):
         revision = -1
@@ -177,7 +290,7 @@ class ControlPlaneServer:
         except BusyError as exc:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
         try:
-            settings = load_control_plane_settings(platform, self.options.workspace_path)
+            settings = self._load_settings(platform)
             prepared = prepare_run(request_id=request_id, settings=settings, body=body)
             self._handles[request_id] = start_execution(prepared, self.state)
         except (TypeError, ValueError, FsqAgentError, OSError) as exc:
@@ -192,13 +305,31 @@ class ControlPlaneServer:
     def _hydrate_evidence(self, request_id: str) -> None:
         artifact, run_id = self.state.artifact(request_id, "screenshot")
         ui_artifact, _ = self.state.artifact(request_id, "ui_snapshot")
-        if (artifact and ui_artifact) or not run_id:
+        if not run_id:
             return
-        snapshot = self.state.snapshot(request_id)
-        settings = load_control_plane_settings(str(snapshot["platform"]), self.options.workspace_path)
-        projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
+        run_dir = self.state.run_directory(request_id)
+        if isinstance(run_dir, Path):
+            projection = EvidenceProjection(self.state, request_id, run_dir.parent)
+        else:
+            snapshot = self.state.snapshot(request_id)
+            settings = self._load_settings(str(snapshot["platform"]))
+            projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
         projection.bind_run(run_id)
-        projection.load_persisted_manifest()
+        if not (artifact and ui_artifact):
+            projection.load_persisted_manifest()
+        projection.load_persisted_step_ids()
+
+    def _terminal_run_dir(self, request_id: str) -> Path:
+        snapshot = self.state.snapshot(request_id)
+        if not snapshot.get("terminal"):
+            raise _RunNotTerminalError("Run evidence is available after the run reaches a terminal state.")
+        run_id = snapshot.get("runId")
+        if not isinstance(run_id, str) or not run_id:
+            raise FileNotFoundError("Run artifacts are unavailable.")
+        run_dir = self.state.run_directory(request_id)
+        if not isinstance(run_dir, Path) or not run_dir.is_dir():
+            raise FileNotFoundError("Run artifacts are unavailable.")
+        return run_dir
 
     def _entry_path(self) -> Path | None:
         candidates = (self._static_root / "control-plane" / "index.html", self._static_root / "index.html")
@@ -224,13 +355,33 @@ class _RequestHandler(BaseHTTPRequestHandler):
             if request_id and suffix == "/stream":
                 self._send_sse(request_id, query)
                 return
-            status, body, headers = self.server.control_plane.handle_get(parsed.path, query)
+            if request_id and suffix == "/replay-video/file":
+                try:
+                    status, body, headers = self.server.control_plane.handle_replay_video_file(request_id, self.headers.get("Range"))
+                    self._send(status, body, headers)
+                except RequestNotFoundError:
+                    self._send(404, _error("request_not_found", "Run request not found.", "Reload Control Plane."), _JSON_HEADERS)
+                except FileNotFoundError as exc:
+                    self._send(404, _error("evidence_unavailable", str(exc), "Wait for replay generation."), _JSON_HEADERS)
+                except (_RunNotTerminalError, ValueError) as exc:
+                    self._send(409 if isinstance(exc, _RunNotTerminalError) else 416, _error("invalid_range", str(exc), "Retry with a valid range after completion."), _JSON_HEADERS)
+                return
+            status, body, headers = self.server.control_plane.handle_get(parsed.path, query, peer_host=self.client_address[0])
             self._send(status, body, headers)
             return
         status, body, content_type = self.server.control_plane.static_response(self.path)
         self._send(status, body, {"Content-Type": content_type})
 
     def do_POST(self) -> None:
+        self._handle_json_write("POST")
+
+    def do_PUT(self) -> None:
+        self._handle_json_write("PUT")
+
+    def do_DELETE(self) -> None:
+        self._handle_json_write("DELETE")
+
+    def _handle_json_write(self, method: str) -> None:
         parsed = urlsplit(self.path)
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -241,11 +392,27 @@ class _RequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError, json.JSONDecodeError):
             self._send(400, _error("invalid_json", "Request body must be a JSON object.", "Correct the request body."), _JSON_HEADERS)
             return
-        status, payload = self.server.control_plane.handle_post(parsed.path, body)
+        request_kwargs = {
+            "peer_host": self.client_address[0],
+            "origin": self.headers.get("Origin"),
+            "host": self.headers.get("Host"),
+        }
+        if method == "POST":
+            status, payload = self.server.control_plane.handle_post(parsed.path, body, **request_kwargs)
+        elif method == "PUT":
+            status, payload = self.server.control_plane.handle_put(parsed.path, body, **request_kwargs)
+        else:
+            status, payload = self.server.control_plane.handle_delete(parsed.path, **request_kwargs)
         self._send(status, payload, _JSON_HEADERS)
 
     def log_message(self, format_string: str, *args: Any) -> None:
         return
+
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
 
     def _send_sse(self, request_id: str, query: dict[str, list[str]]) -> None:
         try:
@@ -337,6 +504,14 @@ def _run_route_or_empty(path: str) -> tuple[str | None, str | None]:
         return _run_route(path)
     except ValueError:
         return None, None
+
+
+def _device_flow_route_or_none(path: str) -> str | None:
+    prefix = f"{_API_PREFIX}/config/github/device-flow/"
+    if not path.startswith(prefix):
+        return None
+    auth_request_id = unquote(path.removeprefix(prefix))
+    return auth_request_id if auth_request_id and "/" not in auth_request_id else None
 
 
 def _error(code: str, message: str, action: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

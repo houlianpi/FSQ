@@ -40,31 +40,28 @@ Reviewer input is limited to:
 - Minimal navigation instructions required to locate modules and public APIs.
 - Optional verification command outputs as auxiliary evidence.
 - For no-SPEC-delta work, the recorded SPEC references and neutral defect reproduction evidence as claims to verify, not accepted proof.
-- For incremental re-audit only, the original reviewer-authored baseline and prior audit result plus the repair diff since that result.
 
 Do not provide persuasive summaries such as "this is complete" or "tests pass, so it should be fine".
 
-## Audit Baseline
+## Complete Audit Scope
 
-Before judging implementation, establish a reviewer-owned, task-local baseline containing:
+Before judging implementation, establish the complete scope for the current audit pass:
 
 - the root and relevant module SPEC inputs;
-- the audited worktree diff or commit range;
+- the complete current worktree diff or commit range;
 - the SPEC delta mode;
 - the complete set of applicable SPEC items;
-- a stable `item_id` for every applicable item;
 - the file, symbol, interface, dependency, configuration, or behavior boundaries relevant to each item;
-- an initially empty finding set.
 
-The baseline is structured reviewer output for the current SDD task. It is not a repository file and must not be authored or closed by the implementation agent.
+Determine this scope independently during every audit pass. Do not reuse verdicts or coverage claims from an earlier pass.
 
-## Complete First-Pass Procedure
+## Complete Audit Procedure
 
 1. Establish the complete applicable SPEC item inventory before assigning final verdicts, including independent validation of a no-SPEC-delta decision when applicable.
 2. Read the diff and relevant implementation path for every applicable item.
 3. Apply the Python and frontend domain checks when those areas are in scope.
 4. Record a verdict and concrete diff evidence for every item.
-5. Assign a stable `finding_id` to every distinct blocking root cause and associate all affected item IDs.
+5. Consolidate duplicate observations of each blocking root cause and reference every affected SPEC item precisely.
 6. Record repair ownership as implementation, SPEC/human decision, or verification environment.
 7. Record non-blocking quality feedback separately from SPEC verdicts.
 8. Return one complete coverage table and the full finding set, with blocking gaps before quality/style feedback.
@@ -82,7 +79,7 @@ When the implementation used the no-SPEC-delta path, independently verify all of
 - Public interfaces, configuration semantics, module ownership, dependency direction, architecture level, and supported-behavior scope remain accurately described.
 - Concrete defect evidence demonstrates an implementation mismatch rather than an undocumented requirement.
 
-The implementation agent's classification, a `bugfix` label, and passing tests are not sufficient proof. If any condition is unproven, return a blocking `spec-delta-required` finding owned by SPEC/human decision. Project implementation pauses until the relevant SPEC is updated and confirmed; that update invalidates the audit baseline.
+The implementation agent's classification, a `bugfix` label, and passing tests are not sufficient proof. If any condition is unproven, return a blocking `spec-delta-required` finding owned by SPEC/human decision. Project implementation pauses until the relevant SPEC is updated and confirmed; after reconciliation and verification, start a new complete audit.
 
 ## Python Architecture Audit
 
@@ -116,56 +113,38 @@ Use `.github/skills/frontend-architecture/references/audit-checklist.md` for the
 
 Each applicable item records:
 
-- `item_id`;
 - SPEC source and requirement text or a precise requirement reference;
 - represented implementation boundaries;
 - concrete diff evidence;
 - audit verdict;
-- validation mode: `first-pass`, `revalidated`, or `reused`;
-- related `finding_id` values, if any;
 - notes needed to reproduce or repair a gap.
 
 Each finding records:
 
-- `finding_id`;
-- related `item_id` values;
+- affected SPEC items or precise requirement references;
+- the distinct root cause;
 - blocking verdict and concrete evidence;
 - repair owner: implementation, SPEC/human decision, or verification environment;
-- status: open or closed;
-- automatic repair attempt count.
 
-Duplicate observations of the same root cause reuse one finding ID and may reference multiple item IDs. Distinct root causes under one SPEC item receive distinct finding IDs.
+Duplicate observations of the same root cause are consolidated into one finding that may reference multiple SPEC items. Distinct root causes under one SPEC item remain distinct findings.
 
-## Incremental Re-Audit
+## Repair And Full Re-Audit
 
-Incremental re-audit receives neutral inputs only:
+An audit pass must finish and return its complete coverage table and finding set before any implementation repair begins. Do not interleave audit and repair.
 
-- the current root and relevant module SPEC files;
-- the original reviewer-authored baseline and prior result;
-- the repair diff since the previous audit pass;
-- the current overall diff or commit range for boundary checks;
-- required verification output as auxiliary evidence;
-- minimal navigation information.
+After a complete audit result:
 
-Inspect every open finding, every changed line or represented boundary in the repair diff, every applicable item that overlaps the repair, shared or transitive boundaries affected by the repair, and every new issue introduced by the repair.
+1. Resolve any SPEC/human-decision or verification-environment blocker that can change or prevent implementation repair.
+2. Repair every in-scope implementation-fixable blocking finding in one batch.
+3. Finish all verification affected by the complete repair batch.
+4. Start a new complete independent audit using the current SPEC inputs, complete current diff or commit range, SPEC delta mode, and neutral verification evidence.
+5. Repeat until a complete audit reports no blocking findings.
 
-An earlier `implemented` result may be reused only when its SPEC input is unchanged, its represented implementation boundary does not overlap the repair, and no shared or transitive contract can be affected. Reused items retain verdict `implemented` and use validation mode `reused`. Inspected items use validation mode `revalidated`.
+Every subsequent audit repeats the complete audit procedure. Do not reuse an earlier item verdict, restrict inspection to repaired paths, or start the next audit before the entire repair batch and its verification are complete.
 
-A repair-introduced root cause receives a new stable finding ID. The reviewer closes a prior finding only when its requirement is satisfied; closing one finding must not hide a newly exposed finding.
+Run at most two automatic repair rounds. An `audit-blocked` result does not consume a repair round because no complete finding set is available to repair. If blocking findings remain after the second repair round, or one round makes no substantive progress, return the complete current result for human decision.
 
-## Baseline Invalidation
-
-Incremental reuse is forbidden and the applicable-item inventory must be rebuilt when:
-
-- a root or relevant module SPEC changes;
-- the diff expands into a previously unaudited module;
-- a module is added, removed, or changes ownership;
-- a public interface or export boundary changes beyond the represented baseline boundaries;
-- project dependency direction or a cross-module dependency changes;
-- frontend workspace, manifest, lock, Vite, generated-output, or backend transport ownership changes outside the represented boundaries;
-- the reviewer cannot prove that an earlier result is unaffected.
-
-Rebuilding the inventory creates a new complete pass over the currently applicable scope, not a repository-wide review of unrelated modules.
+The implementation agent may not declare findings resolved. Resolution is established only when the next complete independent audit gives every applicable item verdict `implemented`.
 
 ## Consolidated Synchronization Category
 
@@ -201,16 +180,16 @@ Any verdict except `implemented` is blocking unless the user explicitly accepts 
 Produce a complete item table:
 
 ```text
-Item ID | SPEC item | Boundaries | Diff evidence | Verdict | Validation mode | Finding IDs | Notes
+SPEC item | Boundaries | Diff evidence | Verdict | Notes
 ```
 
 Produce a complete finding table:
 
 ```text
-Finding ID | Item IDs | Evidence | Verdict | Repair owner | Status | Attempt count
+Affected SPEC items | Root cause | Evidence | Verdict | Repair owner
 ```
 
-State `coverage_complete=true|false`, `spec_delta_mode=confirmed-update|no-delta`, baseline status, audited SPEC inputs, and audited diff or commit range. Each evidence entry must cite concrete files and, when possible, line numbers or changed symbols. If evidence is absent, say so directly.
+State `coverage_complete=true|false`, `spec_delta_mode=confirmed-update|no-delta`, audited SPEC inputs, and audited complete diff or commit range. Each evidence entry must cite concrete files and, when possible, line numbers or changed symbols. If evidence is absent, say so directly.
 
 ## What Not To Accept
 
@@ -231,10 +210,9 @@ Before claiming completion, state:
 - Which root/module `SPEC.md` files were audited.
 - Which diff or commit range was audited.
 - Which SPEC delta mode was audited and, for no-delta work, whether its classification was independently validated.
-- Whether the baseline remains valid and `coverage_complete=true`.
+- Whether the latest complete audit has `coverage_complete=true`.
 - Whether every applicable SPEC item has concrete evidence and verdict `implemented`.
-- Which items were `reused` and which were `revalidated`.
-- Whether every blocking finding is closed by the independent reviewer.
+- Whether the latest complete audit has any blocking findings.
 - Any remaining `needs-human-decision` items accepted by the user.
 
-If the baseline is invalid, coverage is incomplete, required verification is unavailable, or blocking gaps remain, do not claim completion.
+If the latest audit pass is incomplete, coverage is incomplete, required verification is unavailable, or blocking gaps remain, do not claim completion.

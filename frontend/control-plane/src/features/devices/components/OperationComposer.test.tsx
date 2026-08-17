@@ -14,8 +14,8 @@ const ready: ReadinessResponse = {
 
 it('shows strict case facts without claiming human review', async () => {
   const onModeChange = vi.fn();
-  render(<OperationComposer mode="strict" goal="" casePath="flow.codex.yaml" cases={[{
-    path: 'flow.codex.yaml', id: 'flow', name: 'Create flow', platform: 'web', commandCount: 6,
+  render(<OperationComposer mode="strict" goal="" casePath="flow.fsq.yaml" cases={[{
+    path: 'flow.fsq.yaml', id: 'flow', name: 'Create flow', platform: 'web', commandCount: 6,
     requiresAiAssertion: true, validationStatus: 'validated', selectable: true, diagnostics: [],
   }]} casesState="ready" readiness={ready} discoveryLoading={false} canStart primaryInputRef={createRef()} onModeChange={onModeChange} onGoalChange={vi.fn()} onCaseChange={vi.fn()} onStart={vi.fn()} />);
   expect(screen.getByText('validated')).toBeInTheDocument();

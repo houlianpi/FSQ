@@ -57,7 +57,7 @@ export function useRunStream(requestId: string | null, client: ControlPlaneClien
       return true;
     };
 
-    const accept = (incoming: RunSnapshot) => {
+    const accept = (incoming: RunSnapshot, ensureTerminalHydrated = false) => {
       if (disposed) return;
       const incomingSequence = Math.max(0, ...(incoming.events ?? []).map((event) => event.sequence));
       sequenceRef.current = Math.max(sequenceRef.current, incomingSequence);
@@ -66,6 +66,13 @@ export function useRunStream(requestId: string | null, client: ControlPlaneClien
         terminalRef.current = true;
         source?.close();
         setConnection('ended');
+        if (ensureTerminalHydrated) {
+          void client.runSnapshot(requestId, controller.signal).then((hydrated) => {
+            if (!disposed) setSnapshot((previous) => mergeSnapshot(previous, hydrated));
+          }).catch((caught) => {
+            if (!disposed && !controller.signal.aborted && !endMissingRequest(caught)) setError(toApiError(caught));
+          });
+        }
       }
     };
 
@@ -91,7 +98,7 @@ export function useRunStream(requestId: string | null, client: ControlPlaneClien
       source = new EventSource(client.streamUrl(requestId, sequenceRef.current));
       source.addEventListener('open', () => { if (!disposed) { setConnection('live'); setError(null); } });
       source.addEventListener('snapshot', (event) => {
-        try { accept(validateRunSnapshot(JSON.parse((event as MessageEvent<string>).data), 'run stream')); }
+        try { accept(validateRunSnapshot(JSON.parse((event as MessageEvent<string>).data), 'run stream'), true); }
         catch { setError({ code: 'invalid_stream', message: 'A live update could not be read.', action: 'Snapshot polling will recover current state.' }); }
       });
       source.onerror = () => {

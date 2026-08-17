@@ -12,7 +12,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
-from fsq_agent.fsq import FsqCaseLoader
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader
 from fsq_agent.models import FsqCaseHook, FsqCaseHookAction
 
 
@@ -89,7 +89,7 @@ def save_lifecycle(
             mode="wb",
             dir=path.parent,
             prefix=f".{path.name}.",
-            suffix=".tmp",
+            suffix=FSQ_CASE_SUFFIX,
             delete=False,
         ) as handle:
             temporary_path = Path(handle.name)

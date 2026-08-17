@@ -68,19 +68,19 @@ class LifecycleHarness:
 
 
 def test_shared_lifecycle_runs_config_case_child_main_and_after_in_one_manifest(tmp_path: Path) -> None:
-    child_path = tmp_path / "child.codex.yaml"
+    child_path = tmp_path / "child.fsq.yaml"
     child_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Child\nplatform: android\n---\n- tapOn:\n    target: Child target\n",
         encoding="utf-8",
     )
-    root_path = tmp_path / "root.codex.yaml"
+    root_path = tmp_path / "root.fsq.yaml"
     root_path.write_text(
         "schemaVersion: fsq.ai-test/v1\n"
         "name: Root\n"
         "platform: android\n"
         "appId: com.example\n"
         "onCaseStart:\n"
-        "- runCase: child.codex.yaml\n"
+        "- runCase: child.fsq.yaml\n"
         "onCaseComplete:\n"
         "- runShell: echo case-after\n"
         "---\n"
@@ -148,7 +148,7 @@ def test_shared_lifecycle_uses_powershell_on_windows(monkeypatch) -> None:
 
 
 def test_shared_lifecycle_before_failure_skips_main_but_runs_after(tmp_path: Path, monkeypatch) -> None:
-    case_path = tmp_path / "failure.codex.yaml"
+    case_path = tmp_path / "failure.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Failure\nplatform: android\nappId: com.example\nonCaseStart:\n- runShell: fail-before\nonCaseComplete:\n- runShell: pass-after\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -183,7 +183,7 @@ def test_shared_lifecycle_before_failure_skips_main_but_runs_after(tmp_path: Pat
 
 
 def test_shared_lifecycle_propagates_cancellation_before_actions(tmp_path: Path, monkeypatch) -> None:
-    case_path = tmp_path / "cancel.codex.yaml"
+    case_path = tmp_path / "cancel.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Cancel\nplatform: android\nonCaseStart:\n- runShell: should-not-run\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -215,9 +215,9 @@ def test_shared_lifecycle_propagates_cancellation_before_actions(tmp_path: Path,
 
 
 def test_shared_lifecycle_preflight_rejects_recursive_run_case(tmp_path: Path) -> None:
-    case_path = tmp_path / "recursive.codex.yaml"
+    case_path = tmp_path / "recursive.fsq.yaml"
     case_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Recursive\nplatform: android\nonCaseStart:\n- runCase: recursive.codex.yaml\n---\n- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Recursive\nplatform: android\nonCaseStart:\n- runCase: recursive.fsq.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -228,7 +228,7 @@ def test_shared_lifecycle_preflight_rejects_recursive_run_case(tmp_path: Path) -
 
 
 def test_shared_lifecycle_preserves_repeated_shell_order_and_continues_after_failures(tmp_path: Path, monkeypatch) -> None:
-    case_path = tmp_path / "repeated.codex.yaml"
+    case_path = tmp_path / "repeated.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Repeated\nplatform: android\nonCaseComplete:\n- runShell: first\n- runShell: second\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -278,7 +278,7 @@ def test_shared_lifecycle_uses_system_shell_off_windows(monkeypatch) -> None:
 
 
 def test_shared_lifecycle_records_shell_startup_failure(tmp_path: Path, monkeypatch) -> None:
-    case_path = tmp_path / "startup-failure.codex.yaml"
+    case_path = tmp_path / "startup-failure.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Startup Failure\nplatform: android\nonCaseStart:\n- runShell: broken\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -310,7 +310,7 @@ def test_shared_lifecycle_records_shell_startup_failure(tmp_path: Path, monkeypa
 
 
 def test_shared_lifecycle_uses_pre_resolved_steps_without_lazy_resolution(tmp_path: Path) -> None:
-    case_path = tmp_path / "resolved.codex.yaml"
+    case_path = tmp_path / "resolved.fsq.yaml"
     case_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Resolved\nplatform: android\n---\n- launchApp: {}\n",
         encoding="utf-8",
@@ -338,14 +338,14 @@ def test_shared_lifecycle_uses_pre_resolved_steps_without_lazy_resolution(tmp_pa
 
 
 def test_shared_lifecycle_uses_preloaded_child_snapshot_and_encloses_child_events(tmp_path: Path) -> None:
-    child_path = tmp_path / "snapshot-child.codex.yaml"
+    child_path = tmp_path / "snapshot-child.fsq.yaml"
     child_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Snapshot Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
-    root_path = tmp_path / "snapshot-root.codex.yaml"
+    root_path = tmp_path / "snapshot-root.fsq.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Root\nplatform: android\nonCaseStart:\n- runCase: snapshot-child.codex.yaml\n---\n- launchApp: {}\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Snapshot Root\nplatform: android\nonCaseStart:\n- runCase: snapshot-child.fsq.yaml\n---\n- launchApp: {}\n",
         encoding="utf-8",
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -397,13 +397,13 @@ def test_shared_lifecycle_uses_preloaded_child_snapshot_and_encloses_child_event
 
 @pytest.mark.parametrize("cancel_boundary", ["child", "main"])
 def test_shared_lifecycle_cancels_at_child_and_main_boundaries(tmp_path: Path, cancel_boundary: str) -> None:
-    child_path = tmp_path / "cancel-child.codex.yaml"
+    child_path = tmp_path / "cancel-child.fsq.yaml"
     child_path.write_text(
         "schemaVersion: fsq.ai-test/v1\nname: Cancel Child\nplatform: android\n---\n- tapOn:\n    target: Child\n",
         encoding="utf-8",
     )
-    root_path = tmp_path / "cancel-root.codex.yaml"
-    before = "onCaseStart:\n- runCase: cancel-child.codex.yaml\n" if cancel_boundary == "child" else ""
+    root_path = tmp_path / "cancel-root.fsq.yaml"
+    before = "onCaseStart:\n- runCase: cancel-child.fsq.yaml\n" if cancel_boundary == "child" else ""
     root_path.write_text(
         f"schemaVersion: fsq.ai-test/v1\nname: Cancel Root\nplatform: android\n{before}---\n- launchApp: {{}}\n",
         encoding="utf-8",

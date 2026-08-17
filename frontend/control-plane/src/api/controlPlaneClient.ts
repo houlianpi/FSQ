@@ -1,13 +1,20 @@
 import type {
   ApiErrorBody,
+  AzureConfigPayload,
   BootstrapResponse,
   CasesResponse,
+  ConfigResponse,
+  ConnectionTestResponse,
+  GitHubDeviceFlowResponse,
   PlatformId,
   ReadinessResponse,
+  ReplayFramesResponse,
+  ReplayVideoResponse,
   RunSnapshot,
   StartRunPayload,
   StartRunResponse,
   TargetsResponse,
+  StepArtifactsResponse,
   UiSnapshotResponse,
 } from './types';
 
@@ -16,6 +23,8 @@ const platforms = new Set<PlatformId>(['android', 'web', 'windows', 'macos']);
 const modes = new Set(['explore', 'strict']);
 const statuses = new Set(['preparing', 'running', 'finalizing', 'success', 'failed', 'inconclusive', 'cancelled', 'error']);
 const readinessStatuses = new Set(['ready', 'unavailable', 'error']);
+const deviceFlowStatuses = new Set(['waiting', 'success', 'failed', 'expired', 'cancelled']);
+const providerTypes = new Set(['azure_openai', 'github_copilot']);
 
 export class ControlPlaneApiError extends Error {
   readonly status: number;
@@ -58,6 +67,10 @@ function finiteNumber(value: unknown): value is number { return typeof value ===
 function nonNegativeInteger(value: unknown): value is number { return finiteNumber(value) && Number.isInteger(value) && value >= 0; }
 function platform(value: unknown): value is PlatformId { return string(value) && platforms.has(value as PlatformId); }
 function arrayOf(value: unknown, predicate: (item: unknown) => boolean): boolean { return Array.isArray(value) && value.every(predicate); }
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => key in value);
+}
 
 function activeTask(value: unknown): boolean {
   return record(value) && string(value.requestId) && nullableString(value.runId) && platform(value.platform)
@@ -68,7 +81,7 @@ function readinessRecord(value: unknown): boolean {
 }
 function timelineEvent(value: unknown): boolean {
   if (!record(value) || !nonNegativeInteger(value.sequence)) return false;
-  return ['time', 'phase', 'stepId', 'label', 'status', 'message', 'level'].every((key) => value[key] === undefined || string(value[key]))
+  return ['time', 'phase', 'stepId', 'label', 'status', 'message', 'level', 'toolCallId'].every((key) => value[key] === undefined || string(value[key]))
     && (value.tool === undefined || nullableString(value.tool))
     && (value.durationMs === undefined || value.durationMs === null || finiteNumber(value.durationMs));
 }
@@ -125,6 +138,61 @@ function validateUiSnapshot(value: unknown): UiSnapshotResponse {
     || !string(value.mimeType) || !string(value.format) || !string(value.content)) invalidResponse('ui snapshot', 'Invalid UI snapshot fields.');
   return value as unknown as UiSnapshotResponse;
 }
+function validateStepArtifacts(value: unknown): StepArtifactsResponse {
+  const artifact = (item: unknown) => record(item) && ['screenshot', 'ui_snapshot'].includes(String(item.kind))
+    && string(item.phase) && nullableString(item.timestamp) && string(item.mimeType)
+    && (item.format === undefined || string(item.format)) && (item.contentBase64 === undefined || string(item.contentBase64))
+    && (item.content === undefined || string(item.content)) && (item.error === undefined || string(item.error))
+    && (item.sizeBytes === undefined || nonNegativeInteger(item.sizeBytes))
+    && (string(item.error) || (item.kind === 'screenshot' ? string(item.contentBase64) : string(item.content)));
+  if (!record(value) || !bool(value.available) || !string(value.stepId) || !arrayOf(value.artifacts, artifact) || !nullableString(value.message)) invalidResponse('step artifacts', 'Invalid step artifact fields.');
+  return value as unknown as StepArtifactsResponse;
+}
+function validateReplayFrames(value: unknown): ReplayFramesResponse {
+  const frame = (item: unknown) => record(item) && nonNegativeInteger(item.index) && (item.timestamp === null || finiteNumber(item.timestamp)) && string(item.mimeType)
+    && (item.contentBase64 === undefined || string(item.contentBase64)) && (item.error === undefined || string(item.error))
+    && (item.sizeBytes === undefined || nonNegativeInteger(item.sizeBytes)) && (string(item.contentBase64) || string(item.error));
+  if (!record(value) || !bool(value.available) || !arrayOf(value.frames, frame) || !nullableString(value.message)) invalidResponse('replay frames', 'Invalid replay frame fields.');
+  return value as unknown as ReplayFramesResponse;
+}
+function validateReplayVideo(value: unknown): ReplayVideoResponse {
+  if (!record(value) || !bool(value.available) || !nullableString(value.videoUrl)
+    || (value.mimeType !== undefined && !string(value.mimeType)) || (value.sizeBytes !== undefined && !nonNegativeInteger(value.sizeBytes))) invalidResponse('replay video', 'Invalid replay video fields.');
+  return value as unknown as ReplayVideoResponse;
+}
+function validateConfig(value: unknown): ConfigResponse {
+  if (!record(value) || !hasOnlyKeys(value, ['configured', 'provider']) || !bool(value.configured)) invalidResponse('config', 'Invalid configured state.');
+  if (!value.configured) {
+    if (value.provider !== null) invalidResponse('config', 'Unconfigured state must have a null provider.');
+    return value as unknown as ConfigResponse;
+  }
+  const provider = value.provider;
+  if (!record(provider) || !string(provider.type) || !providerTypes.has(provider.type) || !string(provider.modelName) || !provider.modelName) {
+    invalidResponse('config', 'Invalid Provider identity.');
+  }
+  if (provider.type === 'azure_openai') {
+    if (!hasOnlyKeys(provider, ['type', 'modelName', 'baseUrl', 'apiKey']) || !string(provider.baseUrl) || !provider.baseUrl
+      || !string(provider.apiKey) || !provider.apiKey) invalidResponse('config', 'Invalid Azure Provider fields.');
+  } else if (!hasOnlyKeys(provider, ['type', 'modelName', 'authenticated']) || provider.authenticated !== true) {
+    invalidResponse('config', 'Invalid GitHub Provider fields.');
+  }
+  return value as unknown as ConfigResponse;
+}
+function validateDeviceFlow(value: unknown): GitHubDeviceFlowResponse {
+  if (!record(value) || !string(value.authRequestId) || !value.authRequestId || !string(value.verificationUri) || !value.verificationUri
+    || !string(value.userCode) || !value.userCode || !string(value.expiresAt) || !value.expiresAt
+    || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0
+    || !string(value.status) || !deviceFlowStatuses.has(value.status)
+    || !(value.message === undefined || string(value.message))) invalidResponse('GitHub device flow', 'Invalid device-flow fields.');
+  return value as unknown as GitHubDeviceFlowResponse;
+}
+function validateConnectionTest(value: unknown): ConnectionTestResponse {
+  if (!record(value) || value.success !== true || !string(value.provider) || !providerTypes.has(value.provider)
+    || !string(value.modelName) || !value.modelName || !finiteNumber(value.durationMs) || value.durationMs < 0) {
+    invalidResponse('connection test', 'Invalid connection-test fields.');
+  }
+  return value as unknown as ConnectionTestResponse;
+}
 
 async function jsonRequest<T>(path: string, validate: (value: unknown) => T, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -174,6 +242,25 @@ export const controlPlaneClient = {
   },
   uiSnapshot: (requestId: string, signal?: AbortSignal) =>
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/ui-snapshot`, validateUiSnapshot, { signal }),
+  stepArtifacts: (requestId: string, stepId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/step-artifacts/${encodeURIComponent(stepId)}`, validateStepArtifacts, { signal }),
+  replayFrames: (requestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay`, validateReplayFrames, { signal }),
+  replayVideo: (requestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { signal }),
+  uploadReplayVideo: (requestId: string, mimeType: string, videoBase64: string, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { method: 'POST', body: JSON.stringify({ mimeType, videoBase64 }), signal }),
+  config: (signal?: AbortSignal) => jsonRequest('/config', validateConfig, { signal }),
+  saveAzureConfig: (payload: AzureConfigPayload, signal?: AbortSignal) =>
+    jsonRequest('/config/azure', validateConfig, { method: 'PUT', body: JSON.stringify(payload), signal }),
+  startGithubDeviceFlow: (modelName: string, signal?: AbortSignal) =>
+    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', body: JSON.stringify({ modelName }), signal }),
+  githubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { signal }),
+  cancelGithubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', body: '{}', signal }),
+  testConnection: (signal?: AbortSignal) =>
+    jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', body: '{}', signal }),
 };
 
 export type ControlPlaneClient = typeof controlPlaneClient;

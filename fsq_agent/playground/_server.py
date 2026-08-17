@@ -20,10 +20,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import yaml
 
-from fsq_agent.fsq import FsqCaseLoader
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
-from fsq_agent.playground._execution import PlaygroundExecutionHandle, start_dynamic_goal_execution
+from fsq_agent.playground._execution import PlaygroundExecutionHandle, refresh_execution_settings, start_dynamic_goal_execution
 from fsq_agent.playground._state import BusyError, PlaygroundState
 from fsq_agent.playground._yaml_lifecycle import (
     YamlLifecycleConflictError,
@@ -54,7 +54,7 @@ _RUN_RESULT_MARKERS = {
     "evidence-manifest.json",
     "events.jsonl",
     "recording.json",
-    "recorded.codex.yaml",
+    f"recorded{FSQ_CASE_SUFFIX}",
 }
 
 
@@ -276,6 +276,10 @@ class PlaygroundServer:
                 return 400, {"error": "Exactly one of goal, caseYamlPath, or strictCaseYamlPath is required."}
             if self.settings.harness.platform == "android" and not self.state.session.connected:
                 return 409, {"error": "No active Android session. Create a session before execution."}
+            try:
+                execution_settings = refresh_execution_settings(self.settings)
+            except (ConfigurationError, OSError) as exc:
+                return 400, {"error": str(exc)}
             if has_goal:
                 task_label = goal.strip()
             elif has_case_yaml:
@@ -289,13 +293,13 @@ class PlaygroundServer:
             if has_strict_case_yaml:
                 self._reset_replay_for_known_run(request_id, self._strict_case_run_id(strict_case_yaml_path.strip()))
             handle = start_dynamic_goal_execution(
-                settings=self.settings,
+                settings=execution_settings,
                 state=self.state,
                 request_id=request_id,
                 goal=goal.strip() if has_goal else None,
                 case_yaml_path=case_yaml_path.strip() if has_case_yaml else None,
                 strict_case_yaml_path=strict_case_yaml_path.strip() if has_strict_case_yaml else None,
-                device_id=self.state.session.device_id if self.settings.harness.platform == "android" else None,
+                device_id=self.state.session.device_id if execution_settings.harness.platform == "android" else None,
                 record=self.options.record,
                 record_on_failure=self.options.record_on_failure,
             )
@@ -425,7 +429,7 @@ class PlaygroundServer:
         replay_dir = run_dir / "playground-replay"
         return {
             "report": any((run_dir / name).is_file() for name in ("report.md", "report.json", "core-report.md", "core-report.json")),
-            "recordedYaml": (run_dir / "recording.json").is_file() or (run_dir / "recorded.codex.yaml").is_file(),
+            "recordedYaml": (run_dir / "recording.json").is_file() or (run_dir / f"recorded{FSQ_CASE_SUFFIX}").is_file(),
             "replay": (replay_dir / "replay-manifest.json").is_file() or (replay_dir / "replay.webm").is_file() or self._run_has_screenshot_replay_sources(run_dir),
             "stepArtifacts": (run_dir / "evidence-manifest.json").is_file() or (run_dir / "events.jsonl").is_file(),
         }
@@ -669,6 +673,8 @@ class PlaygroundServer:
 
     def _resolve_yaml_input_path(self, path_text: str) -> Path:
         requested = Path(path_text.strip())
+        if not is_fsq_case_file(requested):
+            raise ValueError(f"Case YAML files must use the {FSQ_CASE_SUFFIX} suffix.")
         candidates = [requested] if requested.is_absolute() else [self.settings.cases.dir / requested, Path.cwd() / requested]
         for candidate in candidates:
             if candidate.exists():
@@ -697,7 +703,11 @@ class PlaygroundServer:
             return 400, {"available": False, "error": "Recording metadata must be a JSON object.", "runId": run_id}
         recorded_case_path = self._recorded_case_path(run_dir, recording)
         if recorded_case_path is None:
-            return 400, {"available": False, "error": "Recorded case path is outside the run directory.", "runId": run_id}
+            return 400, {
+                "available": False,
+                "error": f"Recorded case path is outside the run directory or does not identify recorded{FSQ_CASE_SUFFIX}.",
+                "runId": run_id,
+            }
         try:
             content = recorded_case_path.read_text(encoding="utf-8") if recorded_case_path.is_file() else None
         except UnicodeDecodeError:
@@ -936,13 +946,17 @@ class PlaygroundServer:
         return payload if isinstance(payload, dict) else None
 
     def _recorded_case_path(self, run_dir: Path, recording: dict[str, object] | None) -> Path | None:
+        expected_name = f"recorded{FSQ_CASE_SUFFIX}"
         raw_path = recording.get("recorded_case_path") if isinstance(recording, dict) else None
         if isinstance(raw_path, str) and raw_path.strip():
             candidate = Path(raw_path.strip())
+            if candidate.name != expected_name:
+                return None
             resolved = candidate.resolve() if candidate.is_absolute() else (run_dir / candidate).resolve()
         else:
-            resolved = (run_dir / "recorded.codex.yaml").resolve()
-        return resolved if _is_relative_to(resolved, run_dir) else None
+            resolved = (run_dir / expected_name).resolve()
+        expected = (run_dir / expected_name).resolve()
+        return resolved if resolved == expected and _is_relative_to(resolved, run_dir) else None
 
     def _recording_value(self, recording: dict[str, object] | None, key: str, default: str) -> str:
         value = recording.get(key) if isinstance(recording, dict) else None
@@ -1579,6 +1593,8 @@ class PlaygroundServer:
 
     def _resolve_case_yaml_path(self, path_text: str) -> Path:
         requested = Path(path_text.strip())
+        if not is_fsq_case_file(requested):
+            raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
         candidates = [requested] if requested.is_absolute() else [self.settings.cases.dir / requested, Path.cwd() / requested]
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():

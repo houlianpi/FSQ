@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.config import (
+    activate_github_copilot_provider,
     load_platform_settings,
     load_settings,
+    save_azure_openai_provider,
     validate_provider_settings,
     validate_runtime_settings,
     validate_strict_core_settings,
@@ -44,6 +46,9 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
 @pytest.fixture(autouse=True)
 def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    user_home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setenv("USERPROFILE", str(user_home))
     for name in (
         "FSQ_LLM_PROVIDER",
         "AZURE_OPENAI_BASE_URL",
@@ -61,6 +66,12 @@ def _isolate_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "FSQ_MACOS_APP_PATH",
     ):
         monkeypatch.delenv(name, raising=False)
+    activate_github_copilot_provider(
+        model="gpt-5.5",
+        github_token={"access_token": "test-github-token"},
+        provider_token={"token": "test-provider-token", "plan": "individual"},
+        user_config_root=user_home / ".fsq",
+    )
 
 
 def test_load_settings_from_yaml(tmp_path: Path) -> None:
@@ -114,9 +125,9 @@ def test_load_settings_accepts_case_lifecycle_hooks(tmp_path: Path) -> None:
 caseLifecycle:
   onCaseStart:
     runShell: ./scripts/config-before.sh
-    runCase: hooks/config-before.codex.yaml
+    runCase: hooks/config-before.fsq.yaml
   onCaseComplete:
-    - runCase: hooks/config-after.codex.yaml
+    - runCase: hooks/config-after.fsq.yaml
     - runShell: ./scripts/config-after.sh
 """,
         ),
@@ -127,10 +138,10 @@ caseLifecycle:
 
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_start[0].actions] == [
         ["runShell", "./scripts/config-before.sh"],
-        ["runCase", "hooks/config-before.codex.yaml"],
+        ["runCase", "hooks/config-before.fsq.yaml"],
     ]
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[0].actions] == [
-        ["runCase", "hooks/config-after.codex.yaml"],
+        ["runCase", "hooks/config-after.fsq.yaml"],
     ]
     assert [[action.action_name, action.value] for action in settings.case_lifecycle.on_case_complete[1].actions] == [
         ["runShell", "./scripts/config-after.sh"],
@@ -855,21 +866,15 @@ verification:
         load_settings(config_path)
 
 
-def test_azure_openai_endpoint_and_model_come_from_fixed_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/responses?api-version=2025-04-01-preview")
-    monkeypatch.setenv("AZURE_OPENAI_MODEL", "gpt-5.4")
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
+def test_azure_openai_endpoint_model_and_key_come_from_user_provider_store(tmp_path: Path) -> None:
+    save_azure_openai_provider(
+        base_url="https://edgeqa-resource.cognitiveservices.azure.com/openai/responses?api-version=2025-04-01-preview",
+        model="gpt-5.4",
+        api_key="dummy",
+        user_config_root=Path.home() / ".fsq",
     )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
 
     settings = load_settings(config_path)
 
@@ -877,10 +882,10 @@ openai_agents:
     assert settings.openai_agents.provider == "azure_openai"
     assert settings.openai_agents.base_url == "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
     assert settings.openai_agents.model == "gpt-5.4"
-    assert settings.openai_agents.api_key_env == "AZURE_OPENAI_API_KEY"
+    assert settings.openai_agents.api_key == "dummy"
 
 
-def test_load_settings_provider_comes_from_fsq_llm_provider_env(
+def test_load_settings_ignores_provider_environment_variables(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -894,17 +899,12 @@ def test_load_settings_provider_comes_from_fsq_llm_provider_env(
     settings = load_settings(config_path)
 
     validate_provider_settings(settings)
-    assert settings.openai_agents.provider == "azure_openai"
-    assert settings.openai_agents.base_url == "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
-    assert settings.openai_agents.model == "gpt-5.4"
+    assert settings.openai_agents.provider == "github_copilot"
+    assert settings.openai_agents.base_url == ""
+    assert settings.openai_agents.model == "gpt-5.5"
 
 
-def test_load_settings_provider_env_overrides_yaml_provider(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("FSQ_LLM_PROVIDER", "github_copilot")
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+def test_load_settings_rejects_provider_in_platform_yaml(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         _base_config(
@@ -917,14 +917,11 @@ openai_agents:
         encoding="utf-8",
     )
 
-    settings = load_settings(config_path)
-
-    validate_provider_settings(settings)
-    assert settings.openai_agents.provider == "github_copilot"
-    assert settings.openai_agents.model == "gpt-5.5"
+    with pytest.raises(ConfigurationError, match="Invalid configuration"):
+        load_settings(config_path)
 
 
-def test_load_settings_rejects_invalid_fsq_llm_provider_env(
+def test_load_settings_ignores_invalid_fsq_llm_provider_env(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -932,8 +929,9 @@ def test_load_settings_rejects_invalid_fsq_llm_provider_env(
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match="FSQ_LLM_PROVIDER"):
-        load_settings(config_path)
+    settings = load_settings(config_path)
+
+    assert settings.openai_agents.provider == "github_copilot"
 
 
 def test_validate_provider_settings_does_not_require_platform_harness_env(
@@ -964,7 +962,7 @@ harness:
         validate_runtime_settings(settings)
 
 
-def test_default_github_copilot_provider_skips_azure_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configured_github_copilot_provider_skips_azure_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
@@ -1144,42 +1142,27 @@ def test_load_settings_uses_default_harness_without_android_env(tmp_path: Path) 
     assert settings.harness.android.serial is None
 
 
-def test_validate_runtime_settings_requires_azure_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/")
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy")
+def test_validate_runtime_settings_requires_azure_model(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     settings = load_settings(config_path)
+    settings.openai_agents.provider = "azure_openai"
+    settings.openai_agents.base_url = "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
+    settings.openai_agents.model = ""
+    settings.openai_agents.api_key = "dummy"
 
     with pytest.raises(ConfigurationError, match="model deployment"):
         validate_runtime_settings(settings)
 
 
-def test_validate_runtime_settings_requires_azure_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/")
-    monkeypatch.setenv("AZURE_OPENAI_MODEL", "gpt-5.4")
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+def test_validate_runtime_settings_requires_azure_api_key(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     settings = load_settings(config_path)
+    settings.openai_agents.provider = "azure_openai"
+    settings.openai_agents.base_url = "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
+    settings.openai_agents.model = "gpt-5.4"
+    settings.openai_agents.api_key = ""
 
     with pytest.raises(ConfigurationError, match="API key"):
         validate_runtime_settings(settings)
@@ -1187,16 +1170,7 @@ openai_agents:
 
 def test_validate_strict_core_settings_does_not_require_openai_api_key(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     settings = load_settings(config_path)
 
     validate_strict_core_settings(settings)
@@ -1256,52 +1230,28 @@ output:
 
 
 def test_load_settings_loads_dotenv_from_config_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AZURE_OPENAI_BASE_URL", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_MODEL", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("FSQ_ANDROID_APP_ID", raising=False)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
     (tmp_path / ".env").write_text(
-        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=from-dotenv\n",
+        "FSQ_ANDROID_APP_ID=com.example.from-dotenv\n",
         encoding="utf-8",
     )
 
     settings = load_settings(config_path)
 
-    validate_runtime_settings(settings)
-    assert settings.openai_agents.base_url == "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/"
-    assert settings.openai_agents.model == "gpt-5.4"
+    assert settings.harness.android.app_id == "com.example.from-dotenv"
 
 
 def test_load_settings_dotenv_does_not_override_existing_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "from-process")
-    monkeypatch.setenv("AZURE_OPENAI_BASE_URL", "https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/")
-    monkeypatch.setenv("AZURE_OPENAI_MODEL", "gpt-5.4")
+    monkeypatch.setenv("FSQ_ANDROID_APP_ID", "from-process")
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
-    (tmp_path / ".env").write_text("AZURE_OPENAI_API_KEY=from-dotenv\n", encoding="utf-8")
+    config_path.write_text(_base_config(tmp_path), encoding="utf-8")
+    (tmp_path / ".env").write_text("FSQ_ANDROID_APP_ID=from-dotenv\n", encoding="utf-8")
 
     load_settings(config_path)
 
-    assert os.environ["AZURE_OPENAI_API_KEY"] == "from-process"
+    assert os.environ["FSQ_ANDROID_APP_ID"] == "from-process"
 
 
 def test_load_settings_rejects_invalid_dotenv_line(tmp_path: Path) -> None:
@@ -1314,25 +1264,10 @@ def test_load_settings_rejects_invalid_dotenv_line(tmp_path: Path) -> None:
 
 
 def test_validate_runtime_settings_rejects_placeholder_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AZURE_OPENAI_BASE_URL", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_MODEL", raising=False)
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        _base_config(
-            tmp_path,
-            """
-openai_agents:
-  provider: azure_openai
-""",
-        ),
-        encoding="utf-8",
-    )
-    (tmp_path / ".env").write_text(
-        "AZURE_OPENAI_BASE_URL=https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/\nAZURE_OPENAI_MODEL=gpt-5.4\nAZURE_OPENAI_API_KEY=replace-with-your-azure-openai-api-key\n",
-        encoding="utf-8",
-    )
-    settings = load_settings(config_path)
-
     with pytest.raises(ConfigurationError, match="placeholder"):
-        validate_runtime_settings(settings)
+        save_azure_openai_provider(
+            base_url="https://edgeqa-resource.cognitiveservices.azure.com/openai/v1/",
+            model="gpt-5.4",
+            api_key="replace-with-your-azure-openai-api-key",
+            user_config_root=Path.home() / ".fsq",
+        )

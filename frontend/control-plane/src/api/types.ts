@@ -82,6 +82,10 @@ export interface TimelineEvent {
   durationMs?: number | null;
   message?: string;
   level?: string;
+  payload?: unknown;
+  toolCallId?: string;
+  toolArguments?: unknown;
+  toolOutputPreview?: unknown;
 }
 export interface RunSnapshot extends ActiveTaskSummary {
   source: { goal?: string; casePath?: string };
@@ -109,6 +113,71 @@ export interface UiSnapshotResponse {
   mimeType: string;
   format: string;
   content: string;
+}
+export interface StepArtifact {
+  kind: 'screenshot' | 'ui_snapshot';
+  phase: string;
+  timestamp: string | null;
+  mimeType: string;
+  format?: string;
+  contentBase64?: string;
+  content?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface StepArtifactsResponse {
+  available: boolean;
+  stepId: string;
+  artifacts: StepArtifact[];
+  message: string | null;
+}
+export interface ReplayFrame {
+  index: number;
+  timestamp: number | null;
+  mimeType: string;
+  contentBase64?: string;
+  error?: string;
+  sizeBytes?: number;
+}
+export interface ReplayFramesResponse { available: boolean; frames: ReplayFrame[]; message: string | null }
+export interface ReplayVideoResponse {
+  available: boolean;
+  videoUrl: string | null;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
+export interface AzureProviderConfig {
+  type: 'azure_openai';
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+}
+export interface GitHubProviderConfig {
+  type: 'github_copilot';
+  modelName: string;
+  authenticated: true;
+}
+export type ProviderConfig = AzureProviderConfig | GitHubProviderConfig;
+export type ConfigResponse =
+  | { configured: false; provider: null }
+  | { configured: true; provider: ProviderConfig };
+export interface AzureConfigPayload { baseUrl: string; modelName: string; apiKey: string }
+export type DeviceFlowStatus = 'waiting' | 'success' | 'failed' | 'expired' | 'cancelled';
+export interface GitHubDeviceFlowResponse {
+  authRequestId: string;
+  verificationUri: string;
+  userCode: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+  status: DeviceFlowStatus;
+  message?: string;
+}
+export interface ConnectionTestResponse {
+  success: true;
+  provider: 'azure_openai' | 'github_copilot';
+  modelName: string;
+  durationMs: number;
 }
 
 export interface RequestResource<T> {

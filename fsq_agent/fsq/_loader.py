@@ -9,15 +9,23 @@ from pydantic import ValidationError
 
 from fsq_agent.models import ConfigurationError, FsqCase, FsqCaseConfig
 
+FSQ_CASE_SUFFIX = ".fsq.yaml"
+LEGACY_CASE_SUFFIX = ".codex.yaml"
+
 
 def is_fsq_case_file(path: str | Path) -> bool:
     name = Path(path).name
-    return name.endswith((".fsq.yaml", ".codex.yaml"))
+    return name.endswith((FSQ_CASE_SUFFIX, LEGACY_CASE_SUFFIX))
 
 
 class FsqCaseLoader:
     def load_case(self, path: str | Path) -> FsqCase:
         case_path = Path(path)
+        if not is_fsq_case_file(case_path):
+            raise ConfigurationError(
+                f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.",
+                context={"path": str(case_path)},
+            )
         try:
             docs = list(yaml.safe_load_all(case_path.read_text(encoding="utf-8")))
         except (OSError, yaml.YAMLError) as exc:

@@ -24,7 +24,7 @@ execution:
 # config onCaseStart -> case onCaseStart -> case commands -> case onCaseComplete -> config onCaseComplete
 caseLifecycle:
   onCaseStart:
-    - runCase: hooks/common-before.codex.yaml
+    - runCase: hooks/common-before.fsq.yaml
     - runShell: echo config before
   onCaseComplete:
     - runShell: echo config after

@@ -223,27 +223,26 @@ After required project SPEC confirmation or a recorded no-SPEC-delta decision:
 
 ## Project Audit Lifecycle
 
-After project implementation verification, `spec-driven` starts exactly one complete first-pass project audit. The independent reviewer must establish the full applicable-item inventory and inspect every item before returning. Finding the first blocker must not end the pass.
+After project implementation verification, `spec-driven` starts a complete project audit. Every audit pass must independently establish the full applicable-item inventory from the current SPEC inputs and complete current diff, then inspect every item before returning. Finding the first blocker must not end the pass, and implementation repair must not begin while the audit is still in progress.
 
-The first-pass result must contain stable item IDs, concrete diff evidence, verdicts, stable finding IDs, repair ownership, and one complete coverage table. The only allowed early return is `audit-blocked` when required authority inputs, tools, or artifacts are unavailable. `audit-blocked` is not a passing verdict and does not consume a repair attempt.
+Each audit result must contain precise SPEC references, concrete diff evidence, verdicts, repair ownership, one complete coverage table, and the full finding set. The only allowed early return is `audit-blocked` when required authority inputs, tools, or artifacts are unavailable. `audit-blocked` is not a passing verdict and does not consume a repair round.
 
 After the complete result returns:
 
 1. Group all open findings by implementation repair, authority/human decision, or verification environment.
-2. Repair all implementation-fixable blocking findings in one batch.
-3. Run verification affected by that repair batch.
-4. Request incremental re-audit with the reviewer-authored baseline, prior result, repair diff, current overall diff, and neutral verification evidence.
-5. Recheck every open finding, every repair change, overlapping or transitive boundaries, and newly introduced issues.
-6. Reuse an earlier passing item only when its authority input and represented boundary are unchanged and demonstrably unaffected. Mark reused and revalidated items explicitly.
-7. If `spec-implementation-audit` declares the baseline invalid, rebuild the complete applicable-item inventory before judging completion.
+2. Resolve authority/human decisions and verification-environment blockers before starting an implementation repair batch when they can change or prevent that repair.
+3. Repair all in-scope implementation-fixable blocking findings in one batch. Do not trigger another audit after only a partial repair.
+4. Complete the affected verification for the entire repair batch.
+5. Start a new complete audit against the current SPEC inputs and complete current diff. Do not reuse prior item verdicts or limit the audit to repaired paths.
+6. Repeat complete audit, complete repair, and verification rounds until one complete audit has no blocking findings.
 
-The implementation agent may explain its repair but may not close reviewer findings. A re-audit may reuse the same independent reviewer context or supply another fresh reviewer with the reviewer-authored baseline and result. Do not provide persuasive implementation summaries.
+The implementation agent may explain its repair but may not declare audit findings resolved. Only the next complete independent audit determines whether the current implementation passes. Do not provide persuasive implementation summaries to the reviewer.
 
-The same finding may receive at most two automatic repair attempts. If it remains open after the second attempt, or one repair/re-audit round makes no substantive progress, pause automatic repair and present the finding, current evidence, attempted repairs, reviewer rationale, and concrete human decision options. The finding remains blocking until an allowed decision and any required project SPEC confirmation are complete.
+Run at most two automatic repair rounds. If the complete audit after the second repair round still has blocking findings, or one complete repair and re-audit round makes no substantive progress, pause automatic repair and present the complete current finding set, current evidence, attempted repair rounds, reviewer rationale, and concrete human decision options. The findings remain blocking until an allowed decision and any required project SPEC confirmation are complete.
 
 ## Consolidated Project Implementation Audit
 
-For a project change, `spec-implementation-audit` owns the applicable-item inventory, verdict semantics, evidence, baseline reuse, and baseline invalidation. SPEC/code synchronization is a category in that audit, not a separate scan. Include these checks when applicable:
+For a project change, `spec-implementation-audit` owns the applicable-item inventory, verdict semantics, evidence, and complete-pass coverage. SPEC/code synchronization is a category in that audit, not a separate scan. Include these checks when applicable:
 
 - [ ] Root `SPEC.md` module table matches actual modules.
 - [ ] Root `SPEC.md` architecture diagram matches actual project dependencies.
@@ -270,19 +269,17 @@ root SPEC.md + relevant module SPEC.md files + actual diff
 
 Tests, lint, and summaries are supporting evidence only. They do not replace diff-based SPEC audit.
 
-If project SPEC itself needs correction, stop project implementation, update and confirm the applicable SPEC, invalidate the audit baseline, and start a new complete project audit after reconciliation.
+If project SPEC itself needs correction, stop project implementation, update and confirm the applicable SPEC, reconcile the implementation and verification with it, and start a new complete project audit.
 
 ## Completion Gate
 
 Do not claim completion while any blocking finding remains. Completion also requires:
 
-- a valid audit baseline;
+- a complete latest audit pass over the current SPEC inputs and complete current diff;
 - a complete applicable-item inventory;
 - concrete diff evidence and a current verdict for every item;
-- every implementation-fixable finding closed by the independent reviewer;
-- reused and revalidated results marked explicitly;
+- no implementation-fixable blocking finding in the latest independent audit;
 - required verification run or unavailable verification reported as blocking;
-- no pending baseline invalidation condition;
 - any accepted `needs-human-decision` recorded explicitly.
 
 ## Required Final Report
@@ -293,5 +290,5 @@ End with:
 - Project specs updated and confirmed, or the no-SPEC-delta decision with precise SPEC and defect evidence.
 - Files implemented.
 - Verification commands run and results.
-- Audited SPEC inputs, diff or commit range, and baseline status.
-- Complete finding status, reused/revalidated summary, and any accepted human decisions.
+- Audited SPEC inputs, diff or commit range, and latest complete-audit status.
+- Complete current finding status, repair rounds performed, and any accepted human decisions.

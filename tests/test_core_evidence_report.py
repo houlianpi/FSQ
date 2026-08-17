@@ -56,7 +56,7 @@ def test_core_evidence_report_generator_writes_markdown_and_json(tmp_path: Path)
                 phase="finalize",
             )
         ],
-        metadata={"case_id": "case-1", "source_path": "cases/case-1.codex.yaml"},
+        metadata={"case_id": "case-1", "source_path": "cases/case-1.fsq.yaml"},
     )
     manifest_path.write_text(json.dumps(bundle.model_dump(mode="json"), indent=2), encoding="utf-8")
 
@@ -101,14 +101,14 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
                 step_id="setup-step-001",
                 source_ref={
                     "source_type": "fsq",
-                    "source_id": "hooks/setup.codex.yaml",
+                    "source_id": "hooks/setup.fsq.yaml",
                     "metadata": {
                         "case_name": "Setup Hook",
                         "lifecycle_phase": "case",
                         "parent_hook_action": {
                             "lifecycle_phase": "onCaseStart",
                             "hook_action_name": "runCase",
-                            "case_path": "root.codex.yaml",
+                            "case_path": "root.fsq.yaml",
                         },
                     },
                 },
@@ -126,7 +126,7 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
                 step_id="root-step-001",
                 source_ref={
                     "source_type": "fsq",
-                    "source_id": "root.codex.yaml",
+                    "source_id": "root.fsq.yaml",
                     "metadata": {"case_name": "Root Case", "lifecycle_phase": "case"},
                 },
                 status="passed",
@@ -143,11 +143,11 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
                 step_id="root-hook-run-case-001",
                 source_ref={
                     "source_type": "fsq_hook",
-                    "source_id": "root.codex.yaml",
+                    "source_id": "root.fsq.yaml",
                     "metadata": {
                         "lifecycle_phase": "onCaseStart",
                         "hook_action_name": "runCase",
-                        "value": "hooks/setup.codex.yaml",
+                        "value": "hooks/setup.fsq.yaml",
                     },
                 },
                 status="passed",
@@ -159,7 +159,7 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
                         metadata={
                             "lifecycle_phase": "onCaseStart",
                             "hook_action_name": "runCase",
-                            "target": "hooks/setup.codex.yaml",
+                            "target": "hooks/setup.fsq.yaml",
                         },
                     )
                 ],
@@ -168,7 +168,7 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
                 step_id="root-hook-shell-001",
                 source_ref={
                     "source_type": "fsq_hook",
-                    "source_id": "root.codex.yaml",
+                    "source_id": "root.fsq.yaml",
                     "metadata": {"lifecycle_phase": "onCaseComplete", "hook_action_name": "runShell"},
                 },
                 status="failed",
@@ -203,9 +203,9 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
     assert "| After case | `failed` | `1` | `0` | `1` |" in markdown
     assert "| Phase | Source | Action | Step | Status | Failure Category | Error |" in markdown
     assert "| Before case | Setup Hook | `launchApp` | `setup-step-001` | `passed`" in markdown
-    assert "| Before case | root.codex.yaml | `runCase: hooks/setup.codex.yaml` | `root-hook-run-case-001` | `passed`" in markdown
+    assert "| Before case | root.fsq.yaml | `runCase: hooks/setup.fsq.yaml` | `root-hook-run-case-001` | `passed`" in markdown
     assert "| Main case | Root Case | `tapOn` | `root-step-001` | `passed`" in markdown
-    assert "| After case | root.codex.yaml | `runShell: echo done` | `root-hook-shell-001` | `failed`" in markdown
+    assert "| After case | root.fsq.yaml | `runShell: echo done` | `root-hook-shell-001` | `failed`" in markdown
 
     payload = json.loads((tmp_path / "core-report.json").read_text(encoding="utf-8"))
     assert payload["summary"]["lifecycle"]["onCaseStart"] == {
@@ -217,7 +217,7 @@ def test_core_evidence_report_groups_lifecycle_steps(tmp_path: Path) -> None:
     }
     assert payload["summary"]["lifecycle"]["onCaseComplete"]["status"] == "failed"
     assert payload["lifecycle"]["steps"][0]["phase"] == "onCaseStart"
-    assert payload["lifecycle"]["steps"][2]["action"] == "runCase: hooks/setup.codex.yaml"
+    assert payload["lifecycle"]["steps"][2]["action"] == "runCase: hooks/setup.fsq.yaml"
     assert payload["lifecycle"]["steps"][3]["action"] == "runShell: echo done"
 
 

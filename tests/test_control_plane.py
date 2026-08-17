@@ -2,9 +2,11 @@
 # Licensed under the MIT License.
 
 import asyncio
+import base64
 import json
 import subprocess
 import time
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -14,11 +16,14 @@ import pytest
 from fsq_agent.config import Settings
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
 from fsq_agent.control_plane._cases import discover_cases, resolve_case
-from fsq_agent.control_plane._evidence import UI_SNAPSHOT_LIMIT_BYTES, EvidenceProjection, read_screenshot, read_ui_snapshot, safe_exception_message, safe_text
+from fsq_agent.control_plane._evidence import UI_SNAPSHOT_LIMIT_BYTES, EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from fsq_agent.control_plane._execution import _run_explore, _run_strict, prepare_run
 from fsq_agent.control_plane._readiness import provider_readiness, readiness
+from fsq_agent.control_plane._replay import read_replay_video, replay_video_metadata, store_replay_video
+from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
+from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
 
 
@@ -69,6 +74,23 @@ def _wait_for_terminal(url: str) -> dict[str, object]:
     raise AssertionError("Control Plane run did not reach a terminal state")
 
 
+@pytest.mark.parametrize("disconnect_error", [ConnectionAbortedError, ConnectionResetError, BrokenPipeError])
+def test_request_handler_closes_connection_when_client_disconnects(
+    monkeypatch: pytest.MonkeyPatch,
+    disconnect_error: type[OSError],
+) -> None:
+    def raise_disconnect(_handler: BaseHTTPRequestHandler) -> None:
+        raise disconnect_error()
+
+    monkeypatch.setattr(BaseHTTPRequestHandler, "handle_one_request", raise_disconnect)
+    handler = object.__new__(_RequestHandler)
+    handler.close_connection = False
+
+    handler.handle_one_request()
+
+    assert handler.close_connection is True
+
+
 def test_state_holds_single_active_task_through_cancellation() -> None:
     state = ControlPlaneState()
     request_id = state.reserve(platform="android", target_id="serial", mode="explore", source={"goal": "Do it"})
@@ -89,7 +111,7 @@ def test_state_holds_single_active_task_through_cancellation() -> None:
 
 def test_state_sequences_resumable_snapshots_and_releases_only_after_finalizing() -> None:
     state = ControlPlaneState()
-    request_id = state.reserve(platform="web", target_id="chrome", mode="strict", source={"casePath": "a.codex.yaml"})
+    request_id = state.reserve(platform="web", target_id="chrome", mode="strict", source={"casePath": "a.fsq.yaml"})
     state.transition(request_id, "running")
     state.add_event(request_id, {"label": "one"})
     state.add_event(request_id, {"label": "two"})
@@ -199,39 +221,89 @@ def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatc
 
 def test_case_discovery_is_recursive_sorted_validated_and_platform_filtered(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "z.codex.yaml")
-    _case(settings.cases.dir / "nested" / "a.codex.yaml")
-    _case(settings.cases.dir / "wrong.codex.yaml", platform="web", app_id=False)
-    (settings.cases.dir / "broken.codex.yaml").write_text("not: valid: yaml", encoding="utf-8")
+    _case(settings.cases.dir / "z.fsq.yaml")
+    _case(settings.cases.dir / "nested" / "a.fsq.yaml")
+    _case(settings.cases.dir / "wrong.fsq.yaml", platform="web", app_id=False)
+    _case(settings.cases.dir / "excluded.FSQ.yaml")
+    (settings.cases.dir / "broken.fsq.yaml").write_text("not: valid: yaml", encoding="utf-8")
 
     payload = discover_cases(settings)
 
-    assert [entry["path"] for entry in payload["cases"]] == ["broken.codex.yaml", "nested/a.codex.yaml", "wrong.codex.yaml", "z.codex.yaml"]
+    assert [entry["path"] for entry in payload["cases"]] == ["broken.fsq.yaml", "nested/a.fsq.yaml", "wrong.fsq.yaml", "z.fsq.yaml"]
     assert payload["cases"][1]["validationStatus"] == "validated"
     assert payload["cases"][1]["commandCount"] == 1
     assert payload["cases"][2]["selectable"] is False
     assert payload["cases"][0]["diagnostics"]
 
 
+def test_case_discovery_rejects_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text("outside", encoding="utf-8")
+    linked = settings.cases.dir / "linked.fsq.yaml"
+    linked.symlink_to(outside)
+    loaded: list[Path] = []
+
+    def track_load(_loader, path: Path):
+        loaded.append(path)
+        raise AssertionError("escaped case must not be read")
+
+    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+
+    payload = discover_cases(settings)
+
+    assert loaded == []
+    assert payload["cases"][0]["selectable"] is False
+    assert "escapes" in payload["cases"][0]["diagnostics"][0]
+
+
+def test_case_discovery_rejects_lifecycle_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    _case(outside)
+    linked = settings.cases.dir / "child.fsq.yaml"
+    linked.symlink_to(outside)
+    root_path = settings.cases.dir / "root.fsq.yaml"
+    root_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        encoding="utf-8",
+    )
+    original_load = FsqCaseLoader.load_case
+    loaded: list[Path] = []
+
+    def track_load(loader: FsqCaseLoader, path: Path):
+        loaded.append(path.resolve())
+        return original_load(loader, path)
+
+    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+
+    payload = discover_cases(settings)
+
+    root_entry = next(entry for entry in payload["cases"] if entry["path"] == "root.fsq.yaml")
+    assert outside.resolve() not in loaded
+    assert root_entry["selectable"] is False
+    assert "escapes" in root_entry["diagnostics"][0]
+
+
 def test_case_discovery_limit_and_contained_resolution(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     for index in range(3):
-        _case(settings.cases.dir / f"{index}.codex.yaml")
+        _case(settings.cases.dir / f"{index}.fsq.yaml")
 
     payload = discover_cases(settings, limit=2)
 
     assert len(payload["cases"]) == 2
     assert payload["truncated"] is True
-    assert resolve_case(settings, "0.codex.yaml") == (settings.cases.dir / "0.codex.yaml").resolve()
+    assert resolve_case(settings, "0.fsq.yaml") == (settings.cases.dir / "0.fsq.yaml").resolve()
     with pytest.raises(ValueError, match="contained"):
-        resolve_case(settings, "../outside.codex.yaml")
+        resolve_case(settings, "../outside.fsq.yaml")
     with pytest.raises(ValueError, match="relative"):
-        resolve_case(settings, str((settings.cases.dir / "0.codex.yaml").resolve()))
+        resolve_case(settings, str((settings.cases.dir / "0.fsq.yaml").resolve()))
 
 
 def test_case_discovery_derives_ai_requirement_from_registry_snapshots(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "ai.codex.yaml", command="assertWithAI:\n    prompt: Verify the page")
+    _case(settings.cases.dir / "ai.fsq.yaml", command="assertWithAI:\n    prompt: Verify the page")
 
     entry = discover_cases(settings)["cases"][0]
 
@@ -246,8 +318,8 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
         def close_sync(self) -> None:
             captured["closed"] = True
 
-    def prepare(_settings, *, interactive_auth: bool):
-        captured["interactive"] = interactive_auth
+    def prepare(_settings):
+        captured["prepared"] = True
         return Session()
 
     monkeypatch.setattr("fsq_agent.control_plane._readiness.prepare_model_provider_session", prepare)
@@ -255,7 +327,7 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
     result = provider_readiness(_settings(tmp_path))
 
     assert result["status"] == "ready"
-    assert captured == {"interactive": False, "closed": True}
+    assert captured == {"prepared": True, "closed": True}
 
 
 def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -280,10 +352,10 @@ def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(t
 
 def test_strict_preparation_validates_lifecycle_children_before_harness_creation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "child.codex.yaml", platform="web", app_id=False)
-    root_path = settings.cases.dir / "root.codex.yaml"
+    _case(settings.cases.dir / "child.fsq.yaml", platform="web", app_id=False)
+    root_path = settings.cases.dir / "root.fsq.yaml"
     root_path.write_text(
-        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.codex.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
         encoding="utf-8",
     )
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
@@ -292,13 +364,44 @@ def test_strict_preparation_validates_lifecycle_children_before_harness_creation
         prepare_run(
             request_id="request-1",
             settings=settings,
-            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.codex.yaml"},
+            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.fsq.yaml"},
         )
+
+
+def test_strict_preparation_rejects_lifecycle_symlink_escape_before_loading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    outside = tmp_path / "outside.fsq.yaml"
+    _case(outside)
+    linked = settings.cases.dir / "child.fsq.yaml"
+    linked.symlink_to(outside)
+    root_path = settings.cases.dir / "root.fsq.yaml"
+    root_path.write_text(
+        "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
+        encoding="utf-8",
+    )
+    original_load = FsqCaseLoader.load_case
+    loaded: list[Path] = []
+
+    def track_load(loader: FsqCaseLoader, path: Path):
+        loaded.append(path.resolve())
+        return original_load(loader, path)
+
+    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.control_plane._execution.FsqCaseLoader.load_case", track_load)
+
+    with pytest.raises(ValueError, match="escapes"):
+        prepare_run(
+            request_id="request-1",
+            settings=settings,
+            body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "root.fsq.yaml"},
+        )
+
+    assert loaded == [root_path.resolve()]
 
 
 def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "strict.codex.yaml")
+    _case(settings.cases.dir / "strict.fsq.yaml")
     calls: list[bool] = []
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr(
@@ -310,7 +413,7 @@ def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(
     prepared = prepare_run(
         request_id="request-1",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.fsq.yaml"},
     )
 
     assert prepared.registry_snapshot.resolve("waitMs") is not None
@@ -321,7 +424,7 @@ def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(
 
 def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "ai.codex.yaml", command="assertWithAI:\n    prompt: Verify the page")
+    _case(settings.cases.dir / "ai.fsq.yaml", command="assertWithAI:\n    prompt: Verify the page")
     calls: list[str] = []
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda _settings, requires_ai_assertion=False: calls.append(f"strict:{requires_ai_assertion}"))
@@ -330,7 +433,7 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
     prepared = prepare_run(
         request_id="request-ai",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "ai.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "ai.fsq.yaml"},
     )
 
     assert prepared.requires_ai_assertion is True
@@ -339,16 +442,16 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
 
 def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "wait.codex.yaml")
+    _case(settings.cases.dir / "wait.fsq.yaml")
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
     prepared = prepare_run(
         request_id="request-strict",
         settings=settings,
-        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "wait.codex.yaml"},
+        body={"mode": "strict", "platform": "android", "targetId": "device", "casePath": "wait.fsq.yaml"},
     )
     state = ControlPlaneState()
-    request_id = state.reserve(platform="android", target_id="device", mode="strict", source={"casePath": "wait.codex.yaml"})
+    request_id = state.reserve(platform="android", target_id="device", mode="strict", source={"casePath": "wait.fsq.yaml"})
     prepared.request_id = request_id
 
     class FakeHarness:
@@ -455,6 +558,287 @@ def test_evidence_projection_rejects_escape_and_reads_latest_artifacts(tmp_path:
     assert "super-secret" not in json.dumps(state.snapshot(request_id))
 
 
+def test_evidence_projection_preserves_dynamic_runner_step_id(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_completed",
+            title="Tool returned output",
+            tool_name="click_on",
+            payload={"runner_step_id": "agent-click-on-2", "status": "passed"},
+        )
+    )
+
+    assert state.snapshot(request_id)["events"][0]["stepId"] == "agent-click-on-2"
+
+
+def test_evidence_projection_selects_only_dynamic_rows_with_real_runner_step_ids(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_run_event(RunEvent(run_id="run-1", task_id="task", type="tool_call_started", title="Tool call started", tool_name="click_on", tool_call_id="call-1"))
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_completed",
+            title="Tool returned output",
+            tool_name="click_on",
+            tool_call_id="call-1",
+            payload={"runner_step_id": "agent-click-on-2", "status": "passed"},
+        )
+    )
+
+    events = state.snapshot(request_id)["events"]
+    assert "stepId" not in events[0]
+    assert events[1]["stepId"] == "agent-click-on-2"
+
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="planning_update",
+            title="Plan",
+            payload={"step_id": "not-a-tool-step"},
+        )
+    )
+    assert "stepId" not in state.snapshot(request_id)["events"][-1]
+
+
+def test_evidence_projection_does_not_fabricate_status_for_generic_run_events(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="read_knowledge_index",
+            tool_call_id="call-1",
+            tool_arguments={"query": "cats", "path": str(tmp_path / "secret" / "input.txt")},
+            payload={"tool_origin": "agent_tool", "unsafe_path": str(tmp_path / "secret" / "file.txt")},
+        )
+    )
+    projection.project_run_event(
+        RunEvent(
+            run_id="run-1",
+            task_id="task",
+            type="tool_call_completed",
+            title="Tool returned output",
+            tool_name="read_knowledge_index",
+            payload={},
+        )
+    )
+
+    events = state.snapshot(request_id)["events"]
+    assert "status" not in events[0]
+    assert events[0]["toolCallId"] == "call-1"
+    assert events[0]["toolArguments"]["query"] == "cats"
+    assert events[0]["payload"]["tool_origin"] == "agent_tool"
+    assert str(tmp_path) not in json.dumps(events[0])
+    assert events[1]["status"] == "completed"
+
+
+def test_persisted_dynamic_events_hydrate_terminal_action_step_ids(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    runs_dir = tmp_path / "runs"
+    run_dir = runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    projection = EvidenceProjection(state, request_id, runs_dir)
+    projection.bind_run("run-1")
+    state.add_event(request_id, {"label": "click_on", "toolCallId": "call-1"})
+    state.add_event(request_id, {"label": "click_on", "toolCallId": "call-1"})
+    (run_dir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "tool_call_started", "sequence": 1, "tool_call_id": "call-1", "payload": {}}),
+                json.dumps({"type": "tool_call_completed", "sequence": 2, "tool_call_id": "call-1", "payload": {"runner_step_id": "agent-click-on-2"}}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    projection.load_persisted_step_ids()
+
+    events = state.snapshot(request_id)["events"]
+    assert events[0]["stepId"] == "agent-click-on-2"
+    assert events[1]["stepId"] == "agent-click-on-2"
+    state.finish(request_id, status="success", summary="done")
+    assert len(state.snapshot(request_id, after_sequence=2)["events"]) == 2
+
+
+def test_state_freezes_bound_run_directory(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    run_dir = (tmp_path / "runs" / "run-1").resolve()
+
+    state.bind_run(request_id, "run-1", run_dir)
+
+    assert state.run_directory(request_id) == run_dir
+
+
+def test_terminal_step_artifacts_and_replay_frames_are_contained_and_ordered(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-1"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (artifacts_dir / "before.png").write_bytes(b"before")
+    (artifacts_dir / "after.png").write_bytes(b"after")
+    (artifacts_dir / "before.json").write_text('{"value":"before"}', encoding="utf-8")
+    (artifacts_dir / "after.json").write_text('{"value":"after"}', encoding="utf-8")
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {"kind": "screenshot", "path": "artifacts/after.png", "step_id": "step-1", "phase": "finalize", "created_at": "2026-08-12T00:00:02Z"},
+                    {"kind": "ui_snapshot", "path": "artifacts/before.json", "step_id": "step-1", "phase": "prepare", "created_at": "2026-08-12T00:00:01Z"},
+                    {"kind": "screenshot", "path": "artifacts/before.png", "step_id": "step-1", "phase": "prepare", "created_at": "2026-08-12T00:00:01Z"},
+                    {"kind": "ui_snapshot", "path": "artifacts/after.json", "step_id": "step-1", "phase": "finalize", "created_at": "2026-08-12T00:00:02Z"},
+                    {"kind": "screenshot", "path": "../escape.png", "step_id": "step-1", "phase": "finalize"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    step = read_step_artifacts(run_dir, "step-1")
+    replay = read_replay_frames(run_dir)
+
+    assert [(item["kind"], item["phase"]) for item in step["artifacts"]] == [
+        ("screenshot", "before"),
+        ("screenshot", "after"),
+        ("ui_snapshot", "before"),
+        ("ui_snapshot", "after"),
+    ]
+    assert base64.b64decode(step["artifacts"][0]["contentBase64"]) == b"before"
+    assert [base64.b64decode(frame["contentBase64"]) for frame in replay["frames"]] == [b"before", b"after"]
+    assert all("path" not in item for item in [*step["artifacts"], *replay["frames"]])
+
+
+def test_step_and_replay_artifact_read_failures_are_item_local(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_dir = tmp_path / "run"
+    artifacts = run_dir / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "bad.json").write_bytes(b"\xff\xfe")
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {"kind": "ui_snapshot", "path": "artifacts/bad.json", "step_id": "step-1", "phase": "prepare"},
+                    {"kind": "screenshot", "path": "artifacts/missing.png", "step_id": "step-1", "phase": "prepare"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    step = read_step_artifacts(run_dir, "step-1")
+    replay = read_replay_frames(run_dir)
+
+    assert [(artifact["kind"], artifact["error"]) for artifact in step["artifacts"]] == [
+        ("screenshot", "Screenshot is unreadable."),
+        ("ui_snapshot", "UI snapshot is unreadable or is not UTF-8."),
+    ]
+    assert replay["available"] is False
+    assert replay["frames"][0]["error"] == "Replay frame is unreadable."
+
+    blocked = artifacts / "blocked.png"
+    blocked.write_bytes(b"png")
+    original_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path, **kwargs: (_ for _ in ()).throw(PermissionError()) if path == blocked else original_is_file(path, **kwargs))
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps({"artifacts": [{"kind": "screenshot", "path": "artifacts/blocked.png", "step_id": "step-2", "phase": "prepare"}]}),
+        encoding="utf-8",
+    )
+    assert read_step_artifacts(run_dir, "step-2")["artifacts"][0]["error"] == "Screenshot is unreadable."
+    monkeypatch.setattr(Path, "is_file", original_is_file)
+    original_stat = Path.stat
+    monkeypatch.setattr(Path, "stat", lambda path, **kwargs: (_ for _ in ()).throw(PermissionError()) if path == blocked else original_stat(path, **kwargs))
+    assert read_step_artifacts(run_dir, "step-2")["artifacts"][0]["error"] == "Screenshot is unreadable."
+
+
+def test_control_plane_replay_video_storage_metadata_and_ranges(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    webm = b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67\x80"
+
+    stored = store_replay_video(run_dir, "video/webm;codecs=vp8", base64.b64encode(webm).decode())
+    metadata = replay_video_metadata(run_dir, "/api/control-plane/runs/request/replay-video/file")
+    status, body, headers = read_replay_video(run_dir, "bytes=8-11")
+
+    assert stored["available"] is True
+    assert metadata["videoUrl"].endswith("/replay-video/file")
+    assert (run_dir / "control-plane-replay" / "replay.webm").read_bytes() == webm
+    assert (status, body) == (206, b"webm")
+    assert headers == {"Content-Type": "video/webm", "Accept-Ranges": "bytes", "Content-Range": f"bytes 8-11/{len(webm)}"}
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(b"not-webm").decode())
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(b"\x1a\x45\xdf\xa3arbitrary-webm-bytes").decode())
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(b"\x1a\x45\xdf\xa3\x89xx\x42\x82\x84webm\x18\x53\x80\x67\x80").decode())
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67").decode())
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67arbitrary").decode())
+    with pytest.raises(ValueError, match="valid WebM"):
+        store_replay_video(run_dir, "video/webm", base64.b64encode(webm + b"trailing").decode())
+    unknown_segment = b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67\xff" + b"\x1f\x43\xb6\x75\x80"
+    store_replay_video(run_dir, "video/webm", base64.b64encode(unknown_segment).decode())
+    large_segment_payload = b"\x1f\x43\xb6\x75\x50\x00" + (b"x" * 4096)
+    large_segment = b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67\x50\x06" + large_segment_payload
+    store_replay_video(run_dir, "video/webm", base64.b64encode(large_segment).decode())
+    assert replay_video_metadata(run_dir, "/video")["available"] is True
+    video_path = run_dir / "control-plane-replay" / "replay.webm"
+    video_path.write_bytes(b"invalid-existing-video")
+    assert replay_video_metadata(run_dir, "/video")["available"] is False
+    with pytest.raises(FileNotFoundError):
+        read_replay_video(run_dir, None)
+
+
+def test_server_terminal_evidence_and_replay_routes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path, "windows")
+    server = ControlPlaneServer(ControlPlaneServerOptions(workspace_path=tmp_path, static_path=tmp_path))
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    request_id = server.state.reserve(platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
+    run_dir = settings.output.runs_dir / "run-1"
+    artifact = run_dir / "artifacts" / "step.png"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"png")
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps({"artifacts": [{"kind": "screenshot", "path": "artifacts/step.png", "step_id": "step-1", "phase": "prepare", "created_at": "2026-08-12T00:00:01Z"}]}),
+        encoding="utf-8",
+    )
+    server.state.bind_run(request_id, "run-1", run_dir.resolve())
+
+    active_status, active_payload, _ = server.handle_get(f"/api/control-plane/runs/{request_id}/step-artifacts/step-1")
+    server.state.finish(request_id, status="success", summary="done")
+    step_status, step_payload, _ = server.handle_get(f"/api/control-plane/runs/{request_id}/step-artifacts/step-1")
+    replay_status, replay_payload, _ = server.handle_get(f"/api/control-plane/runs/{request_id}/replay")
+    upload_status, upload = server.handle_post(
+        f"/api/control-plane/runs/{request_id}/replay-video",
+        {"mimeType": "video/webm", "videoBase64": base64.b64encode(b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm\x18\x53\x80\x67\x80").decode()},
+    )
+    metadata_status, metadata, _ = server.handle_get(f"/api/control-plane/runs/{request_id}/replay-video")
+    range_status, range_body, range_headers = server.handle_replay_video_file(request_id, "bytes=1-3")
+
+    assert (active_status, active_payload["code"]) == (409, "run_not_terminal")
+    assert step_status == replay_status == upload_status == metadata_status == 200
+    assert step_payload["artifacts"][0]["phase"] == "before"
+    assert base64.b64decode(replay_payload["frames"][0]["contentBase64"]) == b"png"
+    assert upload["videoUrl"] == metadata["videoUrl"]
+    assert (range_status, range_body, range_headers["Content-Range"]) == (206, b"\x45\xdf\xa3", "bytes 1-3/17")
+
+
 def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTROL_PLANE_TEST_SECRET", "runtime-secret-value")
     settings = _settings(tmp_path)
@@ -475,7 +859,7 @@ def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(t
 
 def test_case_diagnostics_use_safe_sanitizer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
-    case_path = settings.cases.dir / "unsafe.codex.yaml"
+    case_path = settings.cases.dir / "unsafe.fsq.yaml"
     case_path.write_text("broken", encoding="utf-8")
     monkeypatch.setattr(
         "fsq_agent.control_plane._cases.FsqCaseLoader.load_case",
@@ -488,7 +872,7 @@ def test_case_diagnostics_use_safe_sanitizer(tmp_path: Path, monkeypatch: pytest
     assert "secret-token" not in diagnostic
 
 
-def test_sse_generator_yields_status_only_and_terminal_snapshots() -> None:
+def test_sse_generator_yields_status_only_then_full_terminal_snapshot() -> None:
     server = ControlPlaneServer(ControlPlaneServerOptions(open_browser=False))
     request_id = server.state.reserve(platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     server.state.add_event(request_id, {"label": "one"})
@@ -500,7 +884,7 @@ def test_sse_generator_yields_status_only_and_terminal_snapshots() -> None:
 
     assert status_only["events"] == []
     assert status_only["status"] == "preparing"
-    assert terminal["events"] == []
+    assert terminal["events"] == [{"label": "one", "sequence": 1}]
     assert terminal["terminal"] is True
 
 
@@ -660,7 +1044,7 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
     entry.parent.mkdir(parents=True)
     entry.write_text("control plane", encoding="utf-8")
     settings = _settings(tmp_path, "web")
-    _case(settings.cases.dir / "strict.codex.yaml", platform="web", app_id=False)
+    _case(settings.cases.dir / "strict.fsq.yaml", platform="web", app_id=False)
     monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda *_args: None)
     monkeypatch.setattr("fsq_agent.control_plane._execution.validate_runtime_settings", lambda *_args: None)
@@ -736,7 +1120,7 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
         assert "Explore started" in sse
         assert '"terminal":true' in sse
 
-        strict = _post_json(f"{server.url}/api/control-plane/runs", {"mode": "strict", "platform": "web", "targetId": "chrome", "casePath": "strict.codex.yaml"})
+        strict = _post_json(f"{server.url}/api/control-plane/runs", {"mode": "strict", "platform": "web", "targetId": "chrome", "casePath": "strict.fsq.yaml"})
         strict_snapshot = _wait_for_terminal(f"{server.url}/api/control-plane/runs/{strict['requestId']}")
         assert strict_snapshot["status"] == "success"
         assert strict_snapshot["screenshotRevision"] > 0
