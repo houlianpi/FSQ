@@ -3,12 +3,28 @@ import type { TimelineEvent } from '../../../api/types';
 
 const LONG_MESSAGE_LENGTH = 140;
 const FOLLOW_THRESHOLD = 32;
-const DEFAULT_MESSAGE_WIDTH = 280;
-const MIN_MESSAGE_WIDTH = 180;
-const MAX_MESSAGE_WIDTH = 720;
+const LOG_COLUMNS = [
+  { key: 'time', label: 'Time', defaultWidth: 82, minWidth: 56 },
+  { key: 'level', label: 'Level', defaultWidth: 58, minWidth: 48 },
+  { key: 'phase', label: 'Phase', defaultWidth: 86, minWidth: 58 },
+  { key: 'tool', label: 'Tool', defaultWidth: 128, minWidth: 72 },
+  { key: 'status', label: 'Status', defaultWidth: 82, minWidth: 58 },
+  { key: 'message', label: 'Message', defaultWidth: 280, minWidth: 180 },
+  { key: 'event', label: 'Event', defaultWidth: 180, minWidth: 110 },
+] as const;
+
+type LogColumnKey = typeof LOG_COLUMNS[number]['key'];
+type LogColumnWidths = Record<LogColumnKey, number>;
 
 interface LogStyle extends CSSProperties {
-  '--log-message-width': string;
+  '--logs-table-width': string;
+  [key: `--log-${string}-width`]: string;
+}
+
+const defaultColumnWidths = Object.fromEntries(LOG_COLUMNS.map((column) => [column.key, column.defaultWidth])) as LogColumnWidths;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function LogMessage({ event }: { event: TimelineEvent }) {
@@ -47,7 +63,7 @@ export function RunLogsView({ events, active }: { events: TimelineEvent[]; activ
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousLastSequence = useRef(0);
   const [following, setFollowing] = useState(true);
-  const [messageWidth, setMessageWidth] = useState(DEFAULT_MESSAGE_WIDTH);
+  const [columnWidths, setColumnWidths] = useState<LogColumnWidths>(defaultColumnWidths);
   const lastSequence = events.at(-1)?.sequence ?? 0;
   useEffect(() => {
     const previous = previousLastSequence.current;
@@ -64,13 +80,24 @@ export function RunLogsView({ events, active }: { events: TimelineEvent[]; activ
     const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight <= FOLLOW_THRESHOLD;
     setFollowing(atBottom);
   };
-  const onMessageResizeStart = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const onColumnResizeStart = (boundaryIndex: number) => (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    const leftColumn = LOG_COLUMNS[boundaryIndex];
+    const rightColumn = LOG_COLUMNS[boundaryIndex + 1];
+    if (!leftColumn || !rightColumn) return;
     const startX = event.clientX;
-    const startWidth = messageWidth;
+    const startLeftWidth = columnWidths[leftColumn.key];
+    const startRightWidth = columnWidths[rightColumn.key];
+    const pairWidth = startLeftWidth + startRightWidth;
+    const minLeftWidth = leftColumn.minWidth;
+    const minRightWidth = rightColumn.minWidth;
     const onMove = (moveEvent: PointerEvent) => {
-      const next = Math.min(MAX_MESSAGE_WIDTH, Math.max(MIN_MESSAGE_WIDTH, startWidth + moveEvent.clientX - startX));
-      setMessageWidth(next);
+      const nextLeftWidth = clamp(startLeftWidth + moveEvent.clientX - startX, minLeftWidth, pairWidth - minRightWidth);
+      setColumnWidths((current) => ({
+        ...current,
+        [leftColumn.key]: nextLeftWidth,
+        [rightColumn.key]: pairWidth - nextLeftWidth,
+      }));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -79,9 +106,13 @@ export function RunLogsView({ events, active }: { events: TimelineEvent[]; activ
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
   };
-  const tableStyle: LogStyle = { '--log-message-width': `${messageWidth}px` };
+  const tableWidth = LOG_COLUMNS.reduce((total, column) => total + columnWidths[column.key], 0);
+  const tableStyle = LOG_COLUMNS.reduce<LogStyle>((style, column) => {
+    style[`--log-${column.key}-width`] = `${columnWidths[column.key]}px`;
+    return style;
+  }, { '--logs-table-width': `${tableWidth}px` });
   return <div className="logs-region">
-    <div className="logs-table-wrap" ref={scrollRef} onScroll={onScroll} data-following={following} tabIndex={-1} aria-label="Structured run logs history"><table className="logs-table" style={tableStyle}><caption className="visually-hidden">Structured run logs</caption><thead><tr><th>Time</th><th>Level</th><th>Phase</th><th>Tool</th><th>Status</th><th><span className="log-message-heading"><span>Message</span><button className="log-column-resizer" type="button" aria-label="Resize message column" onPointerDown={onMessageResizeStart} /></span></th><th>Event</th></tr></thead><tbody>
+    <div className="logs-table-wrap" ref={scrollRef} onScroll={onScroll} data-following={following} tabIndex={-1} aria-label="Structured run logs history"><table className="logs-table" style={tableStyle}><caption className="visually-hidden">Structured run logs</caption><colgroup>{LOG_COLUMNS.map((column) => <col key={column.key} style={{ width: `var(--log-${column.key}-width)` }} />)}</colgroup><thead><tr>{LOG_COLUMNS.map((column, index) => <th key={column.key}><span className="log-column-heading"><span>{column.label}</span>{index < LOG_COLUMNS.length - 1 && <button className="log-column-resizer" type="button" aria-label={`Resize ${column.label} and ${LOG_COLUMNS[index + 1].label} columns`} onPointerDown={onColumnResizeStart(index)} />}</span></th>)}</tr></thead><tbody>
       {events.map((event) => <tr key={event.sequence}><td><time dateTime={event.time}>{event.time ? new Date(event.time).toLocaleTimeString() : '—'}</time></td><td>{event.level ?? 'info'}</td><td>{event.phase ?? '—'}</td><td>{event.tool ?? event.label ?? '—'}</td><td>{event.status ?? '—'}</td><td><LogMessage event={event} /></td><td><EventDetails event={event} /></td></tr>)}
     </tbody></table></div>
   </div>;
