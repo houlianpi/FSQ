@@ -17,6 +17,7 @@
   --cp-danger: #c72828;
   --cp-warning: #a76500;
   --cp-focus: #0067c0;
+  --cp-link: #0078d4;
   --cp-radius: 10px;
   --cp-card-radius: 16px;
   background: var(--cp-bg);

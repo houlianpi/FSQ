@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { controlPlaneClient } from '../api/controlPlaneClient';
@@ -20,12 +21,17 @@ vi.mock('../features/overview/OverviewPage', () => ({
 }));
 vi.mock('../features/workspace/WorkspacePage', () => ({
   WorkspaceTitlebar: ({ workspace, onConfigure }: { workspace: { name: string }; onConfigure: () => void }) => <div><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><button type="button" onClick={onConfigure}>Configure workspace</button></div>,
-  WorkspacePage: ({ createRequested, selectedName, onDirtyChange, onCancelCreate, onCreated, onRegistryChanged }: { createRequested: boolean; selectedName: string | null; onDirtyChange?: (dirty: boolean) => void; onCancelCreate: () => void; onCreated: (detail: object) => void; onRegistryChanged: () => void }) => <div>
-    {createRequested ? 'Create workspace content' : selectedName ? `Workspace ${selectedName}` : 'Workspace content'}
-    <button type="button" onClick={() => onDirtyChange?.(true)}>Make workspace draft dirty</button>
-    {createRequested && <button type="button" onClick={() => onCreated({ name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] })}>Complete creation</button>}
-    <button type="button" onClick={createRequested ? onCancelCreate : onRegistryChanged}>Cancel registry fixture</button>
-  </div>,
+  WorkspacePage: ({ createRequested, configurationOpen, selectedName, onDirtyChange, onCancelCreate, onCreated, onRegistryChanged, onPresentationChange }: { createRequested: boolean; configurationOpen: boolean; selectedName: string | null; onDirtyChange?: (dirty: boolean) => void; onCancelCreate: () => void; onCreated: (detail: object) => void; onRegistryChanged: () => void; onPresentationChange?: (presentation: 'default' | 'full-bleed') => void }) => {
+    useEffect(() => {
+      onPresentationChange?.(selectedName && !createRequested && !configurationOpen ? 'full-bleed' : 'default');
+    }, [configurationOpen, createRequested, onPresentationChange, selectedName]);
+    return <div>
+      {createRequested ? 'Create workspace content' : selectedName ? `Workspace ${selectedName}` : 'Workspace content'}
+      <button type="button" onClick={() => onDirtyChange?.(true)}>Make workspace draft dirty</button>
+      {createRequested && <button type="button" onClick={() => onCreated({ name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] })}>Complete creation</button>}
+      <button type="button" onClick={createRequested ? onCancelCreate : onRegistryChanged}>Cancel registry fixture</button>
+    </div>;
+  },
 }));
 
 beforeEach(() => vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [] }));
@@ -156,6 +162,22 @@ it('selects available registry entries and exposes unavailable entries only as r
 
   await user.click(screen.getByRole('button', { name: /mobile/i }));
   expect(screen.getByText('Workspace mobile')).toBeVisible();
+});
+
+it('uses the full-bleed outlet only for the selected workspace browser presentation', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  const outlet = screen.getByRole('main');
+
+  expect(outlet).not.toHaveClass('cp-page-outlet--full-bleed');
+  await user.click(await screen.findByRole('button', { name: /mobile/i }));
+  await waitFor(() => expect(outlet).toHaveClass('cp-page-outlet--full-bleed'));
+
+  await user.click(screen.getByRole('button', { name: 'Configure workspace' }));
+  await waitFor(() => expect(outlet).not.toHaveClass('cp-page-outlet--full-bleed'));
 });
 
 it('distinguishes workspace registry loading from empty and retries a failed request', async () => {

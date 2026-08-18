@@ -23,6 +23,7 @@ interface WorkspacePageProps {
   onRequestCreate: () => void;
   onCancelCreate: () => void;
   onConfigurationOpenChange: (open: boolean) => void;
+  onPresentationChange?: (presentation: 'default' | 'full-bleed') => void;
   onCreated: (detail: WorkspaceDetail) => void;
   onRegistryChanged: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -54,7 +55,7 @@ function platformRevision(detail: WorkspaceDetail): string {
   return detail.platforms.map((platform) => `${platform.platform}:${platform.revision ?? platform.status}`).join('|');
 }
 
-export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
+export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiErrorBody | null>(null);
@@ -117,6 +118,11 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
   }, [selectedName, createRequested]);
 
   useEffect(() => () => platformDetailController.current?.abort(), []);
+
+  const browserVisible = Boolean(detail && !loading && !error && !createRequested && !configurationOpen && !formMode);
+  useEffect(() => {
+    onPresentationChange?.(browserVisible ? 'full-bleed' : 'default');
+  }, [browserVisible, onPresentationChange]);
 
   const closeForm = () => {
     platformDetailController.current?.abort();
@@ -186,5 +192,5 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
   </section></div>;
   }
 
-  return <div className="cp-workspace-page"><WorkspaceBrowser key={platformRevision(detail)} workspaceName={detail.name} /></div>;
+  return <div className="cp-workspace-page cp-workspace-page--browser"><WorkspaceBrowser key={platformRevision(detail)} workspaceName={detail.name} /></div>;
 }
