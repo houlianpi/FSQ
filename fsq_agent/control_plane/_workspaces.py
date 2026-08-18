@@ -282,6 +282,7 @@ def _target_projection(config: WorkspaceConfig) -> dict[str, Any]:
     aliases = {
         "app_id": "appId",
         "browser_executable_path": "browserExecutablePath",
+        "browser_channel": "browserChannel",
         "app_path": "appPath",
         "window_title_re": "windowTitleRe",
         "launch_args": "launchArgs",
@@ -296,6 +297,7 @@ def _target_input(target: object) -> object:
     aliases = {
         "appId": "app_id",
         "browserExecutablePath": "browser_executable_path",
+        "browserChannel": "browser_channel",
         "appPath": "app_path",
         "windowTitleRe": "window_title_re",
         "launchArgs": "launch_args",

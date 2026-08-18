@@ -355,6 +355,7 @@ class WebLocator(BaseModel):
     xpath: str | None = Field(default=None, description="XPath expression to match.")
     altText: str | None = Field(default=None, description="Image alt text to match.")  # noqa: N815
     title: str | None = Field(default=None, description="Element title attribute to match.")
+    ref: str | None = Field(default=None, description="Current Web snapshot reference to match.")
 
     def has_value(self) -> bool:
         return any(isinstance(value, str) and value.strip() for value in self.model_dump().values())

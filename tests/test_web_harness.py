@@ -199,7 +199,7 @@ def test_web_harness_action_space_returns_catalog_backed_schemas() -> None:
     assert "target" in schemas["click_on"].params_json_schema["properties"]
     assert "target or non-empty locator" in schemas["click_on"].params_json_schema["description"]
     assert "exact snapshot target" in schemas["click_on"].params_json_schema["properties"]["target"]["description"]
-    assert "ref" not in click_locator_schema["properties"]
+    assert "ref" in click_locator_schema["properties"]
     assert schemas["ui_snapshot"].driver_method == "ui_snapshot"
     assert schemas["ui_snapshot"].fsq_action_name == "uiSnapshot"
     assert schemas["ui_snapshot"].params_json_schema.get("properties") == {}

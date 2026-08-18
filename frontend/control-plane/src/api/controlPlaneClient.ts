@@ -22,6 +22,7 @@ import type {
   WorkspaceEntriesResponse,
   WorkspaceFileResponse,
   WorkspaceListResponse,
+  WorkspaceParentDirectoryPickerResponse,
   CreateWorkspacePayload,
   AddWorkspacePlatformPayload,
   UpdateWorkspacePlatformPayload,
@@ -240,7 +241,9 @@ function validateConnectionTest(value: unknown): ConnectionTestResponse {
 function workspaceTarget(value: unknown, platformId: PlatformId): boolean {
   if (!record(value)) return false;
   if (platformId === 'android') return hasOnlyKeys(value, ['appId']) && string(value.appId) && Boolean(value.appId);
-  if (platformId === 'web') return hasOnlyKeys(value, ['browserExecutablePath']) && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
+  if (platformId === 'web') return hasOnlyKeys(value, ['browserChannel', 'browserExecutablePath'])
+    && string(value.browserChannel) && ['chromium', 'chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary', 'msedge', 'msedge-beta', 'msedge-dev', 'msedge-canary'].includes(value.browserChannel)
+    && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
   if (platformId === 'windows') {
     return hasOnlyKeys(value, ['appPath', 'launchArgs']) || hasOnlyKeys(value, ['appPath', 'windowTitleRe', 'launchArgs'])
       ? string(value.appPath) && Boolean(value.appPath) && string(value.launchArgs)
@@ -286,6 +289,19 @@ function validateWorkspaceList(value: unknown): WorkspaceListResponse {
 function validateWorkspaceDetail(value: unknown): WorkspaceDetail {
   if (!workspaceStatus(value, true)) invalidResponse('workspace detail', 'Invalid workspace summary fields.');
   return value;
+}
+
+function validateWorkspaceParentDirectoryPicker(value: unknown): WorkspaceParentDirectoryPickerResponse {
+  if (!record(value) || !string(value.status)) {
+    invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
+  }
+  if (value.status === 'cancelled' && hasOnlyKeys(value, ['status'])) {
+    return value as { status: 'cancelled' };
+  }
+  if (value.status === 'selected' && hasOnlyKeys(value, ['status', 'parentPath']) && string(value.parentPath) && value.parentPath) {
+    return value as { status: 'selected'; parentPath: string };
+  }
+  invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
 }
 
 function validateWorkspacePlatformDetail(value: unknown): WorkspacePlatformDetail {
@@ -404,6 +420,8 @@ export const controlPlaneClient = {
     jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),
   workspacePlatform: (name: string, platformId: PlatformId, signal?: AbortSignal) =>
     jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformDetail, { signal }),
+  pickWorkspaceParentDirectory: () =>
+    jsonRequest('/workspaces/pick-parent-directory', validateWorkspaceParentDirectoryPicker, { method: 'POST', body: '{}' }),
   createWorkspace: (payload: CreateWorkspacePayload, signal?: AbortSignal) =>
     jsonRequest('/workspaces', validateWorkspaceDetail, { method: 'POST', body: JSON.stringify(payload), signal }),
   addWorkspacePlatform: (name: string, payload: AddWorkspacePlatformPayload, signal?: AbortSignal) =>

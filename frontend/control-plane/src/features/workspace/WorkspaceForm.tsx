@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, FolderOpen, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { ControlPlaneApiError, controlPlaneClient, toApiError } from '../../api/controlPlaneClient';
 import type {
   ApiErrorBody,
@@ -8,6 +8,7 @@ import type {
   WorkspaceDetail,
   WorkspacePlatformDetail,
   WorkspaceTarget,
+  WebBrowserChannel,
 } from '../../api/types';
 
 interface WorkspaceFormProps {
@@ -24,6 +25,7 @@ interface WorkspaceFormProps {
 interface TargetDraft {
   appId: string;
   browserExecutablePath: string;
+  browserChannel: WebBrowserChannel;
   appPath: string;
   windowTitleRe: string;
   launchArgs: string;
@@ -34,7 +36,13 @@ interface PlatformDraft { id: number; platform: PlatformId | ''; target: TargetD
 
 const allPlatforms: PlatformId[] = ['android', 'web', 'windows', 'macos'];
 const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'Web', windows: 'Windows', macos: 'macOS' };
-const emptyTarget = (): TargetDraft => ({ appId: '', browserExecutablePath: '', appPath: '', windowTitleRe: '', launchArgs: '', bundleId: '' });
+const webChannels: { value: WebBrowserChannel; label: string }[] = [
+  { value: 'chromium', label: 'Chromium' }, { value: 'chrome', label: 'Google Chrome' }, { value: 'chrome-beta', label: 'Google Chrome Beta' },
+  { value: 'chrome-dev', label: 'Google Chrome Dev' }, { value: 'chrome-canary', label: 'Google Chrome Canary' },
+  { value: 'msedge', label: 'Microsoft Edge' }, { value: 'msedge-beta', label: 'Microsoft Edge Beta' },
+  { value: 'msedge-dev', label: 'Microsoft Edge Dev' }, { value: 'msedge-canary', label: 'Microsoft Edge Canary' },
+];
+const emptyTarget = (): TargetDraft => ({ appId: '', browserChannel: 'chrome', browserExecutablePath: '', appPath: '', windowTitleRe: '', launchArgs: '', bundleId: '' });
 
 function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
   const draft = emptyTarget();
@@ -42,6 +50,7 @@ function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
   const target = detail.target;
   if ('appId' in target) draft.appId = target.appId;
   if ('browserExecutablePath' in target) draft.browserExecutablePath = target.browserExecutablePath;
+  if ('browserChannel' in target) draft.browserChannel = target.browserChannel;
   if ('appPath' in target) draft.appPath = target.appPath ?? '';
   if ('windowTitleRe' in target) draft.windowTitleRe = target.windowTitleRe ?? '';
   if ('launchArgs' in target) draft.launchArgs = target.launchArgs;
@@ -51,7 +60,7 @@ function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
 
 function targetPayload(platform: PlatformId, target: TargetDraft): WorkspaceTarget {
   if (platform === 'android') return { appId: target.appId.trim() };
-  if (platform === 'web') return { browserExecutablePath: target.browserExecutablePath.trim() };
+  if (platform === 'web') return { browserChannel: target.browserChannel, browserExecutablePath: target.browserExecutablePath.trim() };
   if (platform === 'windows') return {
     appPath: target.appPath.trim(),
     ...(target.windowTitleRe.trim() ? { windowTitleRe: target.windowTitleRe.trim() } : {}),
@@ -83,9 +92,12 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
   const [error, setError] = useState<ApiErrorBody | null>(null);
   const [fieldError, setFieldError] = useState('');
   const [pending, setPending] = useState(false);
+  const [pickerPending, setPickerPending] = useState(false);
   const nextDraftId = useRef(2);
   const nextRowId = useRef(initialRows.length + 1);
   const firstField = useRef<HTMLInputElement>(null);
+  const pickerButton = useRef<HTMLButtonElement>(null);
+  const pickerRequest = useRef(0);
   const draftFields = useRef(new Map<string, HTMLElement>());
   const singleDraft = drafts[0];
   const initialValue = useMemo(() => JSON.stringify({ target: detail?.target, env: detail?.env }), [detail]);
@@ -97,7 +109,30 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
     : mode === 'add' ? Boolean(singleDraft && (Object.values(singleDraft.target).some(Boolean) || singleDraft.envRows.length > 0)) : currentValue !== initialValue;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
-  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  useEffect(() => () => {
+    pickerRequest.current += 1;
+    onDirtyChange?.(false);
+  }, [onDirtyChange]);
+
+  const chooseParentFolder = async () => {
+    const request = ++pickerRequest.current;
+    setPickerPending(true);
+    setError(null);
+    try {
+      const result = await controlPlaneClient.pickWorkspaceParentDirectory();
+      if (request !== pickerRequest.current) return;
+      if (result.status === 'selected') {
+        setParentPath(result.parentPath);
+        setFieldError('');
+      } else {
+        pickerButton.current?.focus();
+      }
+    } catch (reason) {
+      if (request === pickerRequest.current) setError(toApiError(reason));
+    } finally {
+      if (request === pickerRequest.current) setPickerPending(false);
+    }
+  };
 
   const updateDraft = (draftId: number, update: (draft: PlatformDraft) => PlatformDraft) => {
     setDrafts((current) => current.map((draft) => draft.id === draftId ? update(draft) : draft));
@@ -156,7 +191,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (mode === 'create' && (!name.trim() || !parentPath.trim())) { setFieldError('Workspace name and parent path are required.'); firstField.current?.focus(); return; }
+    if (mode === 'create' && !name.trim()) { setFieldError('Enter a workspace name.'); firstField.current?.focus(); return; }
+    if (mode === 'create' && !parentPath.trim()) { setFieldError('Choose a parent folder.'); pickerButton.current?.focus(); return; }
     if (mode === 'create' && drafts.length === 0) { setFieldError('Add at least one platform.'); document.querySelector<HTMLElement>('.cp-add-platform')?.focus(); return; }
     const platformPayloads: AddWorkspacePlatformPayload[] = [];
     for (const draft of drafts) {
@@ -189,7 +225,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
 
   const renderTarget = (draft: PlatformDraft) => draft.platform ? <section className="cp-form-section"><div><h3>Target</h3><p>Identify the local application FSQ should operate.</p></div><div className="cp-form-grid">
     {draft.platform === 'android' && <label><span>App ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appId} onChange={(event) => updateTarget(draft.id, 'appId', event.target.value)} placeholder="com.example.app" /></label>}
-    {draft.platform === 'web' && <label className="cp-field-wide"><span>Web path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /></label>}
+    {draft.platform === 'web' && <><label><span>Browser channel</span><select value={draft.target.browserChannel} onChange={(event) => updateTarget(draft.id, 'browserChannel', event.target.value as WebBrowserChannel)}>{webChannels.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}</select></label><label className="cp-field-wide"><span>Web path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /></label></>}
     {draft.platform === 'windows' && <><label className="cp-field-wide"><span>App path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label><label><span>Window title regex <small>Optional</small></span><input value={draft.target.windowTitleRe} onChange={(event) => updateTarget(draft.id, 'windowTitleRe', event.target.value)} /></label><label><span>Launch args <small>Optional</small></span><input value={draft.target.launchArgs} onChange={(event) => updateTarget(draft.id, 'launchArgs', event.target.value)} /></label></>}
     {draft.platform === 'macos' && <><label><span>Bundle ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.bundleId} onChange={(event) => updateTarget(draft.id, 'bundleId', event.target.value)} placeholder="com.example.App" /></label><label><span>App path</span><input value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label></>}
   </div></section> : null;
@@ -201,8 +237,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       <legend>{mode === 'create' ? 'Create workspace' : mode === 'add' ? 'Add platform' : `Edit ${platformLabels[detail!.platform]}`}</legend>
       {mode === 'create' ? <div className="cp-form-grid cp-form-grid--identity">
         <label><span>Workspace name</span><input ref={firstField} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label>
-        <label><span>Parent path</span><input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:\\projects" autoComplete="off" /></label>
-        <label className="cp-path-preview"><span>Final path</span><output>{finalPath(parentPath, name) || 'Complete the name and parent path'}</output></label>
+        <div className="cp-parent-folder"><label><span>Parent folder</span><input value={parentPath} placeholder="No folder selected" readOnly /></label><button ref={pickerButton} className="button" type="button" onClick={chooseParentFolder} disabled={pickerPending} aria-busy={pickerPending}>{pickerPending ? 'Choosing...' : <><FolderOpen aria-hidden="true" />Choose folder</>}</button></div>
+        <label className="cp-path-preview"><span>Final path</span><output>{finalPath(parentPath, name) || 'Complete the name and parent folder'}</output></label>
       </div> : <dl className="cp-workspace-immutable"><div><dt>Name</dt><dd>{detail?.name ?? workspace!.name}</dd></div><div><dt>Root</dt><dd className="mono">{detail?.rootPath ?? workspace!.rootPath}</dd></div><div><dt>Platform</dt><dd>{detail?.platform ? platformLabels[detail.platform] : singleDraft?.platform ? platformLabels[singleDraft.platform] : ''}</dd></div></dl>}
 
       {mode === 'create' && <div className="cp-platform-builder">
@@ -221,8 +257,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       {mode !== 'create' && singleDraft && <>{renderTarget(singleDraft)}{renderEnvironment(singleDraft)}</>}
 
       {fieldError && <p className="cp-form-error" role="alert"><AlertCircle aria-hidden="true" />{fieldError}</p>}
-      {error && <div className="cp-form-error cp-form-error--server" role="alert"><AlertCircle aria-hidden="true" /><span><strong>{error.message}</strong><small>{error.action}</small></span>{error.code === 'workspace_conflict' && onReloadLatest && <button className="button" type="button" onClick={onReloadLatest}><RefreshCw aria-hidden="true" />Reload latest</button>}</div>}
-      <div className="cp-form-actions"><button className="button" type="button" onClick={onCancel}>Cancel</button><button className="button button--primary" type="submit">{pending ? 'Saving…' : mode === 'create' ? 'Create workspace' : mode === 'add' ? 'Add platform' : 'Save changes'}</button></div>
+      {error && <div className="cp-form-error cp-form-error--server" role="alert"><AlertCircle aria-hidden="true" /><span><strong>{error.message}</strong><small>{error.action}</small></span>{error.code.startsWith('directory_picker_') && <button className="button" type="button" onClick={chooseParentFolder} disabled={pickerPending}><RefreshCw aria-hidden="true" />Retry folder selection</button>}{error.code === 'workspace_conflict' && onReloadLatest && <button className="button" type="button" onClick={onReloadLatest}><RefreshCw aria-hidden="true" />Reload latest</button>}</div>}
+      <div className="cp-form-actions"><button className="button" type="button" onClick={onCancel}>Cancel</button><button className="button button--primary" type="submit" disabled={pickerPending}>{pending ? 'Saving…' : mode === 'create' ? 'Create workspace' : mode === 'add' ? 'Add platform' : 'Save changes'}</button></div>
     </fieldset>
   </form>;
 }

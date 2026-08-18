@@ -100,8 +100,18 @@ def _configured_target(settings: Settings) -> dict[str, Any]:
     platform = settings.harness.platform
     ready, message, _ = target_readiness_without_discovery(settings)
     if platform == "web":
-        target_id = "chrome"
-        label = "Chrome"
+        target_id = settings.harness.web.channel
+        label = {
+            "chromium": "Chromium",
+            "chrome": "Google Chrome",
+            "chrome-beta": "Google Chrome Beta",
+            "chrome-dev": "Google Chrome Dev",
+            "chrome-canary": "Google Chrome Canary",
+            "msedge": "Microsoft Edge",
+            "msedge-beta": "Microsoft Edge Beta",
+            "msedge-dev": "Microsoft Edge Dev",
+            "msedge-canary": "Microsoft Edge Canary",
+        }[target_id]
         metadata = {"channel": settings.harness.web.channel, "headless": settings.harness.web.headless}
     elif platform == "windows":
         target_id = "windows-app"
