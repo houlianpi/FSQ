@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
 ResolveSteps = Callable[[list[ExecutableStep], FsqCase], list[ExecutableStep]]
 CancellationCheck = Callable[[], None]
+CasePathValidator = Callable[[Path], None]
 logger = logging.getLogger(__name__)
 _PHASE_LABELS = {
     "onCaseStart": "before case",
@@ -92,12 +94,15 @@ def collect_strict_lifecycle_cases(
     case_path: Path,
     case: FsqCase,
     settings: Settings,
+    validate_case_path: CasePathValidator | None = None,
 ) -> list[tuple[Path, FsqCase]]:
     cases: list[tuple[Path, FsqCase]] = []
     loader = FsqCaseLoader()
 
     def collect(current_path: Path, current_case: FsqCase, stack: tuple[Path, ...], *, include_config: bool) -> None:
         resolved_path = current_path.resolve()
+        if validate_case_path is not None:
+            validate_case_path(resolved_path)
         if resolved_path in stack:
             raise ConfigurationError(
                 "Recursive lifecycle hook runCase detected.",
@@ -117,6 +122,8 @@ def collect_strict_lifecycle_cases(
                 if action.action_name != "runCase":
                     continue
                 child_path = _resolve_case_yaml_path(action.value, settings.cases.dir)
+                if validate_case_path is not None:
+                    validate_case_path(child_path)
                 collect(child_path, loader.load_case(child_path), stack, include_config=False)
 
     collect(case_path, case, (), include_config=True)
@@ -545,11 +552,18 @@ class _LifecycleRecorder:
 
 def _resolve_case_yaml_path(path_text: str, cases_dir: Path | None) -> Path:
     requested = Path(path_text.strip())
+    if cases_dir is not None:
+        try:
+            candidate = resolve_workspace_cases_path(requested, cases_dir)
+        except ConfigurationError as exc:
+            raise ValueError("Case lifecycle dependency escapes the workspace cases directory.") from exc
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        raise FileNotFoundError(f"Case YAML not found: {path_text}")
     candidates = (
         [requested]
         if requested.is_absolute()
         else [
-            *([cases_dir / requested] if cases_dir is not None else []),
             Path.cwd() / requested,
         ]
     )

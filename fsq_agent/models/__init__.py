@@ -116,6 +116,7 @@ from fsq_agent.models._core import (
     WindowsTypeTextParams,
     WindowsUiSnapshotParams,
 )
+from fsq_agent.models._devices import AndroidDevice, AndroidDeviceDiscoveryResult
 from fsq_agent.models._events import RunEvent, RunEventSink
 from fsq_agent.models._exceptions import (
     ConfigurationError,
@@ -149,6 +150,7 @@ from fsq_agent.models._settings import (
     AgentKnowledgeSettings,
     AgentSettings,
     AndroidHarnessSettings,
+    AndroidWorkspaceTarget,
     CaseSettings,
     ContextTrimmingSettings,
     ExecutionSettings,
@@ -156,6 +158,7 @@ from fsq_agent.models._settings import (
     KnowledgeSkillSettings,
     LocalToolOutputSettings,
     MacOSHarnessSettings,
+    MacOSWorkspaceTarget,
     OpenAIAgentPromptConfig,
     OpenAIAgentsSettings,
     OutputSettings,
@@ -163,8 +166,15 @@ from fsq_agent.models._settings import (
     PrePlanKnowledgeSettings,
     RuntimeSecretSettings,
     WebHarnessSettings,
+    WebWorkspaceTarget,
     WindowsHarnessSettings,
+    WindowsWorkspaceTarget,
+    WorkspaceConfig,
+    WorkspaceInitResult,
+    WorkspacePlatformStatus,
+    WorkspaceRegistryEntry,
     WorkspaceSettings,
+    WorkspaceStatus,
 )
 from fsq_agent.models._skills import SkillBundle, SkillConfig
 from fsq_agent.models._task import (
@@ -222,6 +232,8 @@ __all__ = [
     "AndroidAssertStateParams",
     "AndroidAssertVisibleParams",
     "AndroidAssertWithAIParams",
+    "AndroidDevice",
+    "AndroidDeviceDiscoveryResult",
     "AndroidElementState",
     "AndroidHarnessSettings",
     "AndroidInputTextParams",
@@ -238,6 +250,7 @@ __all__ = [
     "AndroidTapOnParams",
     "AndroidTextAssertion",
     "AndroidUiTreeParams",
+    "AndroidWorkspaceTarget",
     "CapabilityDefinition",
     "CapabilityExecutionResult",
     "CapabilityExecutorKind",
@@ -298,6 +311,7 @@ __all__ = [
     "MacOSTakeScreenshotParams",
     "MacOSTypeTextParams",
     "MacOSUiSnapshotParams",
+    "MacOSWorkspaceTarget",
     "OpenAIAgentPromptConfig",
     "OpenAIAgentsSettings",
     "OperationResult",
@@ -363,6 +377,7 @@ __all__ = [
     "WebTypeTextParams",
     "WebUiSnapshotParams",
     "WebWaitForParams",
+    "WebWorkspaceTarget",
     "WindowsAssertVisibleParams",
     "WindowsAssertWithAIParams",
     "WindowsClickOnParams",
@@ -382,5 +397,11 @@ __all__ = [
     "WindowsScrollOnParams",
     "WindowsTypeTextParams",
     "WindowsUiSnapshotParams",
+    "WindowsWorkspaceTarget",
+    "WorkspaceConfig",
+    "WorkspaceInitResult",
+    "WorkspacePlatformStatus",
+    "WorkspaceRegistryEntry",
     "WorkspaceSettings",
+    "WorkspaceStatus",
 ]

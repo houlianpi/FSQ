@@ -11,7 +11,7 @@ sequenceDiagram
     participant R as Report
     participant K as Knowledge System
 
-    CLI->>YAML: load .codex.yaml
+    CLI->>YAML: load .fsq.yaml
     YAML->>YAML: validate schema and normalize commands
     YAML->>EXEC: submit Action IR sequence
     loop each action

@@ -13,7 +13,7 @@ from fsq_agent.models import ConfigurationError, RuntimeSecretSettings
 
 
 def _secret_case_steps(tmp_path: Path):
-    case_path = tmp_path / "secret.codex.yaml"
+    case_path = tmp_path / "secret.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1
@@ -32,9 +32,7 @@ platform: android
 
 def test_resolve_strict_replay_steps_preserves_runtime_secret_ref_for_core_resolution(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TEST_ACCOUNT_PASSWORD", "super-secret")
     settings = Settings(runtime_secrets=RuntimeSecretSettings(allowed_env_names=["TEST_ACCOUNT_PASSWORD"]))
     steps = _secret_case_steps(tmp_path)
 
@@ -54,7 +52,7 @@ def test_resolve_strict_replay_steps_requires_allowlisted_secret(tmp_path: Path)
 
 
 def test_resolve_strict_replay_steps_keeps_missing_text_type_literal(tmp_path: Path) -> None:
-    case_path = tmp_path / "literal.codex.yaml"
+    case_path = tmp_path / "literal.fsq.yaml"
     case_path.write_text(
         """
 schemaVersion: fsq.ai-test/v1

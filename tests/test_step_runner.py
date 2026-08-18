@@ -16,6 +16,7 @@ from fsq_agent.models import (
     HarnessArtifactRef,
     HarnessContext,
     PostActionDelaySettings,
+    RuntimeSecretSettings,
     StepPhase,
 )
 
@@ -63,6 +64,18 @@ class SuccessfulHarness:
 
     def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory:
         return "unknown"
+
+
+def test_runtime_secret_store_uses_private_settings_values_only(monkeypatch) -> None:
+    monkeypatch.setenv("TEST_ACCOUNT_PASSWORD", "environment-value")
+    settings = RuntimeSecretSettings()
+    settings.set_values({"TEST_ACCOUNT_PASSWORD": "workspace-value"})
+
+    store = RuntimeSecretStore.from_settings(settings)
+
+    assert store.resolve("TEST_ACCOUNT_PASSWORD") == "workspace-value"
+    assert settings.private_values() == {"TEST_ACCOUNT_PASSWORD": "workspace-value"}
+    assert "workspace-value" not in str(settings.model_dump())
 
 
 class InvokeFailureHarness(SuccessfulHarness):

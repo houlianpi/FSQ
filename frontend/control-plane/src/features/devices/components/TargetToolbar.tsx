@@ -1,28 +1,33 @@
-import type { PlatformId, PlatformOption, TargetsResponse } from '../../../api/types';
+import type { PlatformId, PlatformOption, TargetsResponse, WorkspaceRegistryEntry } from '../../../api/types';
 
 interface TargetToolbarProps {
+  workspaces: readonly WorkspaceRegistryEntry[];
+  workspaceName: string;
   platforms: readonly PlatformOption[];
-  platform: PlatformId;
+  platform: PlatformId | '';
   targetId: string;
   targets: TargetsResponse | null;
   locked: boolean;
   loading: boolean;
   connectionLabel: string;
-  onPlatformChange: (platform: PlatformId) => void;
+  onWorkspaceChange: (workspaceName: string) => void;
+  onPlatformChange: (platform: PlatformId | '') => void;
   onTargetChange: (targetId: string) => void;
   onRefresh: () => void;
 }
 
-const defaultPlatforms: PlatformOption[] = [
-  { id: 'android', label: 'Android' }, { id: 'web', label: 'Web' },
-  { id: 'windows', label: 'Windows' }, { id: 'macos', label: 'macOS' },
-];
-
-export function TargetToolbar({ platforms, platform, targetId, targets, locked, loading, connectionLabel, onPlatformChange, onTargetChange, onRefresh }: TargetToolbarProps) {
+export function TargetToolbar({ workspaces, workspaceName, platforms, platform, targetId, targets, locked, loading, connectionLabel, onWorkspaceChange, onPlatformChange, onTargetChange, onRefresh }: TargetToolbarProps) {
   return <div className="target-toolbar">
+    <label className="toolbar-select"><span>Workspace</span>
+      <select aria-label="Workspace" value={workspaceName} disabled={locked} onChange={(event) => onWorkspaceChange(event.target.value)}>
+        <option value="">Select a workspace</option>
+        {workspaces.map((item) => <option key={item.name} value={item.name} disabled={item.status === 'unavailable'}>{item.name}</option>)}
+      </select>
+    </label>
     <label className="toolbar-select"><span>Platform</span>
-      <select aria-label="Platform" value={platform} disabled={locked} onChange={(event) => onPlatformChange(event.target.value as PlatformId)}>
-        {(platforms.length ? platforms : defaultPlatforms).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      <select aria-label="Platform" value={platform} disabled={locked || !workspaceName} onChange={(event) => onPlatformChange(event.target.value as PlatformId | '')}>
+        <option value="">Select a platform</option>
+        {platforms.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select>
     </label>
     <label className="toolbar-select toolbar-select--target"><span>{targets?.targetLabel ?? (platform === 'android' ? 'Device' : platform === 'web' ? 'Browser' : 'Application')}</span>
@@ -32,6 +37,6 @@ export function TargetToolbar({ platforms, platform, targetId, targets, locked, 
       </select>
     </label>
     <span className={`connection-status connection-status--${connectionLabel.toLowerCase()}`} role="status"><span aria-hidden="true">●</span>{connectionLabel}</span>
-    <button className="button button--secondary" type="button" disabled={locked || loading} onClick={onRefresh} aria-label="Refresh readiness, targets, and cases">↻ Refresh</button>
+    <button className="button button--secondary" type="button" disabled={locked || loading || !workspaceName || !platform} onClick={onRefresh} aria-label="Refresh readiness, targets, and cases">↻ Refresh</button>
   </div>;
 }

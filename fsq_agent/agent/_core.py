@@ -2,13 +2,12 @@
 # Licensed under the MIT License.
 
 import inspect
-import os
 import time
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fsq_agent._run_ids import new_run_id
 from fsq_agent.agent._events import RunEventEmitter
 from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime
 from fsq_agent.agent._verifier import Verifier
@@ -82,12 +81,11 @@ class FsqAgent:
 
     @staticmethod
     def _runtime_secret_values(settings: Settings) -> tuple[str, ...]:
-        values = [os.getenv(name) for name in settings.runtime_secrets.allowed_env_names]
-        return tuple(sorted({value for value in values if value}, key=len, reverse=True))
+        return tuple(sorted(set(settings.runtime_secrets.private_values().values()), key=len, reverse=True))
 
     async def run(self, task: Task, event_sink: RunEventSink | None = None) -> TaskResult:
         started = time.perf_counter()
-        run_id = f"{task.id}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        run_id = new_run_id(task.id)
         emitter = RunEventEmitter(self.event_logger, event_sink)
         await emitter.emit(RunEvent(run_id=run_id, task_id=task.id, type="run_started", title="Run started", message=task.name))
         try:
@@ -156,7 +154,9 @@ class FsqAgent:
         knowledge = self.settings.agent_context.knowledge
         project_path = knowledge.root_dir / "project.md"
         if project_path.exists():
-            items["project.md"] = project_path.read_text(encoding="utf-8")
+            project_knowledge = project_path.read_text(encoding="utf-8")
+            if project_knowledge.strip():
+                items["project.md"] = project_knowledge
 
         pre_plan_dir = knowledge.pre_plan.dir or knowledge.root_dir
         index_path = pre_plan_dir / "index.md"

@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 const snapshot = (overrides: Partial<RunSnapshot> = {}): RunSnapshot => ({
-  requestId: 'request-1', runId: 'run-1', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+  requestId: 'request-1', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
   source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
   events: [], activeStep: null, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
   evidenceAvailable: false, reportAvailable: false, terminal: false, ...overrides,

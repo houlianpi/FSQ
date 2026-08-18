@@ -333,3 +333,21 @@ def test_resolve_report_path_errors_for_missing_or_ambiguous_report(tmp_path: Pa
         resolve_report_path(tmp_path, "missing")
     with pytest.raises(ReportGenerationError, match="ambiguous"):
         resolve_report_path(tmp_path, "ambiguous")
+
+
+def test_resolve_report_path_requires_direct_child_run_id(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside-report-run"
+    outside.mkdir(exist_ok=True)
+    (outside / "report.md").write_text("outside", encoding="utf-8")
+
+    for run_id in ("../outside-report-run", str(outside), "nested/run"):
+        with pytest.raises(ReportGenerationError, match="direct child"):
+            resolve_report_path(tmp_path, run_id)
+
+    linked = tmp_path / "linked-run"
+    try:
+        linked.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        return
+    with pytest.raises(ReportGenerationError, match="direct child"):
+        resolve_report_path(tmp_path, linked.name)

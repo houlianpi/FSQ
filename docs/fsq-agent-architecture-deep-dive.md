@@ -162,7 +162,7 @@ sequenceDiagram
     participant R as Report
     participant K as Knowledge System
 
-    CLI->>YAML: load .codex.yaml
+    CLI->>YAML: load .fsq.yaml
     YAML->>YAML: validate schema and normalize commands
     YAML->>EXEC: submit Action IR sequence
     loop each action
@@ -269,7 +269,7 @@ Midscene's report path is a strong reference. `ReportGenerator` writes live exec
 
 ### 6.1 FSQ YAML: Regression / Batch / CI
 
-FSQ role: This is the stable regression-test entry. A `.codex.yaml` case should be validatable, normalizable, executable, and reportable without natural-goal planning.
+FSQ role: This is the stable regression-test entry. A `.fsq.yaml` case should be validatable, normalizable, executable, and reportable without natural-goal planning.
 
 Midscene reference: Midscene YAML is handled by `packages/core/src/yaml/player.ts`. `ScriptPlayer` loads task flows and calls agent methods such as `aiAct`, `aiAssert`, `aiWaitFor`, `aiTap`, `aiScroll`, and generic action-space actions. CLI construction starts from `packages/cli/src/create-yaml-player.ts`, which parses YAML, selects target platform, creates an agent, and runs the player.
 

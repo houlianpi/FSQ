@@ -8,31 +8,37 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from fsq_agent.config._paths import resolve_runtime_paths
+from fsq_agent.config._paths import resolve_runtime_paths, resolve_workspace_runtime_paths
 from fsq_agent.config._settings import Settings
 from fsq_agent.config._user_provider import refresh_provider_settings
-from fsq_agent.models import ConfigurationError
+from fsq_agent.config._workspace import CHROME_EXECUTABLE_NAMES, _is_macos_app_bundle_or_executable, load_workspace_config
+from fsq_agent.models import (
+    AndroidWorkspaceTarget,
+    ConfigurationError,
+    MacOSWorkspaceTarget,
+    WebWorkspaceTarget,
+    WindowsWorkspaceTarget,
+    WorkspaceSettings,
+)
 
 DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
-PLATFORM_CONFIG_PATHS = {
-    "android": Path("config.android.yaml"),
-    "web": Path("config.web.yaml"),
-    "windows": Path("config.windows.yaml"),
-    "macos": Path("config.macos.yaml"),
+_PLATFORM_CONFIG_FILENAMES = {
+    "android": "config.android.yaml",
+    "web": "config.web.yaml",
+    "windows": "config.windows.yaml",
+    "macos": "config.macos.yaml",
 }
-DEFAULT_ENV_PATH = Path(".env")
-ANDROID_APP_ID_ENV = "FSQ_ANDROID_APP_ID"
-ANDROID_SERIAL_ENV = "FSQ_ANDROID_SERIAL"
-WEB_BROWSER_EXECUTABLE_PATH_ENV = "FSQ_WEB_BROWSER_EXECUTABLE_PATH"
-WINDOWS_APP_PATH_ENV = "FSQ_WINDOWS_APP_PATH"
-WINDOWS_BACKEND_KIND_ENV = "FSQ_WINDOWS_BACKEND_KIND"
-WINDOWS_WINDOW_TITLE_RE_ENV = "FSQ_WINDOWS_WINDOW_TITLE_RE"
-WINDOWS_LAUNCH_ARGS_ENV = "FSQ_WINDOWS_LAUNCH_ARGS"
-MACOS_APPIUM_SERVER_URL_ENV = "FSQ_MACOS_APPIUM_SERVER_URL"
-MACOS_BUNDLE_ID_ENV = "FSQ_MACOS_BUNDLE_ID"
-MACOS_APP_PATH_ENV = "FSQ_MACOS_APP_PATH"
+
+
+def _runtime_resource_root() -> Path:
+    source_root = Path(__file__).resolve().parents[2]
+    if (source_root / "pyproject.toml").is_file():
+        return source_root
+    return Path(__file__).resolve().parents[1] / "resources"
+
+
+PLATFORM_CONFIG_PATHS = {platform: _runtime_resource_root() / filename for platform, filename in _PLATFORM_CONFIG_FILENAMES.items()}
 SUPPORTED_LLM_PROVIDERS = ("github_copilot", "azure_openai")
-CHROME_EXECUTABLE_NAMES = {"chrome", "chrome.exe", "google chrome", "google-chrome", "google-chrome-stable"}
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -59,7 +65,6 @@ def load_settings(
     user_config_root: str | Path | None = None,
 ) -> Settings:
     config_path = Path(path) if path is not None else _find_default_config()
-    _load_env_files(config_path)
     data = _read_yaml(config_path) if config_path else {}
     _reject_obsolete_settings(data)
     try:
@@ -68,7 +73,6 @@ def load_settings(
         raise ConfigurationError("Invalid configuration.", context={"errors": exc.errors()}) from exc
     if workspace is not None:
         settings.workspace.root_dir = Path(workspace)
-    _apply_environment_settings(settings)
     settings = refresh_provider_settings(settings, user_config_root)
     base_dir = config_path.parent if config_path is not None else Path.cwd()
     resolve_runtime_paths(settings, base_dir)
@@ -97,13 +101,67 @@ def load_platform_settings(
     user_config_root: str | Path | None = None,
 ) -> Settings:
     platform_id = platform.strip().lower()
-    settings = load_settings(resolve_platform_config_path(platform_id), workspace, user_config_root)
+    preset_path = resolve_platform_config_path(platform_id)
+    settings = load_settings(preset_path, workspace, user_config_root)
     if settings.harness.platform != platform_id:
         raise ConfigurationError(
             "Platform configuration does not match requested platform.",
             context={"platform": platform_id, "configured_platform": settings.harness.platform},
         )
+    knowledge = settings.agent_context.knowledge
+    try:
+        skills_relative = knowledge.skills.dir.relative_to(knowledge.root_dir)
+    except ValueError:
+        pass
+    else:
+        knowledge.skills.dir = (preset_path.parent / skills_relative).resolve()
     return settings
+
+
+def load_workspace_platform_settings(
+    workspace: str | Path,
+    platform: str,
+    user_config_root: str | Path | None = None,
+) -> Settings:
+    platform_id = platform.strip().lower()
+    workspace_config, workspace_root, workspace_config_path = load_workspace_config(workspace, platform_id)
+    preset_path = resolve_platform_config_path(platform_id)
+    preset_data = _read_yaml(preset_path)
+    _reject_obsolete_settings(preset_data)
+    _reject_workspace_owned_preset_settings(preset_data)
+    try:
+        settings = Settings.model_validate(preset_data)
+    except ValidationError as exc:
+        raise ConfigurationError("Invalid platform preset.", context={"errors": exc.errors()}) from exc
+
+    settings.workspace = WorkspaceSettings(root_dir=workspace_root, config_path=workspace_config_path)
+    settings.harness.platform = platform_id
+    target = workspace_config.target
+    if isinstance(target, AndroidWorkspaceTarget):
+        settings.harness.android.app_id = target.app_id
+    elif isinstance(target, WebWorkspaceTarget):
+        settings.harness.web.browser_executable_path = target.browser_executable_path
+    elif isinstance(target, WindowsWorkspaceTarget):
+        settings.harness.windows.app_path = target.app_path
+        settings.harness.windows.window_title_re = target.window_title_re
+        settings.harness.windows.launch_args = _parse_windows_launch_args(target.launch_args) if target.launch_args else []
+    elif isinstance(target, MacOSWorkspaceTarget):
+        settings.harness.macos.bundle_id = target.bundle_id
+        settings.harness.macos.app_path = target.app_path
+
+    settings.runtime_secrets.set_values(workspace_config.env)
+    settings = refresh_provider_settings(settings, user_config_root)
+    resolve_workspace_runtime_paths(settings, workspace_root, preset_path.parent, platform_id)
+    return settings
+
+
+def _reject_workspace_owned_preset_settings(data: dict[str, Any]) -> None:
+    for key in ("workspace", "cases", "output", "runtime_secrets"):
+        if key in data:
+            raise ConfigurationError(
+                "Platform preset contains workspace-owned configuration.",
+                context={"config_key": key},
+            )
 
 
 def _reject_obsolete_settings(data: dict[str, Any]) -> None:
@@ -137,108 +195,13 @@ def _reject_obsolete_settings(data: dict[str, Any]) -> None:
             )
 
 
-def _load_env_files(config_path: Path | None) -> None:
-    candidates = [DEFAULT_ENV_PATH]
-    if config_path is not None:
-        config_env_path = config_path.parent / DEFAULT_ENV_PATH
-        if config_env_path not in candidates:
-            candidates.append(config_env_path)
-    for env_path in candidates:
-        _load_env_file(env_path)
-
-
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        raise ConfigurationError("Unable to read .env file.", context={"path": str(path)}) from exc
-    for line_number, raw_line in enumerate(lines, start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            raise ConfigurationError(
-                "Invalid .env line; expected KEY=VALUE.",
-                context={"path": str(path), "line": line_number},
-            )
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not key:
-            raise ConfigurationError(
-                "Invalid .env line; key cannot be empty.",
-                context={"path": str(path), "line": line_number},
-            )
-        os.environ.setdefault(key, _strip_env_value(value.strip()))
-
-
-def _strip_env_value(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        return value[1:-1]
-    return value
-
-
-def _apply_environment_settings(settings: Settings) -> None:
-    app_id = _env_value(ANDROID_APP_ID_ENV)
-    serial = _env_value(ANDROID_SERIAL_ENV)
-    if app_id:
-        settings.harness.android.app_id = app_id
-    if serial:
-        settings.harness.android.serial = serial
-    browser_executable_path = _env_value(WEB_BROWSER_EXECUTABLE_PATH_ENV)
-    if browser_executable_path:
-        settings.harness.web.browser_executable_path = browser_executable_path
-    windows_app_path = _env_value(WINDOWS_APP_PATH_ENV)
-    windows_backend_kind = _env_value(WINDOWS_BACKEND_KIND_ENV)
-    windows_window_title_re = _env_value(WINDOWS_WINDOW_TITLE_RE_ENV)
-    windows_launch_args = _env_value(WINDOWS_LAUNCH_ARGS_ENV)
-    if windows_app_path:
-        settings.harness.windows.app_path = Path(windows_app_path)
-    if windows_backend_kind:
-        settings.harness.windows.backend_kind = _validate_windows_backend_kind(windows_backend_kind)
-    if windows_window_title_re:
-        settings.harness.windows.window_title_re = windows_window_title_re
-    if windows_launch_args:
-        settings.harness.windows.launch_args = _parse_windows_launch_args(windows_launch_args)
-    macos_appium_server_url = _env_value(MACOS_APPIUM_SERVER_URL_ENV)
-    macos_bundle_id = _env_value(MACOS_BUNDLE_ID_ENV)
-    macos_app_path = _env_value(MACOS_APP_PATH_ENV)
-    if macos_appium_server_url:
-        settings.harness.macos.appium_server_url = macos_appium_server_url
-    if macos_bundle_id:
-        settings.harness.macos.bundle_id = macos_bundle_id
-    if macos_app_path:
-        settings.harness.macos.app_path = macos_app_path
-
-
-def _env_value(name: str) -> str | None:
-    value = os.getenv(name)
-    if value is None:
-        return None
-    value = value.strip()
-    return value or None
-
-
-def _validate_windows_backend_kind(value: str) -> str:
-    normalized = value.strip().lower()
-    if normalized in {"uia", "win32"}:
-        return normalized
-    raise ConfigurationError(
-        f"Windows pywinauto backend kind environment variable {WINDOWS_BACKEND_KIND_ENV} is invalid.",
-        context={"backend_kind_env": WINDOWS_BACKEND_KIND_ENV, "value": value, "supported": ["uia", "win32"]},
-    )
-
-
 def _parse_windows_launch_args(value: str) -> list[str]:
     try:
         return _split_windows_command_line(value)
     except ValueError as exc:
         raise ConfigurationError(
-            f"Windows launch arguments environment variable {WINDOWS_LAUNCH_ARGS_ENV} could not be parsed.",
-            context={"launch_args_env": WINDOWS_LAUNCH_ARGS_ENV, "error": str(exc)},
+            "Windows workspace launch arguments could not be parsed.",
+            context={"config_key": "target.launch_args", "error": str(exc)},
         ) from exc
 
 
@@ -370,24 +333,24 @@ def _validate_web_browser_executable_path(settings: Settings) -> None:
     browser_path = settings.harness.web.browser_executable_path
     if browser_path is None:
         raise ConfigurationError(
-            "Web browser executable path environment variable is not set.",
-            context={"executable_path_env": WEB_BROWSER_EXECUTABLE_PATH_ENV, "channel": settings.harness.web.channel},
+            "Web browser executable path is not configured.",
+            context={"config_key": "target.browser_executable_path", "channel": settings.harness.web.channel},
         )
     if not browser_path.exists():
         raise ConfigurationError(
             "Configured Web browser executable path does not exist.",
-            context={"executable_path_env": WEB_BROWSER_EXECUTABLE_PATH_ENV, "path": str(browser_path)},
+            context={"config_key": "target.browser_executable_path", "path": str(browser_path)},
         )
     if not browser_path.is_file():
         raise ConfigurationError(
             "Configured Web browser executable path must point to the browser executable file.",
-            context={"executable_path_env": WEB_BROWSER_EXECUTABLE_PATH_ENV, "path": str(browser_path)},
+            context={"config_key": "target.browser_executable_path", "path": str(browser_path)},
         )
     if settings.harness.web.channel == "chrome" and browser_path.name.casefold() not in CHROME_EXECUTABLE_NAMES:
         raise ConfigurationError(
             "Configured Web browser executable path does not match harness.web.channel.",
             context={
-                "executable_path_env": WEB_BROWSER_EXECUTABLE_PATH_ENV,
+                "config_key": "target.browser_executable_path",
                 "path": str(browser_path),
                 "channel": settings.harness.web.channel,
                 "expected_file_names": sorted(CHROME_EXECUTABLE_NAMES),
@@ -396,7 +359,7 @@ def _validate_web_browser_executable_path(settings: Settings) -> None:
     if os.name != "nt" and not os.access(browser_path, os.X_OK):
         raise ConfigurationError(
             "Configured Web browser executable path is not executable.",
-            context={"executable_path_env": WEB_BROWSER_EXECUTABLE_PATH_ENV, "path": str(browser_path)},
+            context={"config_key": "target.browser_executable_path", "path": str(browser_path)},
         )
 
 
@@ -409,18 +372,18 @@ def _validate_windows_harness_settings(settings: Settings) -> None:
     app_path = settings.harness.windows.app_path
     if app_path is None:
         raise ConfigurationError(
-            f"Windows app path environment variable {WINDOWS_APP_PATH_ENV} is not set.",
-            context={"app_path_env": WINDOWS_APP_PATH_ENV, "legacy_config_key": "harness.windows.app_path"},
+            "Windows app path is not configured.",
+            context={"config_key": "target.app_path"},
         )
     if not app_path.exists():
         raise ConfigurationError(
             "Configured Windows app path does not exist.",
-            context={"app_path_env": WINDOWS_APP_PATH_ENV, "path": str(app_path)},
+            context={"config_key": "target.app_path", "path": str(app_path)},
         )
     if not app_path.is_file():
         raise ConfigurationError(
             "Configured Windows app path must point to the application executable file.",
-            context={"app_path_env": WINDOWS_APP_PATH_ENV, "path": str(app_path)},
+            context={"config_key": "target.app_path", "path": str(app_path)},
         )
 
 
@@ -432,25 +395,25 @@ def _validate_macos_harness_settings(settings: Settings) -> None:
         )
     if not settings.harness.macos.appium_server_url:
         raise ConfigurationError(
-            "macOS Appium server URL environment variable is not set.",
-            context={"server_url_env": MACOS_APPIUM_SERVER_URL_ENV},
+            "macOS Appium server URL is not configured in harness.macos.appium_server_url.",
+            context={"config_key": "harness.macos.appium_server_url"},
         )
     app_path = settings.harness.macos.app_path
     bundle_id = settings.harness.macos.bundle_id
     if app_path is None and bundle_id is None:
         raise ConfigurationError(
             "macOS app identity is not configured.",
-            context={"bundle_id_env": MACOS_BUNDLE_ID_ENV, "app_path_env": MACOS_APP_PATH_ENV},
+            context={"config_keys": ["target.bundle_id", "target.app_path"]},
         )
     if app_path is None:
         return
     if not app_path.exists():
         raise ConfigurationError(
             "Configured macOS app path does not exist.",
-            context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
+            context={"config_key": "target.app_path", "path": str(app_path)},
         )
-    if not (app_path.is_dir() or app_path.is_file()):
+    if not _is_macos_app_bundle_or_executable(app_path):
         raise ConfigurationError(
             "Configured macOS app path must point to an application bundle or executable.",
-            context={"app_path_env": MACOS_APP_PATH_ENV, "path": str(app_path)},
+            context={"config_key": "target.app_path", "path": str(app_path)},
         )

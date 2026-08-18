@@ -14,7 +14,9 @@ from typing import TYPE_CHECKING, Any, Never
 from pydantic import ValidationError
 
 from fsq_agent._capability_bootstrap import build_capability_registry
+from fsq_agent._run_ids import new_run_id
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
+from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
@@ -24,8 +26,8 @@ from fsq_agent.core import (
     HarnessInterface,
     RuntimeSecretStore,
 )
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import CapabilityRegistrySnapshot, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
+from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.playground._recording import record_dynamic_result
 from fsq_agent.providers import build_ai_assertion_evaluator
 
@@ -147,7 +149,7 @@ def task_from_case_yaml(path_text: str, settings: Settings) -> Task:
         f"{content}"
     )
     reference_text = f"Source path: {display_path}\n\nRaw file content:\n{content}"
-    slug_source = source_path.stem or "case-yaml"
+    slug_source = source_path.name.removesuffix(FSQ_CASE_SUFFIX) or "case-yaml"
     slug = re.sub(r"[^a-z0-9]+", "-", slug_source.lower()).strip("-") or "case-yaml"
     return Task(
         id=slug[:80],
@@ -160,16 +162,11 @@ def task_from_case_yaml(path_text: str, settings: Settings) -> Task:
 
 def _read_case_yaml_text(path_text: str, settings: Settings) -> tuple[Path, str]:
     requested = Path(path_text.strip())
-    candidates = []
-    if requested.is_absolute():
-        candidates.append(requested)
-    else:
-        candidates.append(settings.cases.dir / requested)
-        candidates.append(Path.cwd() / requested)
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            resolved = candidate.resolve()
-            return resolved, resolved.read_text(encoding="utf-8")
+    if not is_fsq_case_file(requested):
+        raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
+    resolved = resolve_workspace_cases_path(requested, settings.cases.dir)
+    if resolved.exists() and resolved.is_file():
+        return resolved, resolved.read_text(encoding="utf-8")
     raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
 
@@ -345,8 +342,9 @@ def _run_strict_case_yaml(
         for lifecycle_path, lifecycle_case in lifecycle_cases
     }
     validate_strict_core_settings(settings, requires_ai_assertion=requires_ai_assertion)
-    run_id = case.id
+    run_id = new_run_id(case.id)
     run_dir = Path(settings.output.runs_dir) / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
     state.add_event(
         request_id,
         RunEvent(run_id=run_id, task_id=case.id, type="run_started", title="Strict YAML started", message=str(case_path)),
@@ -432,10 +430,11 @@ class _CancellableHarness:
 
 def _resolve_case_yaml_path(path_text: str, settings: Settings) -> Path:
     requested = Path(path_text.strip())
-    candidates = [requested] if requested.is_absolute() else [settings.cases.dir / requested, Path.cwd() / requested]
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate.resolve()
+    if not is_fsq_case_file(requested):
+        raise ConfigurationError(f"FSQ case files must use the {FSQ_CASE_SUFFIX} suffix.")
+    resolved = resolve_workspace_cases_path(requested, settings.cases.dir)
+    if resolved.exists() and resolved.is_file():
+        return resolved
     raise FileNotFoundError(f"Case YAML not found: {path_text}")
 
 

@@ -4,18 +4,19 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from fsq_agent.config import Settings
 
 RecordingStatus = Literal["recorded", "skipped", "failed"]
@@ -26,6 +27,7 @@ class StrictCaseRecording:
     status: RecordingStatus
     recording_path: Path
     recorded_case_path: Path | None = None
+    published_case_path: Path | None = None
     command_count: int = 0
     required_runtime_secret_names: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -39,6 +41,7 @@ class StrictCaseRecording:
             "status": self.status,
             "recording_path": str(self.recording_path),
             "recorded_case_path": str(self.recorded_case_path) if self.recorded_case_path else None,
+            "published_case_path": str(self.published_case_path) if self.published_case_path else None,
             "command_count": self.command_count,
             "required_runtime_secret_names": self.required_runtime_secret_names,
             "warnings": self.warnings,
@@ -59,7 +62,7 @@ def record_dynamic_run_as_strict_case(
 ) -> StrictCaseRecording:
     run_dir.mkdir(parents=True, exist_ok=True)
     recording_path = run_dir / "recording.json"
-    recorded_case_path = run_dir / "recorded.codex.yaml"
+    recorded_case_path = run_dir / f"recorded{FSQ_CASE_SUFFIX}"
     draft = result.status != "success"
     if draft and not allow_failure:
         recording = StrictCaseRecording(
@@ -75,7 +78,7 @@ def record_dynamic_run_as_strict_case(
             status="failed",
             recording_path=recording_path,
             recorded_case_path=recorded_case_path,
-            errors=["recorded.codex.yaml already exists for this run."],
+            errors=[f"{recorded_case_path.name} already exists for this run."],
             draft=draft,
         )
         _write_recording(recording)
@@ -123,8 +126,48 @@ def record_dynamic_run_as_strict_case(
         recording.status = "failed"
         recording.validation_status = "failed"
         recording.errors.append(str(exc))
+    if recording.status == "recorded" and recording.validation_status == "passed" and task.planning_reference_kind == "goal":
+        recording.published_case_path = _publish_goal_recording(
+            recorded_case_path=recorded_case_path,
+            published_case_path=settings.cases.dir / f"{result.report.run_id}{FSQ_CASE_SUFFIX}",
+            warnings=recording.warnings,
+        )
     _write_recording(recording)
     return recording
+
+
+def _publish_goal_recording(*, recorded_case_path: Path, published_case_path: Path, warnings: list[str]) -> Path | None:
+    temporary_path: Path | None = None
+    try:
+        published_case_path.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            recorded_case_path.open("rb") as source,
+            tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=published_case_path.parent,
+                prefix=f".{published_case_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary,
+        ):
+            temporary_path = Path(temporary.name)
+            while chunk := source.read(1024 * 1024):
+                temporary.write(chunk)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.replace(published_case_path)
+    except OSError:
+        warnings.append("Unable to publish the recorded Goal case to the selected platform cases directory.")
+        return None
+    else:
+        temporary_path = None
+        return published_case_path
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
 
 
 class _RecordingCollector:

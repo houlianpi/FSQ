@@ -5,8 +5,9 @@ import type { ReadinessResponse } from '../../../api/types';
 import { OperationComposer } from './OperationComposer';
 
 const ready: ReadinessResponse = {
-  platform: 'web',
+  workspaceName: 'test', platformId: 'web',
   workspace: { status: 'ready', message: 'Workspace ready', action: '' },
+  platform: { status: 'ready', message: 'Platform ready', action: '' },
   provider: { status: 'ready', message: 'Provider ready', action: '' },
   target: { status: 'ready', message: 'Target ready', action: '' },
   strict: { status: 'ready', message: 'Strict ready', action: '' },
@@ -14,12 +15,12 @@ const ready: ReadinessResponse = {
 
 it('shows strict case facts without claiming human review', async () => {
   const onModeChange = vi.fn();
-  render(<OperationComposer mode="strict" goal="" casePath="flow.codex.yaml" cases={[{
-    path: 'flow.codex.yaml', id: 'flow', name: 'Create flow', platform: 'web', commandCount: 6,
+  render(<OperationComposer mode="strict" goal="" casePath="flow.fsq.yaml" cases={[{
+    path: 'flow.fsq.yaml', id: 'flow', name: 'Create flow', platform: 'web', commandCount: 6,
     requiresAiAssertion: true, validationStatus: 'validated', selectable: true, diagnostics: [],
   }]} casesState="ready" readiness={ready} discoveryLoading={false} canStart primaryInputRef={createRef()} onModeChange={onModeChange} onGoalChange={vi.fn()} onCaseChange={vi.fn()} onStart={vi.fn()} />);
   expect(screen.queryByText('Path')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Validated case flow.codex.yaml' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Validated case flow.fsq.yaml' })).toBeInTheDocument();
   expect(screen.getByText('web')).toBeInTheDocument();
   expect(screen.getByText('6')).toBeInTheDocument();
   expect(screen.getByText('validated')).toBeInTheDocument();

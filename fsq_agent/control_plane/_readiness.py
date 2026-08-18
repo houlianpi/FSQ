@@ -3,34 +3,56 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fsq_agent.config import Settings, load_platform_settings, validate_strict_core_settings
+if TYPE_CHECKING:
+    from pathlib import Path
+
+from fsq_agent.config import Settings, inspect_registered_workspace, load_registered_workspace, load_workspace_platform_settings, validate_strict_core_settings
 from fsq_agent.providers import prepare_model_provider_session
 
 from ._evidence import safe_exception_message
 from ._targets import target_readiness
 
 
-def load_control_plane_settings(platform: str, workspace_path: Path, user_config_root: Path | None = None) -> Settings:
-    return load_platform_settings(platform, workspace_path, user_config_root)
+def load_control_plane_settings(workspace_name: str, platform: str, user_config_root: Path | None = None) -> Settings:
+    workspace = load_registered_workspace(workspace_name, platform, user_config_root)
+    return load_workspace_platform_settings(workspace.root_path, platform, user_config_root)
 
 
-def readiness(platform: str, workspace_path: Path, user_config_root: Path | None = None) -> dict[str, Any]:
+def readiness(workspace_name: str, platform: str, user_config_root: Path | None = None) -> dict[str, Any]:
     try:
-        settings = load_control_plane_settings(platform, workspace_path, user_config_root)
+        workspace_status = inspect_registered_workspace(workspace_name, user_config_root)
     except Exception as exc:  # noqa: BLE001
-        record = _record("error", safe_exception_message(exc), "Fix the committed platform preset or workspace configuration.")
-        return {"platform": platform, "workspace": record, "provider": record, "target": record, "strict": record}
+        workspace = _record("error", safe_exception_message(exc), "Select a registered workspace.")
+        unavailable = _record("unavailable", "Workspace selection is unavailable.", "Select a registered workspace and platform.")
+        return _readiness_payload(workspace_name, platform, workspace, unavailable, unavailable, unavailable, unavailable)
 
-    workspace_ready = settings.workspace.root_dir is not None and Path(settings.workspace.root_dir).is_dir()
+    workspace_name = workspace_status.name
+    workspace_ready = workspace_status.root_path.is_dir() and not workspace_status.root_path.is_symlink()
     workspace = _record(
         "ready" if workspace_ready else "unavailable",
         "Workspace is ready." if workspace_ready else "Workspace is unavailable.",
-        "Initialize the configured workspace directory." if not workspace_ready else "",
+        workspace_status.action if not workspace_ready else "",
     )
+    selected_platform = next((item for item in workspace_status.platforms if item.platform == platform), None)
+    if not workspace_ready or selected_platform is None or selected_platform.status != "available":
+        if selected_platform is None:
+            platform_status = _record("unavailable", "Platform configuration is not configured.", "Add the selected platform to this workspace.")
+        else:
+            platform_status = _record("unavailable", selected_platform.message, selected_platform.action)
+        downstream = _record("unavailable", "Selected platform is unavailable.", "Select or repair a configured platform.")
+        return _readiness_payload(workspace_name, platform, workspace, platform_status, downstream, downstream, downstream)
+
+    try:
+        settings = load_control_plane_settings(workspace_name, platform, user_config_root)
+    except Exception as exc:  # noqa: BLE001
+        platform_status = _record("error", safe_exception_message(exc), "Repair the selected platform configuration.")
+        downstream = _record("unavailable", "Selected platform is unavailable.", "Repair the selected platform configuration.")
+        return _readiness_payload(workspace_name, platform, workspace, platform_status, downstream, downstream, downstream)
+
     provider = provider_readiness(settings)
+    platform_status = _record("ready", "Platform configuration is ready.", "")
     target_ready, target_message, target_action = target_readiness(settings)
     target = _record("ready" if target_ready else "unavailable", target_message, target_action)
     try:
@@ -39,7 +61,27 @@ def readiness(platform: str, workspace_path: Path, user_config_root: Path | None
         strict = _record("unavailable", safe_exception_message(exc, settings=settings), "Configure the selected platform for strict execution.")
     else:
         strict = _record("ready", "Provider-free strict execution is ready.", "")
-    return {"platform": platform, "workspace": workspace, "provider": provider, "target": target, "strict": strict}
+    return _readiness_payload(workspace_name, platform, workspace, platform_status, provider, target, strict)
+
+
+def _readiness_payload(
+    workspace_name: str,
+    platform_id: str,
+    workspace: dict[str, str],
+    platform: dict[str, str],
+    provider: dict[str, str],
+    target: dict[str, str],
+    strict: dict[str, str],
+) -> dict[str, Any]:
+    return {
+        "workspaceName": workspace_name,
+        "platformId": platform_id,
+        "workspace": workspace,
+        "platform": platform,
+        "provider": provider,
+        "target": target,
+        "strict": strict,
+    }
 
 
 def provider_readiness(settings: Settings) -> dict[str, str]:

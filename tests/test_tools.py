@@ -44,6 +44,19 @@ async def test_agent_tool_file_ops_are_scoped(tmp_path: Path) -> None:
     assert (tmp_path / "nested" / "out.txt").read_text(encoding="utf-8") == "hello"
 
 
+@pytest.mark.asyncio
+async def test_agent_tool_file_writes_are_scoped_to_active_run(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "cases"
+    provider = _provider(tmp_path / "shared-artifacts", runs_dir=runs_dir)
+    provider.configure_run("run-1")
+
+    result = await provider.invoke(AgentToolCall(tool_name="write_file", arguments={"path": "notes.txt", "content": "run local"}))
+
+    assert result.status == "success"
+    assert (runs_dir / "run-1" / "artifacts" / "notes.txt").read_text(encoding="utf-8") == "run local"
+    assert not (tmp_path / "shared-artifacts" / "notes.txt").exists()
+
+
 def test_agent_tool_registry_lists_only_dynamic_tools(tmp_path: Path) -> None:
     names = {definition.name for definition in _registry(_provider(tmp_path)).list_tools()}
 

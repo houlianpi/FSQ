@@ -9,6 +9,7 @@ import yaml
 
 from fsq_agent.config import (
     activate_github_copilot_provider,
+    list_workspace_registry,
     load_settings,
     load_user_provider_config,
     refresh_provider_settings,
@@ -37,13 +38,135 @@ def test_load_user_provider_config_initializes_explicit_unconfigured_state(tmp_p
 
     config = load_user_provider_config(user_root)
 
-    assert config.version == 1
+    assert config.version == 3
     assert config.provider is None
+    assert config.workspaces == []
     assert yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8")) == {
-        "version": 1,
+        "version": 3,
         "provider": None,
+        "workspaces": [],
     }
     assert (user_root / "auth").is_dir()
+
+
+def test_load_user_provider_config_upgrades_valid_v2_without_changing_provider_or_credentials(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+    user_root.mkdir()
+    workspace_root = (tmp_path / "checkout").resolve()
+    (user_root / "config.yaml").write_text(
+        f"""
+version: 2
+provider:
+  type: github_copilot
+  model: copilot-model
+workspaces:
+  - name: checkout
+    config_path: {(workspace_root / ".fsq" / "config.yaml").as_posix()}
+""",
+        encoding="utf-8",
+    )
+    auth_dir = user_root / "auth"
+    auth_dir.mkdir()
+    (auth_dir / "github-copilot-token.json").write_text('{"access_token":"github-token"}', encoding="utf-8")
+    (auth_dir / "github-copilot-provider-token.json").write_text(
+        '{"token":"provider-token","plan":"individual"}',
+        encoding="utf-8",
+    )
+
+    config = load_user_provider_config(user_root)
+
+    assert config.version == 3
+    assert config.provider is not None
+    assert config.provider.type == "github_copilot"
+    assert [(entry.name, entry.root_path) for entry in config.workspaces] == [("checkout", workspace_root)]
+    assert config.github_token == {"access_token": "github-token"}
+    assert config.provider_token == {"token": "provider-token", "plan": "individual"}
+    persisted = yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8"))
+    assert persisted == {
+        "version": 3,
+        "provider": {"type": "github_copilot", "model": "copilot-model"},
+        "workspaces": [{"name": "checkout", "root_path": str(workspace_root)}],
+    }
+
+
+def test_provider_activation_preserves_workspace_registry(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+    user_root.mkdir()
+    workspace_root = (tmp_path / "checkout").resolve()
+    (user_root / "config.yaml").write_text(
+        f"""
+version: 3
+provider: null
+workspaces:
+  - name: checkout
+    root_path: {workspace_root.as_posix()}
+""",
+        encoding="utf-8",
+    )
+
+    save_azure_openai_provider(
+        base_url="https://example.openai.azure.com",
+        model="azure-model",
+        api_key="azure-key",
+        user_config_root=user_root,
+    )
+
+    registry = list_workspace_registry(user_root)
+    assert [(entry.name, entry.root_path) for entry in registry] == [("checkout", workspace_root)]
+
+
+@pytest.mark.parametrize("duplicate", ["name", "path"])
+def test_load_user_provider_config_rejects_duplicate_workspace_identity(tmp_path: Path, duplicate: str) -> None:
+    user_root = tmp_path / "user"
+    user_root.mkdir()
+    first_path = (tmp_path / "checkout").resolve()
+    second_path = first_path if duplicate == "path" else (tmp_path / "search").resolve()
+    second_name = "search" if duplicate == "path" else "CHECKOUT"
+    (user_root / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 3,
+                "provider": None,
+                "workspaces": [
+                    {"name": "checkout", "root_path": str(first_path)},
+                    {"name": second_name, "root_path": str(second_path)},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="Invalid user Provider configuration"):
+        load_user_provider_config(user_root)
+
+
+def test_load_user_provider_config_rejects_symlinked_workspace_registry_root(tmp_path: Path) -> None:
+    real_root = tmp_path / "checkout"
+    real_root.mkdir()
+    linked_root = tmp_path / "checkout-link"
+    try:
+        linked_root.symlink_to(real_root, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+    user_root = tmp_path / "user"
+    user_root.mkdir()
+    (user_root / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 3,
+                "provider": None,
+                "workspaces": [
+                    {"name": "checkout", "root_path": str(linked_root)},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="Invalid user Provider configuration"):
+        load_user_provider_config(user_root)
 
 
 def test_save_azure_provider_normalizes_and_keeps_secret_out_of_serialization(tmp_path: Path) -> None:

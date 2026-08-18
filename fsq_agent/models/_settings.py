@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -51,6 +53,21 @@ class RuntimeSecretSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     allowed_env_names: list[str] = Field(default_factory=list)
+    _values: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    @property
+    def allowed_names(self) -> list[str]:
+        return list(self.allowed_env_names)
+
+    def set_values(self, values: dict[str, str]) -> None:
+        self.allowed_env_names = list(values)
+        self._values = dict(values)
+
+    def resolve(self, name: str) -> str:
+        return self._values[name]
+
+    def private_values(self) -> dict[str, str]:
+        return dict(self._values)
 
 
 class PrePlanKnowledgeSettings(BaseModel):
@@ -160,20 +177,20 @@ class MacOSHarnessSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: Literal["appium_mac2"] = "appium_mac2"
+    appium_server_url: str | None = None
     page_source_max_depth: int = Field(default=12, ge=1)
     action_timeout_seconds: int = Field(default=10, ge=1)
     new_command_timeout_seconds: int = Field(default=300, ge=1)
-    _appium_server_url: str | None = PrivateAttr(default=None)
     _bundle_id: str | None = PrivateAttr(default=None)
     _app_path: Path | None = PrivateAttr(default=None)
 
-    @property
-    def appium_server_url(self) -> str | None:
-        return self._appium_server_url
-
-    @appium_server_url.setter
-    def appium_server_url(self, value: str | None) -> None:
-        self._appium_server_url = value.strip() if isinstance(value, str) and value.strip() else None
+    @field_validator("appium_server_url")
+    @classmethod
+    def _normalize_appium_server_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @property
     def bundle_id(self) -> str | None:
@@ -308,16 +325,226 @@ class WorkspaceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     root_dir: Path | None = None
-    _marker_file: str = PrivateAttr(default=".fsq-agent-workspace")
-    _auto_init: bool = PrivateAttr(default=True)
+    config_path: Path | None = None
 
-    @property
-    def marker_file(self) -> str:
-        return self._marker_file
 
-    @property
-    def auto_init(self) -> bool:
-        return self._auto_init
+_WORKSPACE_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+
+
+def _normalize_workspace_name(value: str) -> str:
+    normalized = value.strip()
+    if not normalized or normalized in {".", ".."}:
+        raise ValueError("workspace name must be a non-empty directory name")
+    if any(ord(character) < 32 or character in "/\\" for character in normalized):
+        raise ValueError("workspace name cannot contain path separators or control characters")
+    if os.name == "nt":
+        if any(character in '<>:"|?*' for character in normalized) or normalized.endswith((".", " ")):
+            raise ValueError("workspace name contains characters invalid on Windows")
+        if normalized.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+            raise ValueError("workspace name is reserved on Windows")
+    return normalized
+
+
+class AndroidWorkspaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app_id: str = Field(min_length=1)
+
+    @field_validator("app_id")
+    @classmethod
+    def normalize_app_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("app_id cannot be blank")
+        return normalized
+
+
+class WebWorkspaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    browser_executable_path: Path
+
+
+class WindowsWorkspaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app_path: Path
+    window_title_re: str | None = None
+    launch_args: str = ""
+
+    @field_validator("window_title_re")
+    @classmethod
+    def normalize_window_title_re(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class MacOSWorkspaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bundle_id: str | None = None
+    app_path: Path | None = None
+
+    @field_validator("bundle_id")
+    @classmethod
+    def normalize_bundle_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "MacOSWorkspaceTarget":
+        if self.bundle_id is None and self.app_path is None:
+            raise ValueError("macOS target requires bundle_id or app_path")
+        return self
+
+
+WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget
+
+
+class WorkspaceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[2]
+    name: str = Field(min_length=1, max_length=128)
+    root_path: Path
+    platform: Literal["android", "web", "windows", "macos"]
+    target: WorkspaceTarget
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_platform_target(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        platform = data.get("platform")
+        target = data.get("target")
+        target_models = {
+            "android": AndroidWorkspaceTarget,
+            "web": WebWorkspaceTarget,
+            "windows": WindowsWorkspaceTarget,
+            "macos": MacOSWorkspaceTarget,
+        }
+        target_model = target_models.get(platform)
+        if target_model is not None and not isinstance(target, BaseModel):
+            updated = dict(data)
+            updated["target"] = target_model.model_validate(target)
+            return updated
+        return data
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_workspace_name(value)
+
+    @field_validator("root_path")
+    @classmethod
+    def validate_root_path(cls, value: Path) -> Path:
+        if not value.expanduser().is_absolute():
+            raise ValueError("root_path must be absolute")
+        return value
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for name, secret in value.items():
+            if not _WORKSPACE_ENV_NAME_RE.fullmatch(name):
+                raise ValueError(f"invalid workspace env name: {name}")
+            if not isinstance(secret, str) or not secret.strip():
+                raise ValueError(f"workspace env value cannot be blank: {name}")
+            normalized[name] = secret
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_target_matches_platform(self) -> "WorkspaceConfig":
+        expected_types = {
+            "android": AndroidWorkspaceTarget,
+            "web": WebWorkspaceTarget,
+            "windows": WindowsWorkspaceTarget,
+            "macos": MacOSWorkspaceTarget,
+        }
+        if not isinstance(self.target, expected_types[self.platform]):
+            raise ValueError("workspace target does not match platform")  # noqa: TRY004 - Pydantic validators require ValueError.
+        return self
+
+
+class WorkspaceRegistryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    root_path: Path
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_workspace_name(value)
+
+    @field_validator("root_path")
+    @classmethod
+    def validate_root_path(cls, value: Path) -> Path:
+        expanded = value.expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("workspace root_path must be absolute")
+        if expanded.is_symlink():
+            raise ValueError("workspace root_path must not be a symbolic link")
+        return expanded.resolve()
+
+
+class WorkspacePlatformStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal["android", "web", "windows", "macos"]
+    config_path: Path
+    status: Literal["available", "unavailable"]
+    message: str
+    action: str | None = None
+
+
+class WorkspaceStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    root_path: Path
+    status: Literal["available", "partial", "unavailable"]
+    message: str
+    action: str | None = None
+    platforms: list[WorkspacePlatformStatus] = Field(default_factory=list)
+
+
+class WorkspaceInitResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["initialized", "platform_added", "unchanged", "updated"]
+    name: str = Field(min_length=1, max_length=128)
+    root_path: Path
+    platform: Literal["android", "web", "windows", "macos"]
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_workspace_name(value)
+
+    @field_validator("root_path")
+    @classmethod
+    def validate_root_path(cls, value: Path) -> Path:
+        expanded = value.expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("workspace root_path must be absolute")
+        if expanded.is_symlink():
+            raise ValueError("workspace root_path must not be a symbolic link")
+        return expanded.resolve()
 
 
 class CaseSettings(BaseModel):
