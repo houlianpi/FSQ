@@ -11,8 +11,22 @@ from fsq_agent._strict_case_recording import StrictCaseRecording
 from fsq_agent.cli._android_devices import select_android_serial
 from fsq_agent.cli._main import _task_from_goal, _task_from_raw_case_source, main
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.config import PLATFORM_CONFIG_PATHS, Settings
-from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult, ConfigurationError, ReportArtifact, Task, TaskResult, VerificationResult
+from fsq_agent.config import PLATFORM_CONFIG_PATHS, Settings, load_registered_workspace
+from fsq_agent.models import (
+    AndroidDevice,
+    AndroidDeviceDiscoveryResult,
+    AndroidWorkspaceTarget,
+    ConfigurationError,
+    MacOSWorkspaceTarget,
+    ReportArtifact,
+    Task,
+    TaskResult,
+    VerificationResult,
+    WebWorkspaceTarget,
+    WindowsWorkspaceTarget,
+    WorkspaceConfig,
+    WorkspaceInitResult,
+)
 
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
@@ -246,17 +260,275 @@ def test_init_rejects_provider_before_provider_or_workspace_side_effects(
     assert not (user_root / ".fsq").exists()
 
 
-def test_init_without_provider_does_not_update_env_or_use_interactive_auth(
+def test_init_builds_workspace_config_and_delegates_to_config(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _config(tmp_path)
+    captured: dict[str, object] = {}
 
-    result = CliRunner().invoke(main, ["init", "--platform", "android"])
+    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+        captured.update(kwargs)
+        config = kwargs["config"]
+        assert isinstance(config, WorkspaceConfig)
+        return WorkspaceInitResult(
+            status="initialized",
+            name=config.name,
+            root_path=config.root_path,
+            platform=config.platform,
+        )
+
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "init",
+            "--name",
+            "checkout",
+            "--platform",
+            "android",
+            "--app-id",
+            "com.example.checkout",
+            "--env",
+            "TEST_ACCOUNT=private-value",
+            "--update-existing",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["parent_path"] == tmp_path
+    assert captured["update_existing"] is True
+    config = captured["config"]
+    assert isinstance(config, WorkspaceConfig)
+    assert config.root_path == (tmp_path / "checkout").resolve()
+    assert config.target == AndroidWorkspaceTarget(app_id="com.example.checkout")
+    assert config.env == {"TEST_ACCOUNT": "private-value"}
+    assert "private-value" not in result.output
+    assert "initialized" in result.output
+
+
+def test_init_uses_normalized_name_for_canonical_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+        captured.update(kwargs)
+        config = kwargs["config"]
+        return WorkspaceInitResult(status="initialized", name=config.name, root_path=config.root_path, platform=config.platform)
+
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+
+    result = CliRunner().invoke(
+        main,
+        ["init", "--name", " checkout ", "--platform", "android", "--app-id", "com.example.checkout"],
+    )
+
+    assert result.exit_code == 0, result.output
+    config = captured["config"]
+    assert isinstance(config, WorkspaceConfig)
+    assert config.name == "checkout"
+    assert config.root_path == (tmp_path / "checkout").resolve()
+
+
+def test_init_json_emits_one_safe_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+        config = kwargs["config"]
+        return WorkspaceInitResult(status="unchanged", name=config.name, root_path=config.root_path, platform=config.platform)
+
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+
+    result = CliRunner().invoke(
+        main,
+        ["--output", "json", "init", "--name", "checkout", "--platform", "android", "--app-id", "com.example.checkout"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("\n") == 1
+    assert json.loads(result.output) == {
+        "operation": "init",
+        "status": "unchanged",
+        "workspace": {"name": "checkout", "root_path": str((tmp_path / "checkout").resolve())},
+        "platform": "android",
+    }
+
+
+def test_init_maps_every_platform_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[WorkspaceConfig] = []
+
+    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+        config = kwargs["config"]
+        captured.append(config)
+        return WorkspaceInitResult(status="initialized", name=config.name, root_path=config.root_path, platform=config.platform)
+
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+    runner = CliRunner()
+    web = runner.invoke(
+        main,
+        ["init", "--name", "web-app", "--platform", "web", "--browser-executable-path", "bin/chrome.exe"],
+    )
+    windows = runner.invoke(
+        main,
+        [
+            "init",
+            "--name",
+            "windows-app",
+            "--platform",
+            "windows",
+            "--app-path",
+            "bin/app.exe",
+            "--window-title-re",
+            ".*Checkout",
+            "--launch-args",
+            "--safe-mode",
+        ],
+    )
+    macos = runner.invoke(
+        main,
+        ["init", "--name", "mac-app", "--platform", "macos", "--bundle-id", "com.example.checkout"],
+    )
+
+    assert web.exit_code == windows.exit_code == macos.exit_code == 0
+    assert captured[0].target == WebWorkspaceTarget(browser_executable_path=(tmp_path / "bin/chrome.exe").resolve())
+    assert captured[1].target == WindowsWorkspaceTarget(
+        app_path=(tmp_path / "bin/app.exe").resolve(),
+        window_title_re=".*Checkout",
+        launch_args="--safe-mode",
+    )
+    assert captured[2].target == MacOSWorkspaceTarget(bundle_id="com.example.checkout")
+
+
+def test_init_cli_creates_then_requires_explicit_update(tmp_path: Path) -> None:
+    runner = CliRunner()
+    base_args = ["init", "--name", "checkout", "--platform", "android"]
+
+    created = runner.invoke(main, [*base_args, "--app-id", "com.example.initial", "--env", "TOKEN=initial-secret"])
+    rejected = runner.invoke(main, [*base_args, "--app-id", "com.example.changed", "--env", "TOKEN=rejected-secret"])
+
+    assert created.exit_code == 0, created.output
+    assert "initialized" in created.output
+    assert rejected.exit_code != 0
+    assert "--update-existing" in rejected.output
+    assert "rejected-secret" not in rejected.output
+    assert load_registered_workspace("checkout", "android").target == AndroidWorkspaceTarget(app_id="com.example.initial")
+
+    updated = runner.invoke(
+        main,
+        [*base_args, "--app-id", "com.example.changed", "--env", "TOKEN=replacement-secret", "--update-existing"],
+    )
+
+    assert updated.exit_code == 0, updated.output
+    assert "updated" in updated.output
+    persisted = load_registered_workspace("checkout", "android")
+    assert persisted.target == AndroidWorkspaceTarget(app_id="com.example.changed")
+    assert persisted.env == {"TOKEN": "replacement-secret"}
+
+
+def test_init_machine_error_is_one_safe_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--output",
+            "jsonl",
+            "init",
+            "--name",
+            "checkout",
+            "--platform",
+            "android",
+            "--app-id",
+            "com.example.checkout",
+            "--env",
+            "TOKEN=never-echo-this",
+            "--env",
+            "TOKEN=also-private",
+        ],
+    )
 
     assert result.exit_code != 0
-    assert "Create a new workspace in Control Plane" in result.output
-    assert not (tmp_path / ".env").exists()
-    assert not (tmp_path / ".fsq-agent-workspace").exists()
+    assert result.output.count("\n") == 1
+    assert json.loads(result.output) == {
+        "operation": "init",
+        "status": "error",
+        "error": {"code": "configuration_error", "message": "Each --env name may be specified only once."},
+    }
+    assert "never-echo-this" not in result.output
+    assert "also-private" not in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["init", "--platform", "android", "--app-id", "com.example.checkout"],
+        ["init", "--name", "checkout", "--platform", "android", "--app-id", "com.example.checkout", "--provider", "github_copilot"],
+    ],
+)
+def test_init_machine_parser_errors_are_one_safe_record(args: list[str]) -> None:
+    result = CliRunner().invoke(main, ["--output", "json", *args])
+
+    assert result.exit_code != 0
+    assert result.output.count("\n") == 1
+    assert json.loads(result.output) == {
+        "operation": "init",
+        "status": "error",
+        "error": {"code": "invalid_arguments", "message": "Invalid workspace initialization arguments."},
+    }
+
+
+def test_init_machine_filesystem_error_is_one_safe_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_initialize(**_kwargs) -> WorkspaceInitResult:
+        raise OSError("sensitive filesystem internals")
+
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fail_initialize)
+
+    result = CliRunner().invoke(
+        main,
+        ["--output", "jsonl", "init", "--name", "checkout", "--platform", "android", "--app-id", "com.example.checkout"],
+    )
+
+    assert result.exit_code != 0
+    assert result.output.count("\n") == 1
+    assert json.loads(result.output) == {
+        "operation": "init",
+        "status": "error",
+        "error": {"code": "filesystem_error", "message": "Unable to initialize workspace due to a filesystem error."},
+    }
+    assert "sensitive filesystem internals" not in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--env", "TOKEN=first", "--env", "TOKEN=second"],
+        ["--env", "TOKEN="],
+        ["--browser-executable-path", "chrome.exe"],
+    ],
+)
+def test_init_rejects_invalid_env_or_cross_platform_target_before_config(
+    args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
+
+    result = CliRunner().invoke(
+        main,
+        ["init", "--name", "checkout", "--platform", "android", "--app-id", "com.example.checkout", *args],
+    )
+
+    assert result.exit_code != 0
+    assert "first" not in result.output
+    assert "second" not in result.output
+
+
+def test_non_init_machine_output_is_rejected_before_settings_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fsq_agent.cli._main._load_registered_workspace_settings", lambda *_args: pytest.fail("settings must not load"))
+
+    result = CliRunner().invoke(
+        main,
+        ["--output", "jsonl", "run", "--workspace", "checkout", "--platform", "android", "--goal", "Do it"],
+    )
+
+    assert result.exit_code != 0
+    assert "only supported by init" in result.output
 
 
 def test_removed_setup_command_fails() -> None:

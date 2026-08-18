@@ -18,6 +18,7 @@ from fsq_agent.models import (
     WebWorkspaceTarget,
     WindowsWorkspaceTarget,
     WorkspaceConfig,
+    WorkspaceInitResult,
     WorkspacePlatformStatus,
     WorkspaceRegistryEntry,
     WorkspaceStatus,
@@ -56,6 +57,11 @@ def _workspace_config_path(workspace_root: Path, platform: str) -> Path:
 
 
 def load_workspace_config(workspace: str | Path, platform: str) -> tuple[WorkspaceConfig, Path, Path]:
+    config, workspace_root, config_path, _ = _load_workspace_config_snapshot(workspace, platform)
+    return config, workspace_root, config_path
+
+
+def _load_workspace_config_snapshot(workspace: str | Path, platform: str) -> tuple[WorkspaceConfig, Path, Path, str]:
     requested_root = (Path.cwd() if workspace is None else Path(workspace)).expanduser()
     if requested_root.is_symlink():
         raise ConfigurationError(
@@ -79,7 +85,8 @@ def load_workspace_config(workspace: str | Path, platform: str) -> tuple[Workspa
             context={"workspace": str(workspace_root), "platform": platform, "config_path": str(config_path)},
         )
     try:
-        data = yaml.load(config_path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys.
+        source = config_path.read_bytes()
+        data = yaml.load(source.decode("utf-8"), Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass rejects duplicate keys.
     except ConfigurationError:
         raise
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
@@ -101,7 +108,7 @@ def load_workspace_config(workspace: str | Path, platform: str) -> tuple[Workspa
             "Workspace platform does not match its configuration filename.",
             context={"platform": platform, "configured_platform": config.platform},
         )
-    return config, workspace_root, config_path
+    return config, workspace_root, config_path, _revision(source)
 
 
 def _find_registry_entry(name: str, user_config_root: str | Path | None = None) -> WorkspaceRegistryEntry:
@@ -204,9 +211,18 @@ def load_registered_workspace(
     platform: str,
     user_config_root: str | Path | None = None,
 ) -> WorkspaceConfig:
+    config, _ = _load_registered_workspace_snapshot(name, platform, user_config_root)
+    return config
+
+
+def _load_registered_workspace_snapshot(
+    name: str,
+    platform: str,
+    user_config_root: str | Path | None = None,
+) -> tuple[WorkspaceConfig, str]:
     entry = _find_registry_entry(name, user_config_root)
     try:
-        config, workspace_root, _ = load_workspace_config(entry.root_path, platform)
+        config, workspace_root, _, revision = _load_workspace_config_snapshot(entry.root_path, platform)
     except ConfigurationError as exc:
         raise ConfigurationError(
             "Workspace platform is unavailable.",
@@ -215,7 +231,7 @@ def load_registered_workspace(
     if workspace_root != entry.root_path.resolve() or config.name != entry.name:
         raise ConfigurationError("Registered workspace identity does not match its configuration.", context={"name": entry.name})
     _validate_target_paths(config)
-    return config
+    return config, revision
 
 
 def create_workspace(
@@ -284,6 +300,80 @@ def create_workspace(
     return inspect_registered_workspace(first.name, user_config_root)
 
 
+def initialize_workspace(
+    *,
+    parent_path: Path,
+    config: WorkspaceConfig,
+    update_existing: bool = False,
+    user_config_root: str | Path | None = None,
+) -> WorkspaceInitResult:
+    parent = parent_path.expanduser().resolve()
+    if not parent.exists() or not parent.is_dir():
+        raise ConfigurationError("Workspace parent path must be an existing directory.", context={"parent_path": str(parent)})
+    expected_root = (parent / config.name).resolve()
+    if config.root_path.expanduser().resolve() != expected_root:
+        raise ConfigurationError(
+            "Workspace root_path must match parent path and name.",
+            context={"root_path": str(config.root_path), "expected_root": str(expected_root)},
+        )
+    _validate_target_paths(config)
+
+    entry = next(
+        (candidate for candidate in list_workspace_registry(user_config_root) if candidate.name.casefold() == config.name.casefold()),
+        None,
+    )
+    if entry is None:
+        create_workspace(parent_path=parent, configs=[config], user_config_root=user_config_root)
+        return WorkspaceInitResult(status="initialized", name=config.name, root_path=expected_root, platform=config.platform)
+
+    registered_root = entry.root_path.expanduser().resolve()
+    if registered_root != expected_root:
+        raise ConfigurationError(
+            "Registered workspace root does not match parent path and name.",
+            context={"name": entry.name, "registered_root": str(registered_root), "expected_root": str(expected_root)},
+        )
+    legacy_paths = (registered_root / ".fsq" / "config.yaml", registered_root / ".fsq-agent-workspace")
+    if any(path.exists() or path.is_symlink() for path in legacy_paths):
+        raise ConfigurationError(
+            "Legacy workspace layout is incompatible with initialization.",
+            context={"name": entry.name, "root_path": str(registered_root)},
+        )
+    config_path = _workspace_config_path(registered_root, config.platform)
+    if not config_path.exists() and not config_path.is_symlink():
+        added = add_workspace_platform(
+            name=entry.name,
+            platform=config.platform,
+            target=config.target,
+            env=config.env,
+            user_config_root=user_config_root,
+        )
+        return WorkspaceInitResult(status="platform_added", name=added.name, root_path=added.root_path, platform=added.platform)
+
+    current, expected_revision = _load_registered_workspace_snapshot(entry.name, config.platform, user_config_root)
+    if current.target == config.target and current.env == config.env:
+        _, current_revision = _load_registered_workspace_snapshot(entry.name, config.platform, user_config_root)
+        if current_revision != expected_revision:
+            raise ConfigurationError(
+                "Workspace configuration changed since it was loaded.",
+                context={"name": current.name, "platform": current.platform},
+            )
+        return WorkspaceInitResult(status="unchanged", name=current.name, root_path=current.root_path, platform=current.platform)
+    if not update_existing:
+        raise ConfigurationError(
+            "Workspace platform configuration differs; use --update-existing to replace target and env values.",
+            context={"name": current.name, "platform": current.platform},
+        )
+    updated = update_workspace_platform(
+        name=current.name,
+        platform=current.platform,
+        target=config.target,
+        env=config.env,
+        expected_revision=expected_revision,
+        user_config_root=user_config_root,
+    )
+    return WorkspaceInitResult(status="updated", name=updated.name, root_path=updated.root_path, platform=updated.platform)
+
+
 def add_workspace_platform(
     *,
     name: str,
@@ -350,13 +440,9 @@ def update_workspace_platform(
     user_config_root: str | Path | None = None,
 ) -> WorkspaceConfig:
     with _WRITE_LOCK:
-        current = load_registered_workspace(name, platform, user_config_root)
+        current, current_revision = _load_registered_workspace_snapshot(name, platform, user_config_root)
         config_path = _workspace_config_path(current.root_path, platform)
-        try:
-            source = config_path.read_bytes()
-        except OSError as exc:
-            raise ConfigurationError("Unable to read workspace configuration.", context={"name": current.name}) from exc
-        if _revision(source) != expected_revision:
+        if current_revision != expected_revision:
             raise ConfigurationError(
                 "Workspace configuration changed since it was loaded.",
                 context={"name": current.name, "platform": platform, "error_code": "workspace_conflict"},

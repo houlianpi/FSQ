@@ -6,7 +6,7 @@ Load, persist, merge, normalize, and validate versioned workspace configuration,
 
 ## Dependencies
 
-- `models`: Uses runtime settings models plus `WorkspaceConfig`, platform workspace target models, `WorkspaceRegistryEntry`, `WorkspaceSettings`, and `ConfigurationError`.
+- `models`: Uses runtime settings models plus `WorkspaceConfig`, `WorkspaceInitResult`, platform workspace target models, `WorkspaceRegistryEntry`, `WorkspaceSettings`, and `ConfigurationError`.
 
 ## Public Interface
 
@@ -14,7 +14,7 @@ Current `__init__.py` exports via `__all__`:
 
 - `Settings`: Runtime aggregate combining preset policy, workspace target and resolved paths, private workspace runtime-secret values, reusable repository skills, and the latest Provider snapshot. Entry layers may place a transient Android serial on a run-specific settings copy.
 - `UserProviderConfig`: Validated presentation/runtime snapshot for the single active `azure_openai` or `github_copilot` provider, or the explicit unconfigured state. The persisted user document is version 3 and also carries the root-based workspace registry; Provider APIs preserve registry entries on every write.
-- `WorkspaceConfig`, platform workspace target models, and `WorkspaceRegistryEntry`: Re-exported shared boundary models used by trusted entry surfaces.
+- `WorkspaceConfig`, `WorkspaceInitResult`, platform workspace target models, and `WorkspaceRegistryEntry`: Re-exported shared boundary models used by trusted entry surfaces.
 - `PLATFORM_CONFIG_PATHS`: Mapping from supported platform ids (`android`, `web`, `windows`, `macos`) to committed repository preset paths (`config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, `config.macos.yaml`).
 - `resolve_platform_config_path(platform: str) -> Path`: Validates a platform id and returns the corresponding committed platform preset path. Unsupported platform ids or missing preset files raise `ConfigurationError` with the platform and expected path.
 - `load_workspace_platform_settings(workspace: str | Path, platform: str, user_config_root: str | Path | None = None) -> Settings`: Validates the explicit workspace root and exact `.fsq/config/config.<platform>.yaml`, loads the matching repository preset, resolves repository-owned resources, overlays that platform's target/paths/private secrets, overlays the latest Provider, and validates final paths without initializing workspace identity.
@@ -23,6 +23,7 @@ Current `__init__.py` exports via `__all__`:
 - `list_workspace_registry(user_config_root: str | Path | None = None) -> list[WorkspaceRegistryEntry]`: Returns root-based registry entries in persisted order without loading target or secret values.
 - `inspect_registered_workspace(name: str, user_config_root: str | Path | None = None) -> WorkspaceStatus`: Resolves one case-insensitive registry name and independently inspects exact supported platform files, returning canonical safe availability records without target or env values.
 - `load_registered_workspace(name: str, platform: str, user_config_root: str | Path | None = None) -> WorkspaceConfig`: Resolves one case-insensitive registry name plus explicit platform, validates filename/platform/target and registry identity, validates target paths, and returns that platform's current workspace config truth.
+- `initialize_workspace(*, parent_path: Path, config: WorkspaceConfig, update_existing: bool = False, user_config_root: str | Path | None = None) -> WorkspaceInitResult`: Initializes exactly one platform at `<parent_path>/<config.name>` using the current registered workspace model. An unregistered workspace delegates to the normal create transaction; a registered workspace must resolve to the same root, adds a missing platform, returns `unchanged` without writes when target and env match, and rejects a differing existing platform unless `update_existing` is true. An allowed update reads the current revision and delegates the complete target/env replacement to `update_workspace_platform`; stale revisions fail and are not retried. The result contains no target or private env data.
 - `create_workspace(*, parent_path: Path, configs: Sequence[WorkspaceConfig], user_config_root: str | Path | None = None) -> WorkspaceStatus`: Validates a non-empty unique platform set, creates the platform-specific config/cases/knowledge/runs layout, commits all platform configs, and then appends the root-based registry entry while preserving Provider state. Ordinary failures roll back request-created content without deleting user-owned parent content.
 - `add_workspace_platform(*, name: str, platform: str, target: object, env: Mapping[str, str], user_config_root: str | Path | None = None) -> WorkspaceConfig`: Adds one absent platform config and its contained managed directories without overwriting existing cases, knowledge, project knowledge, or runs content. Existing config files, including invalid ones, are conflicts.
 - `update_workspace_platform(*, name: str, platform: str, target: object, env: Mapping[str, str], expected_revision: str, user_config_root: str | Path | None = None) -> WorkspaceConfig`: Reloads one registered platform, rejects identity changes and stale per-file revisions, validates the complete target/env replacement, and atomically replaces only that platform config.
@@ -101,7 +102,7 @@ macOS configuration:
 - `__init__.py`: Public exports only.
 - `_loader.py`: Workspace/preset composition, Provider merge, and runtime validation.
 - `_user_provider.py`: User-root layout, versioned Provider/registry records, v2-to-v3 upgrade, credential loading, shared atomic writes, Provider activation, workspace registration, and Provider-only refresh.
-- `_workspace.py`: Strict workspace YAML loading, revisions, target validation, creation/update transactions, registry truth checks, and rollback.
+- `_workspace.py`: Strict workspace YAML loading, high-level idempotent initialization, revisions, target validation, creation/add/update transactions, registry truth checks, and rollback.
 - `_settings.py`: `Settings` aggregate model.
 - `_paths.py`: Workspace config/root validation, containment, and side-effect-free runtime path resolution helpers.
 - `SPEC.md`: Module design.
@@ -109,16 +110,16 @@ macOS configuration:
 ## Python Architecture
 
 - Architecture level: 2 Simple Package.
-- Public API: runtime/workspace models, explicit workspace-platform loading, Provider load/save/activation/refresh, root-based workspace registry/inspection/create/platform-add/platform-update operations, path resolution, and validation functions exported from `__init__.py`.
+- Public API: runtime/workspace models, explicit workspace-platform loading, Provider load/save/activation/refresh, root-based workspace registry/inspection/initialize/create/platform-add/platform-update operations, path resolution, and validation functions exported from `__init__.py`.
 - Internal modules: `_loader.py`, `_user_provider.py`, `_workspace.py`, `_settings.py`, and `_paths.py` are private implementation files.
 - Domain boundaries: config owns Provider/registry/workspace filesystem persistence, configuration composition, revisions, atomic writes, rollback, path containment, and validation. It does not own provider clients, authentication protocols, HTTP transport, file-browser projection, or task orchestration.
-- Boundary models: shared workspace/target/registry models come from `models`; `Settings` and `UserProviderConfig` are config runtime boundaries; project exceptions come from `models`.
+- Boundary models: shared workspace/target/registry/init-result models come from `models`; `Settings` and `UserProviderConfig` are config runtime boundaries; project exceptions come from `models`.
 - Dependency direction: config depends on `models` and configuration/filesystem libraries. `providers` and entry layers may depend on config public APIs; config must not import them.
 - Rationale: a small versioned local store and deterministic merge/validation operations need focused private helpers, not service/repository layers.
 
 ## Error Handling
 
-Invalid or missing configuration raises `ConfigurationError` from `models`. YAML duplicate keys, unsupported versions, schema extras, identity/root mismatches, malformed user state, invalid target paths, invalid runtime-secret entries, stale revisions, registry conflicts, containment failures, and atomic-write failures are reported with actionable safe context and no secret values. A malformed workspace or user document never degrades to unconfigured/default state. Workspace creation rejects non-empty final roots, legacy markers, and existing `.fsq` state without merge or overwrite. Provider-only validation remains independent from workspace target readiness. Backend packages are imported only at runtime construction, and config validation never connects to a device, browser, application, or Appium server.
+Invalid or missing configuration raises `ConfigurationError` from `models`. YAML duplicate keys, unsupported versions, schema extras, identity/root mismatches, malformed user state, invalid target paths, invalid runtime-secret entries, stale revisions, registry conflicts, containment failures, and atomic-write failures are reported with actionable safe context and no secret values. A malformed workspace or user document never degrades to unconfigured/default state. Workspace initialization rejects a registered-name/root mismatch, rejects differing existing platform data unless controlled update is enabled, never overwrites an invalid platform config, and never retries a stale revision. Workspace creation rejects non-empty final roots, legacy markers, and existing `.fsq` state without merge or overwrite. Provider-only validation remains independent from workspace target readiness. Backend packages are imported only at runtime construction, and config validation never connects to a device, browser, application, or Appium server.
 
 ## Current Invariants
 
@@ -135,6 +136,7 @@ Invalid or missing configuration raises `ConfigurationError` from `models`. YAML
 - Context trimming and AgentTool local output artifact policy are internal defaults, not part of the default YAML surface. The defaults keep recent moderate AgentTool and platform capability outputs inline, write complete large helper outputs to per-run artifacts, and trim older large SDK tool outputs before model calls.
 - `shell`, `cli_tools`, platform-YAML provider endpoint/key/model fields, YAML Android app id/serial fields, sensitive tracing, workspace marker/autoinit settings, and one-option output policy switches are not accepted external platform YAML configuration keys.
 - Workspace-aware CLI and browser entry points resolve a required case-insensitive registry name plus explicit configured platform through `load_registered_workspace`, then validate and compose settings from that registered workspace root without initializing identity or config files. Their current directory is not a workspace selection source.
+- Config-owned initialization is the single non-browser composition path for create/add/idempotent/update behavior. It preserves immutable workspace name/root/platform identity, compares the complete target and env mapping, and permits a differing existing platform replacement only through the same expected-revision update operation used by Control Plane.
 - `cases.dir` resolves to `<workspace>/cases/<platform>`; `output.root_dir` and `output.runs_dir` resolve to `<workspace>/.fsq/runs/<platform>`; `agent_context.knowledge.root_dir` resolves to `<workspace>/knowledge/<platform>`.
 - Reusable skills remain preset-owned repository resources. Optional project/page knowledge resolves under workspace `knowledge/<platform>/` and is loaded only when non-blank content exists.
 - `openai_agents.prompt` owns prompt template customization and scalar prompt variables. `prompt.agent_template_path` and `prompt.task_template_path` may point to files resolved relative to the configuration file directory; when template paths are omitted, package default templates are used. Static prompt text, headings, loops, and task formatting live in templates. `prompt.variables` provides operator-controlled scalar model data injected into templates. `prompt.custom_instructions` and `prompt.custom_instructions_path` are not supported configuration keys; project-specific guidance belongs in `knowledge/project.md`, and reusable execution guidance belongs in configured skills.

@@ -523,6 +523,30 @@ class WorkspaceStatus(BaseModel):
     platforms: list[WorkspacePlatformStatus] = Field(default_factory=list)
 
 
+class WorkspaceInitResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["initialized", "platform_added", "unchanged", "updated"]
+    name: str = Field(min_length=1, max_length=128)
+    root_path: Path
+    platform: Literal["android", "web", "windows", "macos"]
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _normalize_workspace_name(value)
+
+    @field_validator("root_path")
+    @classmethod
+    def validate_root_path(cls, value: Path) -> Path:
+        expanded = value.expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("workspace root_path must be absolute")
+        if expanded.is_symlink():
+            raise ValueError("workspace root_path must not be a symbolic link")
+        return expanded.resolve()
+
+
 class CaseSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

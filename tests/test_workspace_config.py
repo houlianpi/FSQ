@@ -11,15 +11,18 @@ import yaml
 from fsq_agent.config import (
     AndroidWorkspaceTarget,
     MacOSWorkspaceTarget,
+    WebWorkspaceTarget,
     WorkspaceConfig,
+    WorkspaceInitResult,
     add_workspace_platform,
     create_workspace,
+    initialize_workspace,
     inspect_registered_workspace,
     list_workspace_registry,
     load_registered_workspace,
     update_workspace_platform,
 )
-from fsq_agent.config._workspace import load_workspace_config
+from fsq_agent.config._workspace import _load_registered_workspace_snapshot, load_workspace_config
 from fsq_agent.models import ConfigurationError
 
 
@@ -58,6 +61,245 @@ def test_create_workspace_commits_minimal_layout_and_registry(tmp_path: Path) ->
         ("checkout", candidate.root_path)
     ]
     assert load_registered_workspace("CHECKOUT", "android", user_root) == candidate
+
+
+def test_initialize_workspace_creates_adds_and_returns_unchanged(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    android = _android_workspace(parent)
+
+    created = initialize_workspace(parent_path=parent, config=android, user_config_root=user_root)
+    config_path = android.root_path / ".fsq" / "config" / "config.android.yaml"
+    created_revision = _revision(config_path)
+    unchanged = initialize_workspace(parent_path=parent, config=android, user_config_root=user_root)
+    macos = WorkspaceConfig(
+        version=2,
+        name=android.name,
+        root_path=android.root_path,
+        platform="macos",
+        target=MacOSWorkspaceTarget(bundle_id="com.example.checkout"),
+    )
+    added = initialize_workspace(parent_path=parent, config=macos, user_config_root=user_root)
+
+    assert created.model_dump(mode="json") == {
+        "status": "initialized",
+        "name": "checkout",
+        "root_path": str(android.root_path),
+        "platform": "android",
+    }
+    assert unchanged.status == "unchanged"
+    assert _revision(config_path) == created_revision
+    assert added.status == "platform_added"
+    assert load_registered_workspace("checkout", "macos", user_root) == macos
+
+
+def test_initialize_workspace_requires_update_flag_for_differing_platform(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+    replacement = original.model_copy(
+        update={
+            "target": AndroidWorkspaceTarget(app_id="com.example.changed"),
+            "env": {"TEST_PASSWORD": "replacement-secret"},
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="--update-existing"):
+        initialize_workspace(parent_path=parent, config=replacement, user_config_root=user_root)
+
+    assert load_registered_workspace("checkout", "android", user_root) == original
+    updated = initialize_workspace(
+        parent_path=parent,
+        config=replacement,
+        update_existing=True,
+        user_config_root=user_root,
+    )
+    assert updated.status == "updated"
+    assert load_registered_workspace("checkout", "android", user_root) == replacement
+
+
+@pytest.mark.parametrize("legacy_path", [Path(".fsq/config.yaml"), Path(".fsq-agent-workspace")])
+def test_initialize_workspace_rejects_registered_legacy_layout(
+    tmp_path: Path,
+    legacy_path: Path,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    create_workspace(parent_path=parent, configs=[original], user_config_root=user_root)
+    current_config = original.root_path / ".fsq" / "config" / "config.android.yaml"
+    current_config.unlink()
+    marker = original.root_path / legacy_path
+    if legacy_path.name == ".fsq-agent-workspace":
+        marker.mkdir()
+    else:
+        marker.write_text("version: 1\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="Legacy workspace layout"):
+        initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+
+    assert not current_config.exists()
+
+
+def test_initialize_workspace_does_not_retry_stale_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+    replacement = original.model_copy(update={"target": AndroidWorkspaceTarget(app_id="com.example.changed")})
+    real_update = update_workspace_platform
+
+    def race_update(**kwargs):
+        config_path = original.root_path / ".fsq" / "config" / "config.android.yaml"
+        config_path.write_bytes(config_path.read_bytes() + b"\n")
+        return real_update(**kwargs)
+
+    monkeypatch.setattr("fsq_agent.config._workspace.update_workspace_platform", race_update)
+
+    with pytest.raises(ConfigurationError, match="changed since it was loaded"):
+        initialize_workspace(
+            parent_path=parent,
+            config=replacement,
+            update_existing=True,
+            user_config_root=user_root,
+        )
+
+    assert load_registered_workspace("checkout", "android", user_root).target == original.target
+
+
+def test_initialize_workspace_uses_revision_from_compared_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+    replacement = original.model_copy(update={"target": AndroidWorkspaceTarget(app_id="com.example.requested")})
+    concurrent = original.model_copy(update={"target": AndroidWorkspaceTarget(app_id="com.example.concurrent")})
+    config_path = original.root_path / ".fsq" / "config" / "config.android.yaml"
+
+    def race_snapshot(name: str, platform: str, user_config_root: Path | None = None):
+        del name, user_config_root
+        current, _, _ = load_workspace_config(original.root_path, platform)
+        source = config_path.read_bytes()
+        config_path.write_text(yaml.safe_dump(concurrent.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
+        return current, f"sha256:{hashlib.sha256(source).hexdigest()}"
+
+    monkeypatch.setattr("fsq_agent.config._workspace._load_registered_workspace_snapshot", race_snapshot, raising=False)
+
+    with pytest.raises(ConfigurationError, match="changed since it was loaded"):
+        initialize_workspace(
+            parent_path=parent,
+            config=replacement,
+            update_existing=True,
+            user_config_root=user_root,
+        )
+
+    assert load_registered_workspace("checkout", "android", user_root).target == concurrent.target
+
+
+def test_initialize_workspace_rejects_stale_unchanged_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+    concurrent = original.model_copy(update={"target": AndroidWorkspaceTarget(app_id="com.example.concurrent")})
+    config_path = original.root_path / ".fsq" / "config" / "config.android.yaml"
+
+    def race_snapshot(name: str, platform: str, user_config_root: Path | None = None):
+        del name, user_config_root
+        current, _, _ = load_workspace_config(original.root_path, platform)
+        source = config_path.read_bytes()
+        config_path.write_text(yaml.safe_dump(concurrent.model_dump(mode="json"), sort_keys=False), encoding="utf-8")
+        return current, f"sha256:{hashlib.sha256(source).hexdigest()}"
+
+    monkeypatch.setattr("fsq_agent.config._workspace._load_registered_workspace_snapshot", race_snapshot)
+
+    with pytest.raises(ConfigurationError, match="changed since it was loaded"):
+        initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+
+    assert load_registered_workspace("checkout", "android", user_root).target == concurrent.target
+
+
+def test_initialize_workspace_validates_target_before_user_store_mutation(tmp_path: Path) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    candidate = WorkspaceConfig(
+        version=2,
+        name="checkout",
+        root_path=(parent / "checkout").resolve(),
+        platform="web",
+        target=WebWorkspaceTarget(browser_executable_path=tmp_path / "missing" / "chrome.exe"),
+    )
+
+    with pytest.raises(ConfigurationError, match="does not exist"):
+        initialize_workspace(parent_path=parent, config=candidate, user_config_root=user_root)
+
+    assert not user_root.exists()
+    assert not candidate.root_path.exists()
+
+
+def test_initialize_workspace_rejects_equal_byte_symlink_swap_for_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    user_root = tmp_path / "user"
+    original = _android_workspace(parent)
+    initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+    config_path = original.root_path / ".fsq" / "config" / "config.android.yaml"
+    linked_config = tmp_path / "linked-config.android.yaml"
+    swapped = False
+
+    def race_snapshot(name: str, platform: str, user_config_root: Path | None = None):
+        nonlocal swapped
+        result = _load_registered_workspace_snapshot(name, platform, user_config_root)
+        if not swapped:
+            source = config_path.read_bytes()
+            linked_config.write_bytes(source)
+            config_path.unlink()
+            try:
+                config_path.symlink_to(linked_config)
+            except OSError as exc:
+                config_path.write_bytes(source)
+                pytest.skip(f"Symlink creation is unavailable: {exc}")
+            swapped = True
+        return result
+
+    monkeypatch.setattr("fsq_agent.config._workspace._load_registered_workspace_snapshot", race_snapshot)
+
+    with pytest.raises(ConfigurationError, match="unavailable"):
+        initialize_workspace(parent_path=parent, config=original, user_config_root=user_root)
+
+
+def test_workspace_init_result_normalizes_canonical_identity(tmp_path: Path) -> None:
+    lexical_root = tmp_path / "nested" / ".." / "checkout"
+
+    result = WorkspaceInitResult(
+        status="unchanged",
+        name=" checkout ",
+        root_path=lexical_root,
+        platform="android",
+    )
+
+    assert result.name == "checkout"
+    assert result.root_path == (tmp_path / "checkout").resolve()
 
 
 def test_update_workspace_platform_requires_current_revision_and_preserves_identity(tmp_path: Path) -> None:

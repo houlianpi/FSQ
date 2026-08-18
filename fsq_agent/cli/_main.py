@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from fsq_agent._run_ids import new_run_id
 from fsq_agent._strict_case_recording import StrictCaseRecording, record_dynamic_run_as_strict_case
@@ -25,7 +26,18 @@ from fsq_agent.cli._formatting import log_result, log_run_event
 from fsq_agent.cli._logging import configure_cli_logging
 from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.config import Settings, load_registered_workspace, load_workspace_platform_settings, validate_strict_core_settings
+from fsq_agent.config import (
+    AndroidWorkspaceTarget,
+    MacOSWorkspaceTarget,
+    Settings,
+    WebWorkspaceTarget,
+    WindowsWorkspaceTarget,
+    WorkspaceConfig,
+    initialize_workspace,
+    load_registered_workspace,
+    load_workspace_platform_settings,
+    validate_strict_core_settings,
+)
 from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 from fsq_agent.core import (
     ArtifactStore,
@@ -41,22 +53,191 @@ from fsq_agent.report import resolve_report_path
 
 logger = logging.getLogger(__name__)
 PLATFORM_CHOICE = click.Choice(["android", "web", "windows", "macos"])
+OUTPUT_CHOICE = click.Choice(["human", "json", "jsonl"])
 
 
 def _log_cli_error(message: str, *args: object) -> None:
     logger.error(message, *args)
 
 
+class _WorkspaceInitCommand(click.Command):
+    def parse_args(self, context: click.Context, args: list[str]) -> list[str]:
+        try:
+            return super().parse_args(context, args)
+        except click.ClickException:
+            output_format = context.parent.obj.get("output_format", "human") if context.parent and context.parent.obj else "human"
+            if output_format != "human":
+                _fail_workspace_init(output_format, "invalid_arguments", "Invalid workspace initialization arguments.")
+            raise
+
+
 @click.group()
-def main() -> None:
+@click.option("--output", "output_format", type=OUTPUT_CHOICE, default="human", show_default=True)
+@click.pass_context
+def main(context: click.Context, output_format: str) -> None:
     configure_cli_logging()
+    context.ensure_object(dict)
+    context.obj["output_format"] = output_format
+    if output_format != "human" and context.invoked_subcommand not in {None, "init"}:
+        raise click.UsageError("Machine output is only supported by init.")
 
 
-@main.command()
-@click.option("--platform", type=PLATFORM_CHOICE, required=False)
-def init(platform: str | None) -> None:
-    del platform
-    raise click.ClickException("Workspace initialization and migration are not implemented. Create a new workspace in Control Plane.")
+@main.command(cls=_WorkspaceInitCommand)
+@click.option("--name", required=True, metavar="NAME")
+@click.option("--parent", "parent_path", type=click.Path(path_type=Path, file_okay=False), default=None)
+@click.option("--platform", type=PLATFORM_CHOICE, required=True)
+@click.option("--app-id", default=None)
+@click.option("--browser-executable-path", type=click.Path(path_type=Path, dir_okay=False), default=None)
+@click.option("--app-path", type=click.Path(path_type=Path), default=None)
+@click.option("--window-title-re", default=None)
+@click.option("--launch-args", default=None)
+@click.option("--bundle-id", default=None)
+@click.option(
+    "--env",
+    "env_assignments",
+    multiple=True,
+    metavar="NAME=VALUE",
+    help="Set the complete private environment mapping. Values may be visible in shell process listings.",
+)
+@click.option("--update-existing", is_flag=True, default=False)
+@click.pass_context
+def init(
+    context: click.Context,
+    name: str,
+    parent_path: Path | None,
+    platform: str,
+    app_id: str | None,
+    browser_executable_path: Path | None,
+    app_path: Path | None,
+    window_title_re: str | None,
+    launch_args: str | None,
+    bundle_id: str | None,
+    env_assignments: tuple[str, ...],
+    update_existing: bool,
+) -> None:
+    output_format = context.obj["output_format"]
+    try:
+        parent = (parent_path or Path.cwd()).expanduser().resolve()
+        target = _workspace_init_target(
+            platform=platform,
+            app_id=app_id,
+            browser_executable_path=browser_executable_path,
+            app_path=app_path,
+            window_title_re=window_title_re,
+            launch_args=launch_args,
+            bundle_id=bundle_id,
+        )
+        config = WorkspaceConfig(
+            version=2,
+            name=name,
+            root_path=(parent / name).resolve(),
+            platform=platform,
+            target=target,
+            env=_workspace_init_env(env_assignments),
+        )
+        canonical_root = (parent / config.name).resolve()
+        if config.root_path != canonical_root:
+            config = WorkspaceConfig.model_validate({**config.model_dump(mode="python"), "root_path": canonical_root})
+        result = initialize_workspace(
+            parent_path=parent,
+            config=config,
+            update_existing=update_existing,
+        )
+    except ValidationError:
+        _fail_workspace_init(output_format, "invalid_arguments", "Invalid workspace initialization arguments.")
+        return
+    except FsqAgentError as exc:
+        _fail_workspace_init(output_format, "configuration_error", str(exc))
+        return
+    except OSError:
+        _fail_workspace_init(output_format, "filesystem_error", "Unable to initialize workspace due to a filesystem error.")
+        return
+    _render_workspace_init_result(output_format, result)
+
+
+def _workspace_init_target(
+    *,
+    platform: str,
+    app_id: str | None,
+    browser_executable_path: Path | None,
+    app_path: Path | None,
+    window_title_re: str | None,
+    launch_args: str | None,
+    bundle_id: str | None,
+) -> AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget:
+    supplied = {
+        "--app-id": app_id,
+        "--browser-executable-path": browser_executable_path,
+        "--app-path": app_path,
+        "--window-title-re": window_title_re,
+        "--launch-args": launch_args,
+        "--bundle-id": bundle_id,
+    }
+    allowed = {
+        "android": {"--app-id"},
+        "web": {"--browser-executable-path"},
+        "windows": {"--app-path", "--window-title-re", "--launch-args"},
+        "macos": {"--app-path", "--bundle-id"},
+    }[platform]
+    unexpected = [option for option, value in supplied.items() if value is not None and option not in allowed]
+    if unexpected:
+        raise ConfigurationError(f"Target option is not supported for {platform}.", context={"options": unexpected})
+    if platform == "android":
+        if app_id is None:
+            raise ConfigurationError("Android workspace initialization requires --app-id.")
+        return AndroidWorkspaceTarget(app_id=app_id)
+    if platform == "web":
+        if browser_executable_path is None:
+            raise ConfigurationError("Web workspace initialization requires --browser-executable-path.")
+        return WebWorkspaceTarget(browser_executable_path=browser_executable_path.expanduser().resolve())
+    if platform == "windows":
+        if app_path is None:
+            raise ConfigurationError("Windows workspace initialization requires --app-path.")
+        return WindowsWorkspaceTarget(app_path=app_path.expanduser().resolve(), window_title_re=window_title_re, launch_args=launch_args or "")
+    if bundle_id is None and app_path is None:
+        raise ConfigurationError("macOS workspace initialization requires --bundle-id or --app-path.")
+    return MacOSWorkspaceTarget(bundle_id=bundle_id, app_path=app_path.expanduser().resolve() if app_path else None)
+
+
+def _workspace_init_env(assignments: tuple[str, ...]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for assignment in assignments:
+        name, separator, value = assignment.partition("=")
+        if not separator or not name or not value.strip():
+            raise ConfigurationError("Each --env value must use non-empty NAME=VALUE syntax.")
+        if name in values:
+            raise ConfigurationError("Each --env name may be specified only once.", context={"name": name})
+        values[name] = value
+    return values
+
+
+def _render_workspace_init_result(output_format: str, result) -> None:
+    if output_format == "human":
+        click.echo(f"Workspace {result.name} {result.status}: {result.platform} at {result.root_path}")
+        return
+    click.echo(
+        json.dumps(
+            {
+                "operation": "init",
+                "status": result.status,
+                "workspace": {"name": result.name, "root_path": str(result.root_path)},
+                "platform": result.platform,
+            },
+            separators=(",", ":"),
+        )
+    )
+
+
+def _fail_workspace_init(output_format: str, code: str, message: str) -> None:
+    if output_format == "human":
+        raise click.ClickException(message)
+    click.echo(
+        json.dumps(
+            {"operation": "init", "status": "error", "error": {"code": code, "message": message}},
+            separators=(",", ":"),
+        )
+    )
+    raise click.exceptions.Exit(1)
 
 
 @main.command()
