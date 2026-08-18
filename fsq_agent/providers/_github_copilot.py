@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import httpx
@@ -70,6 +71,21 @@ class GitHubDeviceCode:
     verification_uri: str
     expires_at: float
     poll_interval_seconds: int
+
+
+@dataclass(frozen=True)
+class GitHubCopilotAuthorization:
+    github_access_token: str = field(repr=False)
+    github_expires_at: float | None
+    copilot_token: str = field(repr=False)
+    copilot_expires_at: float
+    plan: str
+
+
+@dataclass(frozen=True)
+class GitHubCopilotModel:
+    id: str
+    name: str
 
 
 def build_github_copilot_client_config(settings: Settings) -> ProviderClientConfig:
@@ -191,13 +207,8 @@ def _parse_device_code(data: object) -> GitHubDeviceCode:
 def complete_github_copilot_device_flow(
     device_code: GitHubDeviceCode,
     *,
-    model: str,
     cancel_requested: Callable[[], bool],
-    user_config_root: str | Path | None = None,
-) -> UserProviderConfig:
-    normalized_model = model.strip()
-    if not normalized_model:
-        raise ConfigurationError("GitHub Copilot model name is required.")
+) -> GitHubCopilotAuthorization:
     wait = device_code.poll_interval_seconds
     while time.time() < device_code.expires_at:
         _raise_if_device_flow_cancelled(cancel_requested)
@@ -221,19 +232,18 @@ def complete_github_copilot_device_flow(
         data = response.json()
         github_token = data.get("access_token")
         if isinstance(github_token, str) and github_token:
-            github_payload: dict[str, object] = {"access_token": github_token}
             expires_in = data.get("expires_in")
-            if isinstance(expires_in, int | float):
-                github_payload["expires_at"] = time.time() + float(expires_in)
+            github_expires_at = time.time() + float(expires_in) if isinstance(expires_in, int | float) else None
             plan = _get_copilot_plan(github_token)
             _raise_if_device_flow_cancelled(cancel_requested)
             copilot_token = _get_copilot_token(github_token)
             _raise_if_device_flow_cancelled(cancel_requested)
-            return activate_github_copilot_provider(
-                model=normalized_model,
-                github_token=github_payload,
-                provider_token={"token": copilot_token.token, "expires_at": copilot_token.expires_at, "plan": plan},
-                user_config_root=user_config_root,
+            return GitHubCopilotAuthorization(
+                github_access_token=github_token,
+                github_expires_at=github_expires_at,
+                copilot_token=copilot_token.token,
+                copilot_expires_at=copilot_token.expires_at,
+                plan=plan,
             )
         error = data.get("error", "")
         if error == "authorization_pending":
@@ -248,6 +258,92 @@ def complete_github_copilot_device_flow(
             raise ConfigurationError("GitHub device-code authorization was denied.")
         raise ConfigurationError("GitHub device-code OAuth failed.", context={"error": error})
     raise ConfigurationError("GitHub device code expired. Please try again.")
+
+
+def list_github_copilot_models(authorization: GitHubCopilotAuthorization) -> tuple[GitHubCopilotModel, ...]:
+    try:
+        response = httpx.get(
+            f"{COPILOT_BASE_URLS[authorization.plan]}/models",
+            headers={"authorization": f"Bearer {authorization.copilot_token}", **COPILOT_MODEL_HEADERS},
+            timeout=COPILOT_AUTH_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise ConfigurationError(
+            "GitHub Copilot model discovery failed.",
+            context={"status_code": exc.response.status_code},
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise ConfigurationError("GitHub Copilot model discovery timed out.") from exc
+    except httpx.HTTPError as exc:
+        raise ConfigurationError("GitHub Copilot model discovery failed.") from exc
+    try:
+        data = response.json()
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError("GitHub Copilot model response was invalid.") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ConfigurationError("GitHub Copilot model response was invalid.")
+    models: list[GitHubCopilotModel] = []
+    seen: set[str] = set()
+    for candidate in data["data"]:
+        model = _parse_github_copilot_model(candidate)
+        if model is None or model.id.casefold() in seen:
+            continue
+        seen.add(model.id.casefold())
+        models.append(model)
+    return tuple(models)
+
+
+def activate_github_copilot_authorization(
+    authorization: GitHubCopilotAuthorization,
+    *,
+    model: str,
+    user_config_root: str | Path | None = None,
+) -> UserProviderConfig:
+    normalized_model = model.strip()
+    if not normalized_model:
+        raise ConfigurationError("GitHub Copilot model name is required.")
+    github_token: dict[str, object] = {"access_token": authorization.github_access_token}
+    if authorization.github_expires_at is not None:
+        github_token["expires_at"] = authorization.github_expires_at
+    return activate_github_copilot_provider(
+        model=normalized_model,
+        github_token=github_token,
+        provider_token={
+            "token": authorization.copilot_token,
+            "expires_at": authorization.copilot_expires_at,
+            "plan": authorization.plan,
+        },
+        user_config_root=user_config_root,
+    )
+
+
+def _parse_github_copilot_model(candidate: object) -> GitHubCopilotModel | None:
+    if not isinstance(candidate, dict):
+        return None
+    model_id = candidate.get("id")
+    if not isinstance(model_id, str) or not model_id.strip():
+        return None
+    model_id = model_id.strip()
+    version = re.match(r"^gpt-(\d+)(?:\D|$)", model_id, flags=re.IGNORECASE)
+    if version is None or int(version.group(1)) < 5:
+        return None
+    name_value = candidate.get("name")
+    name = name_value.strip() if isinstance(name_value, str) and name_value.strip() else model_id
+    specialist_tokens = {
+        "mini", "nano", "codex", "embedding", "audio", "realtime", "image", "search", "transcribe", "transcription", "tts",
+    }
+    tokens = set(re.findall(r"[a-z0-9]+", f"{model_id} {name}".casefold()))
+    if tokens & specialist_tokens:
+        return None
+    if candidate.get("model_picker_enabled") is False:
+        return None
+    capabilities = candidate.get("capabilities")
+    if isinstance(capabilities, dict) and "type" in capabilities:
+        capability_type = capabilities["type"]
+        if not isinstance(capability_type, str) or capability_type.casefold() != "chat":
+            return None
+    return GitHubCopilotModel(id=model_id, name=name)
 
 
 def _raise_if_device_flow_cancelled(cancel_requested: Callable[[], bool]) -> None:

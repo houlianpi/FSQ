@@ -109,9 +109,9 @@ export function ConfigPage({ client, onDirtyChange }: ConfigPageProps) {
       <button className="button button--primary" type="button" onClick={openProviderDialog}>Add configuration</button>
     </section>}
     {providerDialogOpen && <ProviderDialog
-      initialGithubModel={loadedProvider?.type === 'github_copilot' ? loadedProvider.modelName : ''}
       deviceFlow={provider.deviceFlow} deviceFlowPending={provider.deviceFlowPending} deviceFlowError={provider.deviceFlowError}
-      onSelectAzure={selectAzure} onStartGithub={provider.startGithub} onCancelAuthentication={cancelAuthentication}
+      onSelectAzure={selectAzure} onStartGithub={provider.startGithub} onRetryModels={provider.retryGithubModels}
+      onSaveModel={provider.saveGithubModel} onCancelAuthentication={cancelAuthentication}
       onClose={() => void closeProviderDialog()}
     />}
     {provider.connectionResult && <ConnectionResultDialog result={provider.connectionResult} onClose={provider.dismissConnectionResult} />}

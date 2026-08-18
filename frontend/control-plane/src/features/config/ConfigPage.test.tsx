@@ -17,6 +17,13 @@ const waiting: GitHubDeviceFlowResponse = {
   authRequestId: 'auth-1', verificationUri: 'https://github.com/login/device', userCode: 'ABCD-EFGH',
   expiresAt: '2030-01-01T00:00:00Z', pollIntervalSeconds: 10, status: 'waiting',
 };
+const ready: GitHubDeviceFlowResponse = {
+  authRequestId: 'auth-1', expiresAt: '2030-01-01T00:10:00Z', status: 'ready',
+  models: [{ id: 'gpt-5', name: 'GPT 5' }, { id: 'gpt-5.5', name: 'GPT 5.5' }],
+};
+const modelError: GitHubDeviceFlowResponse = {
+  authRequestId: 'auth-1', expiresAt: '2030-01-01T00:10:00Z', status: 'model_error', message: 'Model discovery failed.',
+};
 
 function client(config: ConfigResponse = unconfigured, overrides: Partial<ControlPlaneClient> = {}) {
   return {
@@ -24,6 +31,8 @@ function client(config: ConfigResponse = unconfigured, overrides: Partial<Contro
     saveAzureConfig: vi.fn().mockResolvedValue(azure),
     startGithubDeviceFlow: vi.fn().mockResolvedValue(waiting),
     githubDeviceFlow: vi.fn().mockResolvedValue(waiting),
+    retryGithubModels: vi.fn().mockResolvedValue(ready),
+    saveGithubModel: vi.fn().mockResolvedValue(github),
     cancelGithubDeviceFlow: vi.fn().mockResolvedValue({ ...waiting, status: 'cancelled' }),
     testConnection: vi.fn().mockResolvedValue({ success: true, provider: 'github_copilot', modelName: 'gpt-5.5', durationMs: 125 }),
     ...overrides,
@@ -90,21 +99,73 @@ it('keeps a dirty Azure draft until discard is confirmed and disables saved-only
   expect(screen.getByRole('button', { name: 'Test connection' })).toBeEnabled();
 });
 
-it('requests GitHub authentication only after a model and cancels the waiting flow', async () => {
+it('requests GitHub authentication immediately and cancels the waiting flow', async () => {
   const api = client();
   const user = userEvent.setup();
   render(<ConfigPage client={api} />);
   await user.click(await screen.findByRole('button', { name: 'Add configuration' }));
   await user.click(screen.getByRole('button', { name: /GitHub Copilot GPT/ }));
-  await user.type(screen.getByLabelText('Model name'), 'gpt-5.5');
-  await user.click(screen.getByRole('button', { name: 'Continue' }));
 
+  expect(api.startGithubDeviceFlow).toHaveBeenCalledWith(expect.any(AbortSignal));
   expect(await screen.findByText('ABCD-EFGH')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Open GitHub verification' })).toHaveAttribute('target', '_blank');
+  const verification = screen.getByRole('link', { name: 'Open GitHub verification' });
+  expect(verification).toHaveAttribute('target', '_blank');
+  await waitFor(() => expect(verification).toHaveFocus());
   await user.click(screen.getByRole('button', { name: 'Cancel authentication' }));
 
   await waitFor(() => expect(api.cancelGithubDeviceFlow).toHaveBeenCalled());
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+it('requires an explicit discovered model selection before saving GitHub', async () => {
+  const api = client(unconfigured, { startGithubDeviceFlow: vi.fn().mockResolvedValue(ready) });
+  const user = userEvent.setup();
+  render(<ConfigPage client={api} />);
+  await user.click(await screen.findByRole('button', { name: 'Add configuration' }));
+  await user.click(screen.getByRole('button', { name: /GitHub Copilot GPT/ }));
+
+  const model = await screen.findByRole('combobox', { name: 'Model' });
+  expect(model).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await user.selectOptions(model, 'gpt-5.5');
+  await user.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(api.saveGithubModel).toHaveBeenCalledWith('auth-1', 'gpt-5.5', expect.any(AbortSignal));
+  expect(await screen.findByText('GitHub Copilot GPT authenticated')).toBeVisible();
+});
+
+it('retries model discovery without starting another authorization', async () => {
+  const api = client(unconfigured, {
+    startGithubDeviceFlow: vi.fn().mockResolvedValue(modelError),
+    retryGithubModels: vi.fn().mockResolvedValue(ready),
+  });
+  const user = userEvent.setup();
+  render(<ConfigPage client={api} />);
+  await user.click(await screen.findByRole('button', { name: 'Add configuration' }));
+  await user.click(screen.getByRole('button', { name: /GitHub Copilot GPT/ }));
+  await user.click(await screen.findByRole('button', { name: 'Retry models' }));
+
+  expect(api.startGithubDeviceFlow).toHaveBeenCalledTimes(1);
+  expect(api.retryGithubModels).toHaveBeenCalledWith('auth-1', expect.any(AbortSignal));
+  expect(await screen.findByRole('combobox', { name: 'Model' })).toHaveValue('');
+});
+
+it('preserves the selected model when GitHub save fails', async () => {
+  const api = client(unconfigured, {
+    startGithubDeviceFlow: vi.fn().mockResolvedValue(ready),
+    saveGithubModel: vi.fn().mockRejectedValue(new Error('save unavailable')),
+  });
+  const user = userEvent.setup();
+  render(<ConfigPage client={api} />);
+  await user.click(await screen.findByRole('button', { name: 'Add configuration' }));
+  await user.click(screen.getByRole('button', { name: /GitHub Copilot GPT/ }));
+  const model = await screen.findByRole('combobox', { name: 'Model' });
+  await user.selectOptions(model, 'gpt-5.5');
+  await user.click(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByText('save unavailable')).toBeVisible();
+  expect(model).toHaveValue('gpt-5.5');
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
 });
 
 it('shows loopback unavailability without exposing editable controls', async () => {

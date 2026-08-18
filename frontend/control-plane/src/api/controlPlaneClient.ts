@@ -32,7 +32,7 @@ const platforms = new Set<PlatformId>(['android', 'web', 'windows', 'macos']);
 const modes = new Set(['explore', 'strict']);
 const statuses = new Set(['preparing', 'running', 'finalizing', 'success', 'failed', 'inconclusive', 'cancelled', 'error']);
 const readinessStatuses = new Set(['ready', 'unavailable', 'error']);
-const deviceFlowStatuses = new Set(['waiting', 'success', 'failed', 'expired', 'cancelled']);
+const deviceFlowStatuses = new Set(['waiting', 'loading_models', 'ready', 'model_error', 'success', 'failed', 'expired', 'cancelled']);
 const providerTypes = new Set(['azure_openai', 'github_copilot']);
 
 export class ControlPlaneApiError extends Error {
@@ -79,6 +79,10 @@ function arrayOf(value: unknown, predicate: (item: unknown) => boolean): boolean
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => key in value);
+}
+function hasNoUnknownKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
 }
 
 function activeTask(value: unknown): boolean {
@@ -188,11 +192,33 @@ function validateConfig(value: unknown): ConfigResponse {
   return value as unknown as ConfigResponse;
 }
 function validateDeviceFlow(value: unknown): GitHubDeviceFlowResponse {
-  if (!record(value) || !string(value.authRequestId) || !value.authRequestId || !string(value.verificationUri) || !value.verificationUri
-    || !string(value.userCode) || !value.userCode || !string(value.expiresAt) || !value.expiresAt
-    || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0
-    || !string(value.status) || !deviceFlowStatuses.has(value.status)
-    || !(value.message === undefined || string(value.message))) invalidResponse('GitHub device flow', 'Invalid device-flow fields.');
+  if (!record(value) || !string(value.authRequestId) || !value.authRequestId || !string(value.status) || !deviceFlowStatuses.has(value.status)
+    || !(value.message === undefined || string(value.message))) invalidResponse('GitHub device flow', 'Invalid device-flow identity.');
+  const optionalMessage = ['message'];
+  if (value.status === 'waiting') {
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'verificationUri', 'userCode', 'expiresAt', 'pollIntervalSeconds', ...optionalMessage])
+      || !string(value.verificationUri) || !value.verificationUri || !string(value.userCode) || !value.userCode
+      || !string(value.expiresAt) || !value.expiresAt || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0) {
+      invalidResponse('GitHub device flow', 'Invalid waiting fields.');
+    }
+  } else if (value.status === 'loading_models') {
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'expiresAt', 'pollIntervalSeconds', ...optionalMessage])
+      || !string(value.expiresAt) || !value.expiresAt || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0) {
+      invalidResponse('GitHub device flow', 'Invalid model-loading fields.');
+    }
+  } else if (value.status === 'ready') {
+    const model = (item: unknown) => record(item) && hasOnlyKeys(item, ['id', 'name']) && string(item.id) && Boolean(item.id) && string(item.name) && Boolean(item.name);
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'expiresAt', 'models', ...optionalMessage])
+      || !string(value.expiresAt) || !value.expiresAt || !arrayOf(value.models, model)) {
+      invalidResponse('GitHub device flow', 'Invalid ready model fields.');
+    }
+  } else if (value.status === 'model_error') {
+    if (!hasOnlyKeys(value, ['authRequestId', 'status', 'expiresAt', 'message']) || !string(value.expiresAt) || !value.expiresAt || !string(value.message) || !value.message) {
+      invalidResponse('GitHub device flow', 'Invalid model-error fields.');
+    }
+  } else if (!hasNoUnknownKeys(value, ['authRequestId', 'status', ...optionalMessage])) {
+    invalidResponse('GitHub device flow', 'Invalid terminal fields.');
+  }
   return value as unknown as GitHubDeviceFlowResponse;
 }
 function validateConnectionTest(value: unknown): ConnectionTestResponse {
@@ -351,10 +377,14 @@ export const controlPlaneClient = {
   config: (signal?: AbortSignal) => jsonRequest('/config', validateConfig, { signal }),
   saveAzureConfig: (payload: AzureConfigPayload, signal?: AbortSignal) =>
     jsonRequest('/config/azure', validateConfig, { method: 'PUT', body: JSON.stringify(payload), signal }),
-  startGithubDeviceFlow: (modelName: string, signal?: AbortSignal) =>
-    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', body: JSON.stringify({ modelName }), signal }),
+  startGithubDeviceFlow: (signal?: AbortSignal) =>
+    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', body: '{}', signal }),
   githubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { signal }),
+  retryGithubModels: (authRequestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}/models`, validateDeviceFlow, { method: 'POST', body: '{}', signal }),
+  saveGithubModel: (authRequestId: string, modelName: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateConfig, { method: 'PUT', body: JSON.stringify({ modelName }), signal }),
   cancelGithubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', body: '{}', signal }),
   testConnection: (signal?: AbortSignal) =>
