@@ -12,15 +12,23 @@ import type {
   RunMode,
   StartRunPayload,
   TargetsResponse,
+  PlatformOption,
 } from '../../../api/types';
 import { useRunStream } from './useRunStream';
 
 const emptyResource = <T,>(): RequestResource<T> => ({ state: 'idle', data: null, error: null });
 const loadingResource = <T,>(previous: T | null = null): RequestResource<T> => ({ state: 'loading', data: previous, error: null });
 
-export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClient) {
+interface DeviceWorkspaceContext {
+  workspaceName: string | null;
+  platforms: readonly PlatformOption[];
+  onWorkspaceChange: (workspaceName: string) => void;
+}
+
+export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: ControlPlaneClient = controlPlaneClient) {
+  const { workspaceName, platforms, onWorkspaceChange } = context;
   const [bootstrap, setBootstrap] = useState<RequestResource<BootstrapResponse>>(emptyResource);
-  const [platform, setPlatformState] = useState<PlatformId>('android');
+  const [platform, setPlatformState] = useState<PlatformId | ''>('');
   const [targetId, setTargetId] = useState('');
   const [mode, setMode] = useState<RunMode>('explore');
   const [goal, setGoal] = useState('');
@@ -30,25 +38,27 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   const [cases, setCases] = useState<RequestResource<CasesResponse>>(emptyResource);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [startError, setStartError] = useState<ApiErrorBody | null>(null);
+  const [saveYamlState, setSaveYamlState] = useState<RequestResource<{ savedPath: string; message: string }>>(emptyResource);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('screen');
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const generationRef = useRef(0);
+  const previousWorkspaceRef = useRef<string | null>(workspaceName);
   const discoveryControllerRef = useRef<AbortController | null>(null);
   const { snapshot, connection, error: streamError } = useRunStream(requestId, client);
 
-  const loadDiscovery = useCallback((selectedPlatform: PlatformId, clearSelection: boolean) => {
+  const loadDiscovery = useCallback((selectedWorkspace: string, selectedPlatform: PlatformId, clearSelection: boolean) => {
     discoveryControllerRef.current?.abort();
     const controller = new AbortController();
     discoveryControllerRef.current = controller;
     const generation = ++generationRef.current;
     if (clearSelection) { setTargetId(''); setCasePath(''); }
-    setReadiness((value) => loadingResource(value.data?.platform === selectedPlatform ? value.data : null));
-    setTargets((value) => loadingResource(value.data?.platform === selectedPlatform ? value.data : null));
-    setCases((value) => loadingResource(value.data?.platform === selectedPlatform ? value.data : null));
+    setReadiness((value) => loadingResource(!clearSelection && value.data?.workspaceName === selectedWorkspace && value.data.platformId === selectedPlatform ? value.data : null));
+    setTargets((value) => loadingResource(!clearSelection && value.data?.platform === selectedPlatform ? value.data : null));
+    setCases((value) => loadingResource(!clearSelection && value.data?.platform === selectedPlatform ? value.data : null));
 
     const applies = () => generationRef.current === generation && !controller.signal.aborted;
-    void client.readiness(selectedPlatform, controller.signal).then((data) => { if (applies()) setReadiness({ state: 'ready', data, error: null }); }).catch((error) => { if (applies()) setReadiness({ state: 'error', data: null, error: toApiError(error) }); });
-    void client.targets(selectedPlatform, controller.signal).then((data) => {
+    void client.readiness(selectedWorkspace, selectedPlatform, controller.signal).then((data) => { if (applies()) setReadiness({ state: 'ready', data, error: null }); }).catch((error) => { if (applies()) setReadiness({ state: 'error', data: null, error: toApiError(error) }); });
+    void client.targets(selectedWorkspace, selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setTargets({ state: 'ready', data, error: null });
       setTargetId((current) => {
@@ -56,10 +66,10 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
         return data.targets.find((target) => target.selectable && target.isDefault)?.id ?? data.targets.find((target) => target.selectable)?.id ?? '';
       });
     }).catch((error) => { if (applies()) setTargets({ state: 'error', data: null, error: toApiError(error) }); });
-    void client.cases(selectedPlatform, controller.signal).then((data) => {
+    void client.cases(selectedWorkspace, selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setCases({ state: 'ready', data, error: null });
-      setCasePath((current) => data.cases.some((item) => item.path === current && item.selectable) ? current : (data.cases.find((item) => item.selectable)?.path ?? ''));
+      setCasePath((current) => data.cases.some((item) => item.path === current && item.selectable) ? current : '');
     }).catch((error) => { if (applies()) setCases({ state: 'error', data: null, error: toApiError(error) }); });
   }, [client]);
 
@@ -69,6 +79,7 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
     void client.bootstrap(controller.signal).then((data) => {
       setBootstrap({ state: 'ready', data, error: null });
       if (data.activeTask) {
+        onWorkspaceChange(data.activeTask.workspaceName);
         setPlatformState(data.activeTask.platform);
         setTargetId(data.activeTask.targetId);
         setMode(data.activeTask.mode);
@@ -76,20 +87,38 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
       }
     }).catch((error) => { if (!controller.signal.aborted) setBootstrap({ state: 'error', data: null, error: toApiError(error) }); });
     return () => controller.abort();
-  }, [client]);
+  }, [client, onWorkspaceChange]);
 
   useEffect(() => {
-    loadDiscovery(platform, true);
+    const workspaceChanged = previousWorkspaceRef.current !== workspaceName;
+    previousWorkspaceRef.current = workspaceName;
+    discoveryControllerRef.current?.abort();
+    generationRef.current += 1;
+    setTargetId('');
+    setCasePath('');
+    setReadiness(emptyResource());
+    setTargets(emptyResource());
+    setCases(emptyResource());
+    const activeTask = bootstrap.data?.activeTask;
+    const restoringActiveTask = activeTask?.workspaceName === workspaceName && activeTask.platform === platform;
+    if (!workspaceName || (workspaceChanged && !restoringActiveTask) || (platform && !platforms.some((item) => item.id === platform))) {
+      setPlatformState('');
+      return;
+    }
+    if (!platform) return;
+    loadDiscovery(workspaceName, platform, true);
     return () => discoveryControllerRef.current?.abort();
-  }, [loadDiscovery, platform]);
+  }, [bootstrap.data?.activeTask, loadDiscovery, platform, platforms, workspaceName]);
 
   useEffect(() => {
     if (!snapshot) return;
+    onWorkspaceChange(snapshot.workspaceName);
     setPlatformState(snapshot.platform);
     setTargetId(snapshot.targetId);
     setMode(snapshot.mode);
     if (!snapshot.terminal) setSelectedStepId(null);
-  }, [snapshot]);
+    if (!snapshot.terminal || snapshot.mode !== 'explore') setSaveYamlState(emptyResource());
+  }, [onWorkspaceChange, snapshot]);
 
   useEffect(() => {
     if (streamError?.code !== 'run_ended') return;
@@ -98,20 +127,23 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
     void client.bootstrap().then((data) => {
       setBootstrap({ state: 'ready', data, error: null });
       if (data.activeTask) {
+        onWorkspaceChange(data.activeTask.workspaceName);
         setPlatformState(data.activeTask.platform);
         setTargetId(data.activeTask.targetId);
         setMode(data.activeTask.mode);
         setRequestId(data.activeTask.requestId);
       }
     }).catch((error) => setBootstrap({ state: 'error', data: null, error: toApiError(error) }));
-  }, [client, streamError]);
+  }, [client, onWorkspaceChange, streamError]);
 
   const active = Boolean(snapshot && !snapshot.terminal) || Boolean(requestId && !snapshot);
   const controlsLocked = active;
   const selectedTarget = targets.data?.targets.find((target) => target.id === targetId) ?? null;
   const selectedCase: CaseRecord | null = cases.data?.cases.find((item) => item.path === casePath) ?? null;
   const commonReady = readiness.state === 'ready' && targets.state === 'ready'
+    && Boolean(workspaceName && platform)
     && readiness.data?.workspace.status === 'ready'
+    && readiness.data?.platform.status === 'ready'
     && readiness.data.target.status === 'ready'
     && selectedTarget?.selectable === true;
   const sourceReady = mode === 'explore'
@@ -122,20 +154,23 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
       && (!selectedCase.requiresAiAssertion || readiness.data.provider.status === 'ready');
   const canStart = Boolean(commonReady && sourceReady && !active && bootstrap.state === 'ready' && !bootstrap.data?.busy);
 
-  const setPlatform = (next: PlatformId) => { if (!controlsLocked) setPlatformState(next); };
-  const refresh = () => { if (!controlsLocked) loadDiscovery(platform, false); };
+  const setPlatform = (next: PlatformId | '') => {
+    if (!controlsLocked && (!next || platforms.some((item) => item.id === next))) setPlatformState(next);
+  };
+  const refresh = () => { if (!controlsLocked && workspaceName && platform) loadDiscovery(workspaceName, platform, false); };
   const start = async () => {
-    if (!canStart || !selectedTarget) return;
+    if (!canStart || !selectedTarget || !workspaceName || !platform) return;
     setStartError(null);
     const payload: StartRunPayload = mode === 'explore'
-      ? { mode: 'explore', platform, targetId: selectedTarget.id, goal: goal.trim() }
-      : { mode: 'strict', platform, targetId: selectedTarget.id, casePath };
+      ? { mode: 'explore', workspaceName, platform, targetId: selectedTarget.id, goal: goal.trim() }
+      : { mode: 'strict', workspaceName, platform, targetId: selectedTarget.id, casePath };
     try {
       const response = await client.startRun(payload);
+      setSaveYamlState(emptyResource());
       setRequestId(response.requestId);
     } catch (error) {
       setStartError(toApiError(error));
-      loadDiscovery(platform, false);
+      loadDiscovery(workspaceName, platform, false);
     }
   };
   const cancel = async () => {
@@ -145,20 +180,32 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   };
   const newRun = () => {
     setStartError(null);
+    setSaveYamlState(emptyResource());
     setEvidenceTab('screen');
     setSelectedStepId(null);
     return client.bootstrap().then((data) => {
       setBootstrap({ state: 'ready', data, error: null });
       if (data.activeTask) {
+        onWorkspaceChange(data.activeTask.workspaceName);
         setPlatformState(data.activeTask.platform);
         setTargetId(data.activeTask.targetId);
         setMode(data.activeTask.mode);
         setRequestId(data.activeTask.requestId);
       } else {
         setRequestId(null);
-        loadDiscovery(platform, false);
+        if (workspaceName && platform) loadDiscovery(workspaceName, platform, false);
       }
     }).catch((error) => setStartError(toApiError(error)));
+  };
+  const saveYaml = async (caseName: string) => {
+    if (!requestId || snapshot?.terminal !== true || snapshot.mode !== 'explore') return;
+    setSaveYamlState(loadingResource(saveYamlState.data));
+    try {
+      const response = await client.saveYaml(requestId, { caseName });
+      setSaveYamlState({ state: 'ready', data: response, error: null });
+    } catch (error) {
+      setSaveYamlState({ state: 'error', data: saveYamlState.data, error: toApiError(error) });
+    }
   };
 
   const connectionLabel = useMemo(() => {
@@ -169,9 +216,9 @@ export function useDeviceWorkspace(client: ControlPlaneClient = controlPlaneClie
   }, [active, connection, selectedTarget, targets.state]);
 
   return {
-    bootstrap, platform, setPlatform, targetId, setTargetId, mode, setMode, goal, setGoal, casePath, setCasePath,
+    bootstrap, workspaceName, platform, setPlatform, targetId, setTargetId, mode, setMode, goal, setGoal, casePath, setCasePath,
     readiness, targets, cases, selectedTarget, selectedCase, requestId, snapshot, streamError, startError,
-    evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, newRun,
+    evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, saveYamlState, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, saveYaml, newRun,
   };
 }
 

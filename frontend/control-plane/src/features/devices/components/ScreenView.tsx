@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { controlPlaneClient, toApiError } from '../../../api/controlPlaneClient';
 import type { PlatformId } from '../../../api/types';
 
-export function ScreenView({ requestId, revision, platform, targetLabel }: { requestId: string | null; revision: number; platform: PlatformId; targetLabel: string }) {
+export function ScreenView({ requestId, revision, platform, targetLabel }: { requestId: string | null; revision: number; platform: PlatformId | null; targetLabel: string }) {
   const [state, setState] = useState<'empty' | 'loading' | 'available' | 'unavailable' | 'error'>('empty');
   const [url, setUrl] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -23,7 +23,7 @@ export function ScreenView({ requestId, revision, platform, targetLabel }: { req
     return () => controller.abort();
   }, [requestId, revision]);
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  if (state === 'available' && url) return <div className={`screen-canvas ${platform === 'android' ? 'screen-canvas--android' : ''}`}><img src={url} alt={`${platform} screenshot evidence for ${targetLabel}, revision ${revision}`} /></div>;
+  if (state === 'available' && url) return <div className={`screen-canvas ${platform === 'android' ? 'screen-canvas--android' : ''}`}><img src={url} alt={`${platform ?? 'Selected platform'} screenshot evidence for ${targetLabel}, revision ${revision}`} /></div>;
   const copy = {
     empty: ['Screen not yet captured', 'Real screenshot evidence will appear here after capture.'],
     loading: ['Loading screen', 'Reading the latest screenshot revision…'],

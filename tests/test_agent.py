@@ -190,7 +190,7 @@ def _stub_provider_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_run_id_uses_friendly_timestamp_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_provider_refresh(monkeypatch)
     reporter = _Reporter()
     agent = FsqAgent(
@@ -211,9 +211,12 @@ async def test_agent_run_id_uses_friendly_timestamp_suffix(monkeypatch: pytest.M
     )
 
     result = await agent.run(task)
+    second_result = await agent.run(task)
 
     assert result.report.run_id == reporter.run_ids[0]
-    assert re.fullmatch(r"smoke-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", result.report.run_id)
+    assert second_result.report.run_id == reporter.run_ids[1]
+    assert result.report.run_id != second_result.report.run_id
+    assert re.fullmatch(r"smoke-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{6}-[0-9a-f]{8}", result.report.run_id)
 
 
 def test_recent_tool_output_filter_does_not_artifact_sensitive_outputs() -> None:

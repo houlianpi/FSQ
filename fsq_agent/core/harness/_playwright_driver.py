@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -32,6 +33,7 @@ from fsq_agent.models import (
 )
 
 DEFAULT_WEB_WAIT_TIMEOUT_MS = 10000
+SUPPORTED_WEB_CHANNELS = frozenset({"chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"})
 _BROWSER_NOT_STARTED_MESSAGE = "Browser is not started. Call startBrowser before Web page actions."
 _T = TypeVar("_T")
 
@@ -50,10 +52,10 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         page: object | None = None,
     ) -> None:
         self.channel = channel.strip() if isinstance(channel, str) else channel
-        if self.channel != "chrome":
+        if self.channel not in SUPPORTED_WEB_CHANNELS:
             raise ConfigurationError(
                 "Unsupported Playwright browser channel.",
-                context={"channel": self.channel, "supported": ["chrome"]},
+                context={"channel": self.channel, "supported": sorted(SUPPORTED_WEB_CHANNELS)},
             )
         self.executable_path = str(Path(executable_path)) if executable_path else None
         self.headless = headless
@@ -64,6 +66,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         self._context: object | None = None
         self._executor: ThreadPoolExecutor | None = None
         self.page: object | None = page
+        self._snapshot_refs: dict[str, tuple[str, str]] = {}
 
     def context(self) -> dict[str, object]:
         return self._run_sync(self._context_payload)
@@ -124,6 +127,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         kwargs: dict[str, object] = {}
         if params.waitUntil is not None:
             kwargs["wait_until"] = params.waitUntil
+        self._snapshot_refs.clear()
         response = self.page.goto(url, **kwargs)
         status = getattr(response, "status", None)
         return self._passed({"url": self._page_url() or url, "status": status})
@@ -138,6 +142,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         kwargs: dict[str, object] = {}
         if params.waitUntil is not None:
             kwargs["wait_until"] = params.waitUntil
+        self._snapshot_refs.clear()
         response = self.page.go_back(**kwargs)
         status = getattr(response, "status", None)
         return self._passed({"url": self._page_url(), "status": status})
@@ -150,15 +155,23 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         if self.page is None:
             return self._browser_not_started()
         locator = self._locator(params)
-        if not self._wait_for_locator(locator, state="visible"):
-            return self._target_missing(params)
+        resolution_failure = self._locator_resolution_failure(locator, params)
+        if resolution_failure is not None:
+            return resolution_failure
         kwargs: dict[str, object] = {}
         if params.button is not None:
             kwargs["button"] = params.button
-        if params.double:
-            locator.dblclick(**kwargs)
-        else:
-            locator.click(**kwargs)
+        try:
+            if params.double:
+                locator.dblclick(**kwargs)
+            else:
+                locator.click(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(
+                "interaction_error",
+                "Web target click failed.",
+                metadata={"params": params.model_dump(mode="json", exclude_none=True), "diagnostic": self._safe_exception_message(exc)},
+            )
         return self._passed()
 
     @_web_driver_tool("typeText", description="Type text into a Web page target resolved from the page snapshot.")
@@ -264,12 +277,15 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
     def _ui_snapshot(self, params: WebUiSnapshotParams) -> dict[str, object]:
         if self.page is None:
             return self._browser_not_started()
+        self._snapshot_refs.clear()
         aria_snapshot = getattr(self.page, "aria_snapshot", None)
         if callable(aria_snapshot):
             try:
                 snapshot = aria_snapshot(mode="ai")
             except TypeError:
                 snapshot = aria_snapshot()
+            if isinstance(snapshot, str):
+                self._snapshot_refs = self._snapshot_reference_map(snapshot)
             if not isinstance(snapshot, str) or snapshot.strip():
                 return {"url": self._page_url(), "snapshot_type": "aria", "snapshot": snapshot}
         return self._text_ui_snapshot()
@@ -345,6 +361,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             self._shutdown_executor()
 
     def _close(self) -> None:
+        self._snapshot_refs.clear()
         try:
             for candidate in [self._context, self._browser, self._playwright]:
                 close = getattr(candidate, "close", None)
@@ -392,9 +409,9 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         if self.executable_path is None:
             raise ConfigurationError(
                 "Web browser executable path is required for PlaywrightWebDriver.",
-                context={"executable_path_env": "FSQ_WEB_BROWSER_EXECUTABLE_PATH", "channel": self.channel},
+                context={"config_key": "target.browser_executable_path", "channel": self.channel},
             )
-        launch_kwargs: dict[str, object] = {"headless": self.headless, "executable_path": self.executable_path}
+        launch_kwargs: dict[str, object] = {"headless": self.headless, "channel": self.channel, "executable_path": self.executable_path}
         browser = browser_factory.launch(**launch_kwargs)
         context_kwargs: dict[str, object] = {}
         if self.viewport is not None:
@@ -417,13 +434,21 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         data = params.model_dump(mode="python", exclude_none=True)
         locator = data.get("locator")
         if isinstance(locator, dict):
+            snapshot_ref = locator.get("ref")
+            if isinstance(snapshot_ref, str) and snapshot_ref.strip():
+                referenced = self._snapshot_refs.get(snapshot_ref.strip())
+                if referenced is not None:
+                    ref_role, ref_name = referenced
+                    return self.page.get_by_role(ref_role, name=self._snapshot_text_matcher(ref_name))
+                return self.page.locator("[data-fsq-missing-snapshot-ref]")
             role = locator.get("role")
             name = locator.get("name")
             if isinstance(role, str) and role.strip():
                 kwargs: dict[str, object] = {}
                 if isinstance(name, str) and name.strip():
-                    kwargs["name"] = name
-                return self.page.get_by_role(role, **kwargs)
+                    kwargs["name"] = self._snapshot_text_matcher(name)
+                resolved = self.page.get_by_role(role, **kwargs)
+                return self._compose_locator(resolved, locator, excluded={"role", "name"})
             for key, method_name in [
                 ("text", "get_by_text"),
                 ("label", "get_by_label"),
@@ -434,17 +459,81 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             ]:
                 value = locator.get(key)
                 if isinstance(value, str) and value.strip():
-                    return getattr(self.page, method_name)(value)
+                    resolved = getattr(self.page, method_name)(self._snapshot_text_matcher(value))
+                    return self._compose_locator(resolved, locator, excluded={key})
             css = locator.get("css")
             if isinstance(css, str) and css.strip():
-                return self.page.locator(css)
+                return self._compose_locator(self.page.locator(css), locator, excluded={"css"})
             xpath = locator.get("xpath")
             if isinstance(xpath, str) and xpath.strip():
-                return self.page.locator(f"xpath={xpath}")
+                return self._compose_locator(self.page.locator(f"xpath={xpath}"), locator, excluded={"xpath"})
         target = data.get("target")
         if isinstance(target, str) and target.strip():
-            return self.page.get_by_text(target)
+            ref_match = re.search(r"\[ref=([^]\s]+)\]", target)
+            if ref_match and ref_match.group(1) in self._snapshot_refs:
+                ref_role, ref_name = self._snapshot_refs[ref_match.group(1)]
+                return self.page.get_by_role(ref_role, name=self._snapshot_text_matcher(ref_name))
+            snapshot = self._parse_snapshot_target(target)
+            if snapshot is not None:
+                role, name = snapshot
+                return self.page.get_by_role(role, name=self._snapshot_text_matcher(name))
+            return self.page.get_by_text(self._snapshot_text_matcher(target))
         return self.page.locator(":root")
+
+    def _compose_locator(self, resolved: object, locator: dict[str, object], *, excluded: set[str]) -> object:
+        methods = {"text": "get_by_text", "label": "get_by_label", "placeholder": "get_by_placeholder", "testId": "get_by_test_id", "altText": "get_by_alt_text", "title": "get_by_title"}
+        for key, method_name in methods.items():
+            value = locator.get(key)
+            if key not in excluded and isinstance(value, str) and value.strip():
+                resolved = resolved.and_(getattr(self.page, method_name)(self._snapshot_text_matcher(value)))
+        for key, prefix in (("css", ""), ("xpath", "xpath=")):
+            value = locator.get(key)
+            if key not in excluded and isinstance(value, str) and value.strip():
+                resolved = resolved.and_(self.page.locator(f"{prefix}{value}"))
+        return resolved
+
+    @staticmethod
+    def _parse_snapshot_target(target: str) -> tuple[str, str] | None:
+        match = re.match(r'^\s*([A-Za-z][\w-]*)\s+"([^"]+)"(?:\s+\[[^]]+\])*\s*$', target)
+        return (match.group(1), match.group(2)) if match else None
+
+    @staticmethod
+    def _snapshot_reference_map(snapshot: str) -> dict[str, tuple[str, str]]:
+        references: dict[str, tuple[str, str]] = {}
+        pattern = re.compile(r'^\s*-?\s*([A-Za-z][\w-]*)\s+"([^"]+)".*?\[ref=([^]\s]+)\]', re.MULTILINE)
+        for match in pattern.finditer(snapshot):
+            references[match.group(3)] = (match.group(1), match.group(2))
+        return references
+
+    @staticmethod
+    def _snapshot_text_matcher(value: str) -> str | re.Pattern[str]:
+        normalized = value.strip()
+        if normalized.endswith(("...", "…")):
+            prefix = normalized[:-3] if normalized.endswith("...") else normalized[:-1]
+            return re.compile(rf"^\s*{re.escape(prefix.rstrip())}", re.IGNORECASE)
+        return normalized
+
+    def _locator_resolution_failure(self, locator: object, params: BaseModel) -> dict[str, object] | None:
+        metadata = {"params": params.model_dump(mode="json", exclude_none=True)}
+        try:
+            count = locator.count()
+        except Exception as exc:  # noqa: BLE001
+            return self._failed("target_resolution_error", "Web target resolution failed.", metadata={**metadata, "diagnostic": self._safe_exception_message(exc)})
+        if count == 0:
+            return self._failed("target_not_found", "Web target was not found.", metadata={**metadata, "match_count": 0})
+        if count > 1:
+            return self._failed("target_ambiguous", "Web target matched multiple elements.", metadata={**metadata, "match_count": count})
+        try:
+            if not locator.is_visible():
+                return self._failed("target_not_visible", "Web target is not visible.", metadata={**metadata, "match_count": 1})
+        except Exception as exc:  # noqa: BLE001
+            return self._failed("target_detached", "Web target became unavailable.", metadata={**metadata, "diagnostic": self._safe_exception_message(exc)})
+        return None
+
+    @staticmethod
+    def _safe_exception_message(exc: Exception) -> str:
+        message = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+        return message[:500]
 
     def _wait_for_locator(self, locator: object, *, state: str, timeout: int = DEFAULT_WEB_WAIT_TIMEOUT_MS) -> bool:
         try:

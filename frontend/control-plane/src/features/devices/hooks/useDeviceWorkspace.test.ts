@@ -5,10 +5,11 @@ import { useDeviceWorkspace } from './useDeviceWorkspace';
 
 const bootstrap: BootstrapResponse = {
   apiVersion: '1.0', platforms: [{ id: 'android', label: 'Android' }, { id: 'web', label: 'Web' }],
-  workspace: { name: 'test', initialized: true }, busy: false, activeTask: null,
+  busy: false, activeTask: null,
 };
 const readiness = (platform: 'android' | 'web'): ReadinessResponse => ({
-  platform,
+  workspaceName: 'test', platformId: platform,
+  platform: { status: 'ready', message: 'ready', action: '' },
   workspace: { status: 'ready', message: 'ready', action: '' }, provider: { status: 'ready', message: 'ready', action: '' },
   target: { status: 'ready', message: 'ready', action: '' }, strict: { status: 'ready', message: 'ready', action: '' },
 });
@@ -17,27 +18,63 @@ const cases = (platform: 'android' | 'web'): CasesResponse => ({ platform, trunc
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 const runSnapshot = (requestId = 'request-1', platform: 'android' | 'web' = 'android') => ({
-  requestId, runId: null, platform, targetId: `${platform}-target`, mode: 'explore' as const, status: 'preparing' as const,
+  requestId, runId: null, workspaceName: 'test', platform, targetId: `${platform}-target`, mode: 'explore' as const, status: 'preparing' as const,
   source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false, events: [], activeStep: null,
   result: null, summary: 'Preparing', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false,
+});
+const platforms = bootstrap.platforms;
+const deviceContext = { workspaceName: 'test', platforms, onWorkspaceChange: vi.fn() };
+
+it('does not discover until a platform is explicitly selected', async () => {
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn(), targets: vi.fn(), cases: vi.fn(),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  await waitFor(() => expect(result.current.bootstrap.state).toBe('ready'));
+
+  expect(result.current.platform).toBe('');
+  expect(client.readiness).not.toHaveBeenCalled();
+  expect(client.targets).not.toHaveBeenCalled();
+  expect(client.cases).not.toHaveBeenCalled();
 });
 
 it('rejects stale platform responses by request generation', async () => {
   const oldReadiness = deferred<ReadinessResponse>();
   const client = {
     bootstrap: vi.fn().mockResolvedValue(bootstrap),
-    readiness: vi.fn((platform: 'android' | 'web') => platform === 'android' ? oldReadiness.promise : Promise.resolve(readiness('web'))),
-    targets: vi.fn((platform: 'android' | 'web') => Promise.resolve(targets(platform))),
-    cases: vi.fn((platform: 'android' | 'web') => Promise.resolve(cases(platform))),
+    readiness: vi.fn((_workspace: string, platform: 'android' | 'web') => platform === 'android' ? oldReadiness.promise : Promise.resolve(readiness('web'))),
+    targets: vi.fn((_workspace: string, platform: 'android' | 'web') => Promise.resolve(targets(platform))),
+    cases: vi.fn((_workspace: string, platform: 'android' | 'web') => Promise.resolve(cases(platform))),
     startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.targets.data?.platform).toBe('android'));
   act(() => result.current.setPlatform('web'));
-  await waitFor(() => expect(result.current.readiness.data?.platform).toBe('web'));
+  await waitFor(() => expect(result.current.readiness.data?.platformId).toBe('web'));
   act(() => oldReadiness.resolve(readiness('android')));
   await act(async () => Promise.resolve());
-  expect(result.current.readiness.data?.platform).toBe('web');
+  expect(result.current.readiness.data?.platformId).toBe('web');
+});
+
+it('clears platform selection when changing to a workspace that supports the same platform', async () => {
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
+    targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result, rerender } = renderHook(
+    ({ workspaceName }) => useDeviceWorkspace({ ...deviceContext, workspaceName }, client),
+    { initialProps: { workspaceName: 'first' } },
+  );
+  act(() => result.current.setPlatform('android'));
+  await waitFor(() => expect(result.current.targets.state).toBe('ready'));
+
+  rerender({ workspaceName: 'second' });
+
+  await waitFor(() => expect(result.current.platform).toBe(''));
+  expect(result.current.targets.state).toBe('idle');
 });
 
 it('derives start eligibility and sends mode-specific strict payloads', async () => {
@@ -47,14 +84,19 @@ it('derives start eligibility and sends mode-specific strict payloads', async ()
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),
     startRun, cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot()), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ requestId: 'request-1', runId: null, platform: 'android', targetId: 'android-target', mode: 'strict', status: 'preparing', source: { casePath: 'android.fsq.yaml' }, startedAt: '', completedAt: null, cancelRequested: false, events: [], activeStep: null, result: null, summary: 'Preparing', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ requestId: 'request-1', runId: null, workspaceName: 'test', platform: 'android', targetId: 'android-target', mode: 'strict', status: 'preparing', source: { casePath: 'android.fsq.yaml' }, startedAt: '', completedAt: null, cancelRequested: false, events: [], activeStep: null, result: null, summary: 'Preparing', screenshotRevision: 0, uiSnapshotRevision: 0, evidenceAvailable: false, reportAvailable: false, terminal: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.targets.state).toBe('ready'));
   expect(result.current.canStart).toBe(false);
   act(() => result.current.setMode('strict'));
+  expect(result.current.casePath).toBe('');
+  expect(result.current.selectedCase).toBeNull();
+  expect(result.current.canStart).toBe(false);
+  act(() => result.current.setCasePath('android.fsq.yaml'));
   await waitFor(() => expect(result.current.canStart).toBe(true));
   await act(async () => result.current.start());
-  expect(startRun).toHaveBeenCalledWith({ mode: 'strict', platform: 'android', targetId: 'android-target', casePath: 'android.fsq.yaml' });
+  expect(startRun).toHaveBeenCalledWith({ mode: 'strict', workspaceName: 'test', platform: 'android', targetId: 'android-target', casePath: 'android.fsq.yaml' });
   expect(result.current.controlsLocked).toBe(true);
 });
 
@@ -67,9 +109,14 @@ it('requires provider readiness only for provider-gated strict cases', async () 
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(providerCases),
     startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), screen: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.cases.state).toBe('ready'));
   act(() => result.current.setMode('strict'));
+  expect(result.current.selectedCase).toBeNull();
+  expect(result.current.canStart).toBe(false);
+
+  act(() => result.current.setCasePath('gated.fsq.yaml'));
   expect(result.current.selectedCase?.requiresAiAssertion).toBe(true);
   expect(result.current.canStart).toBe(false);
 
@@ -85,14 +132,15 @@ it('allows Explore and sends its payload without waiting for case discovery', as
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockReturnValue(pendingCases.promise),
     startRun, cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot('explore-request')), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.targets.state).toBe('ready'));
   act(() => result.current.setGoal('  Verify the welcome page  '));
 
   await waitFor(() => expect(result.current.canStart).toBe(true));
   expect(result.current.cases.state).toBe('loading');
   await act(async () => result.current.start());
-  expect(startRun).toHaveBeenCalledWith({ mode: 'explore', platform: 'android', targetId: 'android-target', goal: 'Verify the welcome page' });
+  expect(startRun).toHaveBeenCalledWith({ mode: 'explore', workspaceName: 'test', platform: 'android', targetId: 'android-target', goal: 'Verify the welcome page' });
 });
 
 it('allows Explore with an empty case result while Strict has no selectable source', async () => {
@@ -103,7 +151,8 @@ it('allows Explore with an empty case result while Strict has no selectable sour
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(emptyCases),
     startRun, cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot('explore-request')), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
+  act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.cases.state).toBe('ready'));
   act(() => result.current.setGoal('Verify without authored cases'));
 
@@ -114,24 +163,24 @@ it('allows Explore with an empty case result while Strict has no selectable sour
 
   act(() => result.current.setMode('explore'));
   await act(async () => result.current.start());
-  expect(startRun).toHaveBeenCalledWith({ mode: 'explore', platform: 'android', targetId: 'android-target', goal: 'Verify without authored cases' });
+  expect(startRun).toHaveBeenCalledWith({ mode: 'explore', workspaceName: 'test', platform: 'android', targetId: 'android-target', goal: 'Verify without authored cases' });
 });
 
 it('respects backend bootstrap truth when starting a new run', async () => {
   const activeBootstrap: BootstrapResponse = {
     ...bootstrap, busy: true,
-    activeTask: { requestId: 'other-request', runId: null, platform: 'web', targetId: 'web-target', mode: 'strict', status: 'running' },
+    activeTask: { requestId: 'other-request', runId: null, workspaceName: 'test', platform: 'web', targetId: 'web-target', mode: 'strict', status: 'running' },
   };
   const bootstrapCall = vi.fn()
     .mockResolvedValueOnce(bootstrap)
     .mockResolvedValueOnce(activeBootstrap)
     .mockResolvedValueOnce(bootstrap);
   const client = {
-    bootstrap: bootstrapCall, readiness: vi.fn((platform: 'android' | 'web') => Promise.resolve(readiness(platform))),
-    targets: vi.fn((platform: 'android' | 'web') => Promise.resolve(targets(platform))), cases: vi.fn((platform: 'android' | 'web') => Promise.resolve(cases(platform))),
+    bootstrap: bootstrapCall, readiness: vi.fn((_workspace: string, platform: 'android' | 'web') => Promise.resolve(readiness(platform))),
+    targets: vi.fn((_workspace: string, platform: 'android' | 'web') => Promise.resolve(targets(platform))), cases: vi.fn((_workspace: string, platform: 'android' | 'web') => Promise.resolve(cases(platform))),
     startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot('other-request', 'web')), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
   } as unknown as ControlPlaneClient;
-  const { result } = renderHook(() => useDeviceWorkspace(client));
+  const { result } = renderHook(() => useDeviceWorkspace(deviceContext, client));
   await waitFor(() => expect(result.current.bootstrap.state).toBe('ready'));
 
   await act(async () => result.current.newRun());

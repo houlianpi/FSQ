@@ -18,6 +18,19 @@ def is_fsq_case_file(path: str | Path) -> bool:
     return name.endswith((FSQ_CASE_SUFFIX, LEGACY_CASE_SUFFIX))
 
 
+def _resolve_discovered_case_path(path: str | Path, discovery_root: Path) -> Path:
+    root = discovery_root.expanduser().resolve()
+    resolved = Path(path).expanduser().resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ConfigurationError(
+            "Discovered case path must stay within the case directory.",
+            context={"path": str(path)},
+        ) from exc
+    return resolved
+
+
 class FsqCaseLoader:
     def load_case(self, path: str | Path) -> FsqCase:
         case_path = Path(path)
@@ -33,10 +46,12 @@ class FsqCaseLoader:
         return self._build_case(case_path, docs)
 
     def load_cases(self, path: str | Path) -> list[FsqCase]:
-        root = Path(path)
+        root = Path(path).expanduser().resolve()
         if root.is_file():
             return [self.load_case(root)]
-        candidates = sorted({*root.glob("**/*.fsq.yaml"), *root.glob("**/*.codex.yaml")})
+        candidates = sorted(
+            _resolve_discovered_case_path(candidate, root) for candidate in {*root.glob("**/*.fsq.yaml"), *root.glob("**/*.codex.yaml")} if candidate.is_file() and is_fsq_case_file(candidate)
+        )
         return [self.load_case(candidate) for candidate in candidates]
 
     def _build_case(self, path: Path, docs: list[Any]) -> FsqCase:

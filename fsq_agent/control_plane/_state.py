@@ -33,15 +33,17 @@ def _now() -> str:
 @dataclass
 class TaskRecord:
     request_id: str
+    workspace_name: str
     platform: str
     target_id: str
     mode: str
-    source: dict[str, str]
+    source: dict[str, Any]
     status: TaskStatus = "preparing"
     started_at: str = field(default_factory=_now)
     completed_at: str | None = None
     run_id: str | None = None
     run_dir: Any | None = None
+    cases_dir: Any | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     active_step: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
@@ -62,15 +64,42 @@ class ControlPlaneState:
         self._current_request_id: str | None = None
         self._tasks: dict[str, TaskRecord] = {}
 
-    def reserve(self, *, platform: str, target_id: str, mode: str, source: dict[str, str]) -> str:
+    def reserve(self, *, workspace_name: str, platform: str, target_id: str, mode: str, source: dict[str, Any]) -> str:
         with self._condition:
             if self._current_request_id is not None:
                 raise BusyError("Another Control Plane task is active.")
             request_id = str(uuid4())
-            self._tasks[request_id] = TaskRecord(request_id=request_id, platform=platform, target_id=target_id, mode=mode, source=dict(source))
+            self._tasks[request_id] = TaskRecord(
+                request_id=request_id,
+                workspace_name=workspace_name,
+                platform=platform,
+                target_id=target_id,
+                mode=mode,
+                source=dict(source),
+            )
             self._current_request_id = request_id
             self._notify()
             return request_id
+
+    def update_source(self, request_id: str, values: dict[str, Any]) -> None:
+        with self._condition:
+            task = self._require(request_id)
+            task.source.update(values)
+            self._notify()
+
+    def update_case_step_result(self, request_id: str, step_id: str, result: dict[str, Any]) -> None:
+        if not step_id:
+            return
+        with self._condition:
+            task = self._require(request_id)
+            steps = task.source.get("caseSteps")
+            if not isinstance(steps, list):
+                return
+            for step in steps:
+                if isinstance(step, dict) and step.get("stepId") == step_id:
+                    step.update(result)
+                    self._notify()
+                    return
 
     def abandon_preparation(self, request_id: str) -> None:
         with self._condition:
@@ -94,6 +123,7 @@ class ControlPlaneState:
             if summary is not None:
                 task.summary = summary
             if status in _TERMINAL_STATUSES:
+                self._mark_unfinished_strict_steps_skipped(task)
                 task.completed_at = _now()
                 if self._current_request_id == request_id:
                     self._current_request_id = None
@@ -105,6 +135,12 @@ class ControlPlaneState:
             task.run_id = run_id
             if run_dir is not None:
                 task.run_dir = run_dir
+            self._notify()
+
+    def bind_cases_dir(self, request_id: str, cases_dir: Any) -> None:
+        with self._condition:
+            task = self._require(request_id)
+            task.cases_dir = cases_dir
             self._notify()
 
     def add_event(self, request_id: str, event: dict[str, Any]) -> None:
@@ -159,6 +195,7 @@ class ControlPlaneState:
                 result = {"status": "cancelled"}
             task.result = result
             task.report_available = report_available
+            self._mark_unfinished_strict_steps_skipped(task)
             task.status = status
             task.summary = summary
             task.completed_at = _now()
@@ -189,7 +226,7 @@ class ControlPlaneState:
         with self._condition:
             return self._snapshot(self._require(request_id), after_sequence=after_sequence)
 
-    def bootstrap(self, workspace: str, *, initialized: bool = True) -> dict[str, Any]:
+    def bootstrap(self) -> dict[str, Any]:
         with self._condition:
             active = self._tasks.get(self._current_request_id or "")
             return {
@@ -200,7 +237,6 @@ class ControlPlaneState:
                     {"id": "windows", "label": "Windows"},
                     {"id": "macos", "label": "macOS"},
                 ],
-                "workspace": {"name": workspace, "initialized": initialized},
                 "busy": active is not None,
                 "activeTask": self._summary(active) if active else None,
             }
@@ -225,6 +261,10 @@ class ControlPlaneState:
         with self._condition:
             return self._require(request_id).run_dir
 
+    def cases_directory(self, request_id: str):
+        with self._condition:
+            return self._require(request_id).cases_dir
+
     def _snapshot(self, task: TaskRecord, *, after_sequence: int = 0) -> dict[str, Any]:
         events_after = 0 if task.status in _TERMINAL_STATUSES else after_sequence
         return {
@@ -248,11 +288,23 @@ class ControlPlaneState:
         return {
             "requestId": task.request_id,
             "runId": task.run_id,
+            "workspaceName": task.workspace_name,
             "platform": task.platform,
             "targetId": task.target_id,
             "mode": task.mode,
             "status": task.status,
         }
+
+    def _mark_unfinished_strict_steps_skipped(self, task: TaskRecord) -> None:
+        if task.mode != "strict":
+            return
+        steps = task.source.get("caseSteps")
+        if not isinstance(steps, list):
+            return
+        for step in steps:
+            if isinstance(step, dict) and not step.get("status"):
+                step["status"] = "skipped"
+                step["message"] = "Action was not executed."
 
     def _require(self, request_id: str) -> TaskRecord:
         task = self._tasks.get(request_id)

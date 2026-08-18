@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,35 @@ def test_fsq_case_loader_discovers_only_exact_lowercase_suffix(tmp_path: Path) -
     assert [case.path for case in FsqCaseLoader().load_cases(tmp_path)] == [expected]
 
 
+def test_fsq_case_loader_rejects_discovered_symlink_escape(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text(FSQ_CASE, encoding="utf-8")
+    link = cases_dir / "linked.fsq.yaml"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ConfigurationError, match="case directory"):
+        FsqCaseLoader().load_cases(cases_dir)
+
+
+def test_fsq_module_does_not_import_root_private_modules() -> None:
+    package_root = Path(__file__).resolve().parents[1] / "fsq_agent" / "fsq"
+    imports: set[str] = set()
+    for source_path in package_root.glob("*.py"):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+
+    assert not {module for module in imports if module.startswith("fsq_agent._")}
+
+
 def test_resolve_case_yaml_path_uses_cases_dir_and_requires_suffix(tmp_path: Path) -> None:
     cases_dir = tmp_path / "cases"
     cases_dir.mkdir()
@@ -241,6 +271,21 @@ def test_discover_case_yaml_paths_prefers_recursive_fsq_cases(tmp_path: Path) ->
 def test_discover_case_yaml_paths_rejects_empty_directory(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match=r"No \.fsq\.yaml"):
         discover_case_yaml_paths(tmp_path)
+
+
+def test_discover_case_yaml_paths_rejects_discovered_symlink_escape(tmp_path: Path) -> None:
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    outside = tmp_path / "outside.fsq.yaml"
+    outside.write_text(FSQ_CASE, encoding="utf-8")
+    link = cases_dir / "linked.fsq.yaml"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ConfigurationError, match="case directory"):
+        discover_case_yaml_paths(cases_dir, cases_dir)
 
 
 def test_read_raw_text_file_returns_invalid_yaml_without_parsing(tmp_path: Path) -> None:

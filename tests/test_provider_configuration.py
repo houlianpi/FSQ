@@ -18,6 +18,7 @@ from fsq_agent.config import (
 from fsq_agent.models import ConfigurationError, OpenAIAgentsSettings
 from fsq_agent.providers import (
     GitHubDeviceCode,
+    activate_github_copilot_authorization,
     build_model_provider_session,
     complete_github_copilot_device_flow,
     request_github_copilot_device_code,
@@ -130,9 +131,7 @@ def test_cancelled_github_device_flow_preserves_active_provider(tmp_path: Path) 
     with pytest.raises(ConfigurationError, match="cancelled"):
         complete_github_copilot_device_flow(
             device_code,
-            model="copilot-model",
             cancel_requested=lambda: True,
-            user_config_root=user_root,
         )
 
     assert load_user_provider_config(user_root).provider.type == "azure_openai"  # type: ignore[union-attr]
@@ -166,15 +165,13 @@ def test_github_device_flow_cancelled_during_poll_response_does_not_commit(tmp_p
     with patch.object(copilot.time, "sleep"), patch.object(copilot.httpx, "post", side_effect=poll), pytest.raises(ConfigurationError, match="cancelled"):
         complete_github_copilot_device_flow(
             device_code,
-            model="copilot-model",
             cancel_requested=lambda: cancelled,
-            user_config_root=user_root,
         )
 
     assert load_user_provider_config(user_root).provider.type == "azure_openai"  # type: ignore[union-attr]
 
 
-def test_completed_github_device_flow_commits_complete_provider(tmp_path: Path) -> None:
+def test_completed_github_device_flow_requires_explicit_activation_to_commit(tmp_path: Path) -> None:
     user_root = tmp_path / "user"
     device_code = GitHubDeviceCode(
         device_code="device-secret",
@@ -197,12 +194,17 @@ def test_completed_github_device_flow_commits_complete_provider(tmp_path: Path) 
             return_value=copilot.CopilotToken(token="provider-token", expires_at=time.time() + 3600),  # noqa: S106 - synthetic test credential.
         ),
     ):
-        saved = complete_github_copilot_device_flow(
+        authorization = complete_github_copilot_device_flow(
             device_code,
-            model="copilot-model",
             cancel_requested=lambda: False,
-            user_config_root=user_root,
         )
+    assert load_user_provider_config(user_root).provider is None
+
+    saved = activate_github_copilot_authorization(
+        authorization,
+        model="copilot-model",
+        user_config_root=user_root,
+    )
 
     assert saved.provider is not None
     assert saved.provider.type == "github_copilot"

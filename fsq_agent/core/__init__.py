@@ -8,6 +8,7 @@ from fsq_agent.core._runtime_secrets import RuntimeSecretStore
 from fsq_agent.core.evidence import ArtifactStore, EvidenceRecorder
 from fsq_agent.core.harness import (
     AIAssertionEvaluatorProtocol,
+    AndroidDeviceDiscovery,
     AndroidDriverInterface,
     DriverFactory,
     DriverObservationInterface,
@@ -21,6 +22,7 @@ from fsq_agent.core.runner import StepRunner, StepSequenceRunner
 
 __all__ = [
     "AIAssertionEvaluatorProtocol",
+    "AndroidDeviceDiscovery",
     "AndroidDriverInterface",
     "ArtifactStore",
     "CapabilityDefinitionFactory",

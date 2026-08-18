@@ -10,12 +10,24 @@ import type {
   ReadinessResponse,
   ReplayFramesResponse,
   ReplayVideoResponse,
+  SaveYamlResponse,
+  SaveYamlPayload,
   RunSnapshot,
   StartRunPayload,
   StartRunResponse,
   TargetsResponse,
   StepArtifactsResponse,
   UiSnapshotResponse,
+  WorkspaceDetail,
+  WorkspaceEntriesResponse,
+  WorkspaceFileResponse,
+  WorkspaceListResponse,
+  WorkspaceParentDirectoryPickerResponse,
+  CreateWorkspacePayload,
+  AddWorkspacePlatformPayload,
+  UpdateWorkspacePlatformPayload,
+  WorkspacePlatformDetail,
+  WorkspacePlatformMutationResponse,
 } from './types';
 
 const API_BASE = '/api/control-plane';
@@ -23,7 +35,7 @@ const platforms = new Set<PlatformId>(['android', 'web', 'windows', 'macos']);
 const modes = new Set(['explore', 'strict']);
 const statuses = new Set(['preparing', 'running', 'finalizing', 'success', 'failed', 'inconclusive', 'cancelled', 'error']);
 const readinessStatuses = new Set(['ready', 'unavailable', 'error']);
-const deviceFlowStatuses = new Set(['waiting', 'success', 'failed', 'expired', 'cancelled']);
+const deviceFlowStatuses = new Set(['waiting', 'loading_models', 'ready', 'model_error', 'success', 'failed', 'expired', 'cancelled']);
 const providerTypes = new Set(['azure_openai', 'github_copilot']);
 
 export class ControlPlaneApiError extends Error {
@@ -71,9 +83,13 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => key in value);
 }
+function hasNoUnknownKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
 
 function activeTask(value: unknown): boolean {
-  return record(value) && string(value.requestId) && nullableString(value.runId) && platform(value.platform)
+  return record(value) && string(value.requestId) && nullableString(value.runId) && string(value.workspaceName) && platform(value.platform)
     && string(value.targetId) && string(value.mode) && modes.has(value.mode) && string(value.status) && statuses.has(value.status);
 }
 function readinessRecord(value: unknown): boolean {
@@ -107,12 +123,12 @@ export function validateRunSnapshot(value: unknown, path = 'run snapshot'): RunS
 function validateBootstrap(value: unknown): BootstrapResponse {
   if (!record(value) || !string(value.apiVersion)
     || !arrayOf(value.platforms, (item) => record(item) && platform(item.id) && string(item.label))
-    || !record(value.workspace) || !string(value.workspace.name) || !bool(value.workspace.initialized)
     || !bool(value.busy) || !(value.activeTask === null || activeTask(value.activeTask))) invalidResponse('bootstrap', 'Invalid bootstrap fields.');
   return value as unknown as BootstrapResponse;
 }
 function validateReadiness(value: unknown): ReadinessResponse {
-  if (!record(value) || !platform(value.platform) || !readinessRecord(value.workspace) || !readinessRecord(value.provider)
+  if (!record(value) || !string(value.workspaceName) || !platform(value.platformId)
+    || !readinessRecord(value.workspace) || !readinessRecord(value.platform) || !readinessRecord(value.provider)
     || !readinessRecord(value.target) || !readinessRecord(value.strict)) invalidResponse('readiness', 'Invalid readiness fields.');
   return value as unknown as ReadinessResponse;
 }
@@ -160,6 +176,12 @@ function validateReplayVideo(value: unknown): ReplayVideoResponse {
     || (value.mimeType !== undefined && !string(value.mimeType)) || (value.sizeBytes !== undefined && !nonNegativeInteger(value.sizeBytes))) invalidResponse('replay video', 'Invalid replay video fields.');
   return value as unknown as ReplayVideoResponse;
 }
+function validateSaveYaml(value: unknown): SaveYamlResponse {
+  if (!record(value) || !hasOnlyKeys(value, ['savedPath', 'message']) || !string(value.savedPath) || !value.savedPath || !string(value.message) || !value.message) {
+    invalidResponse('save yaml', 'Invalid Save yaml response fields.');
+  }
+  return value as unknown as SaveYamlResponse;
+}
 function validateConfig(value: unknown): ConfigResponse {
   if (!record(value) || !hasOnlyKeys(value, ['configured', 'provider']) || !bool(value.configured)) invalidResponse('config', 'Invalid configured state.');
   if (!value.configured) {
@@ -179,11 +201,33 @@ function validateConfig(value: unknown): ConfigResponse {
   return value as unknown as ConfigResponse;
 }
 function validateDeviceFlow(value: unknown): GitHubDeviceFlowResponse {
-  if (!record(value) || !string(value.authRequestId) || !value.authRequestId || !string(value.verificationUri) || !value.verificationUri
-    || !string(value.userCode) || !value.userCode || !string(value.expiresAt) || !value.expiresAt
-    || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0
-    || !string(value.status) || !deviceFlowStatuses.has(value.status)
-    || !(value.message === undefined || string(value.message))) invalidResponse('GitHub device flow', 'Invalid device-flow fields.');
+  if (!record(value) || !string(value.authRequestId) || !value.authRequestId || !string(value.status) || !deviceFlowStatuses.has(value.status)
+    || !(value.message === undefined || string(value.message))) invalidResponse('GitHub device flow', 'Invalid device-flow identity.');
+  const optionalMessage = ['message'];
+  if (value.status === 'waiting') {
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'verificationUri', 'userCode', 'expiresAt', 'pollIntervalSeconds', ...optionalMessage])
+      || !string(value.verificationUri) || !value.verificationUri || !string(value.userCode) || !value.userCode
+      || !string(value.expiresAt) || !value.expiresAt || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0) {
+      invalidResponse('GitHub device flow', 'Invalid waiting fields.');
+    }
+  } else if (value.status === 'loading_models') {
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'expiresAt', 'pollIntervalSeconds', ...optionalMessage])
+      || !string(value.expiresAt) || !value.expiresAt || !finiteNumber(value.pollIntervalSeconds) || value.pollIntervalSeconds <= 0) {
+      invalidResponse('GitHub device flow', 'Invalid model-loading fields.');
+    }
+  } else if (value.status === 'ready') {
+    const model = (item: unknown) => record(item) && hasOnlyKeys(item, ['id', 'name']) && string(item.id) && Boolean(item.id) && string(item.name) && Boolean(item.name);
+    if (!hasNoUnknownKeys(value, ['authRequestId', 'status', 'expiresAt', 'models', ...optionalMessage])
+      || !string(value.expiresAt) || !value.expiresAt || !arrayOf(value.models, model)) {
+      invalidResponse('GitHub device flow', 'Invalid ready model fields.');
+    }
+  } else if (value.status === 'model_error') {
+    if (!hasOnlyKeys(value, ['authRequestId', 'status', 'expiresAt', 'message']) || !string(value.expiresAt) || !value.expiresAt || !string(value.message) || !value.message) {
+      invalidResponse('GitHub device flow', 'Invalid model-error fields.');
+    }
+  } else if (!hasNoUnknownKeys(value, ['authRequestId', 'status', ...optionalMessage])) {
+    invalidResponse('GitHub device flow', 'Invalid terminal fields.');
+  }
   return value as unknown as GitHubDeviceFlowResponse;
 }
 function validateConnectionTest(value: unknown): ConnectionTestResponse {
@@ -192,6 +236,110 @@ function validateConnectionTest(value: unknown): ConnectionTestResponse {
     invalidResponse('connection test', 'Invalid connection-test fields.');
   }
   return value as unknown as ConnectionTestResponse;
+}
+
+function workspaceTarget(value: unknown, platformId: PlatformId): boolean {
+  if (!record(value)) return false;
+  if (platformId === 'android') return hasOnlyKeys(value, ['appId']) && string(value.appId) && Boolean(value.appId);
+  if (platformId === 'web') return hasOnlyKeys(value, ['browserChannel', 'browserExecutablePath'])
+    && string(value.browserChannel) && ['chromium', 'chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary', 'msedge', 'msedge-beta', 'msedge-dev', 'msedge-canary'].includes(value.browserChannel)
+    && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
+  if (platformId === 'windows') {
+    return hasOnlyKeys(value, ['appPath', 'launchArgs']) || hasOnlyKeys(value, ['appPath', 'windowTitleRe', 'launchArgs'])
+      ? string(value.appPath) && Boolean(value.appPath) && string(value.launchArgs)
+        && (value.windowTitleRe === undefined || string(value.windowTitleRe))
+      : false;
+  }
+  const keys = Object.keys(value);
+  return keys.every((key) => key === 'bundleId' || key === 'appPath')
+    && keys.length > 0
+    && (value.bundleId === undefined || string(value.bundleId))
+    && (value.appPath === undefined || string(value.appPath))
+    && Boolean(value.bundleId || value.appPath);
+}
+
+function workspacePlatformStatus(value: unknown, summary: boolean): boolean {
+  if (!record(value) || !platform(value.platform) || !string(value.configPath) || !string(value.status) || !string(value.message)) return false;
+  if (value.status === 'unavailable') {
+    return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message', 'action']) && string(value.action);
+  }
+  if (value.status !== 'available') return false;
+  if (!summary) return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message']);
+  return hasOnlyKeys(value, ['platform', 'configPath', 'status', 'message', 'target', 'env', 'revision'])
+    && workspaceTarget(value.target, value.platform)
+    && arrayOf(value.env, (item) => record(item) && hasOnlyKeys(item, ['name', 'configured']) && string(item.name) && item.configured === true)
+    && string(value.revision) && value.revision.startsWith('sha256:');
+}
+
+function workspaceStatus(value: unknown, summary: boolean): value is WorkspaceDetail {
+  if (!record(value) || !string(value.name) || !string(value.rootPath) || !string(value.status)
+    || !['available', 'partial', 'unavailable'].includes(value.status) || !string(value.message)
+    || !arrayOf(value.platforms, (item) => workspacePlatformStatus(item, summary))) return false;
+  const keys = value.action === undefined
+    ? ['name', 'rootPath', 'status', 'message', 'platforms']
+    : ['name', 'rootPath', 'status', 'message', 'action', 'platforms'];
+  return hasOnlyKeys(value, keys) && (value.action === undefined || string(value.action));
+}
+
+function validateWorkspaceList(value: unknown): WorkspaceListResponse {
+  if (!record(value) || !arrayOf(value.workspaces, (item) => workspaceStatus(item, false))) invalidResponse('workspaces', 'Invalid workspace registry fields.');
+  return value as unknown as WorkspaceListResponse;
+}
+
+function validateWorkspaceDetail(value: unknown): WorkspaceDetail {
+  if (!workspaceStatus(value, true)) invalidResponse('workspace detail', 'Invalid workspace summary fields.');
+  return value;
+}
+
+function validateWorkspaceParentDirectoryPicker(value: unknown): WorkspaceParentDirectoryPickerResponse {
+  if (!record(value) || !string(value.status)) {
+    invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
+  }
+  if (value.status === 'cancelled' && hasOnlyKeys(value, ['status'])) {
+    return value as { status: 'cancelled' };
+  }
+  if (value.status === 'selected' && hasOnlyKeys(value, ['status', 'parentPath']) && string(value.parentPath) && value.parentPath) {
+    return value as { status: 'selected'; parentPath: string };
+  }
+  invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
+}
+
+function validateWorkspacePlatformDetail(value: unknown): WorkspacePlatformDetail {
+  if (!record(value) || !hasOnlyKeys(value, ['name', 'rootPath', 'configPath', 'platform', 'target', 'env', 'revision'])
+    || !string(value.name) || !string(value.rootPath) || !string(value.configPath) || !platform(value.platform)
+    || !workspaceTarget(value.target, value.platform)
+    || !record(value.env) || !Object.entries(value.env).every(([name, secret]) => Boolean(name) && string(secret))
+    || !string(value.revision) || !value.revision.startsWith('sha256:')) {
+    invalidResponse('workspace platform detail', 'Invalid workspace platform configuration fields.');
+  }
+  return value as unknown as WorkspacePlatformDetail;
+}
+
+function validateWorkspacePlatformMutation(value: unknown): WorkspacePlatformMutationResponse {
+  if (!record(value) || !hasOnlyKeys(value, ['workspace', 'platform']) || !workspaceStatus(value.workspace, true)) {
+    invalidResponse('workspace platform mutation', 'Invalid workspace platform mutation fields.');
+  }
+  return { workspace: value.workspace, platform: validateWorkspacePlatformDetail(value.platform) };
+}
+
+function validateWorkspaceEntries(value: unknown): WorkspaceEntriesResponse {
+  const entry = (item: unknown) => record(item) && string(item.path) && string(item.name)
+    && (item.kind === 'directory' || item.kind === 'file')
+    && (item.size === null || nonNegativeInteger(item.size)) && string(item.modifiedTime);
+  if (!record(value) || !string(value.path) || !arrayOf(value.entries, entry) || !bool(value.truncated)) {
+    invalidResponse('workspace entries', 'Invalid workspace directory fields.');
+  }
+  return value as unknown as WorkspaceEntriesResponse;
+}
+
+function validateWorkspaceFile(value: unknown): WorkspaceFileResponse {
+  if (!record(value) || !string(value.path) || !string(value.name) || !string(value.mediaType)
+    || (value.presentation !== 'markdown' && value.presentation !== 'code')
+    || !nonNegativeInteger(value.size) || !nonNegativeInteger(value.lineCount)
+    || !string(value.modifiedTime) || !string(value.content)) {
+    invalidResponse('workspace file', 'Invalid workspace file fields.');
+  }
+  return value as unknown as WorkspaceFileResponse;
 }
 
 async function jsonRequest<T>(path: string, validate: (value: unknown) => T, init?: RequestInit): Promise<T> {
@@ -218,14 +366,14 @@ export function toApiError(error: unknown): ApiErrorBody {
 
 export const controlPlaneClient = {
   bootstrap: (signal?: AbortSignal) => jsonRequest('/bootstrap', validateBootstrap, { signal }),
-  readiness: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/readiness?platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
-  targets: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/targets?platform=${encodeURIComponent(platform)}`, validateTargets, { signal }),
-  cases: (platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/cases?platform=${encodeURIComponent(platform)}`, validateCases, { signal }),
+  readiness: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/readiness?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
+  targets: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/targets?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateTargets, { signal }),
+  cases: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/cases?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateCases, { signal }),
   startRun: (payload: StartRunPayload) => jsonRequest('/runs', validateStart, { method: 'POST', body: JSON.stringify(payload) }),
-  cancelRun: (requestId: string) => jsonRequest(`/runs/${encodeURIComponent(requestId)}/cancel`, (value) => validateRunSnapshot(value, 'cancel run'), { method: 'POST', body: '{}' }),
+  cancelRun: (requestId: string) => jsonRequest(`/runs/${encodeURIComponent(requestId)}/cancel`, (value) => validateRunSnapshot(value, 'cancel run'), { method: 'POST' }),
   runSnapshot: (requestId: string, signal?: AbortSignal) => jsonRequest(`/runs/${encodeURIComponent(requestId)}`, validateRunSnapshot, { signal }),
   streamUrl: (requestId: string, afterSequence: number) =>
     `${API_BASE}/runs/${encodeURIComponent(requestId)}/stream?afterSequence=${afterSequence}`,
@@ -250,17 +398,40 @@ export const controlPlaneClient = {
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { signal }),
   uploadReplayVideo: (requestId: string, mimeType: string, videoBase64: string, signal?: AbortSignal) =>
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { method: 'POST', body: JSON.stringify({ mimeType, videoBase64 }), signal }),
+  saveYaml: (requestId: string, payload: SaveYamlPayload, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/save-yaml`, validateSaveYaml, { method: 'POST', body: JSON.stringify(payload), signal }),
   config: (signal?: AbortSignal) => jsonRequest('/config', validateConfig, { signal }),
   saveAzureConfig: (payload: AzureConfigPayload, signal?: AbortSignal) =>
     jsonRequest('/config/azure', validateConfig, { method: 'PUT', body: JSON.stringify(payload), signal }),
-  startGithubDeviceFlow: (modelName: string, signal?: AbortSignal) =>
-    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', body: JSON.stringify({ modelName }), signal }),
+  startGithubDeviceFlow: (signal?: AbortSignal) =>
+    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', signal }),
   githubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { signal }),
+  retryGithubModels: (authRequestId: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}/models`, validateDeviceFlow, { method: 'POST', signal }),
+  saveGithubModel: (authRequestId: string, modelName: string, signal?: AbortSignal) =>
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateConfig, { method: 'PUT', body: JSON.stringify({ modelName }), signal }),
   cancelGithubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
-    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', body: '{}', signal }),
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', signal }),
   testConnection: (signal?: AbortSignal) =>
-    jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', body: '{}', signal }),
+    jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', signal }),
+  workspaces: (signal?: AbortSignal) => jsonRequest('/workspaces', validateWorkspaceList, { signal }),
+  workspace: (name: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),
+  workspacePlatform: (name: string, platformId: PlatformId, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformDetail, { signal }),
+  pickWorkspaceParentDirectory: () =>
+    jsonRequest('/workspaces/pick-parent-directory', validateWorkspaceParentDirectoryPicker, { method: 'POST', body: '{}' }),
+  createWorkspace: (payload: CreateWorkspacePayload, signal?: AbortSignal) =>
+    jsonRequest('/workspaces', validateWorkspaceDetail, { method: 'POST', body: JSON.stringify(payload), signal }),
+  addWorkspacePlatform: (name: string, payload: AddWorkspacePlatformPayload, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms`, validateWorkspacePlatformMutation, { method: 'POST', body: JSON.stringify(payload), signal }),
+  updateWorkspacePlatform: (name: string, platformId: PlatformId, payload: UpdateWorkspacePlatformPayload, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformMutation, { method: 'PUT', body: JSON.stringify(payload), signal }),
+  workspaceEntries: (name: string, path: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/entries?path=${encodeURIComponent(path)}`, validateWorkspaceEntries, { signal }),
+  workspaceFile: (name: string, path: string, signal?: AbortSignal) =>
+    jsonRequest(`/workspaces/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`, validateWorkspaceFile, { signal }),
 };
 
 export type ControlPlaneClient = typeof controlPlaneClient;

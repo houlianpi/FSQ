@@ -139,6 +139,8 @@ class DefaultAgentToolProvider:
 
     def configure_run(self, run_id: str) -> None:
         self.run_id = run_id
+        if self.runs_dir is not None:
+            self.file_ops.configure_write_root(self.runs_dir / run_id / "artifacts")
         self.artifact_store = self._build_artifact_store()
 
     def list_capabilities(self) -> list[AgentToolDefinition]:

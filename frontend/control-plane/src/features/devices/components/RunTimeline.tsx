@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { RunSnapshot, TimelineEvent } from '../../../api/types';
+import type { RequestResource, RunSnapshot, SaveYamlResponse, StrictCaseStep, TimelineEvent } from '../../../api/types';
 
 const cancellable = new Set(['preparing', 'running', 'finalizing']);
 const LONG_MESSAGE_LENGTH = 140;
@@ -12,8 +12,13 @@ interface RunTimelineProps {
   resultHeadingRef: RefObject<HTMLHeadingElement | null>;
   onSelectStep: (stepId: string | null) => void;
   onCancel: () => void;
+  onSaveYaml?: (caseName: string) => void;
   onNewRun: () => void;
+  saveYamlState?: RequestResource<SaveYamlResponse>;
 }
+
+const emptySaveYamlState: RequestResource<SaveYamlResponse> = { state: 'idle', data: null, error: null };
+const FSQ_CASE_SUFFIX = '.fsq.yaml';
 
 function formatTime(value?: string) {
   if (!value) return '';
@@ -21,12 +26,10 @@ function formatTime(value?: string) {
   return Number.isNaN(date.valueOf()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function EventMessage({ event }: { event: TimelineEvent }) {
+function ExpandableMessage({ message, messageId }: { message: string; messageId: string }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const messageRef = useRef<HTMLElement>(null);
-  const message = event.message ?? '';
-  const messageId = `timeline-message-${event.sequence}`;
   useLayoutEffect(() => {
     const element = messageRef.current;
     if (!element) return;
@@ -47,7 +50,74 @@ function EventMessage({ event }: { event: TimelineEvent }) {
   </span>;
 }
 
-export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
+function EventMessage({ event }: { event: TimelineEvent }) {
+  return <ExpandableMessage message={event.message ?? ''} messageId={`timeline-message-${event.sequence}`} />;
+}
+
+function latestStepEvent<T>(events: TimelineEvent[], select: (event: TimelineEvent) => T | null | undefined): T | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const value = select(events[index]);
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
+function strictStepStatus(step: StrictCaseStep, stepEvents: TimelineEvent[], snapshot: RunSnapshot) {
+  if (step.status) return step.status;
+  if (!snapshot.terminal && snapshot.activeStep?.stepId === step.stepId) return 'running';
+  if (!snapshot.terminal && stepEvents.length) return 'running';
+  return snapshot.terminal ? 'skipped' : 'pending';
+}
+
+function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }: { snapshot: RunSnapshot; events: TimelineEvent[]; selectedStepId: string | null; onSelectStep: (stepId: string | null) => void }) {
+  const steps = snapshot.source.caseSteps ?? [];
+  if (snapshot.mode !== 'strict') return null;
+  if (!steps.length) return <section className="strict-action-summary" aria-label="Strict replay action results"><p className="empty-state">No YAML steps are available.</p></section>;
+  const eventsByStep = new Map<string, TimelineEvent[]>();
+  for (const event of events) {
+    if (!event.stepId) continue;
+    const existing = eventsByStep.get(event.stepId) ?? [];
+    existing.push(event);
+    eventsByStep.set(event.stepId, existing);
+  }
+  return <section className="strict-action-summary" aria-label="Strict replay action results">
+    <ol className="strict-action-list">
+      {steps.map((step) => {
+        const stepEvents = eventsByStep.get(step.stepId) ?? [];
+        const status = strictStepStatus(step, stepEvents, snapshot);
+        const durationMs = typeof step.durationMs === 'number' ? step.durationMs : null;
+        const message = step.message || null;
+        const selected = selectedStepId === step.stepId;
+        const active = !snapshot.terminal && snapshot.activeStep?.stepId === step.stepId;
+        const selectable = snapshot.terminal && Boolean(step.stepId);
+        const selectAction = () => onSelectStep(selected ? null : step.stepId);
+        const content = <>
+          <span className="timeline-index">{String(step.index).padStart(2, '0')}</span>
+          <span className="timeline-event-title"><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span>
+          <span className="timeline-event-meta"><span className={`status-badge status-badge--${status}`}>{status}</span>{durationMs !== null && <small>{durationMs}ms</small>}</span>
+          {message && <span className="timeline-event-main"><ExpandableMessage message={message} messageId={`strict-action-message-${step.stepId}`} /></span>}
+        </>;
+        return <li key={step.stepId} className={`strict-action-row timeline-row timeline-row--${status}${active ? ' timeline-row--active' : ''}${selectable ? ' timeline-row--selectable' : ''}${selected ? ' timeline-row--selected' : ''}`}>
+          {selectable ? <button className="timeline-action-select" type="button" aria-label={`Select action ${step.authoredActionName}`} aria-pressed={selected} onClick={selectAction}>{content}</button> : content}
+        </li>;
+      })}
+    </ol>
+  </section>;
+}
+
+function defaultCaseName(snapshot: RunSnapshot) {
+  return (snapshot.runId || 'recorded-case').replace(/\.fsq\.yaml$/i, '');
+}
+
+function invalidCaseName(caseName: string) {
+  const trimmed = caseName.trim();
+  if (!trimmed) return 'Enter a case name.';
+  if (/\.fsq\.yaml$/i.test(trimmed)) return 'Do not include the .fsq.yaml suffix.';
+  if (trimmed.startsWith('.') || trimmed.includes('..') || /[\\/:*?[\]\x00-\x1f]/.test(trimmed)) return 'Use a filename without paths, dots, or wildcard characters.';
+  return null;
+}
+
+export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onSaveYaml = () => undefined, onNewRun, saveYamlState = emptySaveYamlState }: RunTimelineProps) {
   const events = useMemo(() => [...(snapshot?.events ?? [])].sort((left, right) => left.sequence - right.sequence), [snapshot?.events]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousLastSequence = useRef(0);
@@ -55,9 +125,96 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
   const [sourceExpanded, setSourceExpanded] = useState(false);
   const [sourceOverflowing, setSourceOverflowing] = useState(false);
   const sourceRef = useRef<HTMLElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const saveDialogRef = useRef<HTMLElement>(null);
+  const saveNameInputRef = useRef<HTMLInputElement>(null);
+  const saveResultDialogRef = useRef<HTMLElement>(null);
+  const saveResultButtonRef = useRef<HTMLButtonElement>(null);
   const [unseen, setUnseen] = useState(0);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveResultOpen, setSaveResultOpen] = useState(false);
+  const [caseName, setCaseName] = useState('');
   const lastSequence = snapshot?.events.at(-1)?.sequence ?? 0;
-  const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.casePath;
+  const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.caseContent ?? snapshot?.source.casePath;
+  const saveNameError = invalidCaseName(caseName);
+  const savePathPreview = snapshot ? `cases/${snapshot.platform}/${caseName.trim() || defaultCaseName(snapshot)}${FSQ_CASE_SUFFIX}` : '';
+  const openSaveDialog = () => {
+    if (!snapshot) return;
+    setCaseName(defaultCaseName(snapshot));
+    setSaveDialogOpen(true);
+  };
+  const closeSaveDialog = () => {
+    setSaveDialogOpen(false);
+    window.setTimeout(() => saveButtonRef.current?.focus(), 0);
+  };
+  const confirmSaveYaml = () => {
+    if (saveNameError) return;
+    onSaveYaml(caseName.trim());
+    closeSaveDialog();
+  };
+  const closeSaveResult = () => {
+    setSaveResultOpen(false);
+    window.setTimeout(() => saveButtonRef.current?.focus(), 0);
+  };
+  useEffect(() => {
+    if (saveYamlState.state === 'ready' || saveYamlState.state === 'error') {
+      setSaveResultOpen(true);
+    } else if (saveYamlState.state === 'loading') {
+      setSaveResultOpen(false);
+    }
+  }, [saveYamlState.state, saveYamlState.data, saveYamlState.error]);
+  useEffect(() => {
+    if (!saveDialogOpen) return;
+    const frame = requestAnimationFrame(() => saveNameInputRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSaveDialog();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(saveDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? [])
+        .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener('keydown', onKeyDown); };
+  }, [saveDialogOpen]);
+  useEffect(() => {
+    if (!saveResultOpen) return;
+    const frame = requestAnimationFrame(() => saveResultButtonRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSaveResult();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(saveResultDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? [])
+        .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener('keydown', onKeyDown); };
+  }, [saveResultOpen]);
   useEffect(() => {
     const previous = previousLastSequence.current;
     previousLastSequence.current = lastSequence;
@@ -83,7 +240,15 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [source, sourceExpanded]);
   if (!snapshot) return <div className="run-loading" role="status"><span className="spinner" aria-hidden="true" />Preparing run details…</div>;
-  const activeStepMatched = !snapshot.terminal && Boolean(snapshot.activeStep?.stepId) && events.some((event) => event.stepId === snapshot.activeStep?.stepId);
+  const activeStepId = !snapshot.terminal ? snapshot.activeStep?.stepId : null;
+  let latestActiveStepSequence: number | null = null;
+  if (activeStepId) {
+    for (const event of events) {
+      if (event.stepId === activeStepId) latestActiveStepSequence = event.sequence;
+    }
+  }
+  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && events.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
+  const activeStepMatched = Boolean(activeStepId && latestActiveStepSequence != null && !activeStepHasNewerOutsideProgress);
   let latestRunningEvent: TimelineEvent | null = null;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index].status === 'running') { latestRunningEvent = events[index]; break; }
@@ -105,16 +270,17 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     if (atBottom) setUnseen(0);
     element.focus();
   };
-  return <div className="run-timeline">
+  return <div className={`run-timeline${snapshot.mode === 'strict' ? ' run-timeline--strict' : ''}`}>
     <div className={`run-source-summary${sourceExpanded ? ' run-source-summary--expanded' : ''}`}><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><span className="run-source-line"><small ref={sourceRef}>{source ?? 'Source unavailable'}</small>{sourceOverflowing && <button className="message-disclosure run-source-disclosure" type="button" aria-label={sourceExpanded ? 'Collapse run source' : 'Expand run source'} aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((value) => !value)}>{sourceExpanded ? '⌃' : '⌄'}</button>}</span></div>
-    <div className="timeline-history">
+    <StrictActionSummary snapshot={snapshot} events={events} selectedStepId={selectedStepId} onSelectStep={onSelectStep} />
+    {snapshot.mode === 'explore' && <div className="timeline-history">
       <div className="timeline-scroll" ref={scrollRef} onScroll={onTimelineScroll} data-following={following} tabIndex={-1} aria-label="Run timeline history">
         {events.length ? <ol className="timeline-list">
           {events.map((event) => {
             const label = event.label || event.tool || event.phase || 'Run update';
             const selectable = snapshot.terminal && Boolean(event.stepId);
             const selected = selectable && selectedStepId === event.stepId;
-            const active = !snapshot.terminal && (activeStepMatched ? event.stepId === snapshot.activeStep?.stepId : event.sequence === activeFallbackSequence);
+            const active = !snapshot.terminal && (activeStepMatched ? event.stepId === activeStepId : event.sequence === activeFallbackSequence);
             const selectAction = () => onSelectStep(selected ? null : event.stepId ?? null);
             const statusClass = event.status ? ` timeline-row--${event.status}` : '';
             const statusBadge = event.status ? <span className={`status-badge status-badge--${event.status}`}>{event.status}</span> : null;
@@ -130,11 +296,29 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
         </ol> : <p className="empty-state">No timeline events have been emitted yet.</p>}
       </div>
       {!snapshot.terminal && !following && <button className="jump-latest" type="button" onClick={jumpToLatest}>Jump to latest{unseen ? ` · ${unseen} new` : ''}</button>}
-    </div>
+    </div>}
     {!snapshot.terminal && cancellable.has(snapshot.status) && <button className="button button--danger cancel-button" type="button" disabled={snapshot.cancelRequested} onClick={onCancel}>{snapshot.cancelRequested ? 'Cancellation requested…' : 'Cancel run'}</button>}
     {snapshot.terminal && <div className="terminal-actions" aria-label="Completed run actions">
-      <button className="button" type="button" disabled title="Save yaml is not available yet">Save yaml</button>
+      {snapshot.mode === 'explore' && <button ref={saveButtonRef} className="button" type="button" disabled={saveYamlState.state === 'loading'} onClick={openSaveDialog}>{saveYamlState.state === 'loading' ? 'Saving yaml…' : 'Save yaml'}</button>}
       <button className="button button--primary" type="button" onClick={onNewRun}>New run</button>
+    </div>}
+    {snapshot.terminal && snapshot.mode === 'explore' && saveDialogOpen && <div className="config-dialog-backdrop" role="presentation">
+      <section ref={saveDialogRef} className="config-dialog save-yaml-dialog" role="dialog" aria-modal="true" aria-labelledby="save-yaml-title">
+        <h2 id="save-yaml-title">Save YAML case</h2>
+        <p className="config-dialog-intro">Confirm the case name before saving this generated recording.</p>
+        <label className="save-yaml-name-field" htmlFor="save-yaml-case-name"><span>Case name</span><span className="save-yaml-name-input"><input ref={saveNameInputRef} id="save-yaml-case-name" aria-label="Case name" value={caseName} onChange={(event) => setCaseName(event.target.value)} aria-invalid={Boolean(saveNameError)} aria-describedby="save-yaml-path-preview save-yaml-name-error" /><strong>{FSQ_CASE_SUFFIX}</strong></span></label>
+        {saveNameError && <p id="save-yaml-name-error" className="config-error" role="alert"><strong>{saveNameError}</strong></p>}
+        <p id="save-yaml-path-preview" className="save-yaml-path-preview"><span>Save path</span><strong>{savePathPreview}</strong></p>
+        <div className="config-dialog-actions"><button className="button" type="button" onClick={closeSaveDialog}>Cancel</button><button className="button button--primary" type="button" disabled={Boolean(saveNameError) || saveYamlState.state === 'loading'} onClick={confirmSaveYaml}>Save</button></div>
+      </section>
+    </div>}
+    {snapshot.terminal && snapshot.mode === 'explore' && saveResultOpen && (saveYamlState.state === 'ready' || saveYamlState.state === 'error') && <div className="config-dialog-backdrop" role="presentation">
+      <section ref={saveResultDialogRef} className="config-dialog save-yaml-dialog" role="dialog" aria-modal="true" aria-labelledby="save-yaml-result-title">
+        <h2 id="save-yaml-result-title">{saveYamlState.state === 'ready' ? 'YAML case saved' : 'Save YAML failed'}</h2>
+        {saveYamlState.state === 'ready' && saveYamlState.data && <p className="save-yaml-result-message">{saveYamlState.data.message}</p>}
+        {saveYamlState.state === 'error' && saveYamlState.error && <div className="config-error" role="alert"><strong>{saveYamlState.error.message}</strong><span>{saveYamlState.error.action}</span></div>}
+        <div className="config-dialog-actions"><button ref={saveResultButtonRef} className="button button--primary" type="button" onClick={closeSaveResult}>OK</button></div>
+      </section>
     </div>}
   </div>;
 }

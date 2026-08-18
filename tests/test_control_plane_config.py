@@ -11,14 +11,18 @@ from urllib.request import Request, urlopen
 from fsq_agent.config import Settings, activate_github_copilot_provider
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
 from fsq_agent.models import ConfigurationError
-from fsq_agent.providers import GitHubDeviceCode, ProviderConnectionTestResult
+from fsq_agent.providers import (
+    GitHubCopilotAuthorization,
+    GitHubCopilotModel,
+    GitHubDeviceCode,
+    ProviderConnectionTestResult,
+)
 
 
 def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
     return ControlPlaneServer(
         ControlPlaneServerOptions(
             host=host,
-            workspace_path=tmp_path / "workspace",
             static_path=tmp_path / "static",
             user_config_root=tmp_path / "user",
             open_browser=False,
@@ -33,6 +37,16 @@ def _device_code() -> GitHubDeviceCode:
         verification_uri="https://github.com/login/device",
         expires_at=time.time() + 600,
         poll_interval_seconds=5,
+    )
+
+
+def _authorization() -> GitHubCopilotAuthorization:
+    return GitHubCopilotAuthorization(
+        github_access_token="github-secret",  # noqa: S106 - synthetic test credential.
+        github_expires_at=time.time() + 3600,
+        copilot_token="provider-secret",  # noqa: S106 - synthetic test credential.
+        copilot_expires_at=time.time() + 1800,
+        plan="individual",
     )
 
 
@@ -90,10 +104,10 @@ def test_config_rejects_nonloopback_bind_peer_and_cross_origin_write(tmp_path: P
 
 def test_device_flow_is_independent_from_run_state_and_cancels_idempotently(tmp_path: Path) -> None:
     server = _server(tmp_path)
-    server.state.reserve(platform="web", target_id="chrome", mode="explore", source={"goal": "active"})
+    server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "active"})
     worker_started = Event()
 
-    def complete(_device_code, *, model, cancel_requested, user_config_root):
+    def complete(_device_code, *, cancel_requested):
         worker_started.set()
         while not cancel_requested():
             worker_started.wait(0.01)
@@ -105,13 +119,13 @@ def test_device_flow_is_independent_from_run_state_and_cancels_idempotently(tmp_
     ):
         status, started = server.handle_post(
             "/api/control-plane/config/github/device-flow",
-            {"modelName": "copilot-model"},
+            {},
             peer_host="127.0.0.1",
         )
         worker_started.wait(1)
         busy_status, busy = server.handle_post(
             "/api/control-plane/config/github/device-flow",
-            {"modelName": "other-model"},
+            {},
             peer_host="127.0.0.1",
         )
         cancel_status, cancelled = server.handle_delete(
@@ -132,24 +146,45 @@ def test_device_flow_is_independent_from_run_state_and_cancels_idempotently(tmp_
     server.stop()
 
 
-def test_device_flow_success_is_queryable_without_returning_tokens(tmp_path: Path) -> None:
+def test_device_flow_start_rejects_legacy_model_field(tmp_path: Path) -> None:
     server = _server(tmp_path)
 
-    def complete(_device_code, *, model, cancel_requested, user_config_root):
+    status, payload = server.handle_post(
+        "/api/control-plane/config/github/device-flow",
+        {"modelName": "gpt-5"},
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 400
+    assert payload["code"] == "invalid_request"
+
+
+def test_device_flow_discovers_models_and_saves_only_an_offered_selection(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+
+    def activate(authorization, *, model, user_config_root):
+        assert authorization.github_access_token == "github-secret"  # noqa: S105 - synthetic test credential.
+        assert authorization.copilot_token == "provider-secret"  # noqa: S105 - synthetic test credential.
+        assert authorization.plan == "individual"
         return activate_github_copilot_provider(
             model=model,
-            github_token={"access_token": "github-secret"},
-            provider_token={"token": "provider-secret", "plan": "individual"},
+            github_token={"access_token": authorization.github_access_token},
+            provider_token={"token": authorization.copilot_token, "plan": authorization.plan},
             user_config_root=user_config_root,
         )
 
     with (
         patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=complete),
+        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch(
+            "fsq_agent.control_plane._provider_auth.list_github_copilot_models",
+            return_value=(GitHubCopilotModel(id="gpt-5", name="GPT 5"), GitHubCopilotModel(id="gpt-5.1", name="GPT 5.1")),
+        ),
+        patch("fsq_agent.control_plane._provider_auth.activate_github_copilot_authorization", side_effect=activate),
     ):
         status, started = server.handle_post(
             "/api/control-plane/config/github/device-flow",
-            {"modelName": "copilot-model"},
+            {},
             peer_host="127.0.0.1",
         )
         deadline = time.monotonic() + 1
@@ -159,16 +194,122 @@ def test_device_flow_success_is_queryable_without_returning_tokens(tmp_path: Pat
                 f"/api/control-plane/config/github/device-flow/{started['authRequestId']}",
                 peer_host="127.0.0.1",
             )
-            if auth_payload["status"] == "success":
+            if auth_payload["status"] == "ready":
                 break
             time.sleep(0.01)
+        _, config_before, _ = server.handle_get("/api/control-plane/config", peer_host="127.0.0.1")
+        rejected_status, rejected = server.handle_put(
+            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}",
+            {"modelName": "gpt-6"},
+            peer_host="127.0.0.1",
+        )
+        save_status, saved = server.handle_put(
+            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}",
+            {"modelName": "gpt-5.1"},
+            peer_host="127.0.0.1",
+        )
 
     assert status == 202
     assert auth_payload is not None
-    assert auth_payload["status"] == "success"
+    assert auth_payload["status"] == "ready"
+    assert auth_payload["models"] == [{"id": "gpt-5", "name": "GPT 5"}, {"id": "gpt-5.1", "name": "GPT 5.1"}]
     assert "secret" not in str(auth_payload)
-    _, config, _ = server.handle_get("/api/control-plane/config", peer_host="127.0.0.1")
-    assert config["provider"] == {"type": "github_copilot", "modelName": "copilot-model", "authenticated": True}
+    assert config_before == {"configured": False, "provider": None}
+    assert rejected_status == 400
+    assert rejected["code"] == "model_not_offered"
+    assert save_status == 200
+    assert saved["provider"] == {"type": "github_copilot", "modelName": "gpt-5.1", "authenticated": True}
+
+
+def test_device_flow_save_failure_preserves_retryable_ready_state(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    models = (GitHubCopilotModel(id="gpt-5", name="GPT 5"),)
+    with (
+        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch("fsq_agent.control_plane._provider_auth.list_github_copilot_models", return_value=models),
+        patch(
+            "fsq_agent.control_plane._provider_auth.activate_github_copilot_authorization",
+            side_effect=ConfigurationError("GitHub Provider activation failed."),
+        ),
+    ):
+        _, started = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
+        deadline = time.monotonic() + 1
+        payload = None
+        while time.monotonic() < deadline:
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+            if payload["status"] == "ready":
+                break
+            time.sleep(0.01)
+        save_status, _ = server.handle_put(
+            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}",
+            {"modelName": "gpt-5"},
+            peer_host="127.0.0.1",
+        )
+        _, after, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+
+    assert save_status == 400
+    assert after["status"] == "ready"
+    assert after["models"] == [{"id": "gpt-5", "name": "GPT 5"}]
+
+
+def test_pending_authorization_expires_after_ten_minutes_and_releases_busy_slot(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    clock = [1_000.0]
+    with (
+        patch("fsq_agent.control_plane._provider_auth.time.time", side_effect=lambda: clock[0]),
+        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch("fsq_agent.control_plane._provider_auth.list_github_copilot_models", return_value=()),
+    ):
+        _, started = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
+        deadline = time.monotonic() + 1
+        payload = None
+        while time.monotonic() < deadline:
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+            if payload["status"] == "ready":
+                break
+            time.sleep(0.01)
+        clock[0] += 601
+        _, expired, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+        restart_status, restarted = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
+
+    assert expired["status"] == "expired"
+    assert restart_status == 202
+    assert restarted["status"] in {"waiting", "loading_models", "ready"}
+    server.stop()
+
+
+def test_model_discovery_failure_retries_without_reauthorizing(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    with (
+        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()) as request_code,
+        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()) as complete,
+        patch(
+            "fsq_agent.control_plane._provider_auth.list_github_copilot_models",
+            side_effect=[ConfigurationError("GitHub Copilot model discovery failed."), (GitHubCopilotModel(id="gpt-5", name="GPT 5"),)],
+        ),
+    ):
+        _, started = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
+        deadline = time.monotonic() + 1
+        payload = None
+        while time.monotonic() < deadline:
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+            if payload["status"] == "model_error":
+                break
+            time.sleep(0.01)
+        retry_status, _ = server.handle_post(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}/models", {}, peer_host="127.0.0.1")
+        while time.monotonic() < deadline:
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+            if payload["status"] == "ready":
+                break
+            time.sleep(0.01)
+
+    assert retry_status == 202
+    assert payload is not None
+    assert payload["status"] == "ready"
+    request_code.assert_called_once()
+    complete.assert_called_once()
 
 
 def test_connection_endpoint_accepts_no_fields_and_returns_saved_result(tmp_path: Path) -> None:
@@ -199,8 +340,8 @@ def test_control_plane_run_start_loads_latest_provider_from_configured_user_root
     settings = Settings(harness={"platform": "web"})
     captured: dict[str, object] = {}
 
-    def load(platform, workspace, user_config_root=None):
-        captured.update(platform=platform, workspace=workspace, user_config_root=user_config_root)
+    def load(workspace_name, platform, user_config_root=None):
+        captured.update(workspace_name=workspace_name, platform=platform, user_config_root=user_config_root)
         return settings
 
     monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", load)
@@ -209,13 +350,13 @@ def test_control_plane_run_start_loads_latest_provider_from_configured_user_root
 
     status, _ = server.handle_post(
         "/api/control-plane/runs",
-        {"mode": "explore", "platform": "web", "targetId": "chrome", "goal": "Do it"},
+        {"mode": "explore", "workspaceName": "checkout", "platform": "web", "targetId": "chrome", "goal": "Do it"},
     )
 
     assert status == 202
     assert captured == {
+        "workspace_name": "checkout",
         "platform": "web",
-        "workspace": tmp_path / "workspace",
         "user_config_root": tmp_path / "user",
     }
 
@@ -228,7 +369,6 @@ def test_actual_http_config_transport_supports_put_and_rejects_cross_origin(tmp_
     server.options = ControlPlaneServerOptions(
         host="127.0.0.1",
         port=0,
-        workspace_path=tmp_path / "workspace",
         static_path=tmp_path / "static",
         user_config_root=tmp_path / "user",
         open_browser=False,
@@ -285,11 +425,11 @@ def test_concurrent_device_flow_starts_reserve_before_requesting_code(tmp_path: 
         release_request.wait(1)
         return _device_code()
 
-    def start_flow(model: str) -> None:
+    def start_flow() -> None:
         results.append(
             server.handle_post(
                 "/api/control-plane/config/github/device-flow",
-                {"modelName": model},
+                {},
                 peer_host="127.0.0.1",
             )
         )
@@ -298,8 +438,8 @@ def test_concurrent_device_flow_starts_reserve_before_requesting_code(tmp_path: 
         patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", side_effect=request_code),
         patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=ConfigurationError("cancelled")),
     ):
-        first = Thread(target=start_flow, args=("first-model",))
-        second = Thread(target=start_flow, args=("second-model",))
+        first = Thread(target=start_flow)
+        second = Thread(target=start_flow)
         first.start()
         request_entered.wait(1)
         second.start()
@@ -317,7 +457,7 @@ def test_server_stop_cancels_active_device_flow_worker(tmp_path: Path) -> None:
     worker_started = Event()
     worker_stopped = Event()
 
-    def complete(_device_code, *, model, cancel_requested, user_config_root):
+    def complete(_device_code, *, cancel_requested):
         worker_started.set()
         while not cancel_requested():
             worker_stopped.wait(0.01)
@@ -330,7 +470,7 @@ def test_server_stop_cancels_active_device_flow_worker(tmp_path: Path) -> None:
     ):
         server.handle_post(
             "/api/control-plane/config/github/device-flow",
-            {"modelName": "model"},
+            {},
             peer_host="127.0.0.1",
         )
         worker_started.wait(1)

@@ -1,6 +1,13 @@
-import { render, screen } from '@testing-library/react';
+import { useEffect } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { controlPlaneClient } from '../api/controlPlaneClient';
 import { ControlPlaneApp } from './ControlPlaneApp';
+
+vi.mock('../api/controlPlaneClient', () => ({
+  controlPlaneClient: { workspaces: vi.fn().mockResolvedValue({ workspaces: [] }) },
+  toApiError: vi.fn((error) => error),
+}));
 
 vi.mock('../features/devices/DevicesPage', () => ({
   DevicesPage: ({ renderShell }: { renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode }) =>
@@ -9,10 +16,33 @@ vi.mock('../features/devices/DevicesPage', () => ({
 vi.mock('../features/config/ConfigPage', () => ({
   ConfigPage: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => <div>Config content<button type="button" onClick={() => onDirtyChange?.(true)}>Make draft dirty</button></div>,
 }));
+vi.mock('../features/overview/OverviewPage', () => ({
+  OverviewPage: ({ onNavigate }: { onNavigate: (page: 'devices') => void }) => <div>Overview content<button type="button" onClick={() => onNavigate('devices')}>Start dynamic</button></div>,
+}));
+vi.mock('../features/workspace/WorkspacePage', () => ({
+  WorkspaceTitlebar: ({ workspace, onConfigure }: { workspace: { name: string }; onConfigure: () => void }) => <div><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><button type="button" onClick={onConfigure}>Configure workspace</button></div>,
+  WorkspacePage: ({ createRequested, configurationOpen, selectedName, onDirtyChange, onCancelCreate, onCreated, onRegistryChanged, onPresentationChange }: { createRequested: boolean; configurationOpen: boolean; selectedName: string | null; onDirtyChange?: (dirty: boolean) => void; onCancelCreate: () => void; onCreated: (detail: object) => void; onRegistryChanged: () => void; onPresentationChange?: (presentation: 'default' | 'full-bleed') => void }) => {
+    useEffect(() => {
+      onPresentationChange?.(selectedName && !createRequested && !configurationOpen ? 'full-bleed' : 'default');
+    }, [configurationOpen, createRequested, onPresentationChange, selectedName]);
+    return <div>
+      {createRequested ? 'Create workspace content' : selectedName ? `Workspace ${selectedName}` : 'Workspace content'}
+      <button type="button" onClick={() => onDirtyChange?.(true)}>Make workspace draft dirty</button>
+      {createRequested && <button type="button" onClick={() => onCreated({ name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] })}>Complete creation</button>}
+      <button type="button" onClick={createRequested ? onCancelCreate : onRegistryChanged}>Cancel registry fixture</button>
+    </div>;
+  },
+}));
 
-it('selects the two available pages through centralized navigation', async () => {
+beforeEach(() => vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [] }));
+afterEach(() => vi.restoreAllMocks());
+
+it('defaults to Overview and selects available pages through centralized navigation', async () => {
   const user = userEvent.setup();
   render(<ControlPlaneApp />);
+  expect(screen.getByText('Overview content')).toBeVisible();
+
+  await user.click(screen.getByRole('button', { name: 'Start dynamic' }));
   expect(screen.getByText('Devices content')).toBeVisible();
 
   await user.click(screen.getByRole('button', { name: 'Config' }));
@@ -21,12 +51,16 @@ it('selects the two available pages through centralized navigation', async () =>
 
   await user.click(screen.getByRole('button', { name: 'Devices' }));
   expect(screen.getByText('Devices content')).toBeVisible();
+
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+  expect(screen.getByText('Create workspace content')).toBeVisible();
 });
 
 it('keeps Config active when the user rejects dirty-draft navigation', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
   const user = userEvent.setup();
   render(<ControlPlaneApp />);
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
   await user.click(screen.getByRole('button', { name: 'Config' }));
   await user.click(screen.getByRole('button', { name: 'Make draft dirty' }));
 
@@ -36,4 +70,134 @@ it('keeps Config active when the user rejects dirty-draft navigation', async () 
 
   expect(confirm).toHaveBeenCalledTimes(2);
   expect(screen.getByText('Devices content')).toBeVisible();
+});
+
+it('keeps a dirty Workspace draft until page navigation is confirmed', async () => {
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await user.click(screen.getByRole('button', { name: 'Make workspace draft dirty' }));
+
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
+  expect(screen.getByText('Create workspace content')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
+
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('Devices content')).toBeVisible();
+});
+
+it('restores focus to the initiating control when workspace creation is cancelled', async () => {
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  const createWorkspace = screen.getByRole('button', { name: 'Create workspace' });
+
+  await user.click(createWorkspace);
+  await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
+
+  await waitFor(() => expect(createWorkspace).toHaveFocus());
+});
+
+it('focuses the workspace heading after successful creation', async () => {
+  vi.mocked(controlPlaneClient.workspaces)
+    .mockResolvedValueOnce({ workspaces: [] })
+    .mockResolvedValue({ workspaces: [
+      { name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] },
+    ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await user.click(screen.getByRole('button', { name: 'Complete creation' }));
+
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'created' })).toHaveFocus());
+});
+
+it('reopens narrow navigation before restoring create-cancel focus', async () => {
+  const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({
+    matches: true,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  } as unknown as MediaQueryList);
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  const openNavigation = screen.getByRole('button', { name: 'Open navigation' });
+  await user.click(openNavigation);
+  const createWorkspace = screen.getByRole('button', { name: 'Create workspace' });
+  await user.click(createWorkspace);
+
+  await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
+
+  await waitFor(() => {
+    expect(openNavigation).toHaveAttribute('aria-expanded', 'true');
+    expect(createWorkspace).toHaveFocus();
+  });
+  matchMedia.mockRestore();
+});
+
+it('restores the previous workspace selection when creation is cancelled', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [{ platform: 'android', configPath: 'C:\\projects\\mobile\\.fsq\\config\\config.android.yaml', status: 'available', message: 'Platform is available.' }] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  await user.click(await screen.findByRole('button', { name: /mobile/i }));
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+
+  await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
+
+  expect(screen.getByText('Workspace mobile')).toBeVisible();
+});
+
+it('selects available registry entries and exposes unavailable entries only as repair guidance', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [{ platform: 'android', configPath: 'C:\\projects\\mobile\\.fsq\\config\\config.android.yaml', status: 'available', message: 'Platform is available.' }] },
+    { name: 'broken', rootPath: 'C:\\projects\\broken', status: 'unavailable', message: 'Configuration is unavailable.', action: 'Repair config.yaml.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  const broken = await screen.findByText('broken');
+  expect(broken.closest('[aria-disabled="true"]')).toHaveAttribute('title', 'Configuration is unavailable. Repair config.yaml.');
+  expect(screen.queryByRole('button', { name: /broken/i })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /mobile/i }));
+  expect(screen.getByText('Workspace mobile')).toBeVisible();
+});
+
+it('uses the full-bleed outlet only for the selected workspace browser presentation', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  const outlet = screen.getByRole('main');
+
+  expect(outlet).not.toHaveClass('cp-page-outlet--full-bleed');
+  await user.click(await screen.findByRole('button', { name: /mobile/i }));
+  await waitFor(() => expect(outlet).toHaveClass('cp-page-outlet--full-bleed'));
+
+  await user.click(screen.getByRole('button', { name: 'Configure workspace' }));
+  await waitFor(() => expect(outlet).not.toHaveClass('cp-page-outlet--full-bleed'));
+});
+
+it('distinguishes workspace registry loading from empty and retries a failed request', async () => {
+  let resolveInitial!: (value: { workspaces: [] }) => void;
+  vi.mocked(controlPlaneClient.workspaces)
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveInitial = resolve; }))
+    .mockRejectedValueOnce({ code: 'network_error', message: 'Registry unavailable.', action: 'Retry locally.' })
+    .mockResolvedValueOnce({ workspaces: [] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  expect(screen.getByText('Loading workspaces…')).toBeVisible();
+  expect(screen.queryByText('No registered workspaces')).not.toBeInTheDocument();
+  resolveInitial({ workspaces: [] });
+  expect(await screen.findByText('No registered workspaces')).toBeVisible();
+
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
+  expect(await screen.findByText('Registry unavailable.')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Retry workspace registry' }));
+  await waitFor(() => expect(controlPlaneClient.workspaces).toHaveBeenCalledTimes(3));
+  expect(await screen.findByText('No registered workspaces')).toBeVisible();
 });

@@ -20,10 +20,10 @@ export interface ApiErrorBody {
 }
 
 export interface PlatformOption { id: PlatformId; label: string }
-export interface WorkspaceSummary { name: string; initialized: boolean }
 export interface ActiveTaskSummary {
   requestId: string;
   runId: string | null;
+  workspaceName: string;
   platform: PlatformId;
   targetId: string;
   mode: RunMode;
@@ -32,7 +32,6 @@ export interface ActiveTaskSummary {
 export interface BootstrapResponse {
   apiVersion: string;
   platforms: PlatformOption[];
-  workspace: WorkspaceSummary;
   busy: boolean;
   activeTask: ActiveTaskSummary | null;
 }
@@ -40,8 +39,10 @@ export interface BootstrapResponse {
 export type ReadinessStatus = 'ready' | 'unavailable' | 'error';
 export interface ReadinessRecord { status: ReadinessStatus; message: string; action: string }
 export interface ReadinessResponse {
-  platform: PlatformId;
+  workspaceName: string;
+  platformId: PlatformId;
   workspace: ReadinessRecord;
+  platform: ReadinessRecord;
   provider: ReadinessRecord;
   target: ReadinessRecord;
   strict: ReadinessRecord;
@@ -87,8 +88,19 @@ export interface TimelineEvent {
   toolArguments?: unknown;
   toolOutputPreview?: unknown;
 }
+export interface StrictCaseStep {
+  stepId: string;
+  index: number;
+  authoredActionName: string;
+  actionName: string;
+  kind: string;
+  status?: string;
+  durationMs?: number | null;
+  failureCategory?: string | null;
+  message?: string | null;
+}
 export interface RunSnapshot extends ActiveTaskSummary {
-  source: { goal?: string; casePath?: string };
+  source: { goal?: string; casePath?: string; caseContent?: string; caseSteps?: StrictCaseStep[] };
   startedAt: string;
   completedAt: string | null;
   cancelRequested: boolean;
@@ -103,8 +115,8 @@ export interface RunSnapshot extends ActiveTaskSummary {
   terminal: boolean;
 }
 export type StartRunPayload =
-  | { mode: 'explore'; platform: PlatformId; targetId: string; goal: string }
-  | { mode: 'strict'; platform: PlatformId; targetId: string; casePath: string };
+  | { mode: 'explore'; workspaceName: string; platform: PlatformId; targetId: string; goal: string }
+  | { mode: 'strict'; workspaceName: string; platform: PlatformId; targetId: string; casePath: string };
 export interface StartRunResponse { requestId: string }
 export interface UiSnapshotResponse {
   revision: number;
@@ -146,6 +158,11 @@ export interface ReplayVideoResponse {
   mimeType?: string;
   sizeBytes?: number;
 }
+export interface SaveYamlResponse {
+  savedPath: string;
+  message: string;
+}
+export interface SaveYamlPayload { caseName: string }
 
 export interface AzureProviderConfig {
   type: 'azure_openai';
@@ -163,21 +180,106 @@ export type ConfigResponse =
   | { configured: false; provider: null }
   | { configured: true; provider: ProviderConfig };
 export interface AzureConfigPayload { baseUrl: string; modelName: string; apiKey: string }
-export type DeviceFlowStatus = 'waiting' | 'success' | 'failed' | 'expired' | 'cancelled';
-export interface GitHubDeviceFlowResponse {
-  authRequestId: string;
-  verificationUri: string;
-  userCode: string;
-  expiresAt: string;
-  pollIntervalSeconds: number;
-  status: DeviceFlowStatus;
-  message?: string;
-}
+export interface GitHubCopilotModel { id: string; name: string }
+export type GitHubDeviceFlowResponse =
+  | { authRequestId: string; status: 'waiting'; verificationUri: string; userCode: string; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'loading_models'; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'ready'; expiresAt: string; models: GitHubCopilotModel[]; message?: string }
+  | { authRequestId: string; status: 'model_error'; expiresAt: string; message: string }
+  | { authRequestId: string; status: 'success' | 'failed' | 'expired' | 'cancelled'; message?: string };
 export interface ConnectionTestResponse {
   success: true;
   provider: 'azure_openai' | 'github_copilot';
   modelName: string;
   durationMs: number;
+}
+
+export interface AndroidWorkspaceTarget { appId: string }
+export type WebBrowserChannel = 'chromium' | 'chrome' | 'chrome-beta' | 'chrome-dev' | 'chrome-canary' | 'msedge' | 'msedge-beta' | 'msedge-dev' | 'msedge-canary';
+export interface WebWorkspaceTarget { browserChannel: WebBrowserChannel; browserExecutablePath: string }
+export interface WindowsWorkspaceTarget { appPath: string; windowTitleRe?: string; launchArgs: string }
+export interface MacOSWorkspaceTarget { bundleId?: string; appPath?: string }
+export type WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget;
+
+interface WorkspaceStatusBase {
+  name: string;
+  rootPath: string;
+  status: 'available' | 'partial' | 'unavailable';
+  message: string;
+  action?: string;
+}
+interface WorkspacePlatformStatusBase {
+  platform: PlatformId;
+  configPath: string;
+  status: 'available' | 'unavailable';
+  message: string;
+  action?: string;
+}
+export interface WorkspaceRegistryEntry extends WorkspaceStatusBase {
+  platforms: WorkspacePlatformStatusBase[];
+}
+export interface WorkspaceListResponse { workspaces: WorkspaceRegistryEntry[] }
+
+export interface WorkspacePlatformSummary extends WorkspacePlatformStatusBase {
+  target?: WorkspaceTarget;
+  env?: { name: string; configured: true }[];
+  revision?: string;
+}
+export interface WorkspaceDetail extends WorkspaceStatusBase {
+  platforms: WorkspacePlatformSummary[];
+}
+export interface WorkspacePlatformDetail {
+  name: string;
+  rootPath: string;
+  configPath: string;
+  platform: PlatformId;
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+  revision: string;
+}
+export interface CreateWorkspacePayload {
+  name: string;
+  parentPath: string;
+  platforms: { platform: PlatformId; target: WorkspaceTarget; env: Record<string, string> }[];
+}
+export type WorkspaceParentDirectoryPickerResponse =
+  | { status: 'selected'; parentPath: string }
+  | { status: 'cancelled' };
+export interface AddWorkspacePlatformPayload {
+  platform: PlatformId;
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+}
+export interface UpdateWorkspacePlatformPayload {
+  target: WorkspaceTarget;
+  env: Record<string, string>;
+  expectedRevision: string;
+}
+export interface WorkspacePlatformMutationResponse {
+  workspace: WorkspaceDetail;
+  platform: WorkspacePlatformDetail;
+}
+export interface WorkspaceEntry {
+  path: string;
+  name: string;
+  kind: 'directory' | 'file';
+  size: number | null;
+  modifiedTime: string;
+}
+export interface WorkspaceEntriesResponse {
+  path: string;
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+}
+export interface WorkspaceFileResponse {
+  path: string;
+  name: string;
+  mediaType: string;
+  presentation: 'markdown' | 'code';
+  size: number;
+  lineCount: number;
+  modifiedTime: string;
+  content: string;
 }
 
 export interface RequestResource<T> {
