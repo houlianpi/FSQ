@@ -28,7 +28,7 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
   await userEvent.click(screen.getByRole('button', { name: 'Collapse run source' }));
   expect(sourceText.closest('.run-source-summary')).not.toHaveClass('run-source-summary--expanded');
   expect(screen.getByRole('button', { name: 'Select action navigateTo' })).not.toHaveTextContent(/\d{1,2}:\d{2}/);
-  expect(screen.getByRole('button', { name: 'Save yaml' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save yaml' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'New run' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Cancel/ })).not.toBeInTheDocument();
   const disclosure = await screen.findByRole('button', { name: 'Expand message' });
@@ -37,6 +37,63 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
   await userEvent.click(document.getElementById('timeline-message-1') as HTMLElement);
   expect(onSelectStep).toHaveBeenCalledWith('step-1');
   expect(onSelectStep).toHaveBeenCalledOnce();
+});
+
+it('hides Save yaml for terminal strict replay runs and reports save status', async () => {
+  const onSaveYaml = vi.fn();
+  const explore: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: '', cancelRequested: false,
+    events: [], activeStep: null, result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+  const { rerender } = render(<RunTimeline snapshot={explore} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onSaveYaml={onSaveYaml} onNewRun={vi.fn()} saveYamlState={{ state: 'idle', data: null, error: null }} />);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Save yaml' }));
+  expect(screen.getByRole('dialog', { name: 'Save YAML case' })).toBeInTheDocument();
+  const nameInput = screen.getByLabelText('Case name');
+  expect(nameInput).toHaveValue('run-1');
+  await waitFor(() => expect(nameInput).toHaveFocus());
+  expect(screen.getByText('.fsq.yaml')).toBeInTheDocument();
+  expect(screen.getByText('cases/web/run-1.fsq.yaml')).toBeInTheDocument();
+  await userEvent.tab({ shift: true });
+  expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus();
+  await userEvent.tab();
+  expect(nameInput).toHaveFocus();
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Save YAML case' })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save yaml' })).toHaveFocus());
+  await userEvent.click(screen.getByRole('button', { name: 'Save yaml' }));
+  await userEvent.clear(screen.getByLabelText('Case name'));
+  await userEvent.type(screen.getByLabelText('Case name'), 'checkout-flow');
+  expect(screen.getByText('cases/web/checkout-flow.fsq.yaml')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(onSaveYaml).toHaveBeenCalledWith('checkout-flow');
+  rerender(<RunTimeline snapshot={explore} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onSaveYaml={onSaveYaml} onNewRun={vi.fn()} saveYamlState={{ state: 'ready', data: { savedPath: 'run-1.fsq.yaml', message: 'Saved YAML to cases/web/run-1.fsq.yaml.' }, error: null }} />);
+  expect(screen.getByRole('dialog', { name: 'YAML case saved' })).toHaveTextContent('Saved YAML to cases/web/run-1.fsq.yaml.');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'OK' })).toHaveFocus());
+  await userEvent.click(screen.getByRole('button', { name: 'OK' }));
+  expect(screen.queryByRole('dialog', { name: 'YAML case saved' })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save yaml' })).toHaveFocus());
+
+  rerender(<RunTimeline snapshot={{ ...explore, mode: 'strict', source: { casePath: 'case.fsq.yaml' } }} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onSaveYaml={onSaveYaml} onNewRun={vi.fn()} saveYamlState={{ state: 'idle', data: null, error: null }} />);
+  expect(screen.queryByRole('button', { name: 'Save yaml' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'New run' })).toBeInTheDocument();
+});
+
+it('shows Save yaml failures in a result dialog without adding bottom text', async () => {
+  const explore: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: '', cancelRequested: false,
+    events: [], activeStep: null, result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+  render(<RunTimeline snapshot={explore} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onSaveYaml={vi.fn()} onNewRun={vi.fn()} saveYamlState={{ state: 'error', data: null, error: { code: 'save_failed', message: 'Unable to save YAML.', action: 'Choose another name.' } }} />);
+
+  expect(screen.getByRole('dialog', { name: 'Save YAML failed' })).toHaveTextContent('Unable to save YAML.');
+  expect(screen.getByRole('dialog', { name: 'Save YAML failed' })).toHaveTextContent('Choose another name.');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
 it('offers cancellation through finalizing and locks repeated cancellation', async () => {

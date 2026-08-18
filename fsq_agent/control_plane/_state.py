@@ -43,6 +43,7 @@ class TaskRecord:
     completed_at: str | None = None
     run_id: str | None = None
     run_dir: Any | None = None
+    cases_dir: Any | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     active_step: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
@@ -134,6 +135,12 @@ class ControlPlaneState:
             task.run_id = run_id
             if run_dir is not None:
                 task.run_dir = run_dir
+            self._notify()
+
+    def bind_cases_dir(self, request_id: str, cases_dir: Any) -> None:
+        with self._condition:
+            task = self._require(request_id)
+            task.cases_dir = cases_dir
             self._notify()
 
     def add_event(self, request_id: str, event: dict[str, Any]) -> None:
@@ -253,6 +260,10 @@ class ControlPlaneState:
     def run_directory(self, request_id: str):
         with self._condition:
             return self._require(request_id).run_dir
+
+    def cases_directory(self, request_id: str):
+        with self._condition:
+            return self._require(request_id).cases_dir
 
     def _snapshot(self, task: TaskRecord, *, after_sequence: int = 0) -> dict[str, Any]:
         events_after = 0 if task.status in _TERMINAL_STATUSES else after_sequence

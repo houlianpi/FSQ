@@ -38,6 +38,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const [cases, setCases] = useState<RequestResource<CasesResponse>>(emptyResource);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [startError, setStartError] = useState<ApiErrorBody | null>(null);
+  const [saveYamlState, setSaveYamlState] = useState<RequestResource<{ savedPath: string; message: string }>>(emptyResource);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('screen');
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const generationRef = useRef(0);
@@ -116,6 +117,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     setTargetId(snapshot.targetId);
     setMode(snapshot.mode);
     if (!snapshot.terminal) setSelectedStepId(null);
+    if (!snapshot.terminal || snapshot.mode !== 'explore') setSaveYamlState(emptyResource());
   }, [onWorkspaceChange, snapshot]);
 
   useEffect(() => {
@@ -164,6 +166,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
       : { mode: 'strict', workspaceName, platform, targetId: selectedTarget.id, casePath };
     try {
       const response = await client.startRun(payload);
+      setSaveYamlState(emptyResource());
       setRequestId(response.requestId);
     } catch (error) {
       setStartError(toApiError(error));
@@ -177,6 +180,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   };
   const newRun = () => {
     setStartError(null);
+    setSaveYamlState(emptyResource());
     setEvidenceTab('screen');
     setSelectedStepId(null);
     return client.bootstrap().then((data) => {
@@ -193,6 +197,16 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
       }
     }).catch((error) => setStartError(toApiError(error)));
   };
+  const saveYaml = async (caseName: string) => {
+    if (!requestId || snapshot?.terminal !== true || snapshot.mode !== 'explore') return;
+    setSaveYamlState(loadingResource(saveYamlState.data));
+    try {
+      const response = await client.saveYaml(requestId, { caseName });
+      setSaveYamlState({ state: 'ready', data: response, error: null });
+    } catch (error) {
+      setSaveYamlState({ state: 'error', data: saveYamlState.data, error: toApiError(error) });
+    }
+  };
 
   const connectionLabel = useMemo(() => {
     if (active) return connection === 'polling' ? 'Polling' : connection === 'reconnecting' ? 'Reconnecting' : 'Live';
@@ -204,7 +218,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   return {
     bootstrap, workspaceName, platform, setPlatform, targetId, setTargetId, mode, setMode, goal, setGoal, casePath, setCasePath,
     readiness, targets, cases, selectedTarget, selectedCase, requestId, snapshot, streamError, startError,
-    evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, newRun,
+    evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, saveYamlState, controlsLocked, canStart, connection, connectionLabel, refresh, start, cancel, saveYaml, newRun,
   };
 }
 

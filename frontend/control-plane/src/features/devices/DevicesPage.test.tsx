@@ -19,7 +19,7 @@ it('announces live run truth and locks target controls without moving focus', ()
     targets: { state: 'ready', data: { platform: 'web', targetLabel: 'Browser', targets: [{ id: 'chrome', label: 'Chrome', description: 'ready', status: 'ready', selectable: true, isDefault: true, metadata: {} }] }, error: null },
     cases: { state: 'ready', data: { platform: 'web', cases: [], truncated: false }, error: null }, selectedTarget: { id: 'chrome', label: 'Chrome', description: 'ready', status: 'ready', selectable: true, isDefault: true, metadata: {} }, selectedCase: null,
     requestId: 'request-1', snapshot, streamError: null, startError: null, evidenceTab: 'screen', setEvidenceTab: vi.fn(),
-    selectedStepId: null, setSelectedStepId: vi.fn(), controlsLocked: true, canStart: false, connection: 'live', connectionLabel: 'Live', refresh: vi.fn(), start: vi.fn(), cancel: vi.fn(), newRun: vi.fn(),
+    selectedStepId: null, setSelectedStepId: vi.fn(), saveYamlState: { state: 'idle', data: null, error: null }, controlsLocked: true, canStart: false, connection: 'live', connectionLabel: 'Live', refresh: vi.fn(), start: vi.fn(), cancel: vi.fn(), saveYaml: vi.fn(), newRun: vi.fn(),
   });
 
   render(<DevicesPage
@@ -30,6 +30,7 @@ it('announces live run truth and locks target controls without moving focus', ()
   expect(screen.getByLabelText('Workspace')).toBeDisabled();
   expect(screen.getByLabelText('Platform')).toBeDisabled();
   expect(screen.getByLabelText('Browser')).toBeDisabled();
+  expect(document.querySelector('.operation-body')).toHaveClass('operation-body--run');
   expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('Run running. Executing step 1. Live.');
   expect(document.body).toHaveFocus();
 });

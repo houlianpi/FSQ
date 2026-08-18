@@ -947,6 +947,102 @@ def test_server_terminal_evidence_and_replay_routes(tmp_path: Path, monkeypatch:
     assert (range_status, range_body, range_headers["Content-Range"]) == (206, b"\x45\xdf\xa3", "bytes 1-3/17")
 
 
+def test_server_save_yaml_copies_terminal_explore_recording_to_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path, "web")
+    server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    server.state.bind_cases_dir(request_id, settings.cases.dir.resolve())
+    server.state.bind_run(request_id, "run-1", run_dir.resolve())
+
+    active_status, active_payload = server.handle_post(f"/api/control-plane/runs/{request_id}/save-yaml", {"caseName": "checkout-flow"})
+    server.state.finish(request_id, status="success", summary="done")
+    status, payload = server.handle_post(f"/api/control-plane/runs/{request_id}/save-yaml", {"caseName": "checkout-flow"})
+
+    assert (active_status, active_payload["code"]) == (409, "run_not_terminal")
+    assert status == 200
+    assert payload == {"savedPath": "checkout-flow.fsq.yaml", "message": "Saved YAML to cases/web/checkout-flow.fsq.yaml."}
+    assert (settings.cases.dir / "checkout-flow.fsq.yaml").read_text(encoding="utf-8").startswith("schemaVersion: fsq.ai-test/v1")
+
+
+def test_server_save_yaml_uses_frozen_cases_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original_settings = _settings(tmp_path / "original", "web")
+    changed_settings = _settings(tmp_path / "changed", "web")
+    server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: changed_settings)
+    request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
+    run_dir = original_settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    server.state.bind_cases_dir(request_id, original_settings.cases.dir.resolve())
+    server.state.bind_run(request_id, "run-1", run_dir.resolve())
+    server.state.finish(request_id, status="success", summary="done")
+
+    status, payload = server.handle_post(f"/api/control-plane/runs/{request_id}/save-yaml", {"caseName": "frozen-flow"})
+
+    assert status == 200
+    assert payload["savedPath"] == "frozen-flow.fsq.yaml"
+    assert (original_settings.cases.dir / "frozen-flow.fsq.yaml").is_file()
+    assert not (changed_settings.cases.dir / "frozen-flow.fsq.yaml").exists()
+
+
+def test_server_save_yaml_rejects_strict_and_missing_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    strict_request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="strict", source={"casePath": "case.fsq.yaml"})
+    strict_run_dir = settings.output.runs_dir / "strict-run"
+    strict_run_dir.mkdir(parents=True)
+    server.state.bind_cases_dir(strict_request_id, settings.cases.dir.resolve())
+    server.state.bind_run(strict_request_id, "strict-run", strict_run_dir.resolve())
+    server.state.finish(strict_request_id, status="success", summary="done")
+    missing_request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="explore", source={"goal": "Go"})
+    missing_run_dir = settings.output.runs_dir / "missing-run"
+    missing_run_dir.mkdir(parents=True)
+    server.state.bind_cases_dir(missing_request_id, settings.cases.dir.resolve())
+    server.state.bind_run(missing_request_id, "missing-run", missing_run_dir.resolve())
+    server.state.finish(missing_request_id, status="success", summary="done")
+
+    strict_status, strict_payload = server.handle_post(f"/api/control-plane/runs/{strict_request_id}/save-yaml", {"caseName": "strict-flow"})
+    missing_status, missing_payload = server.handle_post(f"/api/control-plane/runs/{missing_request_id}/save-yaml", {"caseName": "missing-flow"})
+
+    assert (strict_status, strict_payload["code"]) == (400, "invalid_request")
+    assert (missing_status, missing_payload["code"]) == (404, "generated_yaml_unavailable")
+
+
+def test_server_save_yaml_rejects_unsafe_case_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path)
+    server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
+    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="explore", source={"goal": "Go"})
+    run_dir = settings.output.runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    server.state.bind_cases_dir(request_id, settings.cases.dir.resolve())
+    server.state.bind_run(request_id, "run-1", run_dir.resolve())
+    server.state.finish(request_id, status="success", summary="done")
+
+    for body in (
+        {},
+        {"caseName": "../escape"},
+        {"caseName": "case.fsq.yaml"},
+        {"caseName": ".hidden"},
+        {"caseName": "bad*name"},
+        {"caseName": "bad<name"},
+        {"caseName": "bad>name"},
+        {"caseName": 'bad"name'},
+        {"caseName": "bad|name"},
+        {"caseName": "bad\x7fname"},
+        {"caseName": "bad\x80name"},
+        {"caseName": "bad\x9fname"},
+    ):
+        status, payload = server.handle_post(f"/api/control-plane/runs/{request_id}/save-yaml", body)
+        assert (status, payload["code"]) == (400, "invalid_request")
+
+
 def test_safe_messages_redact_paths_credentials_and_configured_runtime_secrets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTROL_PLANE_TEST_SECRET", "runtime-secret-value")
     settings = _settings(tmp_path)
