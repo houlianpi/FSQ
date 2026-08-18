@@ -90,6 +90,10 @@ it('derives start eligibility and sends mode-specific strict payloads', async ()
   await waitFor(() => expect(result.current.targets.state).toBe('ready'));
   expect(result.current.canStart).toBe(false);
   act(() => result.current.setMode('strict'));
+  expect(result.current.casePath).toBe('');
+  expect(result.current.selectedCase).toBeNull();
+  expect(result.current.canStart).toBe(false);
+  act(() => result.current.setCasePath('android.fsq.yaml'));
   await waitFor(() => expect(result.current.canStart).toBe(true));
   await act(async () => result.current.start());
   expect(startRun).toHaveBeenCalledWith({ mode: 'strict', workspaceName: 'test', platform: 'android', targetId: 'android-target', casePath: 'android.fsq.yaml' });
@@ -109,6 +113,10 @@ it('requires provider readiness only for provider-gated strict cases', async () 
   act(() => result.current.setPlatform('android'));
   await waitFor(() => expect(result.current.cases.state).toBe('ready'));
   act(() => result.current.setMode('strict'));
+  expect(result.current.selectedCase).toBeNull();
+  expect(result.current.canStart).toBe(false);
+
+  act(() => result.current.setCasePath('gated.fsq.yaml'));
   expect(result.current.selectedCase?.requiresAiAssertion).toBe(true);
   expect(result.current.canStart).toBe(false);
 

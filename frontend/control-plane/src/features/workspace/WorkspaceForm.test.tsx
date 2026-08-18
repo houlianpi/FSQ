@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ControlPlaneApiError, controlPlaneClient } from '../../api/controlPlaneClient';
 import type { WorkspaceDetail, WorkspacePlatformDetail } from '../../api/types';
@@ -37,17 +37,17 @@ it('clears the previous target on platform change and submits the complete maske
   expect(screen.getByLabelText('Parent path')).toBeVisible();
   expect(screen.queryByRole('combobox', { name: 'Platform 1' })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Target' })).not.toBeInTheDocument();
-  await user.type(screen.getByLabelText('Workspace name'), 'web-check');
-  await user.type(screen.getByLabelText('Parent path'), 'C:\\projects');
+  fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'web-check' } });
+  fireEvent.change(screen.getByLabelText('Parent path'), { target: { value: 'C:\\projects' } });
   await user.click(screen.getByRole('button', { name: 'Add platform' }));
   expect(screen.getByRole('combobox', { name: 'Platform 1' })).toBeVisible();
   await user.selectOptions(screen.getByRole('combobox', { name: 'Platform 1' }), 'web');
-  await user.type(screen.getByLabelText('Web path'), 'C:\\Browser\\browser.exe');
+  fireEvent.change(screen.getByLabelText('Web path'), { target: { value: 'C:\\Browser\\browser.exe' } });
   await user.click(screen.getByText('Environment'));
   await user.click(screen.getByRole('button', { name: 'Add environment value' }));
-  await user.type(screen.getByLabelText('Name'), 'TEST_PASSWORD');
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'TEST_PASSWORD' } });
   const secret = screen.getByLabelText('Value');
-  await user.type(secret, 'new-secret');
+  fireEvent.change(secret, { target: { value: 'new-secret' } });
   expect(secret).toHaveAttribute('type', 'password');
   const reveal = screen.getByRole('button', { name: 'Show value for TEST_PASSWORD' });
   expect(reveal).toHaveAttribute('title', 'Show value for TEST_PASSWORD');
