@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.core.harness._playwright_driver import PlaywrightWebDriver
-from fsq_agent.models import ConfigurationError, WebCloseBrowserParams, WebNavigateToParams, WebStartBrowserParams, WebUiSnapshotParams
+from fsq_agent.models import ConfigurationError, WebClickOnParams, WebCloseBrowserParams, WebNavigateToParams, WebStartBrowserParams, WebUiSnapshotParams
 
 
 class _FakeResponse:
@@ -49,6 +49,45 @@ class _ThreadedFakePlaywrightDriver(PlaywrightWebDriver):
 class _FakeLocator:
     def inner_text(self, **kwargs: object) -> str:
         return "Search box\nResults"
+
+
+class _ClickFakeLocator:
+    def __init__(self, count: int = 1, visible: bool = True) -> None:
+        self.match_count = count
+        self.visible = visible
+        self.clicked = False
+        self.filters: list[object] = []
+
+    def filter(self, **kwargs: object) -> "_ClickFakeLocator":
+        self.filters.append(kwargs)
+        return self
+
+    def and_(self, other: object) -> "_ClickFakeLocator":
+        self.filters.append({"and": other})
+        return self
+
+    def count(self) -> int:
+        return self.match_count
+
+    def is_visible(self) -> bool:
+        return self.visible
+
+    def click(self, **kwargs: object) -> None:
+        self.clicked = True
+
+
+class _ClickFakePage(_FakePage):
+    def __init__(self, locator: _ClickFakeLocator) -> None:
+        super().__init__()
+        self.result = locator
+        self.role_calls: list[tuple[str, dict[str, object]]] = []
+
+    def get_by_role(self, role: str, **kwargs: object) -> _ClickFakeLocator:
+        self.role_calls.append((role, kwargs))
+        return self.result
+
+    def get_by_text(self, text: object) -> _ClickFakeLocator:
+        return self.result
 
 
 class _TextFallbackFakePage(_FakePage):
@@ -184,7 +223,7 @@ def test_playwright_web_driver_launches_configured_chrome_executable(monkeypatch
         driver.close()
 
     assert start == {"status": "passed", "output": {"already_started": False, "url": "about:blank"}}
-    assert browser_type.launch_kwargs == {"headless": False, "executable_path": str(Path("C:/Chrome/chrome.exe"))}
+    assert browser_type.launch_kwargs == {"headless": False, "channel": "chrome", "executable_path": str(Path("C:/Chrome/chrome.exe"))}
     assert browser.context_kwargs == {"viewport": {"width": 1024, "height": 768}}
     assert context["metadata"]["channel"] == "chrome"
     assert context["metadata"]["browser_executable_configured"] is True
@@ -196,6 +235,52 @@ def test_playwright_web_driver_launches_configured_chrome_executable(monkeypatch
 def test_playwright_web_driver_rejects_unsupported_channel() -> None:
     with pytest.raises(ConfigurationError, match="Unsupported Playwright browser channel"):
         PlaywrightWebDriver(channel="firefox", page=_FakePage())
+
+
+@pytest.mark.parametrize(
+    "channel",
+    ["chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"],
+)
+def test_playwright_web_driver_accepts_all_supported_channels(channel: str) -> None:
+    driver = PlaywrightWebDriver(channel=channel, page=_FakePage())
+    try:
+        assert driver.context()["metadata"]["channel"] == channel
+    finally:
+        driver.close()
+
+
+def test_click_on_parses_truncated_snapshot_target_as_prefix() -> None:
+    locator = _ClickFakeLocator()
+    page = _ClickFakePage(locator)
+    driver = PlaywrightWebDriver(page=page)
+
+    result = driver.click_on(WebClickOnParams(target='link "GitHub - microsoft/FSQ: FSQ is an evidence-first agent ..." [ref=e12]'))
+
+    assert result["status"] == "passed"
+    role, kwargs = page.role_calls[0]
+    assert role == "link"
+    assert kwargs["name"].match("GitHub - microsoft/FSQ: FSQ is an evidence-first agent harness")
+    assert locator.clicked is True
+
+
+def test_click_on_composes_role_and_text_locator() -> None:
+    locator = _ClickFakeLocator()
+    page = _ClickFakePage(locator)
+    driver = PlaywrightWebDriver(page=page)
+
+    result = driver.click_on(WebClickOnParams(locator={"role": "link", "text": "microsoft/FSQ"}))
+
+    assert result["status"] == "passed"
+    assert len(locator.filters) == 1
+
+
+def test_click_on_reports_ambiguous_target() -> None:
+    driver = PlaywrightWebDriver(page=_ClickFakePage(_ClickFakeLocator(count=2)))
+
+    result = driver.click_on(WebClickOnParams(locator={"role": "link"}))
+
+    assert result["failure_category"] == "target_ambiguous"
+    assert result["metadata"]["match_count"] == 2
 
 
 def test_playwright_web_driver_does_not_launch_until_start_browser(monkeypatch: pytest.MonkeyPatch) -> None:

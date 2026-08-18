@@ -125,7 +125,7 @@ class WebHarnessSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: Literal["playwright"] = "playwright"
-    channel: Literal["chrome"] = "chrome"
+    channel: Literal["chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"] = "chrome"
     headless: bool = True
     base_url: str | None = None
     viewport_width: int | None = Field(default=None, ge=1)
@@ -370,6 +370,7 @@ class AndroidWorkspaceTarget(BaseModel):
 class WebWorkspaceTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    browser_channel: Literal["chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"] = "chrome"
     browser_executable_path: Path
 
 

@@ -407,7 +407,7 @@ platform: web
     assert all(step.metadata["platform"] == "web" for step in steps)
 
 
-def test_fsq_executable_step_adapter_rejects_web_locator_ref(tmp_path: Path) -> None:
+def test_fsq_executable_step_adapter_accepts_web_locator_ref(tmp_path: Path) -> None:
     case_path = tmp_path / "web_ref_case.fsq.yaml"
     case_path.write_text(
         """
@@ -423,11 +423,8 @@ platform: web
     )
     case = FsqCaseLoader().load_case(case_path)
 
-    with pytest.raises(ConfigurationError) as exc_info:
-        _web_adapter().to_executable_steps(case)
-
-    assert exc_info.value.context["action_name"] == "clickOn"
-    assert exc_info.value.context["validation_errors"][0]["loc"] == ("locator", "ref")
+    steps = _web_adapter().to_executable_steps(case)
+    assert steps[0].params["locator"] == {"ref": "e83"}
 
 
 def test_fsq_executable_step_adapter_preserves_web_text_type_runtime_secret(tmp_path: Path) -> None:

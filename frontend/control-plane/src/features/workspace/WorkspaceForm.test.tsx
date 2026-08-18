@@ -58,7 +58,7 @@ it('clears the previous target on platform change and submits the complete maske
   expect(create).toHaveBeenCalledWith({
     name: 'web-check',
     parentPath: 'C:\\projects',
-    platforms: [{ platform: 'web', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: { TEST_PASSWORD: 'new-secret' } }],
+    platforms: [{ platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: { TEST_PASSWORD: 'new-secret' } }],
   });
   expect(onSaved).toHaveBeenCalledWith(created);
 });
@@ -83,7 +83,7 @@ it('submits all unsaved platform drafts in one workspace creation request', asyn
     name: 'mobile', parentPath: 'C:\\projects',
     platforms: [
       { platform: 'android', target: { appId: 'com.example.mobile' }, env: {} },
-      { platform: 'web', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: {} },
+      { platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: {} },
     ],
   });
 });

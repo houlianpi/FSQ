@@ -182,7 +182,8 @@ export interface ConnectionTestResponse {
 }
 
 export interface AndroidWorkspaceTarget { appId: string }
-export interface WebWorkspaceTarget { browserExecutablePath: string }
+export type WebBrowserChannel = 'chromium' | 'chrome' | 'chrome-beta' | 'chrome-dev' | 'chrome-canary' | 'msedge' | 'msedge-beta' | 'msedge-dev' | 'msedge-canary';
+export interface WebWorkspaceTarget { browserChannel: WebBrowserChannel; browserExecutablePath: string }
 export interface WindowsWorkspaceTarget { appPath: string; windowTitleRe?: string; launchArgs: string }
 export interface MacOSWorkspaceTarget { bundleId?: string; appPath?: string }
 export type WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget;

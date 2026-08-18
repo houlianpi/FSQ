@@ -178,7 +178,7 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
     targets: dict[str, dict[str, object]] = {
-        "web": {"browserExecutablePath": str(executable)},
+        "web": {"browserChannel": "chrome", "browserExecutablePath": str(executable)},
         "windows": {"appPath": str(executable), "windowTitleRe": ".*Checkout", "launchArgs": '--mode "test run"'},
         "macos": {"bundleId": "com.example.Checkout"},
     }

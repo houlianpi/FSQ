@@ -8,6 +8,7 @@ import type {
   WorkspaceDetail,
   WorkspacePlatformDetail,
   WorkspaceTarget,
+  WebBrowserChannel,
 } from '../../api/types';
 
 interface WorkspaceFormProps {
@@ -24,6 +25,7 @@ interface WorkspaceFormProps {
 interface TargetDraft {
   appId: string;
   browserExecutablePath: string;
+  browserChannel: WebBrowserChannel;
   appPath: string;
   windowTitleRe: string;
   launchArgs: string;
@@ -34,7 +36,13 @@ interface PlatformDraft { id: number; platform: PlatformId | ''; target: TargetD
 
 const allPlatforms: PlatformId[] = ['android', 'web', 'windows', 'macos'];
 const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'Web', windows: 'Windows', macos: 'macOS' };
-const emptyTarget = (): TargetDraft => ({ appId: '', browserExecutablePath: '', appPath: '', windowTitleRe: '', launchArgs: '', bundleId: '' });
+const webChannels: { value: WebBrowserChannel; label: string }[] = [
+  { value: 'chromium', label: 'Chromium' }, { value: 'chrome', label: 'Google Chrome' }, { value: 'chrome-beta', label: 'Google Chrome Beta' },
+  { value: 'chrome-dev', label: 'Google Chrome Dev' }, { value: 'chrome-canary', label: 'Google Chrome Canary' },
+  { value: 'msedge', label: 'Microsoft Edge' }, { value: 'msedge-beta', label: 'Microsoft Edge Beta' },
+  { value: 'msedge-dev', label: 'Microsoft Edge Dev' }, { value: 'msedge-canary', label: 'Microsoft Edge Canary' },
+];
+const emptyTarget = (): TargetDraft => ({ appId: '', browserChannel: 'chrome', browserExecutablePath: '', appPath: '', windowTitleRe: '', launchArgs: '', bundleId: '' });
 
 function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
   const draft = emptyTarget();
@@ -42,6 +50,7 @@ function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
   const target = detail.target;
   if ('appId' in target) draft.appId = target.appId;
   if ('browserExecutablePath' in target) draft.browserExecutablePath = target.browserExecutablePath;
+  if ('browserChannel' in target) draft.browserChannel = target.browserChannel;
   if ('appPath' in target) draft.appPath = target.appPath ?? '';
   if ('windowTitleRe' in target) draft.windowTitleRe = target.windowTitleRe ?? '';
   if ('launchArgs' in target) draft.launchArgs = target.launchArgs;
@@ -51,7 +60,7 @@ function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
 
 function targetPayload(platform: PlatformId, target: TargetDraft): WorkspaceTarget {
   if (platform === 'android') return { appId: target.appId.trim() };
-  if (platform === 'web') return { browserExecutablePath: target.browserExecutablePath.trim() };
+  if (platform === 'web') return { browserChannel: target.browserChannel, browserExecutablePath: target.browserExecutablePath.trim() };
   if (platform === 'windows') return {
     appPath: target.appPath.trim(),
     ...(target.windowTitleRe.trim() ? { windowTitleRe: target.windowTitleRe.trim() } : {}),
@@ -189,7 +198,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
 
   const renderTarget = (draft: PlatformDraft) => draft.platform ? <section className="cp-form-section"><div><h3>Target</h3><p>Identify the local application FSQ should operate.</p></div><div className="cp-form-grid">
     {draft.platform === 'android' && <label><span>App ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appId} onChange={(event) => updateTarget(draft.id, 'appId', event.target.value)} placeholder="com.example.app" /></label>}
-    {draft.platform === 'web' && <label className="cp-field-wide"><span>Web path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /></label>}
+    {draft.platform === 'web' && <><label><span>Browser channel</span><select value={draft.target.browserChannel} onChange={(event) => updateTarget(draft.id, 'browserChannel', event.target.value as WebBrowserChannel)}>{webChannels.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}</select></label><label className="cp-field-wide"><span>Web path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /></label></>}
     {draft.platform === 'windows' && <><label className="cp-field-wide"><span>App path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label><label><span>Window title regex <small>Optional</small></span><input value={draft.target.windowTitleRe} onChange={(event) => updateTarget(draft.id, 'windowTitleRe', event.target.value)} /></label><label><span>Launch args <small>Optional</small></span><input value={draft.target.launchArgs} onChange={(event) => updateTarget(draft.id, 'launchArgs', event.target.value)} /></label></>}
     {draft.platform === 'macos' && <><label><span>Bundle ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.bundleId} onChange={(event) => updateTarget(draft.id, 'bundleId', event.target.value)} placeholder="com.example.App" /></label><label><span>App path</span><input value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label></>}
   </div></section> : null;
