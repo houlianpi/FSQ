@@ -27,6 +27,16 @@ def _fake_github_token(suffix: str) -> str:
     return f"ghu_{suffix}"
 
 
+def _authorization() -> copilot.GitHubCopilotAuthorization:
+    return copilot.GitHubCopilotAuthorization(
+        github_access_token=_fake_github_token("pending"),
+        github_expires_at=time.time() + 3600,
+        copilot_token=_fake_copilot_token("pending"),
+        copilot_expires_at=time.time() + 1800,
+        plan="business",
+    )
+
+
 def _github_settings(
     tmp_path,
     *,
@@ -209,6 +219,105 @@ def test_request_device_code_uses_explicit_copilot_scope() -> None:
         copilot.request_github_copilot_device_code()
 
     assert post.call_args.kwargs["data"]["scope"] == copilot.GITHUB_OAUTH_SCOPE
+
+
+def test_complete_device_flow_returns_pending_authorization_without_activating_config() -> None:
+    response = MagicMock()
+    response.json.return_value = {"access_token": _fake_github_token("pending"), "expires_in": 3600}
+    response.raise_for_status = MagicMock()
+    device_code = copilot.GitHubDeviceCode(
+        device_code="device",
+        user_code="user",
+        verification_uri="https://github.com/login/device",
+        expires_at=time.time() + 600,
+        poll_interval_seconds=1,
+    )
+
+    with (
+        patch.object(copilot.time, "sleep"),
+        patch.object(copilot.httpx, "post", return_value=response),
+        patch.object(copilot, "_get_copilot_plan", return_value="business"),
+        patch.object(
+            copilot,
+            "_get_copilot_token",
+            return_value=copilot.CopilotToken(token=_fake_copilot_token("pending"), expires_at=time.time() + 1800),
+        ),
+        patch.object(copilot, "activate_github_copilot_provider") as activate,
+    ):
+        authorization = copilot.complete_github_copilot_device_flow(device_code, cancel_requested=lambda: False)
+
+    activate.assert_not_called()
+    assert authorization.plan == "business"
+    assert authorization.github_access_token == _fake_github_token("pending")
+    assert authorization.copilot_token == _fake_copilot_token("pending")
+    assert "pending-token" not in repr(authorization)
+
+
+def test_list_copilot_models_requests_plan_endpoint_and_filters_general_gpt_five_plus() -> None:
+    response = MagicMock()
+    response.json.return_value = {
+        "data": [
+            {"id": "gpt-4o", "name": "GPT 4o", "capabilities": {"type": "chat"}},
+            {"id": "gpt-5", "name": "GPT 5", "capabilities": {"type": "chat"}},
+            {"id": "gpt-5.1", "name": "GPT 5.1", "capabilities": {"type": "chat"}},
+            {"id": "gpt-5-mini", "name": "GPT 5 Mini", "capabilities": {"type": "chat"}},
+            {"id": "gpt-5.1-codex", "name": "GPT 5.1 Codex", "capabilities": {"type": "chat"}},
+            {"id": "gpt-6", "name": "GPT 6", "capabilities": {"type": "chat"}},
+            {"id": "GPT-5", "name": "duplicate", "capabilities": {"type": "chat"}},
+            {"id": "gpt-5.2", "name": "disabled", "model_picker_enabled": False, "capabilities": {"type": "chat"}},
+            {"id": "gpt-5.3", "name": "completion", "capabilities": {"type": "completion"}},
+        ]
+    }
+    response.raise_for_status = MagicMock()
+
+    with patch.object(copilot.httpx, "get", return_value=response) as get:
+        models = copilot.list_github_copilot_models(_authorization())
+
+    assert models == (
+        copilot.GitHubCopilotModel(id="gpt-5", name="GPT 5"),
+        copilot.GitHubCopilotModel(id="gpt-5.1", name="GPT 5.1"),
+        copilot.GitHubCopilotModel(id="gpt-6", name="GPT 6"),
+    )
+    assert get.call_args.args[0] == "https://api.business.githubcopilot.com/models"
+    assert get.call_args.kwargs["headers"]["authorization"] == "Bearer pending-token"
+    assert get.call_args.kwargs["timeout"] == copilot.COPILOT_AUTH_TIMEOUT_SECONDS
+
+
+def test_list_copilot_models_rejects_malformed_envelope_without_exposing_token() -> None:
+    response = MagicMock()
+    response.json.return_value = {"data": "not-a-list", "token": _fake_copilot_token("pending")}
+    response.raise_for_status = MagicMock()
+
+    with (
+        patch.object(copilot.httpx, "get", return_value=response),
+        pytest.raises(ConfigurationError, match="model response was invalid") as captured,
+    ):
+        copilot.list_github_copilot_models(_authorization())
+
+    assert _fake_copilot_token("pending") not in str(captured.value)
+
+
+def test_activate_copilot_authorization_commits_exact_credentials_and_model(tmp_path) -> None:
+    authorization = _authorization()
+
+    with patch.object(copilot, "activate_github_copilot_provider", return_value=MagicMock()) as activate:
+        result = copilot.activate_github_copilot_authorization(
+            authorization,
+            model="gpt-5.1",
+            user_config_root=tmp_path,
+        )
+
+    assert result is activate.return_value
+    activate.assert_called_once_with(
+        model="gpt-5.1",
+        github_token={"access_token": authorization.github_access_token, "expires_at": authorization.github_expires_at},
+        provider_token={
+            "token": authorization.copilot_token,
+            "expires_at": authorization.copilot_expires_at,
+            "plan": authorization.plan,
+        },
+        user_config_root=tmp_path,
+    )
 
 
 def test_get_copilot_token_uses_copilot_exchange_headers() -> None:

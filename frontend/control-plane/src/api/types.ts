@@ -164,16 +164,13 @@ export type ConfigResponse =
   | { configured: false; provider: null }
   | { configured: true; provider: ProviderConfig };
 export interface AzureConfigPayload { baseUrl: string; modelName: string; apiKey: string }
-export type DeviceFlowStatus = 'waiting' | 'success' | 'failed' | 'expired' | 'cancelled';
-export interface GitHubDeviceFlowResponse {
-  authRequestId: string;
-  verificationUri: string;
-  userCode: string;
-  expiresAt: string;
-  pollIntervalSeconds: number;
-  status: DeviceFlowStatus;
-  message?: string;
-}
+export interface GitHubCopilotModel { id: string; name: string }
+export type GitHubDeviceFlowResponse =
+  | { authRequestId: string; status: 'waiting'; verificationUri: string; userCode: string; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'loading_models'; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'ready'; expiresAt: string; models: GitHubCopilotModel[]; message?: string }
+  | { authRequestId: string; status: 'model_error'; expiresAt: string; message: string }
+  | { authRequestId: string; status: 'success' | 'failed' | 'expired' | 'cancelled'; message?: string };
 export interface ConnectionTestResponse {
   success: true;
   provider: 'azure_openai' | 'github_copilot';

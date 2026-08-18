@@ -282,9 +282,15 @@ class ControlPlaneServer:
                 return 200, save_azure_config(body, self.options.user_config_root)
             if method == "POST" and path == f"{_API_PREFIX}/config/github/device-flow":
                 return 202, self._provider_auth.start(body)
+            models_auth_request_id = _device_flow_models_route_or_none(path)
+            if method == "POST" and models_auth_request_id is not None:
+                return 202, self._provider_auth.retry_models(models_auth_request_id, body)
             if method == "POST" and path == f"{_API_PREFIX}/config/test-connection":
                 return 200, test_saved_connection(body, self.options.user_config_root)
             auth_request_id = _device_flow_route_or_none(path)
+            if method == "PUT" and auth_request_id is not None:
+                self._provider_auth.save(auth_request_id, body)
+                return 200, get_config(self.options.user_config_root)
             if method == "DELETE" and auth_request_id is not None:
                 return 200, self._provider_auth.cancel(auth_request_id)
             return 404, _error("not_found", "Control Plane Config endpoint not found.", "Check the API path and method.")
@@ -600,6 +606,13 @@ def _device_flow_route_or_none(path: str) -> str | None:
         return None
     auth_request_id = unquote(path.removeprefix(prefix))
     return auth_request_id if auth_request_id and "/" not in auth_request_id else None
+
+
+def _device_flow_models_route_or_none(path: str) -> str | None:
+    suffix = "/models"
+    if not path.endswith(suffix):
+        return None
+    return _device_flow_route_or_none(path.removesuffix(suffix))
 
 
 def _workspace_route_or_none(path: str) -> tuple[str | None, str | None]:
