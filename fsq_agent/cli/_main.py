@@ -84,7 +84,6 @@ def main(context: click.Context, output_format: str) -> None:
 
 @main.command(cls=_WorkspaceInitCommand)
 @click.option("--name", required=True, metavar="NAME")
-@click.option("--parent", "parent_path", type=click.Path(path_type=Path, file_okay=False), default=None)
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--app-id", default=None)
 @click.option("--browser-executable-path", type=click.Path(path_type=Path, dir_okay=False), default=None)
@@ -104,7 +103,6 @@ def main(context: click.Context, output_format: str) -> None:
 def init(
     context: click.Context,
     name: str,
-    parent_path: Path | None,
     platform: str,
     app_id: str | None,
     browser_executable_path: Path | None,
@@ -117,7 +115,7 @@ def init(
 ) -> None:
     output_format = context.obj["output_format"]
     try:
-        parent = (parent_path or Path.cwd()).expanduser().resolve()
+        parent = Path.cwd().resolve()
         target = _workspace_init_target(
             platform=platform,
             app_id=app_id,
@@ -241,7 +239,6 @@ def _fail_workspace_init(output_format: str, code: str, message: str) -> None:
 
 
 @main.command()
-@click.option("--workspace", "workspace_name", required=True, metavar="NAME")
 @click.option("--platform", type=PLATFORM_CHOICE, required=True)
 @click.option("--android-serial", default=None, metavar="SERIAL")
 @click.option("--strict", is_flag=True, default=False, show_default=True)
@@ -254,7 +251,6 @@ def _fail_workspace_init(output_format: str, code: str, message: str) -> None:
 @click.option("--record-on-failure", is_flag=True, default=False, show_default=True)
 @click.option("--tracing/--no-tracing", "tracing", default=None)
 def run(
-    workspace_name: str,
     platform: str,
     android_serial: str | None,
     strict: bool,
@@ -276,7 +272,7 @@ def run(
             record=record,
             record_on_failure=record_on_failure,
         )
-        settings = _load_registered_workspace_settings(workspace_name, platform)
+        settings = load_workspace_platform_settings(Path.cwd(), platform)
         select_android_serial(settings, android_serial)
         if tracing is not None:
             settings.openai_agents.tracing_enabled = tracing
@@ -378,10 +374,12 @@ def _validate_run_inputs(
     record_on_failure: bool = False,
 ) -> None:
     source_count = sum(value is not None for value in (goal, case_yaml_path, case_dir_path))
-    if source_count != 1:
+    if not strict and source_count != 1:
         raise ConfigurationError("Exactly one of --goal, --case-yaml, or --case-dir is required.")
     if strict and goal is not None:
-        raise ConfigurationError("--strict requires --case-yaml or --case-dir; --goal is only supported by dynamic LLM runs.")
+        raise ConfigurationError("--strict does not support --goal; use --case-yaml, --case-dir, or omit both to scan platform cases.")
+    if strict and source_count > 1:
+        raise ConfigurationError("--strict accepts at most one of --case-yaml or --case-dir.")
     if strict and (record or record_on_failure):
         raise ConfigurationError("--record and --record-on-failure are only supported by dynamic LLM runs.")
     if record_on_failure and not record:
@@ -481,11 +479,20 @@ def _run_strict(settings: Settings, *, case_yaml_path: str | None, case_dir_path
             logger.error("Strict core case failed: %s: %s", case_path, case_error)
             raise click.exceptions.Exit(1)
         return
-    if case_dir_path is None:
-        raise ConfigurationError("--case-dir is required for strict directory runs.")
-    case_paths = discover_case_yaml_paths(case_dir_path, settings.cases.dir)
+    case_paths = discover_case_yaml_paths(case_dir_path or settings.cases.dir, settings.cases.dir)
     cases = [(case_path, loader.load_case(case_path)) for case_path in case_paths]
-    cases = _filter_top_level_strict_cases(settings, cases, loader)
+    matching_cases: list[tuple[Path, FsqCase]] = []
+    for case_path, case in cases:
+        if case.config.platform == settings.harness.platform:
+            matching_cases.append((case_path, case))
+            continue
+        message = f"Skipping strict case for platform {case.config.platform}: {case_path}"
+        logger.info(message)
+        click.echo(message)
+    if not matching_cases:
+        click.echo(f"Strict core batch summary: total=0 platform={settings.harness.platform} skipped={len(cases)}")
+        return
+    cases = _filter_top_level_strict_cases(settings, matching_cases, loader)
     for _, case in cases:
         _validate_strict_case_platform(settings, case)
     validate_strict_core_settings(settings, requires_ai_assertion=any(_case_requires_ai_assertion(settings, case) for _, case in cases))
