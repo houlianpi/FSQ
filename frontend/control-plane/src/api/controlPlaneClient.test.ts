@@ -93,7 +93,6 @@ it('encodes workspace names and file paths in client requests', async () => {
   );
 });
 
-<<<<<<< HEAD
 it.each([
   ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow(), '/api/control-plane/config/github/device-flow', 'POST'],
   ['GitHub model retry', () => controlPlaneClient.retryGithubModels('auth-1'), '/api/control-plane/config/github/device-flow/auth-1/models', 'POST'],
@@ -128,7 +127,8 @@ it('sends the confirmed Save yaml case name without a suffix', async () => {
     '/api/control-plane/runs/request-1/save-yaml',
     expect.objectContaining({ method: 'POST', body: JSON.stringify({ caseName: 'checkout-flow' }) }),
   );
-=======
+});
+
 it('accepts selected and cancelled workspace parent directory responses', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', parentPath: 'C:\\projects' }), {
@@ -141,7 +141,6 @@ it('accepts selected and cancelled workspace parent directory responses', async 
   await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', parentPath: 'C:\\projects' });
   await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'cancelled' });
   expect(fetch).toHaveBeenNthCalledWith(1, '/api/control-plane/workspaces/pick-parent-directory', expect.objectContaining({ method: 'POST', body: '{}' }));
->>>>>>> main
 });
 
 it('requires step artifacts to contain readable content or an item error', async () => {

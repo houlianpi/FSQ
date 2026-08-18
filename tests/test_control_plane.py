@@ -1025,7 +1025,20 @@ def test_server_save_yaml_rejects_unsafe_case_names(tmp_path: Path, monkeypatch:
     server.state.bind_run(request_id, "run-1", run_dir.resolve())
     server.state.finish(request_id, status="success", summary="done")
 
-    for body in ({}, {"caseName": "../escape"}, {"caseName": "case.fsq.yaml"}, {"caseName": ".hidden"}, {"caseName": "bad*name"}, {"caseName": "bad<name"}, {"caseName": "bad>name"}, {"caseName": 'bad"name'}, {"caseName": "bad|name"}, {"caseName": "bad\x7fname"}, {"caseName": "bad\x80name"}, {"caseName": "bad\x9fname"}):
+    for body in (
+        {},
+        {"caseName": "../escape"},
+        {"caseName": "case.fsq.yaml"},
+        {"caseName": ".hidden"},
+        {"caseName": "bad*name"},
+        {"caseName": "bad<name"},
+        {"caseName": "bad>name"},
+        {"caseName": 'bad"name'},
+        {"caseName": "bad|name"},
+        {"caseName": "bad\x7fname"},
+        {"caseName": "bad\x80name"},
+        {"caseName": "bad\x9fname"},
+    ):
         status, payload = server.handle_post(f"/api/control-plane/runs/{request_id}/save-yaml", body)
         assert (status, payload["code"]) == (400, "invalid_request")
 
