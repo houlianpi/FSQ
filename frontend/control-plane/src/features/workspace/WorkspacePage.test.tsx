@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { controlPlaneClient } from '../../api/controlPlaneClient';
 import type { WorkspaceDetail, WorkspacePlatformDetail } from '../../api/types';
@@ -64,4 +64,17 @@ it('implements selected tab-panel relationships and keyboard navigation', async 
   expect(web).toHaveFocus();
   expect(web).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', web.id);
+});
+it('reports full-bleed presentation only while the loaded browser is visible', async () => {
+  const detail = deferred<WorkspaceDetail>();
+  vi.spyOn(controlPlaneClient, 'workspace').mockReturnValue(detail.promise);
+  const onPresentationChange = vi.fn();
+  const { rerender } = render(<WorkspacePage {...props} configurationOpen={false} selectedName="alpha" onPresentationChange={onPresentationChange} />);
+
+  expect(onPresentationChange).toHaveBeenLastCalledWith('default');
+  await act(async () => detail.resolve(summary('alpha')));
+  await waitFor(() => expect(onPresentationChange).toHaveBeenLastCalledWith('full-bleed'));
+
+  rerender(<WorkspacePage {...props} configurationOpen selectedName="alpha" onPresentationChange={onPresentationChange} />);
+  await waitFor(() => expect(onPresentationChange).toHaveBeenLastCalledWith('default'));
 });

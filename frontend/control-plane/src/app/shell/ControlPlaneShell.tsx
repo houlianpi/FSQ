@@ -7,6 +7,7 @@ interface ControlPlaneShellProps {
   activePage: ControlPlanePageId;
   title: string;
   description: string;
+  outletPresentation?: 'default' | 'full-bleed';
   titleContent?: ReactNode;
   titleActions?: ReactNode;
   children: ReactNode;
@@ -20,7 +21,7 @@ interface ControlPlaneShellProps {
   onSelectWorkspace?: (workspaceId: string) => void;
 }
 
-export function ControlPlaneShell({ activePage, title, description, titleContent, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneShellProps) {
+export function ControlPlaneShell({ activePage, title, description, outletPresentation = 'default', titleContent, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -100,12 +101,12 @@ export function ControlPlaneShell({ activePage, title, description, titleContent
           onSelectWorkspace={(workspaceId) => { onSelectWorkspace?.(workspaceId); closeDrawer(); }}
         />
       </aside>
-      <div className="cp-main-column">
+      <div className={`cp-main-column${outletPresentation === 'full-bleed' ? ' cp-main-column--full-bleed' : ''}`}>
         <header className="cp-titlebar">
           {titleContent ?? <div className="cp-title-context"><strong>{title}</strong><small>{description}</small></div>}
           {titleActions && <div className="cp-title-actions">{titleActions}</div>}
         </header>
-        <main className="cp-page-outlet" id="main-content">{children}</main>
+        <main className={`cp-page-outlet${outletPresentation === 'full-bleed' ? ' cp-page-outlet--full-bleed' : ''}`} id="main-content">{children}</main>
       </div>
     </div>
   );

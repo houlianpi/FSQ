@@ -24,6 +24,7 @@ export function ControlPlaneApp() {
   const [selectedWorkspaceName, setSelectedWorkspaceName] = useState<string | null>(null);
   const [createRequested, setCreateRequested] = useState(false);
   const [workspaceConfigurationOpen, setWorkspaceConfigurationOpen] = useState(false);
+  const [workspaceOutletPresentation, setWorkspaceOutletPresentation] = useState<'default' | 'full-bleed'>('default');
   const workspaceRegistryRequest = useRef(0);
   const workspaceCreateInitiator = useRef<{ element: HTMLElement; id: string | null } | null>(null);
   const workspaceCreateFocusRestore = useRef<(() => void) | null>(null);
@@ -70,6 +71,7 @@ export function ControlPlaneApp() {
     workspaceCreateInitiator.current = null;
     workspaceCreateFocusRestore.current = null;
     workspaceCreatePreviousSelection.current = null;
+    setWorkspaceOutletPresentation('default');
     if (page === 'workspace') {
       setSelectedWorkspaceName(null);
       setCreateRequested(false);
@@ -87,6 +89,7 @@ export function ControlPlaneApp() {
     workspaceCreateFocusRestore.current = restoreFocus ?? null;
     workspaceCreatePreviousSelection.current = selectedWorkspaceName;
     setWorkspaceDirty(false);
+    setWorkspaceOutletPresentation('default');
     setSelectedWorkspaceName(null);
     setCreateRequested(true);
     setWorkspaceConfigurationOpen(false);
@@ -96,6 +99,7 @@ export function ControlPlaneApp() {
   const cancelWorkspaceCreation = () => {
     setCreateRequested(false);
     setWorkspaceDirty(false);
+    setWorkspaceOutletPresentation('default');
     setSelectedWorkspaceName(workspaceCreatePreviousSelection.current);
     void refreshWorkspaces();
     requestAnimationFrame(() => {
@@ -120,6 +124,7 @@ export function ControlPlaneApp() {
     workspaceCreateInitiator.current = null;
     workspaceCreateFocusRestore.current = null;
     workspaceCreatePreviousSelection.current = null;
+    setWorkspaceOutletPresentation('default');
     setCreateRequested(false);
     setSelectedWorkspaceName(name);
     setWorkspaceConfigurationOpen(false);
@@ -151,7 +156,8 @@ export function ControlPlaneApp() {
 
   if (activePage === 'workspace') return <ControlPlaneShell
     activePage="workspace" title="Workspace" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
-    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => setWorkspaceConfigurationOpen(true)} /> : undefined}
+    outletPresentation={workspaceOutletPresentation}
+    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => { setWorkspaceOutletPresentation('default'); setWorkspaceConfigurationOpen(true); }} /> : undefined}
     onNavigate={navigate} {...shellWorkspaceProps}
   ><WorkspacePage
       selectedName={selectedWorkspaceName}
@@ -162,8 +168,9 @@ export function ControlPlaneApp() {
       onRequestCreate={requestCreateWorkspace}
       onCancelCreate={cancelWorkspaceCreation}
       onConfigurationOpenChange={setWorkspaceConfigurationOpen}
-      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); refreshWorkspaces(); }}
-      onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); refreshWorkspaces(); }}
+      onPresentationChange={setWorkspaceOutletPresentation}
+      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
+      onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onDirtyChange={setWorkspaceDirty}
     /></ControlPlaneShell>;
 
