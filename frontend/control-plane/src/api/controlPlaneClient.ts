@@ -20,6 +20,7 @@ import type {
   WorkspaceEntriesResponse,
   WorkspaceFileResponse,
   WorkspaceListResponse,
+  WorkspaceParentDirectoryPickerResponse,
   CreateWorkspacePayload,
   AddWorkspacePlatformPayload,
   UpdateWorkspacePlatformPayload,
@@ -280,6 +281,19 @@ function validateWorkspaceDetail(value: unknown): WorkspaceDetail {
   return value;
 }
 
+function validateWorkspaceParentDirectoryPicker(value: unknown): WorkspaceParentDirectoryPickerResponse {
+  if (!record(value) || !string(value.status)) {
+    invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
+  }
+  if (value.status === 'cancelled' && hasOnlyKeys(value, ['status'])) {
+    return value as { status: 'cancelled' };
+  }
+  if (value.status === 'selected' && hasOnlyKeys(value, ['status', 'parentPath']) && string(value.parentPath) && value.parentPath) {
+    return value as { status: 'selected'; parentPath: string };
+  }
+  invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
+}
+
 function validateWorkspacePlatformDetail(value: unknown): WorkspacePlatformDetail {
   if (!record(value) || !hasOnlyKeys(value, ['name', 'rootPath', 'configPath', 'platform', 'target', 'env', 'revision'])
     || !string(value.name) || !string(value.rootPath) || !string(value.configPath) || !platform(value.platform)
@@ -394,6 +408,8 @@ export const controlPlaneClient = {
     jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),
   workspacePlatform: (name: string, platformId: PlatformId, signal?: AbortSignal) =>
     jsonRequest(`/workspaces/${encodeURIComponent(name)}/platforms/${encodeURIComponent(platformId)}`, validateWorkspacePlatformDetail, { signal }),
+  pickWorkspaceParentDirectory: () =>
+    jsonRequest('/workspaces/pick-parent-directory', validateWorkspaceParentDirectoryPicker, { method: 'POST', body: '{}' }),
   createWorkspace: (payload: CreateWorkspacePayload, signal?: AbortSignal) =>
     jsonRequest('/workspaces', validateWorkspaceDetail, { method: 'POST', body: JSON.stringify(payload), signal }),
   addWorkspacePlatform: (name: string, payload: AddWorkspacePlatformPayload, signal?: AbortSignal) =>
