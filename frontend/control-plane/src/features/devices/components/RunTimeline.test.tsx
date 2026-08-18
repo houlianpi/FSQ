@@ -68,6 +68,117 @@ it('shows strict replay YAML content in the run source summary', () => {
   expect(screen.getByText('Run source · Strict Replay').closest('.run-source-summary')).not.toHaveTextContent('strict.yaml');
 });
 
+it('shows strict authored actions with step results and selects evidence by step id', async () => {
+  const onSelectStep = vi.fn();
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'success',
+    source: {
+      casePath: 'recorded.codex.yaml',
+      caseSteps: [
+        { stepId: 'step-launch', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup', status: 'passed', durationMs: 2309 },
+        { stepId: 'step-tap', index: 2, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action', status: 'failed', durationMs: 12700, message: 'Target was not found.' },
+        { stepId: 'step-assert', index: 3, authoredActionName: 'assertVisible', actionName: 'assert_visible', kind: 'assertion', status: 'skipped', message: 'Action was not executed.' },
+      ],
+    },
+    startedAt: '', completedAt: '', cancelRequested: false,
+    events: [
+      { sequence: 1, stepId: 'step-launch', label: 'launch_app', status: 'completed', message: 'step finish' },
+      { sequence: 2, stepId: 'step-tap', label: 'tap_on', status: 'completed', message: 'step finish' },
+    ],
+    activeStep: null, result: { status: 'failed' }, summary: 'Strict replay failed.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+
+  render(<RunTimeline snapshot={snapshot} connection="ended" selectedStepId="step-assert" resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByRole('region', { name: 'Strict replay action results' })).toBeInTheDocument();
+  expect(screen.getByText('launchApp').closest('li')).toHaveTextContent('passed');
+  expect(screen.getByText('tapOn').closest('li')).toHaveTextContent('failed');
+  expect(screen.getByText('tapOn').closest('li')).toHaveTextContent('12700ms');
+  expect(screen.getByText('tapOn').closest('li')).toHaveTextContent('Target was not found.');
+  expect(screen.getByText('assertVisible').closest('li')).toHaveClass('timeline-row--selected');
+  expect(screen.getByText('assertVisible').closest('li')).toHaveTextContent('skipped');
+  expect(screen.getByText('assertVisible').closest('li')).toHaveTextContent('Action was not executed.');
+  expect(screen.getByText('assertVisible').closest('li')).toHaveTextContent('assert_visible');
+
+  await userEvent.click(screen.getByRole('button', { name: 'Select action tapOn' }));
+  expect(onSelectStep).toHaveBeenCalledWith('step-tap');
+});
+
+it('discloses overflowing strict authored action messages', async () => {
+  const longMessage = 'Strict action completed with a long safe backend message. '.repeat(8);
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'success',
+    source: { casePath: 'recorded.codex.yaml', caseSteps: [{ stepId: 'step-tap', index: 1, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action', status: 'passed', message: longMessage }] },
+    startedAt: '', completedAt: '', cancelRequested: false,
+    events: [{ sequence: 1, stepId: 'step-tap', label: 'tap_on', status: 'passed', message: longMessage }],
+    activeStep: null, result: { status: 'passed' }, summary: 'Strict replay passed.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+
+  render(<RunTimeline snapshot={snapshot} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  const buttons = await screen.findAllByRole('button', { name: 'Expand message' });
+  const actionDisclosure = buttons.find((button) => button.getAttribute('aria-controls') === 'strict-action-message-step-tap');
+  expect(actionDisclosure).toBeDefined();
+  expect(actionDisclosure).toHaveAttribute('aria-expanded', 'false');
+  await userEvent.click(actionDisclosure as HTMLButtonElement);
+  expect(actionDisclosure).toHaveAttribute('aria-expanded', 'true');
+  expect(actionDisclosure).toHaveTextContent('⌃');
+});
+
+it('keeps strict actions pending until matching step events arrive', () => {
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
+    source: {
+      casePath: 'recorded.codex.yaml',
+      caseSteps: [
+        { stepId: 'step-launch', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup' },
+        { stepId: 'step-tap', index: 2, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action' },
+      ],
+    },
+    startedAt: '', completedAt: null, cancelRequested: false,
+    events: [], activeStep: { stepId: 'step-tap', label: 'tapOn' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+
+  render(<RunTimeline snapshot={snapshot} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('launchApp').closest('li')).toHaveTextContent('pending');
+  expect(screen.getByText('tapOn').closest('li')).toHaveTextContent('running');
+  expect(screen.queryByRole('button', { name: 'Select action tapOn' })).not.toBeInTheDocument();
+});
+
+it('shows only strict authored action rows in the operation body', () => {
+  const strict: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
+    source: { casePath: 'recorded.codex.yaml', caseSteps: [
+      { stepId: 'recorded-step-001', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup', status: 'passed', message: 'phase finish' },
+      { stepId: 'recorded-step-002', index: 2, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action', status: 'failed', message: 'Target was not found.' },
+      { stepId: 'recorded-step-003', index: 3, authoredActionName: 'assertVisible', actionName: 'assert_visible', kind: 'assertion', status: 'skipped' },
+      { stepId: 'recorded-step-004', index: 4, authoredActionName: 'killApp', actionName: 'kill_app', kind: 'teardown' },
+    ] }, startedAt: '', completedAt: null, cancelRequested: false,
+    events: [
+      { sequence: 1, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'step start' },
+      { sequence: 2, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'passed', message: 'phase finish' },
+      { sequence: 3, label: 'recorded-step-002', stepId: 'recorded-step-002', status: 'completed', message: 'harness call finish' },
+      { sequence: 4, label: 'Run update', message: 'strict log without step id' },
+    ], activeStep: { stepId: 'recorded-step-004', label: 'recorded-step-004' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
+    evidenceAvailable: false, reportAvailable: false, terminal: false,
+  };
+  render(<RunTimeline snapshot={strict} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByLabelText('Strict replay action results')).toBeInTheDocument();
+  expect(screen.getByText('launchApp').closest('li')).toHaveTextContent('passed');
+  expect(screen.getByText('tapOn').closest('li')).toHaveTextContent('failed');
+  expect(screen.getByText('assertVisible').closest('li')).toHaveTextContent('skipped');
+  expect(screen.getByText('killApp').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.queryByLabelText('Run timeline history')).not.toBeInTheDocument();
+  expect(screen.queryByText('strict log without step id')).not.toBeInTheDocument();
+  expect(screen.getAllByText('phase finish')).toHaveLength(1);
+  expect(screen.queryByText('harness call finish')).not.toBeInTheDocument();
+});
+
 it('renders a flat sequence-ordered event list and discloses long messages', async () => {
   const longMessage = 'A detailed safe planning message '.repeat(8);
   const active: RunSnapshot = {
@@ -104,44 +215,6 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
   await userEvent.click(disclosure);
   expect(disclosure).toHaveTextContent('⌄');
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-});
-
-it('shows Strict Replay YAML command steps instead of timeline events', () => {
-  const strict: RunSnapshot = {
-    requestId: 'request', runId: 'run-1', platform: 'android', targetId: 'device', mode: 'strict', status: 'running',
-    source: { casePath: 'recorded.codex.yaml', caseSteps: [
-      { stepId: 'recorded-step-001', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup' },
-      { stepId: 'recorded-step-002', index: 2, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action' },
-      { stepId: 'recorded-step-003', index: 3, authoredActionName: 'assertVisible', actionName: 'assert_visible', kind: 'assertion' },
-      { stepId: 'recorded-step-004', index: 4, authoredActionName: 'killApp', actionName: 'kill_app', kind: 'teardown' },
-    ] }, startedAt: '', completedAt: null, cancelRequested: false,
-    events: [
-      { sequence: 1, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'step start' },
-      { sequence: 2, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'running', message: 'phase start' },
-      { sequence: 3, label: 'recorded-step-001', stepId: 'recorded-step-001', status: 'passed', message: 'phase finish' },
-      { sequence: 4, label: 'recorded-step-002', stepId: 'recorded-step-002', status: 'running', message: 'phase start' },
-      { sequence: 5, label: 'recorded-step-002', stepId: 'recorded-step-002', status: 'completed', message: 'harness call finish' },
-      { sequence: 6, label: 'recorded-step-003', stepId: 'recorded-step-003', status: 'running', message: 'artifact captured' },
-      { sequence: 7, label: 'recorded-step-004', stepId: 'recorded-step-004', status: 'running', message: 'step start' },
-      { sequence: 8, label: 'Run update', message: 'strict log without step id' },
-    ], activeStep: { stepId: 'recorded-step-004', label: 'recorded-step-004' }, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,
-    evidenceAvailable: false, reportAvailable: false, terminal: false,
-  };
-  render(<RunTimeline snapshot={strict} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
-
-  const rows = screen.getAllByRole('listitem');
-  expect(rows.map((item) => item.querySelector('strong')?.textContent)).toEqual([
-    'launchApp',
-    'tapOn',
-    'assertVisible',
-    'killApp',
-  ]);
-  expect(screen.getByLabelText('Strict Replay YAML steps')).toBeInTheDocument();
-  expect(screen.queryByText('strict log without step id')).not.toBeInTheDocument();
-  expect(screen.queryByText('phase finish')).not.toBeInTheDocument();
-  expect(screen.queryByText('harness call finish')).not.toBeInTheDocument();
-  expect(screen.queryByText('artifact captured')).not.toBeInTheDocument();
-  expect(screen.getByText('killApp').closest('li')).toHaveClass('strict-step-row--active');
 });
 
 it('highlights only the active running action and clears active highlighting after terminal selection', async () => {

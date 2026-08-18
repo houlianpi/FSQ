@@ -93,6 +93,10 @@ export interface StrictCaseStep {
   authoredActionName: string;
   actionName: string;
   kind: string;
+  status?: string;
+  durationMs?: number | null;
+  failureCategory?: string | null;
+  message?: string | null;
 }
 export interface RunSnapshot extends ActiveTaskSummary {
   source: { goal?: string; casePath?: string; caseContent?: string; caseSteps?: StrictCaseStep[] };

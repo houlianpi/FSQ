@@ -5,16 +5,6 @@ const cancellable = new Set(['preparing', 'running', 'finalizing']);
 const LONG_MESSAGE_LENGTH = 140;
 const FOLLOW_THRESHOLD = 32;
 
-function timelineEventsForDisplay(events: TimelineEvent[], mode?: string) {
-  if (mode !== 'strict') return events;
-  const byStep = new Map<string, TimelineEvent>();
-  for (const event of events) {
-    if (!event.stepId) continue;
-    byStep.set(event.stepId, event);
-  }
-  return [...byStep.values()].sort((left, right) => left.sequence - right.sequence);
-}
-
 interface RunTimelineProps {
   snapshot: RunSnapshot | null;
   connection: string;
@@ -31,12 +21,10 @@ function formatTime(value?: string) {
   return Number.isNaN(date.valueOf()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function EventMessage({ event }: { event: TimelineEvent }) {
+function ExpandableMessage({ message, messageId }: { message: string; messageId: string }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const messageRef = useRef<HTMLElement>(null);
-  const message = event.message ?? '';
-  const messageId = `timeline-message-${event.sequence}`;
   useLayoutEffect(() => {
     const element = messageRef.current;
     if (!element) return;
@@ -57,26 +45,63 @@ function EventMessage({ event }: { event: TimelineEvent }) {
   </span>;
 }
 
-function StrictStepList({ steps, activeStepId, terminal, selectedStepId, onSelectStep }: { steps: StrictCaseStep[]; activeStepId: string | null | undefined; terminal: boolean; selectedStepId: string | null; onSelectStep: (stepId: string | null) => void }) {
-  if (!steps.length) return <p className="empty-state">No YAML steps are available.</p>;
-  return <ol className="strict-step-list">
-    {steps.map((step) => {
-      const selected = terminal && selectedStepId === step.stepId;
-      const active = !terminal && activeStepId === step.stepId;
-      const selectable = terminal && Boolean(step.stepId);
-      const selectAction = () => onSelectStep(selected ? null : step.stepId);
-      return <li key={step.stepId} className={`strict-step-row${active ? ' strict-step-row--active' : ''}${selectable ? ' strict-step-row--selectable' : ''}${selected ? ' strict-step-row--selected' : ''}`} onClick={selectable ? selectAction : undefined}>
-        {selectable ? <button className="strict-step-select" type="button" aria-label={`Select YAML step ${step.authoredActionName}`} aria-pressed={selected}>
-          <span className="timeline-index">{String(step.index).padStart(2, '0')}</span><span><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span>
-        </button> : <><span className="timeline-index">{String(step.index).padStart(2, '0')}</span><span><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span></>}
-      </li>;
-    })}
-  </ol>;
+function EventMessage({ event }: { event: TimelineEvent }) {
+  return <ExpandableMessage message={event.message ?? ''} messageId={`timeline-message-${event.sequence}`} />;
+}
+
+function latestStepEvent<T>(events: TimelineEvent[], select: (event: TimelineEvent) => T | null | undefined): T | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const value = select(events[index]);
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
+function strictStepStatus(step: StrictCaseStep, stepEvents: TimelineEvent[], snapshot: RunSnapshot) {
+  if (step.status) return step.status;
+  if (!snapshot.terminal && snapshot.activeStep?.stepId === step.stepId) return 'running';
+  if (!snapshot.terminal && stepEvents.length) return 'running';
+  return snapshot.terminal ? 'skipped' : 'pending';
+}
+
+function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }: { snapshot: RunSnapshot; events: TimelineEvent[]; selectedStepId: string | null; onSelectStep: (stepId: string | null) => void }) {
+  const steps = snapshot.source.caseSteps ?? [];
+  if (snapshot.mode !== 'strict') return null;
+  if (!steps.length) return <section className="strict-action-summary" aria-label="Strict replay action results"><p className="empty-state">No YAML steps are available.</p></section>;
+  const eventsByStep = new Map<string, TimelineEvent[]>();
+  for (const event of events) {
+    if (!event.stepId) continue;
+    const existing = eventsByStep.get(event.stepId) ?? [];
+    existing.push(event);
+    eventsByStep.set(event.stepId, existing);
+  }
+  return <section className="strict-action-summary" aria-label="Strict replay action results">
+    <ol className="strict-action-list">
+      {steps.map((step) => {
+        const stepEvents = eventsByStep.get(step.stepId) ?? [];
+        const status = strictStepStatus(step, stepEvents, snapshot);
+        const durationMs = typeof step.durationMs === 'number' ? step.durationMs : null;
+        const message = step.message || null;
+        const selected = selectedStepId === step.stepId;
+        const active = !snapshot.terminal && snapshot.activeStep?.stepId === step.stepId;
+        const selectable = snapshot.terminal && Boolean(step.stepId);
+        const selectAction = () => onSelectStep(selected ? null : step.stepId);
+        const content = <>
+          <span className="timeline-index">{String(step.index).padStart(2, '0')}</span>
+          <span className="timeline-event-title"><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span>
+          <span className="timeline-event-meta"><span className={`status-badge status-badge--${status}`}>{status}</span>{durationMs !== null && <small>{durationMs}ms</small>}</span>
+          {message && <span className="timeline-event-main"><ExpandableMessage message={message} messageId={`strict-action-message-${step.stepId}`} /></span>}
+        </>;
+        return <li key={step.stepId} className={`strict-action-row timeline-row timeline-row--${status}${active ? ' timeline-row--active' : ''}${selectable ? ' timeline-row--selectable' : ''}${selected ? ' timeline-row--selected' : ''}`}>
+          {selectable ? <button className="timeline-action-select" type="button" aria-label={`Select action ${step.authoredActionName}`} aria-pressed={selected} onClick={selectAction}>{content}</button> : content}
+        </li>;
+      })}
+    </ol>
+  </section>;
 }
 
 export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep, onCancel, onNewRun }: RunTimelineProps) {
   const events = useMemo(() => [...(snapshot?.events ?? [])].sort((left, right) => left.sequence - right.sequence), [snapshot?.events]);
-  const visibleEvents = useMemo(() => timelineEventsForDisplay(events, snapshot?.mode), [events, snapshot?.mode]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousLastSequence = useRef(0);
   const [following, setFollowing] = useState(true);
@@ -84,9 +109,8 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
   const [sourceOverflowing, setSourceOverflowing] = useState(false);
   const sourceRef = useRef<HTMLElement>(null);
   const [unseen, setUnseen] = useState(0);
-  const lastSequence = visibleEvents.at(-1)?.sequence ?? 0;
+  const lastSequence = snapshot?.events.at(-1)?.sequence ?? 0;
   const source = snapshot?.mode === 'explore' ? snapshot.source.goal : snapshot?.source.caseContent ?? snapshot?.source.casePath;
-  const strictSteps = snapshot?.mode === 'strict' ? snapshot.source.caseSteps ?? [] : [];
   useEffect(() => {
     const previous = previousLastSequence.current;
     previousLastSequence.current = lastSequence;
@@ -95,9 +119,9 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
       scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'auto' });
       setUnseen(0);
     } else {
-      setUnseen((value) => value + visibleEvents.filter((event) => event.sequence > previous).length);
+      setUnseen((value) => value + (snapshot?.events.filter((event) => event.sequence > previous).length ?? 0));
     }
-  }, [following, lastSequence, visibleEvents]);
+  }, [following, lastSequence, snapshot?.events]);
   useLayoutEffect(() => {
     const element = sourceRef.current;
     if (!element) return;
@@ -119,13 +143,13 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
       if (event.stepId === activeStepId) latestActiveStepSequence = event.sequence;
     }
   }
-  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && visibleEvents.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
+  const activeStepHasNewerOutsideProgress = latestActiveStepSequence != null && events.some((event) => event.sequence > latestActiveStepSequence && event.stepId !== activeStepId);
   const activeStepMatched = Boolean(activeStepId && latestActiveStepSequence != null && !activeStepHasNewerOutsideProgress);
   let latestRunningEvent: TimelineEvent | null = null;
-  for (let index = visibleEvents.length - 1; index >= 0; index -= 1) {
-    if (visibleEvents[index].status === 'running') { latestRunningEvent = visibleEvents[index]; break; }
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index].status === 'running') { latestRunningEvent = events[index]; break; }
   }
-  const activeFallbackSequence = !snapshot.terminal && !activeStepMatched ? (latestRunningEvent ?? visibleEvents.at(-1))?.sequence : null;
+  const activeFallbackSequence = !snapshot.terminal && !activeStepMatched ? (latestRunningEvent ?? events.at(-1))?.sequence : null;
   const onTimelineScroll = () => {
     const element = scrollRef.current;
     if (!element) return;
@@ -142,16 +166,13 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     if (atBottom) setUnseen(0);
     element.focus();
   };
-  return <div className="run-timeline">
+  return <div className={`run-timeline${snapshot.mode === 'strict' ? ' run-timeline--strict' : ''}`}>
     <div className={`run-source-summary${sourceExpanded ? ' run-source-summary--expanded' : ''}`}><strong>Run source · {snapshot.mode === 'explore' ? 'Explore' : 'Strict Replay'}</strong><span className="run-source-line"><small ref={sourceRef}>{source ?? 'Source unavailable'}</small>{sourceOverflowing && <button className="message-disclosure run-source-disclosure" type="button" aria-label={sourceExpanded ? 'Collapse run source' : 'Expand run source'} aria-expanded={sourceExpanded} onClick={() => setSourceExpanded((value) => !value)}>{sourceExpanded ? '⌃' : '⌄'}</button>}</span></div>
-    {snapshot.mode === 'strict' ? <div className="timeline-history">
-      <div className="timeline-scroll" tabIndex={-1} aria-label="Strict Replay YAML steps">
-        <StrictStepList steps={strictSteps} activeStepId={activeStepId} terminal={snapshot.terminal} selectedStepId={selectedStepId} onSelectStep={onSelectStep} />
-      </div>
-    </div> : <div className="timeline-history">
+    <StrictActionSummary snapshot={snapshot} events={events} selectedStepId={selectedStepId} onSelectStep={onSelectStep} />
+    {snapshot.mode === 'explore' && <div className="timeline-history">
       <div className="timeline-scroll" ref={scrollRef} onScroll={onTimelineScroll} data-following={following} tabIndex={-1} aria-label="Run timeline history">
-        {visibleEvents.length ? <ol className="timeline-list">
-          {visibleEvents.map((event) => {
+        {events.length ? <ol className="timeline-list">
+          {events.map((event) => {
             const label = event.label || event.tool || event.phase || 'Run update';
             const selectable = snapshot.terminal && Boolean(event.stepId);
             const selected = selectable && selectedStepId === event.stepId;

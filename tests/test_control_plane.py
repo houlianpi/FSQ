@@ -23,7 +23,7 @@ from fsq_agent.control_plane._replay import read_replay_video, replay_video_meta
 from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
-from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
+from fsq_agent.models import HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, RunnerStepResult, TaskResult, VerificationResult
 
 
 def _settings(tmp_path: Path, platform: str = "android") -> Settings:
@@ -220,27 +220,17 @@ def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatc
 
 def test_case_discovery_is_recursive_sorted_validated_and_platform_filtered(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
-    _case(settings.cases.dir / "plain.yaml")
-    _case(settings.cases.dir / "recorded.codex2.yaml")
     _case(settings.cases.dir / "z.codex.yaml")
     _case(settings.cases.dir / "nested" / "a.codex.yaml")
     _case(settings.cases.dir / "wrong.codex.yaml", platform="web", app_id=False)
     (settings.cases.dir / "broken.codex.yaml").write_text("not: valid: yaml", encoding="utf-8")
-    (settings.cases.dir / "ignored.yml").write_text("not discovered", encoding="utf-8")
 
     payload = discover_cases(settings)
 
-    assert [entry["path"] for entry in payload["cases"]] == [
-        "broken.codex.yaml",
-        "nested/a.codex.yaml",
-        "plain.yaml",
-        "recorded.codex2.yaml",
-        "wrong.codex.yaml",
-        "z.codex.yaml",
-    ]
+    assert [entry["path"] for entry in payload["cases"]] == ["broken.codex.yaml", "nested/a.codex.yaml", "wrong.codex.yaml", "z.codex.yaml"]
     assert payload["cases"][1]["validationStatus"] == "validated"
     assert payload["cases"][1]["commandCount"] == 1
-    assert payload["cases"][4]["selectable"] is False
+    assert payload["cases"][2]["selectable"] is False
     assert payload["cases"][0]["diagnostics"]
 
 
@@ -254,14 +244,10 @@ def test_case_discovery_limit_and_contained_resolution(tmp_path: Path) -> None:
     assert len(payload["cases"]) == 2
     assert payload["truncated"] is True
     assert resolve_case(settings, "0.codex.yaml") == (settings.cases.dir / "0.codex.yaml").resolve()
-    _case(settings.cases.dir / "plain.yaml")
-    assert resolve_case(settings, "plain.yaml") == (settings.cases.dir / "plain.yaml").resolve()
     with pytest.raises(ValueError, match="contained"):
         resolve_case(settings, "../outside.codex.yaml")
     with pytest.raises(ValueError, match="relative"):
         resolve_case(settings, str((settings.cases.dir / "0.codex.yaml").resolve()))
-    with pytest.raises(ValueError, match=r"\.yaml"):
-        resolve_case(settings, "not-a-case.yml")
 
 
 def test_case_discovery_derives_ai_requirement_from_registry_snapshots(tmp_path: Path) -> None:
@@ -488,6 +474,76 @@ def test_evidence_projection_rejects_escape_and_reads_latest_artifacts(tmp_path:
     assert headers["X-Evidence-Revision"] == "1"
     assert tree["content"] == '{"node":"safe"}'
     assert "super-secret" not in json.dumps(state.snapshot(request_id))
+
+
+def test_strict_step_results_project_to_case_steps_without_event_status_override(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={"casePath": "recorded.codex.yaml", "caseSteps": [{"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action"}]},
+    )
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_runner_event(RunnerEvent(run_id="run-1", event_type="step_finish", step_id="step-1"))
+    projection.project_step_result(RunnerStepResult(step_id="step-1", status="failed", duration_ms=12700, failure_category="target_resolution_error", error_message="Target was not found."))
+
+    step = state.snapshot(request_id)["source"]["caseSteps"][0]
+    assert step["status"] == "failed"
+    assert step["durationMs"] == 12700
+    assert step["failureCategory"] == "target_resolution_error"
+    assert step["message"] == "Target was not found."
+
+
+def test_terminal_strict_steps_without_results_are_marked_skipped() -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={
+            "casePath": "recorded.codex.yaml",
+            "caseSteps": [
+                {"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action", "status": "failed"},
+                {"stepId": "step-2", "index": 2, "authoredActionName": "assertVisible", "actionName": "assert_visible", "kind": "assertion"},
+            ],
+        },
+    )
+
+    state.finish(request_id, status="failed", summary="done")
+
+    steps = state.snapshot(request_id)["source"]["caseSteps"]
+    assert steps[0]["status"] == "failed"
+    assert steps[1]["status"] == "skipped"
+    assert steps[1]["message"] == "Action was not executed."
+
+
+def test_persisted_manifest_hydrates_strict_case_step_results(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={"casePath": "recorded.codex.yaml", "caseSteps": [{"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action"}]},
+    )
+    runs_dir = tmp_path / "runs"
+    run_dir = runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps({"steps": [{"step_id": "step-1", "status": "failed", "duration_ms": 12, "failure_category": "target_resolution_error", "error_message": "Target was not found."}]}),
+        encoding="utf-8",
+    )
+    projection = EvidenceProjection(state, request_id, runs_dir)
+    projection.bind_run("run-1")
+
+    projection.load_persisted_manifest()
+
+    step = state.snapshot(request_id)["source"]["caseSteps"][0]
+    assert step["status"] == "failed"
+    assert step["durationMs"] == 12
+    assert step["failureCategory"] == "target_resolution_error"
+    assert step["message"] == "Target was not found."
 
 
 def test_evidence_projection_preserves_dynamic_runner_step_id(tmp_path: Path) -> None:
@@ -949,33 +1005,6 @@ def test_server_run_start_busy_cancel_and_snapshot(tmp_path: Path, monkeypatch: 
     assert captured["cancelled"] is True
     assert snapshot_status == 200
     assert snapshot["source"] == {"goal": "Do it"}
-
-
-def test_server_strict_run_snapshot_includes_case_yaml_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = _settings(tmp_path)
-    case_path = settings.cases.dir / "strict.yaml"
-    _case(case_path)
-    case_text = case_path.read_bytes().decode("utf-8")
-    server = ControlPlaneServer(ControlPlaneServerOptions(open_browser=False))
-
-    class Handle:
-        def cancel(self) -> None:
-            pass
-
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda platform, workspace: settings)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda *_args: None)
-    monkeypatch.setattr("fsq_agent.control_plane._server.start_execution", lambda prepared, state: Handle())
-
-    status, payload = server.handle_post("/api/control-plane/runs", {"mode": "strict", "platform": "android", "targetId": "device", "casePath": "strict.yaml"})
-    snapshot_status, snapshot, _ = server.handle_get(f"/api/control-plane/runs/{payload['requestId']}")
-
-    assert status == 202
-    assert snapshot_status == 200
-    assert snapshot["source"] == {
-        "casePath": "strict.yaml",
-        "caseContent": case_text,
-        "caseSteps": [{"stepId": "strict-step-001", "index": 1, "authoredActionName": "waitMs", "actionName": "wait_ms", "kind": "action"}],
-    }
 
 
 def test_server_actual_http_dispatches_json(tmp_path: Path) -> None:

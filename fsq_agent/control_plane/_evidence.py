@@ -114,6 +114,7 @@ class EvidenceProjection:
             self._consider_artifact(payload, step_id=event.step_id, timestamp=event.timestamp.isoformat())
 
     def project_step_result(self, result: RunnerStepResult) -> None:
+        self.state.update_case_step_result(self.request_id, result.step_id, _step_result_payload(result, self.safe_text))
         for phase in result.phase_reports:
             for ref in phase.artifact_refs:
                 self._consider_artifact(ref.model_dump(mode="json"), step_id=result.step_id, timestamp=(ref.created_at.isoformat()))
@@ -136,11 +137,15 @@ class EvidenceProjection:
         except (OSError, ValueError):
             return
         artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
-        if not isinstance(artifacts, list):
-            return
-        for artifact in artifacts:
-            if isinstance(artifact, dict):
-                self._consider_artifact(artifact, step_id=_optional_str(artifact.get("step_id")), timestamp=_optional_str(artifact.get("created_at")))
+        if isinstance(artifacts, list):
+            for artifact in artifacts:
+                if isinstance(artifact, dict):
+                    self._consider_artifact(artifact, step_id=_optional_str(artifact.get("step_id")), timestamp=_optional_str(artifact.get("created_at")))
+        steps = payload.get("steps") if isinstance(payload, dict) else None
+        if isinstance(steps, list):
+            for step in steps:
+                if isinstance(step, dict):
+                    self._consider_manifest_step(step)
 
     def load_persisted_step_ids(self) -> None:
         if self.run_dir is None:
@@ -182,6 +187,26 @@ class EvidenceProjection:
 
     def safe_text(self, value: str, *, limit: int = 1000) -> str:
         return safe_text(value, secret_values=self.secret_values, limit=limit)
+
+    def _consider_manifest_step(self, step: dict[str, Any]) -> None:
+        step_id = _optional_str(step.get("step_id") or step.get("stepId"))
+        if step_id is None:
+            return
+        status = _optional_str(step.get("status"))
+        duration_ms = step.get("duration_ms") if isinstance(step.get("duration_ms"), int) else None
+        failure_category = _optional_str(step.get("failure_category"))
+        error_message = _optional_str(step.get("error_message"))
+        payload: dict[str, Any] = {}
+        if status:
+            payload["status"] = status
+        if duration_ms is not None:
+            payload["durationMs"] = duration_ms
+        if failure_category:
+            payload["failureCategory"] = self.safe_text(failure_category, limit=200)
+        if error_message:
+            payload["message"] = self.safe_text(error_message)
+        if payload:
+            self.state.update_case_step_result(self.request_id, step_id, payload)
 
     def _consume_run_artifacts(self, event: RunEvent) -> None:
         payload = event.payload or {}
@@ -432,6 +457,17 @@ def _safe_details(value: Any, sanitizer, *, depth: int = 0) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return sanitizer(str(value), limit=1000)
+
+
+def _step_result_payload(result: RunnerStepResult, sanitizer) -> dict[str, Any]:
+    payload: dict[str, Any] = {"status": result.status}
+    if isinstance(result.duration_ms, int):
+        payload["durationMs"] = result.duration_ms
+    if result.failure_category:
+        payload["failureCategory"] = sanitizer(result.failure_category, limit=200)
+    if result.error_message:
+        payload["message"] = sanitizer(result.error_message)
+    return payload
 
 
 def _run_event_status(event: RunEvent) -> str | None:
