@@ -321,10 +321,7 @@ def _load_user_document(root: Path) -> tuple[UserProviderConfig, Path, Path]:
                 context={"path": str(config_path), "errors": exc.errors()},
             ) from exc
         try:
-            workspaces = [
-                WorkspaceRegistryEntry(name=entry.name, root_path=entry.config_path.parent.parent)
-                for entry in legacy.workspaces
-            ]
+            workspaces = [WorkspaceRegistryEntry(name=entry.name, root_path=entry.config_path.parent.parent) for entry in legacy.workspaces]
             upgraded = UserProviderConfig(provider=legacy.provider, workspaces=workspaces)
         except ValidationError as exc:
             raise ConfigurationError(

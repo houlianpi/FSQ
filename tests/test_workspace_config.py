@@ -57,9 +57,7 @@ def test_create_workspace_commits_minimal_layout_and_registry(tmp_path: Path) ->
     assert (candidate.root_path / ".fsq" / "runs" / "android").is_dir()
     assert (candidate.root_path / "knowledge" / "android" / "project.md").read_text(encoding="utf-8") == ""
     assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["env"] == {"TEST_PASSWORD": "initial-secret"}
-    assert [(entry.name, entry.root_path) for entry in list_workspace_registry(user_root)] == [
-        ("checkout", candidate.root_path)
-    ]
+    assert [(entry.name, entry.root_path) for entry in list_workspace_registry(user_root)] == [("checkout", candidate.root_path)]
     assert load_registered_workspace("CHECKOUT", "android", user_root) == candidate
 
 
@@ -463,6 +461,7 @@ def test_add_workspace_platform_rejects_symlinked_managed_directory(tmp_path: Pa
     outside.mkdir()
     chrome = tmp_path / "chrome.exe"
     chrome.write_bytes(b"")
+    chrome.chmod(0o755)
     linked_cases = android.root_path / "cases" / "web"
     try:
         linked_cases.symlink_to(outside, target_is_directory=True)
@@ -609,7 +608,6 @@ def test_create_workspace_rejects_macos_app_path_that_is_not_bundle_or_executabl
             parent_path=parent,
             configs=[valid_candidate],
             user_config_root=tmp_path / "valid-user",
-        )
-        .status
+        ).status
         == "available"
     )

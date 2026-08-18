@@ -85,7 +85,7 @@ def prepare_run(*, request_id: str, settings: Settings, body: dict[str, Any]) ->
         raise TypeError("targetId is required.")
     config_path = settings.workspace.config_path
     if not isinstance(config_path, Path):
-        raise ValueError("Selected workspace platform configuration is unavailable.")
+        raise TypeError("Selected workspace platform configuration is unavailable.")
     platform_revision = workspace_revision(config_path)
     validate_target(settings, target_id)
     run_settings = settings.model_copy(deep=True)

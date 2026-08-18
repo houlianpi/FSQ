@@ -54,12 +54,7 @@ def list_workspaces(user_config_root: Path | None) -> dict[str, list[dict[str, A
 def get_workspace(name: str, user_config_root: Path | None) -> dict[str, Any]:
     status = inspect_registered_workspace(name, user_config_root)
     result = _status_projection(status)
-    result["platforms"] = [
-        _platform_summary(name, platform.platform, user_config_root)
-        if platform.status == "available"
-        else _platform_status_projection(platform)
-        for platform in status.platforms
-    ]
+    result["platforms"] = [_platform_summary(name, platform.platform, user_config_root) if platform.status == "available" else _platform_status_projection(platform) for platform in status.platforms]
     return result
 
 
@@ -80,7 +75,7 @@ def create_workspace_request(body: dict[str, Any], user_config_root: Path | None
         configs: list[WorkspaceConfig] = []
         for item in platforms:
             if not isinstance(item, dict):
-                raise TypeError("platform item must be an object")
+                raise TypeError("platform item must be an object")  # noqa: TRY301
             _require_exact_fields(item, {"platform", "target", "env"})
             configs.append(
                 WorkspaceConfig.model_validate(

@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from fsq_agent.config import Settings, inspect_registered_workspace, load_registered_workspace, load_workspace_platform_settings, validate_strict_core_settings
 from fsq_agent.providers import prepare_model_provider_session

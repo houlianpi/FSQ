@@ -72,14 +72,7 @@ def _load_workspace_config_snapshot(workspace: str | Path, platform: str) -> tup
     metadata_path = workspace_root / ".fsq"
     config_directory = workspace_root / WORKSPACE_CONFIG_DIRECTORY
     config_path = _workspace_config_path(workspace_root, platform)
-    if (
-        metadata_path.is_symlink()
-        or config_directory.is_symlink()
-        or config_path.is_symlink()
-        or not metadata_path.is_dir()
-        or not config_directory.is_dir()
-        or not config_path.is_file()
-    ):
+    if metadata_path.is_symlink() or config_directory.is_symlink() or config_path.is_symlink() or not metadata_path.is_dir() or not config_directory.is_dir() or not config_path.is_file():
         raise ConfigurationError(
             "Directory is not an FSQ workspace. Create a workspace in Control Plane.",
             context={"workspace": str(workspace_root), "platform": platform, "config_path": str(config_path)},
@@ -155,7 +148,7 @@ def inspect_registered_workspace(name: str, user_config_root: str | Path | None 
         try:
             config, _, loaded_path = load_workspace_config(root, platform)
             if config.name != entry.name or loaded_path.resolve() != config_path.resolve():
-                raise ConfigurationError("Registered workspace identity does not match its configuration.")
+                raise ConfigurationError("Registered workspace identity does not match its configuration.")  # noqa: TRY301
             _validate_target_paths(config)
         except ConfigurationError:
             unavailable_count += 1
