@@ -37,7 +37,7 @@ class TaskRecord:
     platform: str
     target_id: str
     mode: str
-    source: dict[str, str]
+    source: dict[str, Any]
     status: TaskStatus = "preparing"
     started_at: str = field(default_factory=_now)
     completed_at: str | None = None
@@ -63,7 +63,7 @@ class ControlPlaneState:
         self._current_request_id: str | None = None
         self._tasks: dict[str, TaskRecord] = {}
 
-    def reserve(self, *, workspace_name: str, platform: str, target_id: str, mode: str, source: dict[str, str]) -> str:
+    def reserve(self, *, workspace_name: str, platform: str, target_id: str, mode: str, source: dict[str, Any]) -> str:
         with self._condition:
             if self._current_request_id is not None:
                 raise BusyError("Another Control Plane task is active.")
@@ -79,6 +79,26 @@ class ControlPlaneState:
             self._current_request_id = request_id
             self._notify()
             return request_id
+
+    def update_source(self, request_id: str, values: dict[str, Any]) -> None:
+        with self._condition:
+            task = self._require(request_id)
+            task.source.update(values)
+            self._notify()
+
+    def update_case_step_result(self, request_id: str, step_id: str, result: dict[str, Any]) -> None:
+        if not step_id:
+            return
+        with self._condition:
+            task = self._require(request_id)
+            steps = task.source.get("caseSteps")
+            if not isinstance(steps, list):
+                return
+            for step in steps:
+                if isinstance(step, dict) and step.get("stepId") == step_id:
+                    step.update(result)
+                    self._notify()
+                    return
 
     def abandon_preparation(self, request_id: str) -> None:
         with self._condition:
@@ -102,6 +122,7 @@ class ControlPlaneState:
             if summary is not None:
                 task.summary = summary
             if status in _TERMINAL_STATUSES:
+                self._mark_unfinished_strict_steps_skipped(task)
                 task.completed_at = _now()
                 if self._current_request_id == request_id:
                     self._current_request_id = None
@@ -167,6 +188,7 @@ class ControlPlaneState:
                 result = {"status": "cancelled"}
             task.result = result
             task.report_available = report_available
+            self._mark_unfinished_strict_steps_skipped(task)
             task.status = status
             task.summary = summary
             task.completed_at = _now()
@@ -261,6 +283,17 @@ class ControlPlaneState:
             "mode": task.mode,
             "status": task.status,
         }
+
+    def _mark_unfinished_strict_steps_skipped(self, task: TaskRecord) -> None:
+        if task.mode != "strict":
+            return
+        steps = task.source.get("caseSteps")
+        if not isinstance(steps, list):
+            return
+        for step in steps:
+            if isinstance(step, dict) and not step.get("status"):
+                step["status"] = "skipped"
+                step["message"] = "Action was not executed."
 
     def _require(self, request_id: str) -> TaskRecord:
         task = self._tasks.get(request_id)

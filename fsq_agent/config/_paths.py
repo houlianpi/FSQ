@@ -52,7 +52,7 @@ def resolve_runtime_paths(settings: Settings, base_dir: Path | None = None) -> N
     settings.output.runs_dir = (output_root / runs_dir).resolve() if not runs_dir.is_absolute() else runs_dir.expanduser().resolve()
     _ensure_inside(settings.output.runs_dir, output_root, "Output runs directory must be inside output root.")
 
-    settings.cases.dir = _resolve_path(settings.cases.dir, config_base)
+    settings.cases.dir = _resolve_path(settings.cases.dir, workspace_root)
     knowledge = settings.agent_context.knowledge
     knowledge.root_dir = _resolve_path(knowledge.root_dir, config_base)
     knowledge.skills.dir = _resolve_path(knowledge.skills.dir, knowledge.root_dir)

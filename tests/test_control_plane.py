@@ -23,7 +23,19 @@ from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
 from fsq_agent.fsq import FsqCaseLoader
-from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, TaskResult, VerificationResult
+from fsq_agent.models import (
+    AndroidDevice,
+    AndroidDeviceDiscoveryResult,
+    HarnessActionResult,
+    HarnessArtifactRef,
+    HarnessContext,
+    ReportArtifact,
+    RunEvent,
+    RunnerEvent,
+    RunnerStepResult,
+    TaskResult,
+    VerificationResult,
+)
 
 
 def _settings(tmp_path: Path, platform: str = "android") -> Settings:
@@ -575,6 +587,79 @@ def test_evidence_projection_rejects_escape_and_reads_latest_artifacts(tmp_path:
     assert headers["X-Evidence-Revision"] == "1"
     assert tree["content"] == '{"node":"safe"}'
     assert "super-secret" not in json.dumps(state.snapshot(request_id))
+
+
+def test_strict_step_results_project_to_case_steps_without_event_status_override(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        workspace_name="checkout",
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={"casePath": "recorded.fsq.yaml", "caseSteps": [{"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action"}]},
+    )
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_runner_event(RunnerEvent(run_id="run-1", event_type="step_finish", step_id="step-1"))
+    projection.project_step_result(RunnerStepResult(step_id="step-1", status="failed", duration_ms=12700, failure_category="target_resolution_error", error_message="Target was not found."))
+
+    step = state.snapshot(request_id)["source"]["caseSteps"][0]
+    assert step["status"] == "failed"
+    assert step["durationMs"] == 12700
+    assert step["failureCategory"] == "target_resolution_error"
+    assert step["message"] == "Target was not found."
+
+
+def test_terminal_strict_steps_without_results_are_marked_skipped() -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        workspace_name="checkout",
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={
+            "casePath": "recorded.fsq.yaml",
+            "caseSteps": [
+                {"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action", "status": "failed"},
+                {"stepId": "step-2", "index": 2, "authoredActionName": "assertVisible", "actionName": "assert_visible", "kind": "assertion"},
+            ],
+        },
+    )
+
+    state.finish(request_id, status="failed", summary="done")
+
+    steps = state.snapshot(request_id)["source"]["caseSteps"]
+    assert steps[0]["status"] == "failed"
+    assert steps[1]["status"] == "skipped"
+    assert steps[1]["message"] == "Action was not executed."
+
+
+def test_persisted_manifest_hydrates_strict_case_step_results(tmp_path: Path) -> None:
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        workspace_name="checkout",
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={"casePath": "recorded.fsq.yaml", "caseSteps": [{"stepId": "step-1", "index": 1, "authoredActionName": "tapOn", "actionName": "tap_on", "kind": "action"}]},
+    )
+    runs_dir = tmp_path / "runs"
+    run_dir = runs_dir / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "evidence-manifest.json").write_text(
+        json.dumps({"steps": [{"step_id": "step-1", "status": "failed", "duration_ms": 12, "failure_category": "target_resolution_error", "error_message": "Target was not found."}]}),
+        encoding="utf-8",
+    )
+    projection = EvidenceProjection(state, request_id, runs_dir)
+    projection.bind_run("run-1")
+
+    projection.load_persisted_manifest()
+
+    step = state.snapshot(request_id)["source"]["caseSteps"][0]
+    assert step["status"] == "failed"
+    assert step["durationMs"] == 12
+    assert step["failureCategory"] == "target_resolution_error"
+    assert step["message"] == "Target was not found."
 
 
 def test_evidence_projection_preserves_dynamic_runner_step_id(tmp_path: Path) -> None:
