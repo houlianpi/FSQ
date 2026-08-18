@@ -121,8 +121,10 @@ it('reopens narrow navigation before restoring create-cancel focus', async () =>
 
   await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
 
-  await waitFor(() => expect(openNavigation).toHaveAttribute('aria-expanded', 'true'));
-  expect(createWorkspace).toHaveFocus();
+  await waitFor(() => {
+    expect(openNavigation).toHaveAttribute('aria-expanded', 'true');
+    expect(createWorkspace).toHaveFocus();
+  });
   matchMedia.mockRestore();
 });
 

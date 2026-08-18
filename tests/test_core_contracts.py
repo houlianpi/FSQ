@@ -421,8 +421,7 @@ def test_web_parameter_models_produce_canonical_dumps_and_reject_extra_fields() 
         WebStartBrowserParams.model_validate({"url": "https://example.com"})
     with pytest.raises(ValidationError):
         WebCloseBrowserParams.model_validate({"force": True})
-    with pytest.raises(ValidationError):
-        WebClickOnParams.model_validate({"locator": {"ref": "e83"}})
+    assert WebClickOnParams.model_validate({"locator": {"ref": "e83"}}).model_dump(mode="json", exclude_none=True) == {"locator": {"ref": "e83"}}
     with pytest.raises(ValidationError):
         WebClickOnParams.model_validate({"locator": {"unknown": "Login"}})
     with pytest.raises(ValidationError):

@@ -233,7 +233,9 @@ function validateConnectionTest(value: unknown): ConnectionTestResponse {
 function workspaceTarget(value: unknown, platformId: PlatformId): boolean {
   if (!record(value)) return false;
   if (platformId === 'android') return hasOnlyKeys(value, ['appId']) && string(value.appId) && Boolean(value.appId);
-  if (platformId === 'web') return hasOnlyKeys(value, ['browserExecutablePath']) && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
+  if (platformId === 'web') return hasOnlyKeys(value, ['browserChannel', 'browserExecutablePath'])
+    && string(value.browserChannel) && ['chromium', 'chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary', 'msedge', 'msedge-beta', 'msedge-dev', 'msedge-canary'].includes(value.browserChannel)
+    && string(value.browserExecutablePath) && Boolean(value.browserExecutablePath);
   if (platformId === 'windows') {
     return hasOnlyKeys(value, ['appPath', 'launchArgs']) || hasOnlyKeys(value, ['appPath', 'windowTitleRe', 'launchArgs'])
       ? string(value.appPath) && Boolean(value.appPath) && string(value.launchArgs)

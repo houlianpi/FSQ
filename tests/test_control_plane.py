@@ -235,9 +235,11 @@ def test_android_target_discovery_reports_command_failures(tmp_path: Path, monke
 def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("fsq_agent.control_plane._targets.importlib.util.find_spec", lambda _name: object())
     monkeypatch.setattr("fsq_agent.control_plane._targets.validate_strict_core_settings", lambda _settings: None)
-    expected = {"web": ("chrome", "Browser"), "windows": ("windows-app", "Application"), "macos": ("macos-app", "Application")}
+    expected = {"web": ("msedge-canary", "Browser"), "windows": ("windows-app", "Application"), "macos": ("macos-app", "Application")}
     for platform, (target_id, target_label) in expected.items():
         settings = _settings(tmp_path / platform, platform)
+        if platform == "web":
+            settings.harness.web.channel = "msedge-canary"
         if platform == "windows":
             settings.harness.windows.app_path = Path("C:/secret/location/app.exe")
         elif platform == "macos":
@@ -245,6 +247,8 @@ def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatc
         payload = discover_targets(settings)
         assert payload["targetLabel"] == target_label
         assert payload["targets"][0]["id"] == target_id
+        if platform == "web":
+            assert payload["targets"][0]["label"] == "Microsoft Edge Canary"
         assert "secret/location" not in json.dumps(payload)
 
 

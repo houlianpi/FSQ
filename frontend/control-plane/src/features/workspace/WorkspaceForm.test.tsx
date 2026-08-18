@@ -26,7 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 it('clears the previous target on platform change and submits the complete masked environment', async () => {
   const created: WorkspaceDetail = {
     name: 'web-check', rootPath: 'C:\\projects\\web-check', status: 'available', message: 'Workspace is available.',
-    platforms: [{ platform: 'web', configPath: 'C:\\projects\\web-check\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Platform is available.', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: [{ name: 'TEST_PASSWORD', configured: true }], revision: 'sha256:created' }],
+    platforms: [{ platform: 'web', configPath: 'C:\\projects\\web-check\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Platform is available.', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: [{ name: 'TEST_PASSWORD', configured: true }], revision: 'sha256:created' }],
   };
   const pickParent = vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', parentPath: 'C:\\projects' });
   const create = vi.spyOn(controlPlaneClient, 'createWorkspace').mockResolvedValue(created);
@@ -61,7 +61,7 @@ it('clears the previous target on platform change and submits the complete maske
   expect(create).toHaveBeenCalledWith({
     name: 'web-check',
     parentPath: 'C:\\projects',
-    platforms: [{ platform: 'web', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: { TEST_PASSWORD: 'new-secret' } }],
+    platforms: [{ platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: { TEST_PASSWORD: 'new-secret' } }],
   });
   expect(onSaved).toHaveBeenCalledWith(created);
 });
@@ -87,7 +87,7 @@ it('submits all unsaved platform drafts in one workspace creation request', asyn
     name: 'mobile', parentPath: 'C:\\projects',
     platforms: [
       { platform: 'android', target: { appId: 'com.example.mobile' }, env: {} },
-      { platform: 'web', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: {} },
+      { platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: {} },
     ],
   });
 });

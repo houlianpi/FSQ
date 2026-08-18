@@ -76,10 +76,10 @@ Android configuration:
 Web configuration:
 
 - `harness.web.backend` supports `playwright` in the first Web backend.
-- `harness.web.channel` selects the local browser channel. The supported channel is `chrome`.
-- Workspace target `browser_executable_path` is required and must point to an existing executable compatible with the preset channel.
+- `harness.web.channel` selects any distribution channel documented by the installed Playwright `BrowserType.launch(channel=...)` contract: `chromium`, `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `msedge`, `msedge-beta`, `msedge-dev`, or `msedge-canary`. Existing Web workspace files without a target channel load as `chrome`. Firefox and WebKit are separate Playwright browser types rather than channel values and are outside this Web target contract.
+- Workspace Web targets require `browser_channel` and `browser_executable_path`. The path must identify an existing executable compatible with the selected Chrome or Microsoft Edge channel on the host platform.
 - `harness.web.headless`, optional `harness.web.base_url`, and optional viewport fields are YAML-owned runtime shape.
-- Missing Playwright packages are reported during Web runtime construction with actionable setup guidance, not during registry bootstrap. Missing, nonexistent, non-file, non-executable, or channel-mismatched Web browser executable paths are reported by configuration validation before external actions begin.
+- Missing Playwright packages are reported during Web runtime construction with actionable setup guidance, not during registry bootstrap. Missing, unsupported, nonexistent, non-file, non-executable, or channel-mismatched Web browser targets are reported by configuration validation before external actions begin.
 
 Windows configuration:
 
@@ -142,7 +142,7 @@ Invalid or missing configuration raises `ConfigurationError` from `models`. YAML
 - `openai_agents.prompt` owns prompt template customization and scalar prompt variables. `prompt.agent_template_path` and `prompt.task_template_path` may point to files resolved relative to the configuration file directory; when template paths are omitted, package default templates are used. Static prompt text, headings, loops, and task formatting live in templates. `prompt.variables` provides operator-controlled scalar model data injected into templates. `prompt.custom_instructions` and `prompt.custom_instructions_path` are not supported configuration keys; project-specific guidance belongs in `knowledge/project.md`, and reusable execution guidance belongs in configured skills.
 - `harness.platform` selects the platform harness used by goal-driven task execution and strict-core execution. Supported platforms are `android`, `web`, `windows`, and `macos`.
 - `harness.android.backend` selects the Android backend. The supported backend is `uiautomator2`.
-- `harness.web.backend` selects Playwright and the preset selects channel/headless/base-URL policy; the workspace target supplies the browser executable path.
+- `harness.web.backend` selects Playwright; the preset owns headless/base-URL policy, while the workspace target supplies the browser channel and executable path.
 - `execution.post_action_delay_seconds` controls runner-owned post-action stabilization delay defaults. `platform` defaults to `1.0` seconds and applies to PlatformTool capabilities when capability metadata does not override it. `common` defaults to `0.0` seconds and applies to inherited CommonTool capabilities when capability metadata does not override it. Values must be non-negative, and this pacing is execution timing only: it must not add `waitMs` commands, mutate parsed FSQ commands, record generated strict replay waits, or create synthetic evidence steps.
 - Android workspace target supplies app id; strict case metadata may override the app id where already allowed. Android serial remains transient run state and is not accepted from case metadata or configuration.
 - Playwright package installation is operator-managed through the `web` extra. Configuration validates the workspace browser executable against preset channel policy before external actions.

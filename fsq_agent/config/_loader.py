@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from fsq_agent.config._paths import resolve_runtime_paths, resolve_workspace_runtime_paths
 from fsq_agent.config._settings import Settings
 from fsq_agent.config._user_provider import refresh_provider_settings
-from fsq_agent.config._workspace import CHROME_EXECUTABLE_NAMES, _is_macos_app_bundle_or_executable, load_workspace_config
+from fsq_agent.config._workspace import WEB_CHANNEL_EXECUTABLE_NAMES, _is_macos_app_bundle_or_executable, load_workspace_config
 from fsq_agent.models import (
     AndroidWorkspaceTarget,
     ConfigurationError,
@@ -140,6 +140,7 @@ def load_workspace_platform_settings(
     if isinstance(target, AndroidWorkspaceTarget):
         settings.harness.android.app_id = target.app_id
     elif isinstance(target, WebWorkspaceTarget):
+        settings.harness.web.channel = target.browser_channel
         settings.harness.web.browser_executable_path = target.browser_executable_path
     elif isinstance(target, WindowsWorkspaceTarget):
         settings.harness.windows.app_path = target.app_path
@@ -346,14 +347,15 @@ def _validate_web_browser_executable_path(settings: Settings) -> None:
             "Configured Web browser executable path must point to the browser executable file.",
             context={"config_key": "target.browser_executable_path", "path": str(browser_path)},
         )
-    if settings.harness.web.channel == "chrome" and browser_path.name.casefold() not in CHROME_EXECUTABLE_NAMES:
+    expected_names = WEB_CHANNEL_EXECUTABLE_NAMES[settings.harness.web.channel]
+    if browser_path.name.casefold() not in expected_names:
         raise ConfigurationError(
             "Configured Web browser executable path does not match harness.web.channel.",
             context={
                 "config_key": "target.browser_executable_path",
                 "path": str(browser_path),
                 "channel": settings.harness.web.channel,
-                "expected_file_names": sorted(CHROME_EXECUTABLE_NAMES),
+                "expected_file_names": sorted(expected_names),
             },
         )
     if os.name != "nt" and not os.access(browser_path, os.X_OK):
