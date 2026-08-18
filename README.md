@@ -71,7 +71,8 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ $ fsq-agent run --workspace web-demo --goal "Search for FSQ on Bing" │
+│ $ fsq-agent run --workspace web-demo --platform web --record         │
+│     --goal "Search for FSQ on Bing"                                 │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ► Planning: 3 key actions identified                                │
 │  ► Step 1: startBrowser          📸 screenshot + UI snapshot         │
@@ -79,7 +80,8 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 │  ► Step 3: typeText "FSQ"        📸 screenshot + UI snapshot         │
 │  ► Step 4: pressKey Enter        📸 screenshot + UI snapshot         │
 │  ► Verification: PASSED ✅ (evidence-based)                          │
-│  ► Strict YAML generated → output/case.fsq.yaml                     │
+│  ► Recording manifest → .fsq/runs/web/<run-id>/recording.json       │
+│  ► Replayable YAML → .fsq/runs/web/<run-id>/recorded.fsq.yaml       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -129,7 +131,34 @@ uv sync --extra dev --extra web
 fsq-agent control-plane
 ```
 
-Open **Workspace**, create a workspace for the application under test, and give it a unique name such as `web-demo`. CLI commands select this registered name and can run outside the workspace directory.
+Open **Workspace**, create a workspace for the application under test, and give it a unique name such as `web-demo`. A workspace can contain any combination of Android, Web, Windows, and macOS platform configurations. Add one or more platforms during creation, then add or edit platforms independently from the workspace configuration page.
+
+For non-interactive setup, `init` creates exactly one platform per invocation:
+
+```bash
+# Create and register a Web workspace platform.
+fsq-agent init --name web-demo --parent /path/to/workspaces \
+  --platform web \
+  --browser-executable-path /path/to/google-chrome
+
+# Add Android to the same registered workspace.
+fsq-agent init --name web-demo --parent /path/to/workspaces \
+  --platform android \
+  --app-id com.example.app
+```
+
+`--parent` identifies the parent directory for `<parent>/<name>` and defaults to the current directory. Platform target options are:
+
+| Platform | `init` target options |
+|---|---|
+| Android | `--app-id APP_ID` (required) |
+| Web | `--browser-executable-path FILE` (required) |
+| Windows | `--app-path PATH` (required), plus optional `--window-title-re` and `--launch-args` |
+| macOS | `--bundle-id` or `--app-path` (at least one required) |
+
+Repeating an equal platform configuration returns `unchanged`. If its target or private environment mapping differs, pass `--update-existing` to replace only that platform's target and `--env NAME=VALUE` entries. Use `fsq-agent --output json init ...` or `--output jsonl` for one-record machine output. Command-line environment values may be visible in shell history or process inspection.
+
+The `run`, `report`, and `playground` commands select the registered workspace name and an explicit configured platform, so they can run outside the workspace directory. Legacy `.fsq/config.yaml` and `.fsq-agent-workspace` layouts are not migrated.
 
 ### 3. Configure a Provider
 
@@ -147,19 +176,22 @@ Provider configuration is stored under `~/.fsq` and is used by the next complete
 ```bash
 # Dynamic: AI-driven exploration with full evidence
 fsq-agent run --workspace web-demo \
+  --platform web \
+  --record \
   --goal "Open https://www.bing.com, search for 'FSQ automation', verify results appear."
 ```
 
 ```bash
 # Strict: Deterministic replay from YAML (no LLM needed)
-fsq-agent run --workspace web-demo --strict --case-yaml path/to/case.fsq.yaml
+fsq-agent run --workspace web-demo --platform web --strict \
+  --case-yaml path/to/case.fsq.yaml
 ```
 
-**Output:** `screenshots` + `UI snapshots` + `verification report` + `replayable .fsq.yaml`
+**Output:** Every run writes evidence and a report under `.fsq/runs/<platform>/<run-id>/`. For a dynamic run, `--record` writes a `recording.json` manifest for the recording attempt and writes `recorded.fsq.yaml` when the run is eligible and contains replayable commands. Failed runs are skipped unless `--record-on-failure` is also supplied. Strict runs do not record new cases.
 
 ### Control Plane
 
-Launch the local browser Control Plane for platform readiness, target and case discovery, Explore runs, Strict Replay, and live evidence:
+Launch the local browser Control Plane for multi-platform workspace management, platform readiness, target and case discovery, Explore runs, Strict Replay, and live evidence:
 
 ```bash
 fsq-agent control-plane
@@ -199,35 +231,46 @@ It listens on `127.0.0.1:8879` and opens a browser by default. Use `--host`, `--
 </tr>
 </table>
 
-All platforms share the same `HarnessInterface`, evidence model, and FSQ YAML format.
+All platforms share the same `HarnessInterface`, evidence model, and FSQ YAML format. A registered workspace may configure one or more platforms independently:
+
+```text
+<workspace-root>/
+  .fsq/config/config.<platform>.yaml
+  cases/<platform>/
+  knowledge/<platform>/
+  .fsq/runs/<platform>/
+```
+
+The `run`, `report`, and `playground` commands always require both `--workspace NAME` and `--platform PLATFORM`. The `control-plane` command manages browser selection instead and accepts neither option.
 
 <details>
 <summary><b>Platform setup details</b></summary>
 
-**Web** — Set the browser executable in the workspace `.fsq/config.yaml` target:
+**Web** — Set the browser executable in `.fsq/config/config.web.yaml`:
 ```yaml
 target:
   browser_executable_path: /usr/bin/google-chrome
 ```
 
-**Android** — Set the app ID in the workspace target, then select a connected ADB device per run:
+**Android** — Set the app ID in `.fsq/config/config.android.yaml`, then select a connected ADB device per run:
 ```yaml
 target:
   app_id: com.example.app
 ```
 ```bash
-fsq-agent run --workspace my-android-workspace --android-serial emulator-5554 --goal "Open the app"
+fsq-agent run --workspace my-workspace --platform android \
+  --android-serial emulator-5554 --goal "Open the app"
 ```
 When exactly one device is online, `--android-serial` may be omitted.
 
-**Windows** — Keep `backend_kind` in `config.windows.yaml`; set app-specific values in the workspace target:
+**Windows** — Keep `backend_kind` in the repository preset `config.windows.yaml`; set app-specific values in `.fsq/config/config.windows.yaml`:
 ```yaml
 target:
   app_path: C:\Program Files\MyApp\app.exe
   window_title_re: .*MyApp.*
 ```
 
-**macOS** — Keep `appium_server_url` in `config.macos.yaml`; set the app identity in the workspace target:
+**macOS** — Keep `appium_server_url` in the repository preset `config.macos.yaml`; set the app identity in `.fsq/config/config.macos.yaml`:
 ```yaml
 target:
   bundle_id: com.example.app

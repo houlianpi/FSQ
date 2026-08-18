@@ -7,7 +7,7 @@ import json
 import mimetypes
 import time
 import webbrowser
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from threading import Thread
@@ -28,11 +28,13 @@ from ._targets import discover_targets
 from ._workspace_files import WorkspaceFileAPIError, list_workspace_entries, read_workspace_file
 from ._workspaces import (
     WorkspaceAPIError,
+    add_workspace_platform_request,
     create_workspace_request,
     get_workspace,
+    get_workspace_platform,
     list_workspaces,
     map_workspace_exception,
-    update_workspace_request,
+    update_workspace_platform_request,
 )
 
 _API_PREFIX = "/api/control-plane"
@@ -49,7 +51,6 @@ class ControlPlaneServerOptions:
     host: str = "127.0.0.1"
     port: int = 8879
     open_browser: bool = True
-    workspace_path: Path = field(default_factory=lambda: Path.cwd() / ".fsq-agent-workspace")
     static_path: Path | None = None
     user_config_root: Path | None = None
 
@@ -107,6 +108,13 @@ class ControlPlaneServer:
                 self._require_config_access(peer_host)
                 if workspace_suffix == "":
                     return 200, get_workspace(workspace_name, self.options.user_config_root), dict(_JSON_HEADERS)
+                workspace_platform = _workspace_platform_suffix_or_none(workspace_suffix)
+                if workspace_platform is not None:
+                    return (
+                        200,
+                        get_workspace_platform(workspace_name, workspace_platform, self.options.user_config_root),
+                        dict(_JSON_HEADERS),
+                    )
                 if workspace_suffix == "/entries":
                     return (
                         200,
@@ -133,16 +141,17 @@ class ControlPlaneServer:
                 self._require_config_access(peer_host)
                 return 200, self._provider_auth.get(auth_request_id), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/bootstrap":
-                initialized = self.options.workspace_path.is_dir() and (self.options.workspace_path / ".fsq-agent-workspace").is_file()
-                return 200, self.state.bootstrap(self.options.workspace_path.name, initialized=initialized), dict(_JSON_HEADERS)
+                return 200, self.state.bootstrap(), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/readiness":
-                platform = _platform_query(query)
-                return 200, self._readiness(platform), dict(_JSON_HEADERS)
+                workspace_name, platform = _workspace_platform_query(query)
+                return 200, self._readiness(workspace_name, platform), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/targets":
-                settings = self._load_settings(_platform_query(query))
+                workspace_name, platform = _workspace_platform_query(query)
+                settings = self._load_settings(workspace_name, platform)
                 return 200, discover_targets(settings), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/cases":
-                settings = self._load_settings(_platform_query(query))
+                workspace_name, platform = _workspace_platform_query(query)
+                settings = self._load_settings(workspace_name, platform)
                 return 200, discover_cases(settings), dict(_JSON_HEADERS)
             request_id, suffix = _run_route(path)
             if suffix == "":
@@ -200,7 +209,8 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        if path == f"{_API_PREFIX}/workspaces":
+        workspace_name, workspace_suffix = _workspace_route_or_none(path)
+        if path == f"{_API_PREFIX}/workspaces" or (workspace_name is not None and workspace_suffix == "/platforms"):
             return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         if path.startswith(f"{_API_PREFIX}/config/"):
             return self._handle_config_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
@@ -241,7 +251,7 @@ class ControlPlaneServer:
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
         workspace_name, workspace_suffix = _workspace_route_or_none(path)
-        if workspace_name is not None and workspace_suffix == "":
+        if workspace_name is not None and _workspace_platform_suffix_or_none(workspace_suffix) is not None:
             return self._handle_workspace_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
         return self._handle_config_write("PUT", path, body, peer_host=peer_host, origin=origin, host=host)
 
@@ -298,8 +308,11 @@ class ControlPlaneServer:
             if method == "POST" and path == f"{_API_PREFIX}/workspaces":
                 return 201, create_workspace_request(body, self.options.user_config_root)
             workspace_name, workspace_suffix = _workspace_route_or_none(path)
-            if method == "PUT" and workspace_name is not None and workspace_suffix == "":
-                return 200, update_workspace_request(workspace_name, body, self.options.user_config_root)
+            if method == "POST" and workspace_name is not None and workspace_suffix == "/platforms":
+                return 201, add_workspace_platform_request(workspace_name, body, self.options.user_config_root)
+            platform = _workspace_platform_suffix_or_none(workspace_suffix)
+            if method == "PUT" and workspace_name is not None and platform is not None:
+                return 200, update_workspace_platform_request(workspace_name, platform, body, self.options.user_config_root)
             return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path and method.")
         except ConfigAPIError as exc:
             return exc.status, _error(exc.code, exc.message, exc.action)
@@ -310,15 +323,11 @@ class ControlPlaneServer:
     def _require_config_access(self, peer_host: str | None) -> None:
         require_config_access(self.options.host, peer_host)
 
-    def _load_settings(self, platform: str) -> Any:
-        if self.options.user_config_root is None:
-            return load_control_plane_settings(platform, self.options.workspace_path)
-        return load_control_plane_settings(platform, self.options.workspace_path, self.options.user_config_root)
+    def _load_settings(self, workspace_name: str, platform: str) -> Any:
+        return load_control_plane_settings(workspace_name, platform, self.options.user_config_root)
 
-    def _readiness(self, platform: str) -> dict[str, Any]:
-        if self.options.user_config_root is None:
-            return readiness(platform, self.options.workspace_path)
-        return readiness(platform, self.options.workspace_path, self.options.user_config_root)
+    def _readiness(self, workspace_name: str, platform: str) -> dict[str, Any]:
+        return readiness(workspace_name, platform, self.options.user_config_root)
 
     def sse_snapshots(self, request_id: str, *, after_sequence: int = 0, timeout: float = 15.0):
         revision = -1
@@ -348,19 +357,21 @@ class ControlPlaneServer:
         return 200, entry.read_bytes(), "text/html; charset=utf-8"
 
     def _start_run(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        workspace_name = body.get("workspaceName")
         platform = body.get("platform")
         target_id = body.get("targetId")
         mode = body.get("mode")
-        if not isinstance(platform, str) or not isinstance(target_id, str) or not isinstance(mode, str):
-            return 400, _error("invalid_run", "mode, platform, and targetId are required.", "Complete the run form and retry.")
+        if not isinstance(workspace_name, str) or not workspace_name.strip() or not isinstance(platform, str) or not isinstance(target_id, str) or not isinstance(mode, str):
+            return 400, _error("invalid_run", "workspaceName, mode, platform, and targetId are required.", "Complete the run form and retry.")
+        workspace_name = workspace_name.strip()
         source = {"goal": body["goal"]} if isinstance(body.get("goal"), str) else {"casePath": body["casePath"]} if isinstance(body.get("casePath"), str) else {}
         settings = None
         try:
-            request_id = self.state.reserve(platform=platform, target_id=target_id, mode=mode, source=source)
+            request_id = self.state.reserve(workspace_name=workspace_name, platform=platform, target_id=target_id, mode=mode, source=source)
         except BusyError as exc:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
         try:
-            settings = self._load_settings(platform)
+            settings = self._load_settings(workspace_name, platform)
             prepared = prepare_run(request_id=request_id, settings=settings, body=body)
             self._handles[request_id] = start_execution(prepared, self.state)
         except (TypeError, ValueError, FsqAgentError, OSError) as exc:
@@ -382,7 +393,7 @@ class ControlPlaneServer:
             projection = EvidenceProjection(self.state, request_id, run_dir.parent)
         else:
             snapshot = self.state.snapshot(request_id)
-            settings = self._load_settings(str(snapshot["platform"]))
+            settings = self._load_settings(str(snapshot["workspaceName"]), str(snapshot["platform"]))
             projection = EvidenceProjection(self.state, request_id, Path(settings.output.runs_dir))
         projection.bind_run(run_id)
         if not (artifact and ui_artifact):
@@ -541,6 +552,13 @@ def _platform_query(query: dict[str, list[str]]) -> str:
     return values[0]
 
 
+def _workspace_platform_query(query: dict[str, list[str]]) -> tuple[str, str]:
+    workspace_values = query.get("workspace") or []
+    if len(workspace_values) != 1 or not workspace_values[0].strip():
+        raise ValueError("workspace must be one registered workspace name.")
+    return workspace_values[0].strip(), _platform_query(query)
+
+
 def _decode_json_body(raw: bytes) -> dict[str, Any]:
     body = json.loads(raw or b"{}")
     if not isinstance(body, dict):
@@ -604,6 +622,14 @@ def _workspace_path_query(query: dict[str, list[str]], *, required: bool) -> str
     if len(values) != 1:
         raise WorkspaceFileAPIError(400, "invalid_workspace_path", "Workspace path must have one value.", "Select a workspace path and retry.")
     return values[0]
+
+
+def _workspace_platform_suffix_or_none(suffix: str | None) -> str | None:
+    prefix = "/platforms/"
+    if suffix is None or not suffix.startswith(prefix):
+        return None
+    platform = suffix.removeprefix(prefix)
+    return platform if platform and "/" not in platform else None
 
 
 def _error(code: str, message: str, action: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

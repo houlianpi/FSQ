@@ -21,7 +21,7 @@ Current `__init__.py` exports via `__all__`:
 - `AgentToolProvider`: Protocol for a provider of SDK-neutral dynamic helper tools. It exposes serializable AgentTool definitions and invokes one helper by canonical name with JSON-like arguments.
 - `AgentToolRegistry`: Maintains the active AgentTool helper set for dynamic runtime exposure and rejects duplicate canonical names. It is not the global capability registry and must not contain recordable CommonTools or PlatformTools.
 - `AgentToolExecutor`: Routes AgentTool calls to registered providers and returns normalized `AgentToolResult` values.
-- `FileOps`: Performs scoped file reads and writes. Read roots include workspace cases/knowledge, resolved preset skill resources, and the current run where needed; writes are restricted to the current run artifact boundary.
+- `FileOps`: Performs scoped file reads and writes. Read roots include the selected workspace platform's resolved cases/knowledge roots, resolved preset skill resources, and the current run where needed; writes are restricted to the current run artifact boundary.
 - `ToolArtifactStore`: Persists complete AgentTool outputs under the current run directory and provides bounded artifact search and slice reads.
 - `DefaultAgentToolProvider`: Built-in provider for `read_file`, `write_file`, `search_artifact`, and `read_artifact_slice`.
 - `AgentToolAdapter`: Builds OpenAI Agents SDK `FunctionTool` objects from AgentTool definitions while preserving SDK-neutral execution semantics.
@@ -78,7 +78,7 @@ AgentTool events must use an AgentTool-specific origin such as `agent_tool`. Rec
 - AgentTool is the dynamic-only helper concept in this module.
 - CommonTool is reserved for platform-default recordable capabilities owned by `core` platform tool providers.
 - AgentTools do not use the `capabilities` decorator layer because they are not executable FSQ capabilities and must not enter strict registries. Any decorated compatibility path must be hidden behind compatibility shims and must not be exposed as current AgentTool behavior.
-- File operation tools treat workspace cases/knowledge and resolved preset skill resources as read-only inputs. They write generated files only under the current run's artifact directory, which is a direct-child run below workspace `cases/`.
+- File operation tools treat the selected workspace platform's cases/knowledge and resolved preset skill resources as read-only inputs. They write generated files only under the current run's artifact directory, which is a direct-child run below the resolved platform run root.
 - Artifact read tools only resolve paths inside the current run directory and enforce bounded search/slice results so artifact recovery cannot reintroduce unbounded context growth.
 - Local CLI and shell execution remain out of scope. Command execution requires an explicitly scoped capability with its own SPEC update.
 - `publish_progress` is not an AgentTool. Runtime progress is emitted directly by `agent` as `RunEvent` values so user-visible status does not consume a model tool call or become confused with external capabilities.

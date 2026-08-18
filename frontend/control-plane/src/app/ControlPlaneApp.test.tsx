@@ -19,9 +19,11 @@ vi.mock('../features/overview/OverviewPage', () => ({
   OverviewPage: ({ onNavigate }: { onNavigate: (page: 'devices') => void }) => <div>Overview content<button type="button" onClick={() => onNavigate('devices')}>Start dynamic</button></div>,
 }));
 vi.mock('../features/workspace/WorkspacePage', () => ({
-  WorkspacePage: ({ createRequested, selectedName, onDirtyChange, onCancelCreate, onRegistryChanged }: { createRequested: boolean; selectedName: string | null; onDirtyChange?: (dirty: boolean) => void; onCancelCreate: () => void; onRegistryChanged: () => void }) => <div>
+  WorkspaceTitlebar: ({ workspace, onConfigure }: { workspace: { name: string }; onConfigure: () => void }) => <div><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><button type="button" onClick={onConfigure}>Configure workspace</button></div>,
+  WorkspacePage: ({ createRequested, selectedName, onDirtyChange, onCancelCreate, onCreated, onRegistryChanged }: { createRequested: boolean; selectedName: string | null; onDirtyChange?: (dirty: boolean) => void; onCancelCreate: () => void; onCreated: (detail: object) => void; onRegistryChanged: () => void }) => <div>
     {createRequested ? 'Create workspace content' : selectedName ? `Workspace ${selectedName}` : 'Workspace content'}
     <button type="button" onClick={() => onDirtyChange?.(true)}>Make workspace draft dirty</button>
+    {createRequested && <button type="button" onClick={() => onCreated({ name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] })}>Complete creation</button>}
     <button type="button" onClick={createRequested ? onCancelCreate : onRegistryChanged}>Cancel registry fixture</button>
   </div>,
 }));
@@ -90,6 +92,20 @@ it('restores focus to the initiating control when workspace creation is cancelle
   await waitFor(() => expect(createWorkspace).toHaveFocus());
 });
 
+it('focuses the workspace heading after successful creation', async () => {
+  vi.mocked(controlPlaneClient.workspaces)
+    .mockResolvedValueOnce({ workspaces: [] })
+    .mockResolvedValue({ workspaces: [
+      { name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] },
+    ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  await user.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await user.click(screen.getByRole('button', { name: 'Complete creation' }));
+
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'created' })).toHaveFocus());
+});
+
 it('reopens narrow navigation before restoring create-cancel focus', async () => {
   const matchMedia = vi.spyOn(window, 'matchMedia').mockReturnValue({
     matches: true,
@@ -112,7 +128,7 @@ it('reopens narrow navigation before restoring create-cancel focus', async () =>
 
 it('restores the previous workspace selection when creation is cancelled', async () => {
   vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
-    { name: 'mobile', configPath: 'C:\\projects\\mobile\\.fsq\\config.yaml', rootPath: 'C:\\projects\\mobile', status: 'available', platform: 'android', message: 'Workspace is available.' },
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [{ platform: 'android', configPath: 'C:\\projects\\mobile\\.fsq\\config\\config.android.yaml', status: 'available', message: 'Platform is available.' }] },
   ] });
   const user = userEvent.setup();
   render(<ControlPlaneApp />);
@@ -126,8 +142,8 @@ it('restores the previous workspace selection when creation is cancelled', async
 
 it('selects available registry entries and exposes unavailable entries only as repair guidance', async () => {
   vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
-    { name: 'mobile', configPath: 'C:\\projects\\mobile\\.fsq\\config.yaml', rootPath: 'C:\\projects\\mobile', status: 'available', platform: 'android', message: 'Workspace is available.' },
-    { name: 'broken', configPath: 'C:\\projects\\broken\\.fsq\\config.yaml', rootPath: 'C:\\projects\\broken', status: 'unavailable', message: 'Configuration is unavailable.', action: 'Repair config.yaml.' },
+    { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [{ platform: 'android', configPath: 'C:\\projects\\mobile\\.fsq\\config\\config.android.yaml', status: 'available', message: 'Platform is available.' }] },
+    { name: 'broken', rootPath: 'C:\\projects\\broken', status: 'unavailable', message: 'Configuration is unavailable.', action: 'Repair config.yaml.', platforms: [] },
   ] });
   const user = userEvent.setup();
   render(<ControlPlaneApp />);

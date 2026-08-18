@@ -40,6 +40,15 @@ const file = (name: string, content: string): WorkspaceFileResponse => ({
 
 afterEach(() => vi.clearAllMocks());
 
+it('renders a distinct successful empty tree state', async () => {
+  vi.mocked(controlPlaneClient.workspaceEntries).mockResolvedValue(entries('', []));
+
+  render(<WorkspaceBrowser workspaceName="alpha" />);
+
+  expect(await screen.findByText('No cases or knowledge files')).toBeVisible();
+  expect(screen.queryByText('Loading workspace files…')).not.toBeInTheDocument();
+});
+
 it('ignores stale root and nested responses after the selected workspace changes', async () => {
   const alphaRoot = deferred<WorkspaceEntriesResponse>();
   const alphaCases = deferred<WorkspaceEntriesResponse>();

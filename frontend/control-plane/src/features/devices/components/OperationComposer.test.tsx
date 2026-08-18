@@ -5,8 +5,9 @@ import type { ReadinessResponse } from '../../../api/types';
 import { OperationComposer } from './OperationComposer';
 
 const ready: ReadinessResponse = {
-  platform: 'web',
+  workspaceName: 'test', platformId: 'web',
   workspace: { status: 'ready', message: 'Workspace ready', action: '' },
+  platform: { status: 'ready', message: 'Platform ready', action: '' },
   provider: { status: 'ready', message: 'Provider ready', action: '' },
   target: { status: 'ready', message: 'Target ready', action: '' },
   strict: { status: 'ready', message: 'Strict ready', action: '' },

@@ -9,14 +9,14 @@ import pytest
 from fsq_agent.config import (
     PLATFORM_CONFIG_PATHS,
     activate_github_copilot_provider,
-    load_platform_settings,
     load_settings,
-    load_workspace_settings,
+    load_workspace_platform_settings,
     save_azure_openai_provider,
     validate_provider_settings,
     validate_runtime_settings,
     validate_strict_core_settings,
 )
+from fsq_agent.config._loader import load_platform_settings
 from fsq_agent.models import ConfigurationError
 
 
@@ -45,13 +45,13 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
     return app_path
 
 
-def test_load_workspace_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
+def test_load_workspace_platform_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
     workspace = tmp_path / "checkout-android"
-    config_dir = workspace / ".fsq"
+    config_dir = workspace / ".fsq" / "config"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.yaml").write_text(
+    (config_dir / "config.android.yaml").write_text(
         f"""
-version: 1
+version: 2
 name: checkout-android
 root_path: {workspace.as_posix()}
 platform: android
@@ -63,29 +63,29 @@ env:
         encoding="utf-8",
     )
 
-    settings = load_workspace_settings(workspace)
+    settings = load_workspace_platform_settings(workspace, "android")
 
     assert settings.workspace.root_dir == workspace
-    assert settings.workspace.config_path == config_dir / "config.yaml"
+    assert settings.workspace.config_path == config_dir / "config.android.yaml"
     assert settings.harness.platform == "android"
     assert settings.harness.android.app_id == "com.example.checkout"
     assert settings.runtime_secrets.allowed_names == ["TEST_ACCOUNT_PASSWORD"]
     assert settings.runtime_secrets.resolve("TEST_ACCOUNT_PASSWORD") == "local-secret"
-    assert settings.cases.dir == workspace / "cases"
-    assert settings.output.root_dir == workspace / "cases"
-    assert settings.output.runs_dir == workspace / "cases"
-    assert settings.agent_context.knowledge.root_dir == workspace / "knowledge"
+    assert settings.cases.dir == workspace / "cases" / "android"
+    assert settings.output.root_dir == workspace / ".fsq" / "runs" / "android"
+    assert settings.output.runs_dir == workspace / ".fsq" / "runs" / "android"
+    assert settings.agent_context.knowledge.root_dir == workspace / "knowledge" / "android"
     assert not (workspace / "cases").exists()
     assert not (workspace / "knowledge").exists()
 
 
-def test_load_workspace_settings_uses_committed_preset_outside_repository_cwd(tmp_path: Path) -> None:
+def test_load_workspace_platform_settings_uses_committed_preset_outside_repository_cwd(tmp_path: Path) -> None:
     workspace = tmp_path / "registered-android"
-    config_dir = workspace / ".fsq"
+    config_dir = workspace / ".fsq" / "config"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.yaml").write_text(
+    (config_dir / "config.android.yaml").write_text(
         f"""
-version: 1
+version: 2
 name: registered-android
 root_path: {workspace.as_posix()}
 platform: android
@@ -96,7 +96,7 @@ env: {{}}
         encoding="utf-8",
     )
 
-    settings = load_workspace_settings(workspace)
+    settings = load_workspace_platform_settings(workspace, "android")
 
     assert settings.harness.platform == "android"
     assert settings.harness.android.backend == "uiautomator2"
@@ -109,7 +109,7 @@ def test_validate_runtime_settings_rejects_workspace_macos_path_that_is_not_bund
     tmp_path: Path,
 ) -> None:
     workspace = tmp_path / "checkout-macos"
-    config_dir = workspace / ".fsq"
+    config_dir = workspace / ".fsq" / "config"
     config_dir.mkdir(parents=True)
     invalid_app_path = tmp_path / "ordinary-directory"
     invalid_app_path.mkdir()
@@ -121,9 +121,9 @@ harness:
 """,
         encoding="utf-8",
     )
-    (config_dir / "config.yaml").write_text(
+    (config_dir / "config.macos.yaml").write_text(
         f"""
-version: 1
+version: 2
 name: checkout-macos
 root_path: {workspace.as_posix()}
 platform: macos
@@ -140,7 +140,7 @@ env: {{}}
         api_key="test-key",
         user_config_root=user_root,
     )
-    settings = load_workspace_settings(workspace, user_config_root=user_root)
+    settings = load_workspace_platform_settings(workspace, "macos", user_config_root=user_root)
 
     with pytest.raises(ConfigurationError, match="application bundle or executable"):
         validate_runtime_settings(settings)
@@ -204,10 +204,9 @@ openai_agents:
     assert not hasattr(settings, "cli_tools")
     assert not hasattr(settings, "shell")
     assert settings.workspace.root_dir == tmp_path / "workspace"
-    assert (settings.workspace.root_dir / ".fsq-agent-workspace").exists()
     assert settings.output.root_dir == tmp_path / "workspace" / "output"
     assert settings.output.runs_dir == tmp_path / "workspace" / "output" / "runs"
-    assert settings.output.runs_dir.exists()
+    assert not settings.workspace.root_dir.exists()
     assert settings.cases.dir == tmp_path / "cases"
     assert not hasattr(settings, "pre_plan")
     assert settings.execution.post_action_delay_seconds.platform == 1.0
@@ -385,20 +384,22 @@ output:
 
     expected_workspace = project_dir / ".fsq-agent-workspace"
     assert settings.workspace.root_dir == expected_workspace
-    assert (expected_workspace / ".fsq-agent-workspace").exists()
     assert settings.output.root_dir == expected_workspace / "output"
     assert settings.output.runs_dir == expected_workspace / "output" / "runs"
+    assert not expected_workspace.exists()
 
 
-def test_load_settings_rejects_non_empty_unmarked_workspace(tmp_path: Path) -> None:
+def test_load_settings_does_not_modify_non_empty_workspace_path(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "user-file.txt").write_text("do not own this", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(_base_config(tmp_path), encoding="utf-8")
 
-    with pytest.raises(ConfigurationError, match="not marked"):
-        load_settings(config_path)
+    settings = load_settings(config_path)
+
+    assert settings.workspace.root_dir == workspace
+    assert [path.name for path in workspace.iterdir()] == ["user-file.txt"]
 
 
 def test_load_settings_ignores_fsq_process_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

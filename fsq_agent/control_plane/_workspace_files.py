@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fsq_agent.config import list_workspace_registry, load_registered_workspace
-from fsq_agent.models import ConfigurationError, WorkspaceConfig
+from fsq_agent.config import inspect_registered_workspace
+from fsq_agent.models import ConfigurationError, WorkspaceStatus
 
 _ALLOWED_ROOTS = frozenset({"cases", "knowledge"})
 _MAX_DEPTH = 32
@@ -96,18 +96,14 @@ def read_workspace_file(name: str, relative_path: str, user_config_root: Path | 
     }
 
 
-def _load_workspace(name: str, user_config_root: Path | None) -> WorkspaceConfig:
-    normalized_name = name.casefold()
-    entry = next(
-        (candidate for candidate in list_workspace_registry(user_config_root) if candidate.name.casefold() == normalized_name),
-        None,
-    )
-    if entry is None:
-        raise WorkspaceFileAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.")
+def _load_workspace(name: str, user_config_root: Path | None) -> WorkspaceStatus:
     try:
-        return load_registered_workspace(entry.name, user_config_root)
+        status = inspect_registered_workspace(name, user_config_root)
     except ConfigurationError as exc:
-        raise WorkspaceFileAPIError(409, "workspace_unavailable", "Workspace configuration is unavailable.", "Repair the registered workspace configuration.") from exc
+        raise WorkspaceFileAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.") from exc
+    if status.status == "unavailable":
+        raise WorkspaceFileAPIError(409, "workspace_unavailable", "Workspace configuration is unavailable.", "Repair the registered workspace configuration.")
+    return status
 
 
 def _normalize_relative_path(value: str, *, allow_root: bool) -> PurePosixPath:

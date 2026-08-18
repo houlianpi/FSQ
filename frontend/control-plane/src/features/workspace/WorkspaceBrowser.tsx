@@ -134,11 +134,12 @@ export function WorkspaceBrowser({ workspaceName }: WorkspaceBrowserProps) {
   };
 
   return <section className="cp-workspace-browser" aria-labelledby="workspace-files-heading">
-    <header><div><span className="cp-kicker">Read only</span><h2 id="workspace-files-heading">Workspace files</h2></div><span>Only cases and knowledge are exposed</span></header>
+    <header><h2 id="workspace-files-heading">Workspace files</h2></header>
     <div className="cp-browser-grid">
       <div className="cp-tree-pane" aria-label="Workspace file tree">
         {treeError && <div className="cp-inline-error"><AlertCircle aria-hidden="true" /><span><strong>{treeError.message}</strong><small>{treeError.action}</small></span><button className="cp-icon-button" type="button" aria-label="Retry workspace files" onClick={loadRoot}><RefreshCw aria-hidden="true" /></button></div>}
         {!root && !treeError && <p className="cp-pane-state">Loading workspace files…</p>}
+        {root?.entries.length === 0 && <p className="cp-pane-state">No cases or knowledge files</p>}
         {root && <ul className="cp-tree-root">{root.entries.map((entry) => <TreeEntry key={entry.path} entry={entry} depth={0} expanded={expanded} childrenByPath={childrenByPath} loadingPaths={loadingPaths} selectedPath={file?.path ?? null} onDirectory={onDirectory} onFile={onFile} />)}</ul>}
       </div>
       <div className="cp-file-pane">

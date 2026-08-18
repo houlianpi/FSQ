@@ -118,12 +118,14 @@ def load_platform_settings(
     return settings
 
 
-def load_workspace_settings(
-    workspace: str | Path | None = None,
+def load_workspace_platform_settings(
+    workspace: str | Path,
+    platform: str,
     user_config_root: str | Path | None = None,
 ) -> Settings:
-    workspace_config, workspace_root, workspace_config_path = load_workspace_config(workspace)
-    preset_path = resolve_platform_config_path(workspace_config.platform)
+    platform_id = platform.strip().lower()
+    workspace_config, workspace_root, workspace_config_path = load_workspace_config(workspace, platform_id)
+    preset_path = resolve_platform_config_path(platform_id)
     preset_data = _read_yaml(preset_path)
     _reject_obsolete_settings(preset_data)
     _reject_workspace_owned_preset_settings(preset_data)
@@ -133,7 +135,7 @@ def load_workspace_settings(
         raise ConfigurationError("Invalid platform preset.", context={"errors": exc.errors()}) from exc
 
     settings.workspace = WorkspaceSettings(root_dir=workspace_root, config_path=workspace_config_path)
-    settings.harness.platform = workspace_config.platform
+    settings.harness.platform = platform_id
     target = workspace_config.target
     if isinstance(target, AndroidWorkspaceTarget):
         settings.harness.android.app_id = target.app_id
@@ -149,7 +151,7 @@ def load_workspace_settings(
 
     settings.runtime_secrets.set_values(workspace_config.env)
     settings = refresh_provider_settings(settings, user_config_root)
-    resolve_workspace_runtime_paths(settings, workspace_root, preset_path.parent)
+    resolve_workspace_runtime_paths(settings, workspace_root, preset_path.parent, platform_id)
     return settings
 
 

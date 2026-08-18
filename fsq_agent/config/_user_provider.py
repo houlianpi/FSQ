@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from fsq_agent.config._settings import Settings
 
-USER_CONFIG_VERSION = 2
+USER_CONFIG_VERSION = 3
 USER_CONFIG_FILENAME = "config.yaml"
 AUTH_DIRECTORY = "auth"
 AZURE_AUTH_FILENAME = "azure-openai.json"
@@ -91,7 +91,7 @@ _ProviderRecord = Annotated[
 class UserProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[2] = USER_CONFIG_VERSION
+    version: Literal[3] = USER_CONFIG_VERSION
     provider: _ProviderRecord | None = None
     workspaces: list[WorkspaceRegistryEntry] = Field(default_factory=list)
     _api_key: str = PrivateAttr(default="")
@@ -101,16 +101,16 @@ class UserProviderConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_workspace_uniqueness(self) -> UserProviderConfig:
         names: set[str] = set()
-        paths: set[str] = set()
+        roots: set[str] = set()
         for workspace in self.workspaces:
             normalized_name = workspace.name.casefold()
-            normalized_path = os.path.normcase(str(workspace.config_path.resolve()))
+            normalized_root = os.path.normcase(str(workspace.root_path.resolve()))
             if normalized_name in names:
                 raise ValueError("workspace names must be unique")
-            if normalized_path in paths:
-                raise ValueError("workspace config paths must be unique")
+            if normalized_root in roots:
+                raise ValueError("workspace root paths must be unique")
             names.add(normalized_name)
-            paths.add(normalized_path)
+            roots.add(normalized_root)
         return self
 
     @property
@@ -126,11 +126,34 @@ class UserProviderConfig(BaseModel):
         return dict(self._provider_token) if self._provider_token is not None else None
 
 
-class _UserProviderConfigV1(BaseModel):
+class _WorkspaceRegistryEntryV2(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[1]
+    name: str
+    config_path: Path
+
+    @field_validator("config_path")
+    @classmethod
+    def _validate_config_path(cls, value: Path) -> Path:
+        expanded = value.expanduser()
+        if not expanded.is_absolute():
+            raise ValueError("workspace config_path must be absolute")
+        metadata_path = expanded.parent
+        workspace_root = metadata_path.parent
+        if expanded.is_symlink() or metadata_path.is_symlink() or workspace_root.is_symlink():
+            raise ValueError("workspace config_path must not traverse symbolic links")
+        normalized = expanded.resolve()
+        if normalized.name != "config.yaml" or normalized.parent.name != ".fsq":
+            raise ValueError("workspace config_path must identify .fsq/config.yaml")
+        return normalized
+
+
+class _UserProviderConfigV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[2]
     provider: _ProviderRecord | None = None
+    workspaces: list[_WorkspaceRegistryEntryV2] = Field(default_factory=list)
 
 
 def load_user_provider_config(user_config_root: str | Path | None = None) -> UserProviderConfig:
@@ -166,16 +189,16 @@ def _register_workspace(entry: WorkspaceRegistryEntry, user_config_root: str | P
     with _WRITE_LOCK:
         config, config_path, _ = _load_user_document(root)
         normalized_name = entry.name.casefold()
-        normalized_path = os.path.normcase(str(entry.config_path.resolve()))
+        normalized_root = os.path.normcase(str(entry.root_path.resolve()))
         if any(existing.name.casefold() == normalized_name for existing in config.workspaces):
             raise ConfigurationError(
                 "A workspace with this name is already registered.",
                 context={"name": entry.name},
             )
-        if any(os.path.normcase(str(existing.config_path.resolve())) == normalized_path for existing in config.workspaces):
+        if any(os.path.normcase(str(existing.root_path.resolve())) == normalized_root for existing in config.workspaces):
             raise ConfigurationError(
                 "This workspace path is already registered.",
-                context={"config_path": str(entry.config_path)},
+                context={"root_path": str(entry.root_path)},
             )
         updated = config.model_copy(update={"workspaces": [*config.workspaces, entry]})
         try:
@@ -289,15 +312,22 @@ def _load_user_document(root: Path) -> tuple[UserProviderConfig, Path, Path]:
         raise ConfigurationError("Unable to read user Provider configuration.", context={"path": str(config_path)}) from exc
     if not isinstance(data, dict):
         raise ConfigurationError("User Provider configuration must contain a YAML mapping.", context={"path": str(config_path)})
-    if data.get("version") == 1:
+    if data.get("version") == 2:
         try:
-            legacy = _UserProviderConfigV1.model_validate(data)
+            legacy = _UserProviderConfigV2.model_validate(data)
         except ValidationError as exc:
             raise ConfigurationError(
                 "Invalid user Provider configuration.",
                 context={"path": str(config_path), "errors": exc.errors()},
             ) from exc
-        upgraded = UserProviderConfig(provider=legacy.provider)
+        try:
+            workspaces = [WorkspaceRegistryEntry(name=entry.name, root_path=entry.config_path.parent.parent) for entry in legacy.workspaces]
+            upgraded = UserProviderConfig(provider=legacy.provider, workspaces=workspaces)
+        except ValidationError as exc:
+            raise ConfigurationError(
+                "Invalid user Provider configuration.",
+                context={"path": str(config_path), "errors": exc.errors()},
+            ) from exc
         try:
             _atomic_write(config_path, _yaml_bytes(upgraded))
         except OSError as exc:

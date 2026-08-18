@@ -38,26 +38,30 @@ def test_load_user_provider_config_initializes_explicit_unconfigured_state(tmp_p
 
     config = load_user_provider_config(user_root)
 
-    assert config.version == 2
+    assert config.version == 3
     assert config.provider is None
     assert config.workspaces == []
     assert yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8")) == {
-        "version": 2,
+        "version": 3,
         "provider": None,
         "workspaces": [],
     }
     assert (user_root / "auth").is_dir()
 
 
-def test_load_user_provider_config_upgrades_valid_v1_without_changing_provider(tmp_path: Path) -> None:
+def test_load_user_provider_config_upgrades_valid_v2_without_changing_provider_or_credentials(tmp_path: Path) -> None:
     user_root = tmp_path / "user"
     user_root.mkdir()
+    workspace_root = (tmp_path / "checkout").resolve()
     (user_root / "config.yaml").write_text(
-        """
-version: 1
+        f"""
+version: 2
 provider:
   type: github_copilot
   model: copilot-model
+workspaces:
+  - name: checkout
+    config_path: {(workspace_root / ".fsq" / "config.yaml").as_posix()}
 """,
         encoding="utf-8",
     )
@@ -71,24 +75,31 @@ provider:
 
     config = load_user_provider_config(user_root)
 
-    assert config.version == 2
+    assert config.version == 3
     assert config.provider is not None
     assert config.provider.type == "github_copilot"
-    assert config.workspaces == []
-    assert yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8"))["version"] == 2
+    assert [(entry.name, entry.root_path) for entry in config.workspaces] == [("checkout", workspace_root)]
+    assert config.github_token == {"access_token": "github-token"}
+    assert config.provider_token == {"token": "provider-token", "plan": "individual"}
+    persisted = yaml.safe_load((user_root / "config.yaml").read_text(encoding="utf-8"))
+    assert persisted == {
+        "version": 3,
+        "provider": {"type": "github_copilot", "model": "copilot-model"},
+        "workspaces": [{"name": "checkout", "root_path": str(workspace_root)}],
+    }
 
 
 def test_provider_activation_preserves_workspace_registry(tmp_path: Path) -> None:
     user_root = tmp_path / "user"
     user_root.mkdir()
-    config_path = (tmp_path / "checkout" / ".fsq" / "config.yaml").resolve()
+    workspace_root = (tmp_path / "checkout").resolve()
     (user_root / "config.yaml").write_text(
         f"""
-version: 2
+version: 3
 provider: null
 workspaces:
   - name: checkout
-    config_path: {config_path.as_posix()}
+    root_path: {workspace_root.as_posix()}
 """,
         encoding="utf-8",
     )
@@ -101,24 +112,24 @@ workspaces:
     )
 
     registry = list_workspace_registry(user_root)
-    assert [(entry.name, entry.config_path) for entry in registry] == [("checkout", config_path)]
+    assert [(entry.name, entry.root_path) for entry in registry] == [("checkout", workspace_root)]
 
 
 @pytest.mark.parametrize("duplicate", ["name", "path"])
 def test_load_user_provider_config_rejects_duplicate_workspace_identity(tmp_path: Path, duplicate: str) -> None:
     user_root = tmp_path / "user"
     user_root.mkdir()
-    first_path = (tmp_path / "checkout" / ".fsq" / "config.yaml").resolve()
-    second_path = first_path if duplicate == "path" else (tmp_path / "search" / ".fsq" / "config.yaml").resolve()
+    first_path = (tmp_path / "checkout").resolve()
+    second_path = first_path if duplicate == "path" else (tmp_path / "search").resolve()
     second_name = "search" if duplicate == "path" else "CHECKOUT"
     (user_root / "config.yaml").write_text(
         yaml.safe_dump(
             {
-                "version": 2,
+                "version": 3,
                 "provider": None,
                 "workspaces": [
-                    {"name": "checkout", "config_path": str(first_path)},
-                    {"name": second_name, "config_path": str(second_path)},
+                    {"name": "checkout", "root_path": str(first_path)},
+                    {"name": second_name, "root_path": str(second_path)},
                 ],
             },
             sort_keys=False,
@@ -132,7 +143,7 @@ def test_load_user_provider_config_rejects_duplicate_workspace_identity(tmp_path
 
 def test_load_user_provider_config_rejects_symlinked_workspace_registry_root(tmp_path: Path) -> None:
     real_root = tmp_path / "checkout"
-    (real_root / ".fsq").mkdir(parents=True)
+    real_root.mkdir()
     linked_root = tmp_path / "checkout-link"
     try:
         linked_root.symlink_to(real_root, target_is_directory=True)
@@ -143,10 +154,10 @@ def test_load_user_provider_config_rejects_symlinked_workspace_registry_root(tmp
     (user_root / "config.yaml").write_text(
         yaml.safe_dump(
             {
-                "version": 2,
+                "version": 3,
                 "provider": None,
                 "workspaces": [
-                    {"name": "checkout", "config_path": str(linked_root / ".fsq" / "config.yaml")},
+                    {"name": "checkout", "root_path": str(linked_root)},
                 ],
             },
             sort_keys=False,

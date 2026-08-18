@@ -6,7 +6,7 @@ import type { ApiErrorBody, WorkspaceRegistryEntry } from '../api/types';
 import { ConfigPage } from '../features/config/ConfigPage';
 import { DevicesPage } from '../features/devices/DevicesPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
-import { WorkspacePage } from '../features/workspace/WorkspacePage';
+import { WorkspacePage, WorkspaceTitlebar } from '../features/workspace/WorkspacePage';
 
 function parentPath(rootPath: string): string {
   const normalized = rootPath.replace(/[\\/]+$/, '');
@@ -23,10 +23,13 @@ export function ControlPlaneApp() {
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<ApiErrorBody | null>(null);
   const [selectedWorkspaceName, setSelectedWorkspaceName] = useState<string | null>(null);
   const [createRequested, setCreateRequested] = useState(false);
+  const [workspaceConfigurationOpen, setWorkspaceConfigurationOpen] = useState(false);
   const workspaceRegistryRequest = useRef(0);
   const workspaceCreateInitiator = useRef<{ element: HTMLElement; id: string | null } | null>(null);
   const workspaceCreateFocusRestore = useRef<(() => void) | null>(null);
   const workspaceCreatePreviousSelection = useRef<string | null>(null);
+  const focusCreatedWorkspace = useRef(false);
+  const selectedWorkspace = workspaces.find((workspace) => workspace.name === selectedWorkspaceName) ?? null;
 
   const refreshWorkspaces = (signal?: AbortSignal) => {
     const request = ++workspaceRegistryRequest.current;
@@ -47,6 +50,12 @@ export function ControlPlaneApp() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!focusCreatedWorkspace.current || !selectedWorkspaceName || !selectedWorkspace) return;
+    focusCreatedWorkspace.current = false;
+    requestAnimationFrame(() => document.getElementById('workspace-heading')?.focus());
+  }, [selectedWorkspaceName, selectedWorkspace]);
+
   const canDiscardDraft = (destination: ControlPlanePageId) => {
     if (activePage === 'config' && destination !== 'config' && configDirty && !window.confirm('Discard unsaved Azure changes?')) return false;
     if (activePage === 'workspace' && workspaceDirty && !window.confirm('Discard unsaved workspace changes?')) return false;
@@ -64,6 +73,7 @@ export function ControlPlaneApp() {
     if (page === 'workspace') {
       setSelectedWorkspaceName(null);
       setCreateRequested(false);
+      setWorkspaceConfigurationOpen(false);
     }
     setActivePage(page);
   };
@@ -79,6 +89,7 @@ export function ControlPlaneApp() {
     setWorkspaceDirty(false);
     setSelectedWorkspaceName(null);
     setCreateRequested(true);
+    setWorkspaceConfigurationOpen(false);
     setActivePage('workspace');
   };
 
@@ -111,14 +122,17 @@ export function ControlPlaneApp() {
     workspaceCreatePreviousSelection.current = null;
     setCreateRequested(false);
     setSelectedWorkspaceName(name);
+    setWorkspaceConfigurationOpen(false);
     setActivePage('workspace');
   };
 
   const workspaceNavigation: WorkspaceNavigationItem[] = workspaces.map((workspace) => ({
     id: workspace.name,
     label: workspace.name,
-    description: workspace.status === 'available' ? `${workspace.platform} · ${parentPath(workspace.rootPath)}` : `${parentPath(workspace.rootPath)} · unavailable`,
-    available: workspace.status === 'available',
+    description: workspace.status !== 'unavailable'
+      ? `${workspace.platforms.filter((item) => item.status === 'available').map((item) => item.platform).join(', ') || 'No available platforms'} · ${parentPath(workspace.rootPath)}`
+      : `${parentPath(workspace.rootPath)} · unavailable`,
+    available: workspace.status !== 'unavailable',
     message: workspace.status === 'unavailable' ? `${workspace.message} ${workspace.action}` : undefined,
   }));
   const shellWorkspaceProps = {
@@ -130,7 +144,6 @@ export function ControlPlaneApp() {
     onCreateWorkspace: requestCreateWorkspace,
     onSelectWorkspace: selectWorkspace,
   };
-
   if (activePage === 'overview') return <ControlPlaneShell
     activePage="overview" title="" description=""
     onNavigate={navigate} {...shellWorkspaceProps}
@@ -138,15 +151,18 @@ export function ControlPlaneApp() {
 
   if (activePage === 'workspace') return <ControlPlaneShell
     activePage="workspace" title="Workspace" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
+    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => setWorkspaceConfigurationOpen(true)} /> : undefined}
     onNavigate={navigate} {...shellWorkspaceProps}
   ><WorkspacePage
       selectedName={selectedWorkspaceName}
       createRequested={createRequested}
+      configurationOpen={workspaceConfigurationOpen}
       registryError={workspaceRegistryError}
       onRetryRegistry={refreshWorkspaces}
       onRequestCreate={requestCreateWorkspace}
       onCancelCreate={cancelWorkspaceCreation}
-      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); refreshWorkspaces(); }}
+      onConfigurationOpenChange={setWorkspaceConfigurationOpen}
+      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); refreshWorkspaces(); }}
       onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); refreshWorkspaces(); }}
       onDirtyChange={setWorkspaceDirty}
     /></ControlPlaneShell>;
@@ -156,7 +172,7 @@ export function ControlPlaneApp() {
     onNavigate={navigate} {...shellWorkspaceProps}
   ><ConfigPage onDirtyChange={setConfigDirty} /></ControlPlaneShell>;
 
-  return <DevicesPage renderShell={(toolbar, content) => <ControlPlaneShell
+  return <DevicesPage workspaces={workspaces} selectedWorkspaceName={selectedWorkspaceName} onWorkspaceChange={setSelectedWorkspaceName} renderShell={(toolbar, content) => <ControlPlaneShell
     activePage="devices" title="Device workspace"
     description="Select a target, choose how FSQ should test it, and follow real evidence while the run progresses."
     titleActions={toolbar} onNavigate={navigate} {...shellWorkspaceProps}

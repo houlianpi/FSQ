@@ -2,14 +2,14 @@
 
 ## Purpose
 
-Serve the Python runtime boundary for the local, single-user FSQ-Agent Playground. The module owns the HTTP API, server-side session and task state, execution adaptation, safe YAML and run-artifact access, replay persistence, production static serving, and package integration.
+Serve the Python runtime boundary for the local, single-user FSQ-Agent Playground after CLI has resolved one explicit registered workspace and configured platform. The module owns the HTTP API, server-side session and task state, execution adaptation, safe platform-scoped YAML and run-artifact access, replay persistence, production static serving, and package integration.
 
 The authored browser application and browser-local interaction state are owned by `frontend/playground/SPEC.md`. This Python module is an entry-layer convenience surface that reuses existing FSQ-Agent execution, configuration, platform harness/tool provider, event, report, and recording contracts rather than implementing a separate agent loop or platform runner.
 
 ## Dependencies
 
 - `models`: Uses `Task`, `TaskResult`, `RunEvent`, report artifacts, and shared configuration/error models.
-- `config`: Receives workspace-derived startup settings, refreshes only the user-provider portion at each complete execution boundary, and applies the same runtime/provider/strict validation policy used by CLI entry points.
+- `config`: Receives validated workspace-platform startup settings, refreshes only the user-provider portion at each complete execution boundary, and applies the same runtime/provider/strict validation policy used by CLI entry points.
 - `providers`: Builds the provider-backed AI assertion evaluator used by configured dynamic and strict execution.
 - `agent`: Runs dynamic goal/raw-reference tasks through `FsqAgent.run` and receives live events through an event sink.
 - `fsq`: Loads strict FSQ YAML cases and converts them into executable steps for strict mode.
@@ -27,7 +27,7 @@ Current `__init__.py` exports via `__all__`:
 
 - `PlaygroundServer`: Local HTTP server wrapper.
 - `PlaygroundServerOptions`: Host, port, open-browser flag, and optional static path overrides for tests.
-- `run_playground(settings: Settings, options: PlaygroundServerOptions) -> None`: Blocking entry helper used by the CLI command.
+- `run_playground(settings: Settings, options: PlaygroundServerOptions) -> None`: Blocking entry helper used by the CLI command after explicit workspace/platform resolution. It does not discover or select a workspace or platform.
 
 Initial HTTP API:
 
@@ -57,9 +57,9 @@ Initial HTTP API:
 | `GET /step-artifacts/{request_or_run_id}/{step_id_or_index}` | Resolve one completed-run step and return safe run-local artifacts for that step. A step-id selector resolves strictly against artifact and event step ids; a numeric selector resolves against evidence step indices. Strict YAML uses evidence step ids; dynamic raw-YAML may best-effort use runner metadata. The endpoint returns screenshot and supported text artifacts, or a structured no-artifacts response. |
 | `GET /reports/{run_id}` | Resolve a stored Markdown or JSON report for one run id and return safe metadata or content. |
 
-`POST /execute` accepts exactly one of `goal`, `caseYamlPath`, or `strictCaseYamlPath`. `goal` constructs a dynamic `Task` equivalent to CLI `--goal`. Case paths must identify exact lowercase `.fsq.yaml` files contained below workspace `settings.cases.dir`; the same boundary applies to Input YAML display/edit and strict lifecycle `runCase` dependencies. Dynamic case input is read as complete UTF-8 raw reference text and is not parsed into strict steps. Strict case input executes through the shared lifecycle service and active platform harness. Lifecycle and main steps share one report and evidence manifest. Playground dynamic execution attempts post-run recording with `allow_failure=True`; strict YAML execution does not record again.
+`POST /execute` accepts exactly one of `goal`, `caseYamlPath`, or `strictCaseYamlPath`. `goal` constructs a dynamic `Task` equivalent to CLI `--goal`. Case paths must identify exact lowercase `.fsq.yaml` files contained below the selected platform's resolved `settings.cases.dir`; the same boundary applies to Input YAML display/edit and strict lifecycle `runCase` dependencies. Dynamic case input is read as complete UTF-8 raw reference text and is not parsed into strict steps. Strict case input executes through the shared lifecycle service and active platform harness. Lifecycle and main steps share one report and evidence manifest. Playground dynamic execution attempts post-run recording with `allow_failure=True`; strict YAML execution does not record again.
 
-At the beginning of every accepted `/execute`, Playground copies its startup settings and refreshes only the user-provider snapshot before validating or constructing provider-dependent runtime objects. The server's selected platform, active target/session metadata, workspace, cases, output paths, and all other runtime policy remain unchanged. The refreshed snapshot is frozen for that complete execution; Config changes do not alter a preparing/running/finalizing task.
+At the beginning of every accepted `/execute`, Playground copies its startup settings and refreshes only the user-provider snapshot before validating or constructing provider-dependent runtime objects. The server's selected workspace/platform identity, platform-config-derived target/secrets, session metadata, cases/knowledge/runs roots, and all other runtime policy remain unchanged for its lifetime. The refreshed snapshot is frozen for that complete execution; Provider changes do not alter a preparing/running/finalizing task.
 
 Lifecycle `runCase` uses strict path resolution and recursion detection, and repeated actions preserve authored order. Before-hook failure skips the remaining before/main work as appropriate, while after hooks still execute. Windows `runShell` uses PowerShell; other platforms use the local system shell. Playground cancellation applies throughout lifecycle execution.
 
@@ -70,7 +70,7 @@ Lifecycle `runCase` uses strict path resolution and recursion detection, and rep
 Shared playground behavior:
 
 - Runtime info reports the active platform and safe backend metadata.
-- Dynamic and strict execution use the same workspace-private runtime secret store as CLI execution. Playground may expose configured names but never values. Workspace target/secret changes require restart; saved Provider changes are captured by the next `/execute` without restart.
+- Dynamic and strict execution use the selected platform's private runtime secret store as CLI execution. Playground may expose configured names but never values. Platform target/secret changes require restart; saved Provider changes are captured by the next `/execute` without restart.
 - `/execute`, progress polling, screenshots, replay frames/video, and report lookup route through the active platform execution path.
 - Strict execution parses YAML through the active platform registry snapshot containing inherited CommonTools plus active PlatformTools. Authored command names resolve through canonical capability names and active `fsq_command` replay aliases.
 - Strict execution always uses the shared lifecycle service, including cases without hooks. Lifecycle, child, and main steps share progress, evidence, report, preview, and replay behavior.
@@ -147,7 +147,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 ## Verification Scope
 
 - Verification covers playground state/session behavior, runtime info, dynamic and strict execution adapters, strict lifecycle execution, Input YAML lifecycle display/save behavior, progress delivery, cancellation, report lookup, recorded YAML display, existing-run loading, replay/video endpoints, and step-artifact preview.
-- Boundary verification ensures all run and artifact endpoints stay read-only where specified, YAML lifecycle saves are atomic and revision-checked, unsafe paths are rejected, secret redaction is preserved, and dynamic raw YAML display remains separate from strict YAML execution.
+- Boundary verification ensures the server accepts an already resolved explicit workspace/platform context; all case/lifecycle paths remain in that platform's cases root; all run and artifact endpoints remain in that platform's run root and stay read-only where specified; YAML lifecycle saves are atomic and revision-checked; unsafe paths are rejected; secret redaction is preserved; and dynamic raw YAML display remains separate from strict YAML execution.
 - Frontend integration verification ensures Python static serving resolves the generated assets, missing generated output fails with the documented build instruction, API/SSE/binary/range contracts remain consumable by the browser application, and a built wheel runs the Playground without Node.js. Frontend source and build verification are owned by `frontend/SPEC.md` and `frontend/playground/SPEC.md`.
 
 ## Current Invariants
@@ -155,7 +155,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 ### Execution and Ownership
 
 - Goal, YAML, and Strict YAML preserve the corresponding CLI execution semantics: dynamic goal task construction, non-strict raw UTF-8 YAML reference material, and registry-backed deterministic strict execution with core evidence reporting.
-- Each `/execute` captures the latest complete Provider snapshot while preserving startup platform/session/workspace/path policy. Active tasks never change Provider in place.
+- Each `/execute` captures the latest complete Provider snapshot while preserving startup workspace/platform/config/session/path policy. Active tasks never change Provider in place, and Playground never infers or switches platform.
 - Capability declaration and discovery remain bootstrap concerns. Playground consumes validated registry metadata, public execution APIs, and normalized results rather than decorator internals or platform action catalogs.
 - Completed dynamic runs use post-run recording with `allow_failure=True`; recording failure does not change execution status.
 - Authored browser source and npm dependencies are owned by `frontend/SPEC.md` and `frontend/playground/SPEC.md`. The Python package owns production serving of generated assets; generated bundles are package data rather than authored or tracked source.

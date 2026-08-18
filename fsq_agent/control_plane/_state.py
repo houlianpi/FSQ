@@ -33,6 +33,7 @@ def _now() -> str:
 @dataclass
 class TaskRecord:
     request_id: str
+    workspace_name: str
     platform: str
     target_id: str
     mode: str
@@ -62,12 +63,19 @@ class ControlPlaneState:
         self._current_request_id: str | None = None
         self._tasks: dict[str, TaskRecord] = {}
 
-    def reserve(self, *, platform: str, target_id: str, mode: str, source: dict[str, str]) -> str:
+    def reserve(self, *, workspace_name: str, platform: str, target_id: str, mode: str, source: dict[str, str]) -> str:
         with self._condition:
             if self._current_request_id is not None:
                 raise BusyError("Another Control Plane task is active.")
             request_id = str(uuid4())
-            self._tasks[request_id] = TaskRecord(request_id=request_id, platform=platform, target_id=target_id, mode=mode, source=dict(source))
+            self._tasks[request_id] = TaskRecord(
+                request_id=request_id,
+                workspace_name=workspace_name,
+                platform=platform,
+                target_id=target_id,
+                mode=mode,
+                source=dict(source),
+            )
             self._current_request_id = request_id
             self._notify()
             return request_id
@@ -189,7 +197,7 @@ class ControlPlaneState:
         with self._condition:
             return self._snapshot(self._require(request_id), after_sequence=after_sequence)
 
-    def bootstrap(self, workspace: str, *, initialized: bool = True) -> dict[str, Any]:
+    def bootstrap(self) -> dict[str, Any]:
         with self._condition:
             active = self._tasks.get(self._current_request_id or "")
             return {
@@ -200,7 +208,6 @@ class ControlPlaneState:
                     {"id": "windows", "label": "Windows"},
                     {"id": "macos", "label": "macOS"},
                 ],
-                "workspace": {"name": workspace, "initialized": initialized},
                 "busy": active is not None,
                 "activeTask": self._summary(active) if active else None,
             }
@@ -248,6 +255,7 @@ class ControlPlaneState:
         return {
             "requestId": task.request_id,
             "runId": task.run_id,
+            "workspaceName": task.workspace_name,
             "platform": task.platform,
             "targetId": task.target_id,
             "mode": task.mode,

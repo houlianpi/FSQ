@@ -5,7 +5,7 @@ import type { RunSnapshot } from '../../../api/types';
 import { LiveEvidencePanel } from './LiveEvidencePanel';
 
 const snapshot: RunSnapshot = {
-  requestId: 'request', runId: 'run', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
+  requestId: 'request', runId: 'run', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
   source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
   events: [{ sequence: 1, time: '2026-08-11T12:00:00Z', level: 'info', phase: 'execution', tool: 'clickOn', status: 'completed', message: 'Clicked safely' }],
   activeStep: null, result: null, summary: 'Running', screenshotRevision: 0, uiSnapshotRevision: 0,

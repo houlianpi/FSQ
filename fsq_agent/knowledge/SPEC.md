@@ -36,5 +36,5 @@ Missing optional knowledge references are recorded as operational diagnostics. I
 - `index.md` is reserved for the optional page-knowledge graph index consumed by internal dynamic goal planning. It is loaded only when present under the resolved pre-plan knowledge directory and is not automatically loaded into normal task execution by `DirectoryKnowledgeProvider`.
 - Task-specific `Task.knowledge_refs` remain supported and are resolved relative to the configured knowledge directory.
 - Plain text and Markdown are loaded as strings. JSON and YAML are parsed into structured values. Image files are discovered as assets, but this implementation does not attach image pixels to the model prompt.
-- Project knowledge storage lives under each workspace `knowledge/` root. Reusable automation skills remain repository preset resources and are loaded by the separate `skills` module.
+- Project knowledge storage lives under the selected workspace platform's `knowledge/<platform>/` root. Reusable automation skills remain repository preset resources and are loaded by the separate `skills` module.
 - Skill loading is owned by the separate `skills` module so private knowledge and reusable automation skills can evolve independently.
