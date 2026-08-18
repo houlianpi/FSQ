@@ -23,7 +23,19 @@ from fsq_agent.control_plane._server import _RequestHandler
 from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
 from fsq_agent.control_plane._targets import discover_targets
 from fsq_agent.fsq import FsqCaseLoader
-from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult, HarnessActionResult, HarnessArtifactRef, HarnessContext, ReportArtifact, RunEvent, RunnerEvent, RunnerStepResult, TaskResult, VerificationResult
+from fsq_agent.models import (
+    AndroidDevice,
+    AndroidDeviceDiscoveryResult,
+    HarnessActionResult,
+    HarnessArtifactRef,
+    HarnessContext,
+    ReportArtifact,
+    RunEvent,
+    RunnerEvent,
+    RunnerStepResult,
+    TaskResult,
+    VerificationResult,
+)
 
 
 def _settings(tmp_path: Path, platform: str = "android") -> Settings:
