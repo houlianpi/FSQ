@@ -11,7 +11,7 @@ const summary = (name: string): WorkspaceDetail => ({
   message: 'Available.',
   platforms: [
     { platform: 'android', configPath: 'android.yaml', status: 'available', message: 'Available.', target: { appId: `com.example.${name}` }, env: [], revision: 'sha256:android' },
-    { platform: 'web', configPath: 'web.yaml', status: 'available', message: 'Available.', target: { browserExecutablePath: 'C:\\chrome.exe' }, env: [], revision: 'sha256:web' },
+    { platform: 'web', configPath: 'web.yaml', status: 'available', message: 'Available.', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\chrome.exe' }, env: [], revision: 'sha256:web' },
   ],
 });
 

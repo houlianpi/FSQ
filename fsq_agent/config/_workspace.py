@@ -38,10 +38,15 @@ WEB_CHANNEL_EXECUTABLE_NAMES = {
     "msedge-canary": {"msedge", "msedge.exe", "microsoft edge canary"},
 }
 WEB_CHANNEL_PATH_MARKERS = {
-    "chromium": ("chromium",), "chrome": ("google/chrome", "google chrome"),
-    "chrome-beta": ("chrome beta",), "chrome-dev": ("chrome dev",), "chrome-canary": ("chrome canary", "chrome sxs"),
-    "msedge": ("microsoft/edge/application", "microsoft edge.app"), "msedge-beta": ("edge beta",),
-    "msedge-dev": ("edge dev",), "msedge-canary": ("edge canary", "edge sxs"),
+    "chromium": ("chromium",),
+    "chrome": ("google/chrome", "google chrome"),
+    "chrome-beta": ("chrome beta",),
+    "chrome-dev": ("chrome dev",),
+    "chrome-canary": ("chrome canary", "chrome sxs"),
+    "msedge": ("microsoft/edge/application", "microsoft edge.app"),
+    "msedge-beta": ("edge beta",),
+    "msedge-dev": ("edge dev",),
+    "msedge-canary": ("edge canary", "edge sxs"),
 }
 CHROME_EXECUTABLE_NAMES = WEB_CHANNEL_EXECUTABLE_NAMES["chrome"]
 
@@ -522,7 +527,7 @@ def _validate_target_paths(config: WorkspaceConfig) -> None:
             "Web browser executable path does not match the configured Web preset channel.",
             context={"path": str(normalized), "channel": target.browser_channel, "expected_file_names": sorted(expected_names)},
         )
-    if os.name == "nt" and isinstance(target, WebWorkspaceTarget) and normalized.name.casefold() in {"chrome.exe", "msedge.exe"}:
+    if os.name == "nt" and isinstance(target, WebWorkspaceTarget) and normalized.name.casefold() in {"chrome.exe", "msedge.exe"} and "program files" in str(normalized).casefold():
         normalized_path = str(normalized).replace("\\", "/").casefold()
         if not any(marker in normalized_path for marker in WEB_CHANNEL_PATH_MARKERS[target.browser_channel]):
             raise ConfigurationError(

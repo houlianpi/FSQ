@@ -26,7 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 it('clears the previous target on platform change and submits the complete masked environment', async () => {
   const created: WorkspaceDetail = {
     name: 'web-check', rootPath: 'C:\\projects\\web-check', status: 'available', message: 'Workspace is available.',
-    platforms: [{ platform: 'web', configPath: 'C:\\projects\\web-check\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Platform is available.', target: { browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: [{ name: 'TEST_PASSWORD', configured: true }], revision: 'sha256:created' }],
+    platforms: [{ platform: 'web', configPath: 'C:\\projects\\web-check\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Platform is available.', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: [{ name: 'TEST_PASSWORD', configured: true }], revision: 'sha256:created' }],
   };
   const create = vi.spyOn(controlPlaneClient, 'createWorkspace').mockResolvedValue(created);
   const onSaved = vi.fn();

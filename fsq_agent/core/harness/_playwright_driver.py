@@ -469,7 +469,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
                 return self._compose_locator(self.page.locator(f"xpath={xpath}"), locator, excluded={"xpath"})
         target = data.get("target")
         if isinstance(target, str) and target.strip():
-            ref_match = re.search(r'\[ref=([^]\s]+)\]', target)
+            ref_match = re.search(r"\[ref=([^]\s]+)\]", target)
             if ref_match and ref_match.group(1) in self._snapshot_refs:
                 ref_role, ref_name = self._snapshot_refs[ref_match.group(1)]
                 return self.page.get_by_role(ref_role, name=self._snapshot_text_matcher(ref_name))
