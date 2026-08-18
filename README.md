@@ -71,8 +71,9 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ $ fsq-agent run --workspace web-demo --platform web --record         │
-│     --goal "Search for FSQ on Bing"                                 │
+│ $ cd /path/to/workspaces/web-demo                                   │
+│ $ fsq-agent run --platform web --record                             │
+│     --goal "Search for FSQ on Bing"                                │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ► Planning: 3 key actions identified                                │
 │  ► Step 1: startBrowser          📸 screenshot + UI snapshot         │
@@ -136,18 +137,20 @@ Open **Workspace**, create a workspace for the application under test, and give 
 For non-interactive setup, `init` creates exactly one platform per invocation:
 
 ```bash
+cd /path/to/workspaces
+
 # Create and register a Web workspace platform.
-fsq-agent init --name web-demo --parent /path/to/workspaces \
+fsq-agent init --name web-demo \
   --platform web \
   --browser-executable-path /path/to/google-chrome
 
 # Add Android to the same registered workspace.
-fsq-agent init --name web-demo --parent /path/to/workspaces \
+fsq-agent init --name web-demo \
   --platform android \
   --app-id com.example.app
 ```
 
-`--parent` identifies the parent directory for `<parent>/<name>` and defaults to the current directory. Platform target options are:
+`init` always creates or updates `<current-directory>/<name>`. Platform target options are:
 
 | Platform | `init` target options |
 |---|---|
@@ -158,7 +161,7 @@ fsq-agent init --name web-demo --parent /path/to/workspaces \
 
 Repeating an equal platform configuration returns `unchanged`. If its target or private environment mapping differs, pass `--update-existing` to replace only that platform's target and `--env NAME=VALUE` entries. Use `fsq-agent --output json init ...` or `--output jsonl` for one-record machine output. Command-line environment values may be visible in shell history or process inspection.
 
-The `run`, `report`, and `playground` commands select the registered workspace name and an explicit configured platform, so they can run outside the workspace directory. Legacy `.fsq/config.yaml` and `.fsq-agent-workspace` layouts are not migrated.
+`run` must be launched from the exact workspace root and requires an explicit configured platform. It validates the current directory directly instead of looking up a registry name or searching parent directories. `report` and `playground` keep their registered workspace-name selection and can run outside the workspace directory. Legacy `.fsq/config.yaml` and `.fsq-agent-workspace` layouts are not migrated.
 
 ### 3. Configure a Provider
 
@@ -174,20 +177,26 @@ Provider configuration is stored under `~/.fsq` and is used by the next complete
 ### 4. Run
 
 ```bash
+cd /path/to/workspaces/web-demo
+
 # Dynamic: AI-driven exploration with full evidence
-fsq-agent run --workspace web-demo \
-  --platform web \
+fsq-agent run --platform web \
   --record \
   --goal "Open https://www.bing.com, search for 'FSQ automation', verify results appear."
 ```
 
 ```bash
 # Strict: Deterministic replay from YAML (no LLM needed)
-fsq-agent run --workspace web-demo --platform web --strict \
+fsq-agent run --platform web --strict \
   --case-yaml path/to/case.fsq.yaml
+
+# Strict batch: Run matching cases under cases/web/.
+fsq-agent run --platform web --strict
 ```
 
-**Output:** Every run writes evidence and a report under `.fsq/runs/<platform>/<run-id>/`. For a dynamic run, `--record` writes a `recording.json` manifest for the recording attempt and writes `recorded.fsq.yaml` when the run is eligible and contains replayable commands. Failed runs are skipped unless `--record-on-failure` is also supplied. Strict runs do not record new cases.
+Strict directory runs, including the no-input default, recursively load exact `.fsq.yaml` files and skip cases authored for another platform. If files are present but none match `--platform`, the command reports zero cases and succeeds without creating run artifacts. A single `--case-yaml` platform mismatch is an error.
+
+**Output:** Every executed run writes evidence and a report under `.fsq/runs/<platform>/<run-id>/`. For a dynamic run, `--record` writes a `recording.json` manifest for the recording attempt and writes `recorded.fsq.yaml` when the run is eligible and contains replayable commands. Failed runs are skipped unless `--record-on-failure` is also supplied. Strict runs do not record new cases.
 
 ### Control Plane
 
@@ -241,7 +250,7 @@ All platforms share the same `HarnessInterface`, evidence model, and FSQ YAML fo
   .fsq/runs/<platform>/
 ```
 
-The `run`, `report`, and `playground` commands always require both `--workspace NAME` and `--platform PLATFORM`. The `control-plane` command manages browser selection instead and accepts neither option.
+The `run` command requires `--platform PLATFORM` and uses the exact current directory as its workspace root. The `report` and `playground` commands require both `--workspace NAME` and `--platform PLATFORM`. The `control-plane` command manages browser selection instead and accepts neither option.
 
 <details>
 <summary><b>Platform setup details</b></summary>
@@ -258,7 +267,8 @@ target:
   app_id: com.example.app
 ```
 ```bash
-fsq-agent run --workspace my-workspace --platform android \
+cd /path/to/workspaces/my-workspace
+fsq-agent run --platform android \
   --android-serial emulator-5554 --goal "Open the app"
 ```
 When exactly one device is online, `--android-serial` may be omitted.
