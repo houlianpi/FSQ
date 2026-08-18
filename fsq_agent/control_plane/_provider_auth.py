@@ -285,11 +285,7 @@ class ProviderAuthState:
             self._expire_record_if_due_locked(record)
 
     def _expire_record_if_due_locked(self, record: _AuthRecord) -> None:
-        if (
-            record.status in {"loading_models", "ready", "model_error"}
-            and record.authorization_expires_at is not None
-            and time.time() >= record.authorization_expires_at
-        ):
+        if record.status in {"loading_models", "ready", "model_error"} and record.authorization_expires_at is not None and time.time() >= record.authorization_expires_at:
             record.cancel_event.set()
             record.status = "expired"
             record.message = "Pending GitHub authorization expired."

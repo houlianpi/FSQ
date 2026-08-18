@@ -331,7 +331,17 @@ def _parse_github_copilot_model(candidate: object) -> GitHubCopilotModel | None:
     name_value = candidate.get("name")
     name = name_value.strip() if isinstance(name_value, str) and name_value.strip() else model_id
     specialist_tokens = {
-        "mini", "nano", "codex", "embedding", "audio", "realtime", "image", "search", "transcribe", "transcription", "tts",
+        "mini",
+        "nano",
+        "codex",
+        "embedding",
+        "audio",
+        "realtime",
+        "image",
+        "search",
+        "transcribe",
+        "transcription",
+        "tts",
     }
     tokens = set(re.findall(r"[a-z0-9]+", f"{model_id} {name}".casefold()))
     if tokens & specialist_tokens:

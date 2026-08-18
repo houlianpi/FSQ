@@ -237,9 +237,7 @@ def test_device_flow_save_failure_preserves_retryable_ready_state(tmp_path: Path
         deadline = time.monotonic() + 1
         payload = None
         while time.monotonic() < deadline:
-            _, payload, _ = server.handle_get(
-                f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-            )
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
             if payload["status"] == "ready":
                 break
             time.sleep(0.01)
@@ -248,9 +246,7 @@ def test_device_flow_save_failure_preserves_retryable_ready_state(tmp_path: Path
             {"modelName": "gpt-5"},
             peer_host="127.0.0.1",
         )
-        _, after, _ = server.handle_get(
-            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-        )
+        _, after, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
 
     assert save_status == 400
     assert after["status"] == "ready"
@@ -270,19 +266,13 @@ def test_pending_authorization_expires_after_ten_minutes_and_releases_busy_slot(
         deadline = time.monotonic() + 1
         payload = None
         while time.monotonic() < deadline:
-            _, payload, _ = server.handle_get(
-                f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-            )
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
             if payload["status"] == "ready":
                 break
             time.sleep(0.01)
         clock[0] += 601
-        _, expired, _ = server.handle_get(
-            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-        )
-        restart_status, restarted = server.handle_post(
-            "/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1"
-        )
+        _, expired, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
+        restart_status, restarted = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
 
     assert expired["status"] == "expired"
     assert restart_status == 202
@@ -304,19 +294,13 @@ def test_model_discovery_failure_retries_without_reauthorizing(tmp_path: Path) -
         deadline = time.monotonic() + 1
         payload = None
         while time.monotonic() < deadline:
-            _, payload, _ = server.handle_get(
-                f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-            )
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
             if payload["status"] == "model_error":
                 break
             time.sleep(0.01)
-        retry_status, _ = server.handle_post(
-            f"/api/control-plane/config/github/device-flow/{started['authRequestId']}/models", {}, peer_host="127.0.0.1"
-        )
+        retry_status, _ = server.handle_post(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}/models", {}, peer_host="127.0.0.1")
         while time.monotonic() < deadline:
-            _, payload, _ = server.handle_get(
-                f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1"
-            )
+            _, payload, _ = server.handle_get(f"/api/control-plane/config/github/device-flow/{started['authRequestId']}", peer_host="127.0.0.1")
             if payload["status"] == "ready":
                 break
             time.sleep(0.01)
