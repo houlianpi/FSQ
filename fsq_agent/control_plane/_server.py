@@ -16,8 +16,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from fsq_agent.models import FsqAgentError
 
-from ._cases import discover_cases
+from ._cases import discover_cases, resolve_case
 from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
+from ._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
 from ._provider_auth import ProviderAuthState
@@ -38,6 +39,7 @@ from ._workspaces import (
 )
 
 _API_PREFIX = "/api/control-plane"
+_CASE_SOURCE_LIMIT_BYTES = 512 * 1024
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
 _MAX_BODY_BYTES = 36 * 1024 * 1024
 
@@ -64,6 +66,7 @@ class ControlPlaneServer:
         self._thread: Thread | None = None
         self._handles: dict[str, ExecutionHandle] = {}
         self._provider_auth = ProviderAuthState(self.options.user_config_root)
+        self._directory_picker = DirectoryPicker()
 
     @property
     def port(self) -> int:
@@ -83,6 +86,7 @@ class ControlPlaneServer:
         self._thread.start()
 
     def stop(self) -> None:
+        self._directory_picker.shutdown()
         self._provider_auth.shutdown()
         httpd = self._httpd
         self._httpd = None
@@ -209,6 +213,8 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
+        if path == f"{_API_PREFIX}/workspaces/pick-parent-directory":
+            return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         workspace_name, workspace_suffix = _workspace_route_or_none(path)
         if path == f"{_API_PREFIX}/workspaces" or (workspace_name is not None and workspace_suffix == "/platforms"):
             return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
@@ -282,9 +288,15 @@ class ControlPlaneServer:
                 return 200, save_azure_config(body, self.options.user_config_root)
             if method == "POST" and path == f"{_API_PREFIX}/config/github/device-flow":
                 return 202, self._provider_auth.start(body)
+            models_auth_request_id = _device_flow_models_route_or_none(path)
+            if method == "POST" and models_auth_request_id is not None:
+                return 202, self._provider_auth.retry_models(models_auth_request_id, body)
             if method == "POST" and path == f"{_API_PREFIX}/config/test-connection":
                 return 200, test_saved_connection(body, self.options.user_config_root)
             auth_request_id = _device_flow_route_or_none(path)
+            if method == "PUT" and auth_request_id is not None:
+                self._provider_auth.save(auth_request_id, body)
+                return 200, get_config(self.options.user_config_root)
             if method == "DELETE" and auth_request_id is not None:
                 return 200, self._provider_auth.cancel(auth_request_id)
             return 404, _error("not_found", "Control Plane Config endpoint not found.", "Check the API path and method.")
@@ -305,6 +317,14 @@ class ControlPlaneServer:
         try:
             self._require_config_access(peer_host)
             require_same_origin_write(origin, host)
+            if method == "POST" and path == f"{_API_PREFIX}/workspaces/pick-parent-directory":
+                if body:
+                    return 400, _error(
+                        "invalid_directory_picker_request",
+                        "Folder selection does not accept request fields.",
+                        "Send an empty JSON object and retry.",
+                    )
+                return 200, self._directory_picker.choose()
             if method == "POST" and path == f"{_API_PREFIX}/workspaces":
                 return 201, create_workspace_request(body, self.options.user_config_root)
             workspace_name, workspace_suffix = _workspace_route_or_none(path)
@@ -315,6 +335,8 @@ class ControlPlaneServer:
                 return 200, update_workspace_platform_request(workspace_name, platform, body, self.options.user_config_root)
             return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path and method.")
         except ConfigAPIError as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action)
+        except DirectoryPickerAPIError as exc:
             return exc.status, _error(exc.code, exc.message, exc.action)
         except Exception as exc:  # noqa: BLE001 - Workspace boundary maps safe errors.
             mapped = map_workspace_exception(exc)
@@ -372,9 +394,14 @@ class ControlPlaneServer:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
         try:
             settings = self._load_settings(workspace_name, platform)
+            source = self._run_source(body, settings)
+            if source:
+                self.state.update_source(request_id, source)
             prepared = prepare_run(request_id=request_id, settings=settings, body=body)
+            if getattr(prepared, "mode", None) == "strict":
+                self.state.update_source(request_id, {"caseSteps": _strict_case_steps(prepared)})
             self._handles[request_id] = start_execution(prepared, self.state)
-        except (TypeError, ValueError, FsqAgentError, OSError) as exc:
+        except (TypeError, ValueError, FsqAgentError, OSError, UnicodeDecodeError) as exc:
             self.state.abandon_preparation(request_id)
             return 400, _exception_error("run_validation_failed", exc, "Refresh readiness, targets, and cases, then retry.", settings=settings)
         except Exception as exc:  # noqa: BLE001
@@ -382,6 +409,17 @@ class ControlPlaneServer:
             return 500, _exception_error("run_start_failed", exc, "Inspect local configuration and retry.", unexpected=True)
         else:
             return 202, {"requestId": request_id}
+
+    def _run_source(self, body: dict[str, Any], settings) -> dict[str, Any]:
+        if isinstance(body.get("goal"), str):
+            return {"goal": body["goal"]}
+        if not isinstance(body.get("casePath"), str):
+            return {}
+        case_path = resolve_case(settings, body["casePath"])
+        content_bytes = case_path.read_bytes()
+        if len(content_bytes) > _CASE_SOURCE_LIMIT_BYTES:
+            raise ValueError(f"Case YAML is too large to display ({len(content_bytes)} bytes).")
+        return {"casePath": body["casePath"], "caseContent": content_bytes.decode("utf-8")}
 
     def _hydrate_evidence(self, request_id: str) -> None:
         artifact, run_id = self.state.artifact(request_id, "screenshot")
@@ -415,6 +453,25 @@ class ControlPlaneServer:
     def _entry_path(self) -> Path | None:
         candidates = (self._static_root / "control-plane" / "index.html", self._static_root / "index.html")
         return next((path for path in candidates if path.is_file()), None)
+
+
+def _strict_case_steps(prepared) -> list[dict[str, Any]]:
+    if prepared.case_path is None:
+        return []
+    steps = prepared.resolved_steps_by_path.get(prepared.case_path.resolve(), [])
+    summaries: list[dict[str, Any]] = []
+    for index, step in enumerate(steps):
+        step_index = step.source_ref.step_index + 1 if step.source_ref is not None else index + 1
+        summaries.append(
+            {
+                "stepId": step.step_id,
+                "index": step_index,
+                "authoredActionName": step.metadata.get("authored_action_name") or step.action_name,
+                "actionName": step.action_name,
+                "kind": step.kind,
+            }
+        )
+    return summaries
 
 
 class _ControlPlaneHTTPServer(ThreadingHTTPServer):
@@ -600,6 +657,13 @@ def _device_flow_route_or_none(path: str) -> str | None:
         return None
     auth_request_id = unquote(path.removeprefix(prefix))
     return auth_request_id if auth_request_id and "/" not in auth_request_id else None
+
+
+def _device_flow_models_route_or_none(path: str) -> str | None:
+    suffix = "/models"
+    if not path.endswith(suffix):
+        return None
+    return _device_flow_route_or_none(path.removesuffix(suffix))
 
 
 def _workspace_route_or_none(path: str) -> tuple[str | None, str | None]:

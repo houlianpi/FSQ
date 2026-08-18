@@ -19,6 +19,20 @@ def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
     )
 
 
+class _FakeDirectoryPicker:
+    def __init__(self, result: dict[str, str]) -> None:
+        self.result = result
+        self.calls = 0
+        self.shutdown_called = False
+
+    def choose(self) -> dict[str, str]:
+        self.calls += 1
+        return self.result
+
+    def shutdown(self) -> None:
+        self.shutdown_called = True
+
+
 def _create(
     server: ControlPlaneServer,
     parent: Path,
@@ -86,6 +100,72 @@ def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tm
     assert "private-value" not in str(detail)
     assert platform_detail["env"] == {"TEST_PASSWORD": "private-value"}
     assert str(platform_detail["revision"]).startswith("sha256:")
+
+
+def test_workspace_parent_directory_picker_returns_selection_and_cancellation(tmp_path: Path) -> None:
+    selected = _server(tmp_path / "selected")
+    selected_picker = _FakeDirectoryPicker({"status": "selected", "parentPath": str(tmp_path.resolve())})
+    selected._directory_picker = selected_picker  # type: ignore[attr-defined]
+    cancelled = _server(tmp_path / "cancelled")
+    cancelled_picker = _FakeDirectoryPicker({"status": "cancelled"})
+    cancelled._directory_picker = cancelled_picker  # type: ignore[attr-defined]
+
+    selected_status, selected_payload = selected.handle_post(
+        "/api/control-plane/workspaces/pick-parent-directory",
+        {},
+        peer_host="127.0.0.1",
+    )
+    cancelled_status, cancelled_payload = cancelled.handle_post(
+        "/api/control-plane/workspaces/pick-parent-directory",
+        {},
+        peer_host="127.0.0.1",
+    )
+
+    assert selected_status == cancelled_status == 200
+    assert selected_payload == {"status": "selected", "parentPath": str(tmp_path.resolve())}
+    assert cancelled_payload == {"status": "cancelled"}
+    assert selected_picker.calls == cancelled_picker.calls == 1
+
+
+def test_workspace_parent_directory_picker_rejects_fields_and_untrusted_access(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    picker = _FakeDirectoryPicker({"status": "cancelled"})
+    server._directory_picker = picker  # type: ignore[attr-defined]
+
+    field_status, field_error = server.handle_post(
+        "/api/control-plane/workspaces/pick-parent-directory",
+        {"parentPath": str(tmp_path)},
+        peer_host="127.0.0.1",
+    )
+    peer_status, peer_error = server.handle_post(
+        "/api/control-plane/workspaces/pick-parent-directory",
+        {},
+        peer_host="192.0.2.5",
+    )
+    origin_status, origin_error = server.handle_post(
+        "/api/control-plane/workspaces/pick-parent-directory",
+        {},
+        peer_host="127.0.0.1",
+        origin="https://evil.example",
+        host="127.0.0.1:8879",
+    )
+
+    assert field_status == 400
+    assert field_error["code"] == "invalid_directory_picker_request"
+    assert peer_status == origin_status == 403
+    assert peer_error["code"] == "config_unavailable"
+    assert origin_error["code"] == "cross_origin_forbidden"
+    assert picker.calls == 0
+
+
+def test_control_plane_stop_shuts_down_directory_picker(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    picker = _FakeDirectoryPicker({"status": "cancelled"})
+    server._directory_picker = picker  # type: ignore[attr-defined]
+
+    server.stop()
+
+    assert picker.shutdown_called is True
 
 
 def test_workspace_routes_use_case_insensitive_registry_identity(tmp_path: Path) -> None:

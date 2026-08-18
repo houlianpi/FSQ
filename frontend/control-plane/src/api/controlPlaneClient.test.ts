@@ -17,13 +17,16 @@ it.each([
   ['replay upload', () => controlPlaneClient.uploadReplayVideo('request-1', 'video/webm', 'encoded')],
   ['config', () => controlPlaneClient.config()],
   ['Azure config save', () => controlPlaneClient.saveAzureConfig({ baseUrl: 'https://example.test', modelName: 'model', apiKey: 'key' })],
-  ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow('model')],
+  ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow()],
   ['GitHub device-flow status', () => controlPlaneClient.githubDeviceFlow('auth-1')],
+  ['GitHub model retry', () => controlPlaneClient.retryGithubModels('auth-1')],
+  ['GitHub model save', () => controlPlaneClient.saveGithubModel('auth-1', 'gpt-5')],
   ['GitHub device-flow cancellation', () => controlPlaneClient.cancelGithubDeviceFlow('auth-1')],
   ['connection test', () => controlPlaneClient.testConnection()],
   ['workspace registry', () => controlPlaneClient.workspaces()],
   ['workspace detail', () => controlPlaneClient.workspace('mobile')],
   ['workspace platform detail', () => controlPlaneClient.workspacePlatform('mobile', 'android')],
+  ['workspace parent directory picker', () => controlPlaneClient.pickWorkspaceParentDirectory()],
   ['workspace create', () => controlPlaneClient.createWorkspace({ name: 'mobile', parentPath: 'C:\\projects', platforms: [{ platform: 'android', target: { appId: 'com.example' }, env: {} }] })],
   ['workspace platform add', () => controlPlaneClient.addWorkspacePlatform('mobile', { platform: 'android', target: { appId: 'com.example' }, env: {} })],
   ['workspace platform update', () => controlPlaneClient.updateWorkspacePlatform('mobile', 'android', { target: { appId: 'com.example' }, env: {}, expectedRevision: 'sha256:old' })],
@@ -88,6 +91,20 @@ it('encodes workspace names and file paths in client requests', async () => {
     '/api/control-plane/workspaces/mobile%20main/file?path=knowledge%2Fproject%20notes.md',
     expect.objectContaining({ headers: expect.objectContaining({ 'Content-Type': 'application/json' }) }),
   );
+});
+
+it('accepts selected and cancelled workspace parent directory responses', async () => {
+  const fetch = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', parentPath: 'C:\\projects' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'cancelled' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+
+  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', parentPath: 'C:\\projects' });
+  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'cancelled' });
+  expect(fetch).toHaveBeenNthCalledWith(1, '/api/control-plane/workspaces/pick-parent-directory', expect.objectContaining({ method: 'POST', body: '{}' }));
 });
 
 it('requires step artifacts to contain readable content or an item error', async () => {

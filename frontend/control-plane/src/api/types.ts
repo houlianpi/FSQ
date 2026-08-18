@@ -88,8 +88,19 @@ export interface TimelineEvent {
   toolArguments?: unknown;
   toolOutputPreview?: unknown;
 }
+export interface StrictCaseStep {
+  stepId: string;
+  index: number;
+  authoredActionName: string;
+  actionName: string;
+  kind: string;
+  status?: string;
+  durationMs?: number | null;
+  failureCategory?: string | null;
+  message?: string | null;
+}
 export interface RunSnapshot extends ActiveTaskSummary {
-  source: { goal?: string; casePath?: string };
+  source: { goal?: string; casePath?: string; caseContent?: string; caseSteps?: StrictCaseStep[] };
   startedAt: string;
   completedAt: string | null;
   cancelRequested: boolean;
@@ -164,16 +175,13 @@ export type ConfigResponse =
   | { configured: false; provider: null }
   | { configured: true; provider: ProviderConfig };
 export interface AzureConfigPayload { baseUrl: string; modelName: string; apiKey: string }
-export type DeviceFlowStatus = 'waiting' | 'success' | 'failed' | 'expired' | 'cancelled';
-export interface GitHubDeviceFlowResponse {
-  authRequestId: string;
-  verificationUri: string;
-  userCode: string;
-  expiresAt: string;
-  pollIntervalSeconds: number;
-  status: DeviceFlowStatus;
-  message?: string;
-}
+export interface GitHubCopilotModel { id: string; name: string }
+export type GitHubDeviceFlowResponse =
+  | { authRequestId: string; status: 'waiting'; verificationUri: string; userCode: string; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'loading_models'; expiresAt: string; pollIntervalSeconds: number; message?: string }
+  | { authRequestId: string; status: 'ready'; expiresAt: string; models: GitHubCopilotModel[]; message?: string }
+  | { authRequestId: string; status: 'model_error'; expiresAt: string; message: string }
+  | { authRequestId: string; status: 'success' | 'failed' | 'expired' | 'cancelled'; message?: string };
 export interface ConnectionTestResponse {
   success: true;
   provider: 'azure_openai' | 'github_copilot';
@@ -229,6 +237,9 @@ export interface CreateWorkspacePayload {
   parentPath: string;
   platforms: { platform: PlatformId; target: WorkspaceTarget; env: Record<string, string> }[];
 }
+export type WorkspaceParentDirectoryPickerResponse =
+  | { status: 'selected'; parentPath: string }
+  | { status: 'cancelled' };
 export interface AddWorkspacePlatformPayload {
   platform: PlatformId;
   target: WorkspaceTarget;

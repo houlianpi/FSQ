@@ -9,13 +9,21 @@ import type {
   RequestResource,
 } from '../../../api/types';
 
-type DeviceFlowPending = 'starting' | 'waiting' | 'cancelling' | null;
+export type DeviceFlowPending = 'starting' | 'waiting' | 'loading_models' | 'retrying_models' | 'saving' | 'cancelling' | null;
 export type ConnectionResult =
   | { success: true; data: ConnectionTestResponse }
   | { success: false; error: ApiErrorBody };
 
 function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function isPolling(flow: GitHubDeviceFlowResponse): flow is Extract<GitHubDeviceFlowResponse, { status: 'waiting' | 'loading_models' }> {
+  return flow.status === 'waiting' || flow.status === 'loading_models';
+}
+
+function isUnsaved(flow: GitHubDeviceFlowResponse): boolean {
+  return ['waiting', 'loading_models', 'ready', 'model_error'].includes(flow.status);
 }
 
 export function useProviderConfig(client: ControlPlaneClient = controlPlaneClient) {
@@ -66,6 +74,7 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
   }, [client]);
 
   const schedulePoll = useCallback((flow: GitHubDeviceFlowResponse, generation: number) => {
+    if (!isPolling(flow)) return;
     const delay = Math.min(10, Math.max(1, flow.pollIntervalSeconds)) * 1000;
     pollTimerRef.current = window.setTimeout(async () => {
       const controller = new AbortController();
@@ -75,13 +84,12 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
         if (!mountedRef.current || generation !== deviceGenerationRef.current) return;
         setDeviceFlow(next);
         setDeviceFlowError(null);
-        if (next.status === 'waiting') {
-          setDeviceFlowPending('waiting');
+        if (isPolling(next)) {
+          setDeviceFlowPending(next.status);
           schedulePoll(next, generation);
         } else {
           setDeviceFlowPending(null);
           pollTimerRef.current = null;
-          if (next.status === 'success') await loadConfig(true);
         }
       } catch (error) {
         if (!isAbort(error) && mountedRef.current && generation === deviceGenerationRef.current) {
@@ -92,7 +100,7 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
         if (deviceControllerRef.current === controller) deviceControllerRef.current = null;
       }
     }, delay);
-  }, [client, loadConfig, setDeviceFlow]);
+  }, [client, setDeviceFlow]);
 
   const saveAzure = useCallback(async (payload: AzureConfigPayload) => {
     saveControllerRef.current?.abort();
@@ -117,7 +125,7 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
     }
   }, [client]);
 
-  const startGithub = useCallback(async (modelName: string) => {
+  const startGithub = useCallback(async () => {
     clearPoll();
     const generation = ++deviceGenerationRef.current;
     const controller = new AbortController();
@@ -126,15 +134,14 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
     setDeviceFlowError(null);
     setDeviceFlowPending('starting');
     try {
-      const flow = await client.startGithubDeviceFlow(modelName.trim(), controller.signal);
+      const flow = await client.startGithubDeviceFlow(controller.signal);
       if (!mountedRef.current || generation !== deviceGenerationRef.current) return null;
       setDeviceFlow(flow);
-      if (flow.status === 'waiting') {
-        setDeviceFlowPending('waiting');
+      if (isPolling(flow)) {
+        setDeviceFlowPending(flow.status);
         schedulePoll(flow, generation);
       } else {
         setDeviceFlowPending(null);
-        if (flow.status === 'success') await loadConfig(true);
       }
       return flow;
     } catch (error) {
@@ -146,13 +153,69 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
     } finally {
       if (deviceControllerRef.current === controller) deviceControllerRef.current = null;
     }
-  }, [clearPoll, client, loadConfig, schedulePoll, setDeviceFlow]);
+  }, [clearPoll, client, schedulePoll, setDeviceFlow]);
+
+  const retryGithubModels = useCallback(async () => {
+    const active = deviceFlowRef.current;
+    if (!active || (active.status !== 'model_error' && !(active.status === 'ready' && active.models.length === 0))) return null;
+    clearPoll();
+    const generation = ++deviceGenerationRef.current;
+    const controller = new AbortController();
+    deviceControllerRef.current = controller;
+    setDeviceFlowError(null);
+    setDeviceFlowPending('retrying_models');
+    try {
+      const flow = await client.retryGithubModels(active.authRequestId, controller.signal);
+      if (!mountedRef.current || generation !== deviceGenerationRef.current) return null;
+      setDeviceFlow(flow);
+      if (isPolling(flow)) {
+        setDeviceFlowPending(flow.status);
+        schedulePoll(flow, generation);
+      } else {
+        setDeviceFlowPending(null);
+      }
+      return flow;
+    } catch (error) {
+      if (!isAbort(error) && mountedRef.current && generation === deviceGenerationRef.current) {
+        setDeviceFlowPending(null);
+        setDeviceFlowError(toApiError(error));
+      }
+      return null;
+    } finally {
+      if (deviceControllerRef.current === controller) deviceControllerRef.current = null;
+    }
+  }, [clearPoll, client, schedulePoll, setDeviceFlow]);
+
+  const saveGithubModel = useCallback(async (modelName: string) => {
+    const active = deviceFlowRef.current;
+    const selectedModel = modelName.trim();
+    if (!active || active.status !== 'ready' || !selectedModel) return null;
+    clearPoll();
+    const generation = ++deviceGenerationRef.current;
+    const controller = new AbortController();
+    deviceControllerRef.current = controller;
+    setDeviceFlowError(null);
+    setDeviceFlowPending('saving');
+    try {
+      const data = await client.saveGithubModel(active.authRequestId, selectedModel, controller.signal);
+      if (!mountedRef.current || generation !== deviceGenerationRef.current) return null;
+      setConfig({ state: 'ready', data, error: null });
+      setDeviceFlow({ authRequestId: active.authRequestId, status: 'success', message: 'GitHub Copilot Provider saved.' });
+      return data;
+    } catch (error) {
+      if (!isAbort(error) && mountedRef.current && generation === deviceGenerationRef.current) setDeviceFlowError(toApiError(error));
+      return null;
+    } finally {
+      if (mountedRef.current && generation === deviceGenerationRef.current) setDeviceFlowPending(null);
+      if (deviceControllerRef.current === controller) deviceControllerRef.current = null;
+    }
+  }, [clearPoll, client, setDeviceFlow]);
 
   const cancelGithub = useCallback(async () => {
     const active = deviceFlowRef.current;
-    ++deviceGenerationRef.current;
+    const generation = ++deviceGenerationRef.current;
     clearPoll();
-    if (!active || active.status !== 'waiting') {
+    if (!active || !isUnsaved(active)) {
       setDeviceFlow(null);
       setDeviceFlowError(null);
       setDeviceFlowPending(null);
@@ -163,26 +226,30 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
     setDeviceFlowPending('cancelling');
     try {
       const cancelled = await client.cancelGithubDeviceFlow(active.authRequestId, controller.signal);
-      if (mountedRef.current) {
+      if (mountedRef.current && generation === deviceGenerationRef.current) {
         setDeviceFlow(cancelled);
         setDeviceFlowError(null);
       }
     } catch (error) {
-      if (!isAbort(error) && mountedRef.current) setDeviceFlowError(toApiError(error));
+      if (!isAbort(error) && mountedRef.current && generation === deviceGenerationRef.current) setDeviceFlowError(toApiError(error));
     } finally {
-      if (mountedRef.current) setDeviceFlowPending(null);
+      if (mountedRef.current && generation === deviceGenerationRef.current) setDeviceFlowPending(null);
       if (deviceControllerRef.current === controller) deviceControllerRef.current = null;
     }
   }, [clearPoll, client, setDeviceFlow]);
 
-  const clearDeviceFlow = useCallback(() => {
-    if (deviceFlowRef.current?.status === 'waiting') return cancelGithub();
+  const clearDeviceFlow = useCallback(async () => {
+    if (deviceFlowRef.current && isUnsaved(deviceFlowRef.current)) {
+      const cancellation = cancelGithub();
+      const cancellationGeneration = deviceGenerationRef.current;
+      await cancellation;
+      if (cancellationGeneration !== deviceGenerationRef.current) return;
+    }
     ++deviceGenerationRef.current;
     clearPoll();
     setDeviceFlow(null);
     setDeviceFlowError(null);
     setDeviceFlowPending(null);
-    return Promise.resolve();
   }, [cancelGithub, clearPoll, setDeviceFlow]);
 
   const testSavedConnection = useCallback(async () => {
@@ -214,7 +281,7 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
       testControllerRef.current?.abort();
       clearPoll();
       const active = deviceFlowRef.current;
-      if (active?.status === 'waiting') void client.cancelGithubDeviceFlow(active.authRequestId);
+      if (active && isUnsaved(active)) void client.cancelGithubDeviceFlow(active.authRequestId);
     };
   }, [clearPoll, client, loadConfig]);
 
@@ -228,6 +295,8 @@ export function useProviderConfig(client: ControlPlaneClient = controlPlaneClien
     deviceFlowPending,
     deviceFlowError,
     startGithub,
+    retryGithubModels,
+    saveGithubModel,
     cancelGithub,
     clearDeviceFlow,
     testSavedConnection,

@@ -8,12 +8,74 @@ import yaml
 
 from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 from fsq_agent.config._settings import Settings
-from fsq_agent.models import AndroidHarnessSettings, HarnessSettings, OutputSettings, ReportArtifact, RunEvent, Task, TaskResult, VerificationResult
+from fsq_agent.models import AndroidHarnessSettings, ConfigurationError, HarnessSettings, OutputSettings, ReportArtifact, RunEvent, Task, TaskResult, VerificationResult
 
 
 def _write_event(path: Path, event: RunEvent) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(event.model_dump_json() + "\n")
+
+
+def _recordable_web_run(
+    tmp_path: Path,
+    *,
+    planning_reference_kind: str = "goal",
+    status: str = "success",
+    replay_alias: str = "clickOn",
+) -> tuple[Path, Task, TaskResult, Settings]:
+    run_id = "goal-recording-run"
+    run_dir = tmp_path / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    task = Task(
+        id="task-1",
+        name="Search",
+        description="Search the web",
+        planning_reference_kind=planning_reference_kind,
+        planning_reference_text="Search the web",
+    )
+    result = TaskResult(
+        task_id=task.id,
+        status=status,
+        steps=[],
+        verification=VerificationResult(status=status, summary=status),
+        report=ReportArtifact(run_id=run_id, path=run_dir / "report.md"),
+    )
+    output_settings = OutputSettings()
+    output_settings.runs_dir = tmp_path / "runs"
+    settings = Settings(output=output_settings, harness=HarnessSettings(platform="web"))
+    settings.cases.dir = tmp_path / "workspace" / "cases" / "web"
+    events_path = run_dir / "events.jsonl"
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id=run_id,
+            task_id=task.id,
+            type="tool_call_started",
+            title="Tool call started",
+            tool_name="click_on",
+            tool_call_id="call-1",
+            tool_arguments={"target": "Search"},
+            payload={"tool_origin": "platform", "capability_name": "click_on", "replay": {"kind": "fsq_command", "alias": replay_alias}},
+        ),
+    )
+    _write_event(
+        events_path,
+        RunEvent(
+            run_id=run_id,
+            task_id=task.id,
+            type="tool_call_completed",
+            title="Tool call completed",
+            tool_name="click_on",
+            tool_call_id="call-1",
+            payload={
+                "tool_origin": "platform",
+                "capability_name": "click_on",
+                "replay": {"kind": "fsq_command", "alias": replay_alias},
+                "status": "passed",
+            },
+        ),
+    )
+    return run_dir, task, result, settings
 
 
 def test_record_dynamic_run_writes_strict_yaml_with_runtime_secret_and_wait(tmp_path: Path) -> None:
@@ -430,3 +492,88 @@ def test_record_dynamic_android_point_swipe_includes_reference_screen_size(tmp_p
             }
         }
     ]
+
+
+def test_record_dynamic_goal_publishes_validated_case_to_platform_cases_dir(tmp_path: Path) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path)
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    expected_path = settings.cases.dir / "goal-recording-run.fsq.yaml"
+    assert recording.status == "recorded"
+    assert recording.validation_status == "passed"
+    assert recording.published_case_path == expected_path
+    assert expected_path.read_bytes() == (run_dir / "recorded.fsq.yaml").read_bytes()
+    manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
+    assert manifest["published_case_path"] == str(expected_path)
+    assert manifest["warnings"] == []
+
+
+def test_record_dynamic_goal_atomically_overwrites_published_case_with_valid_draft(tmp_path: Path) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path, status="failed")
+    published_path = settings.cases.dir / "goal-recording-run.fsq.yaml"
+    published_path.parent.mkdir(parents=True)
+    published_path.write_text("stale", encoding="utf-8")
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings, allow_failure=True)
+
+    assert recording.status == "recorded"
+    assert recording.draft is True
+    assert recording.published_case_path == published_path
+    assert published_path.read_bytes() == (run_dir / "recorded.fsq.yaml").read_bytes()
+    docs = list(yaml.safe_load_all(published_path.read_text(encoding="utf-8")))
+    assert docs[0]["properties"]["recording"]["draft"] is True
+
+
+def test_record_dynamic_raw_case_does_not_publish(tmp_path: Path) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path, planning_reference_kind="raw_case")
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "recorded"
+    assert recording.published_case_path is None
+    assert not settings.cases.dir.exists()
+    manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
+    assert manifest["published_case_path"] is None
+
+
+def test_record_dynamic_goal_does_not_publish_when_generated_case_validation_fails(tmp_path: Path, monkeypatch) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path)
+
+    def fail_validation(*_args, **_kwargs):
+        raise ConfigurationError("invalid generated case")
+
+    monkeypatch.setattr("fsq_agent._strict_case_recording.FsqExecutableStepAdapter.to_executable_steps", fail_validation)
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "failed"
+    assert recording.validation_status == "failed"
+    assert recording.published_case_path is None
+    assert not settings.cases.dir.exists()
+
+
+def test_record_dynamic_goal_publication_failure_preserves_recording_and_existing_case(tmp_path: Path, monkeypatch) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path)
+    published_path = settings.cases.dir / "goal-recording-run.fsq.yaml"
+    published_path.parent.mkdir(parents=True)
+    published_path.write_text("existing", encoding="utf-8")
+
+    def fail_replace(_source: Path, _destination: Path) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("fsq_agent._strict_case_recording.os.replace", fail_replace)
+
+    recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
+
+    assert recording.status == "recorded"
+    assert recording.validation_status == "passed"
+    assert recording.published_case_path is None
+    assert published_path.read_text(encoding="utf-8") == "existing"
+    assert list(settings.cases.dir.iterdir()) == [published_path]
+    assert any("publish" in warning.lower() for warning in recording.warnings)
+    manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "recorded"
+    assert manifest["validation_status"] == "passed"
+    assert manifest["published_case_path"] is None
+    assert manifest["warnings"] == recording.warnings

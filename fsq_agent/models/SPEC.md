@@ -175,8 +175,8 @@ Platform settings exports:
 - `WorkspaceStatus`: Pydantic safe-discovery model containing registered name/root, overall `available`, `partial`, or `unavailable` status, safe message/action fields, and canonical ordered platform status records.
 - `WorkspaceInitResult`: Strict Pydantic safe-result model for Config-owned initialization. It contains status (`initialized`, `platform_added`, `unchanged`, or `updated`), canonical workspace name/root, and platform id. It contains no target fields, env names, env values, revisions, or Provider data.
 - `WorkspaceSettings`: Pydantic model for the validated workspace root and selected platform config path. It has no marker/autoinit setting and does not imply filesystem creation.
-- `CaseSettings`: Pydantic model for the selected workspace platform's read-only FSQ case directory.
-- `OutputSettings`: Pydantic model for the managed run/output root. Workspace composition sets both output roots to `.fsq/runs/<platform>`; every run creates one unique direct child and all logs, reports, tool artifacts, and generated files remain inside that run directory.
+- `CaseSettings`: Pydantic model for the selected workspace platform's FSQ case directory. Existing cases are read-only execution inputs; the shared post-run recorder may use the resolved directory only to publish a validated Goal recording as an atomic run-id-named direct child.
+- `OutputSettings`: Pydantic model for the managed run/output root. Workspace composition sets both output roots to `.fsq/runs/<platform>`; every run creates one unique direct child containing its canonical logs, reports, tool artifacts, and generated files. A validated Goal recording may additionally have an identical published copy in the selected platform case directory.
 
 Exception exports:
 

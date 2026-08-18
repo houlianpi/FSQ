@@ -207,7 +207,7 @@ openai_agents:
     assert settings.output.root_dir == tmp_path / "workspace" / "output"
     assert settings.output.runs_dir == tmp_path / "workspace" / "output" / "runs"
     assert not settings.workspace.root_dir.exists()
-    assert settings.cases.dir == tmp_path / "cases"
+    assert settings.cases.dir == tmp_path / "workspace" / "cases"
     assert not hasattr(settings, "pre_plan")
     assert settings.execution.post_action_delay_seconds.platform == 1.0
     assert settings.execution.post_action_delay_seconds.common == 0.0
