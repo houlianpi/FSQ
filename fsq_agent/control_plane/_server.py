@@ -18,6 +18,7 @@ from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases, resolve_case
 from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
+from ._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
 from ._provider_auth import ProviderAuthState
@@ -65,6 +66,7 @@ class ControlPlaneServer:
         self._thread: Thread | None = None
         self._handles: dict[str, ExecutionHandle] = {}
         self._provider_auth = ProviderAuthState(self.options.user_config_root)
+        self._directory_picker = DirectoryPicker()
 
     @property
     def port(self) -> int:
@@ -84,6 +86,7 @@ class ControlPlaneServer:
         self._thread.start()
 
     def stop(self) -> None:
+        self._directory_picker.shutdown()
         self._provider_auth.shutdown()
         httpd = self._httpd
         self._httpd = None
@@ -210,6 +213,8 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
+        if path == f"{_API_PREFIX}/workspaces/pick-parent-directory":
+            return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         workspace_name, workspace_suffix = _workspace_route_or_none(path)
         if path == f"{_API_PREFIX}/workspaces" or (workspace_name is not None and workspace_suffix == "/platforms"):
             return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
@@ -312,6 +317,14 @@ class ControlPlaneServer:
         try:
             self._require_config_access(peer_host)
             require_same_origin_write(origin, host)
+            if method == "POST" and path == f"{_API_PREFIX}/workspaces/pick-parent-directory":
+                if body:
+                    return 400, _error(
+                        "invalid_directory_picker_request",
+                        "Folder selection does not accept request fields.",
+                        "Send an empty JSON object and retry.",
+                    )
+                return 200, self._directory_picker.choose()
             if method == "POST" and path == f"{_API_PREFIX}/workspaces":
                 return 201, create_workspace_request(body, self.options.user_config_root)
             workspace_name, workspace_suffix = _workspace_route_or_none(path)
@@ -322,6 +335,8 @@ class ControlPlaneServer:
                 return 200, update_workspace_platform_request(workspace_name, platform, body, self.options.user_config_root)
             return 404, _error("not_found", "Control Plane workspace endpoint not found.", "Check the API path and method.")
         except ConfigAPIError as exc:
+            return exc.status, _error(exc.code, exc.message, exc.action)
+        except DirectoryPickerAPIError as exc:
             return exc.status, _error(exc.code, exc.message, exc.action)
         except Exception as exc:  # noqa: BLE001 - Workspace boundary maps safe errors.
             mapped = map_workspace_exception(exc)

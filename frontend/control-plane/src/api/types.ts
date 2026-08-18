@@ -236,6 +236,9 @@ export interface CreateWorkspacePayload {
   parentPath: string;
   platforms: { platform: PlatformId; target: WorkspaceTarget; env: Record<string, string> }[];
 }
+export type WorkspaceParentDirectoryPickerResponse =
+  | { status: 'selected'; parentPath: string }
+  | { status: 'cancelled' };
 export interface AddWorkspacePlatformPayload {
   platform: PlatformId;
   target: WorkspaceTarget;
