@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+import re
+import tempfile
 import time
 import webbrowser
 from dataclasses import dataclass
@@ -14,6 +17,7 @@ from threading import Thread
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from fsq_agent.fsq import FSQ_CASE_SUFFIX
 from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases, resolve_case
@@ -41,6 +45,8 @@ _API_PREFIX = "/api/control-plane"
 _CASE_SOURCE_LIMIT_BYTES = 512 * 1024
 _JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
 _MAX_BODY_BYTES = 36 * 1024 * 1024
+_FSQ_CASE_SUFFIX_LOWER = FSQ_CASE_SUFFIX.casefold()
+_SAVE_CASE_FORBIDDEN = re.compile(r"[<>\"|\\/:*?\[\]\x00-\x1f\x7f-\x9f]")
 
 
 class _RunNotTerminalError(RuntimeError):
@@ -222,6 +228,8 @@ class ControlPlaneServer:
             if suffix == "/replay-video":
                 stored = store_replay_video(self._terminal_run_dir(request_id), body.get("mimeType"), body.get("videoBase64"))
                 return 200, {**stored, "videoUrl": f"{_API_PREFIX}/runs/{request_id}/replay-video/file"}
+            if suffix == "/save-yaml":
+                return 200, self._save_run_yaml(request_id, body)
             if suffix != "/cancel":
                 return 404, _error("not_found", "Control Plane endpoint not found.", "Check the API path.")
             snapshot = self.state.request_cancel(request_id)
@@ -230,14 +238,51 @@ class ControlPlaneServer:
                 handle.cancel()
         except RequestNotFoundError:
             return 404, _error("request_not_found", "Run request not found.", "Reload Control Plane to find the active request.")
+        except FileNotFoundError as exc:
+            return 404, _exception_error("generated_yaml_unavailable", exc, "Run Explore again or inspect the run artifacts.")
         except ValueError as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry.")
         except OverflowError as exc:
             return 413, _exception_error("body_too_large", exc, "Upload a smaller replay video.")
         except _RunNotTerminalError as exc:
             return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish.")
+        except OSError as exc:
+            return 503, _exception_error("save_yaml_failed", exc, "Check workspace file permissions and retry.")
         else:
             return 200, snapshot
+
+    def _save_run_yaml(self, request_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        case_name = _save_case_name(body)
+        snapshot = self.state.snapshot(request_id)
+        if not snapshot.get("terminal"):
+            raise _RunNotTerminalError("Save yaml is available after the run reaches a terminal state.")
+        if snapshot.get("mode") != "explore":
+            raise ValueError("Save yaml is available only for Explore runs.")
+        run_id = snapshot.get("runId")
+        if not isinstance(run_id, str) or not run_id:
+            raise FileNotFoundError("Generated YAML is unavailable for this run.")
+        run_dir = self._terminal_run_dir(request_id)
+        recorded_case_path = (run_dir / f"recorded{FSQ_CASE_SUFFIX}").resolve()
+        try:
+            recorded_case_path.relative_to(run_dir.resolve())
+        except ValueError as exc:
+            raise ValueError("Generated YAML path escapes the run directory.") from exc
+        if not recorded_case_path.is_file():
+            raise FileNotFoundError("Generated recorded.fsq.yaml was not found for this run.")
+        frozen_cases_dir = self.state.cases_directory(request_id)
+        if not isinstance(frozen_cases_dir, Path):
+            raise FileNotFoundError("Frozen cases directory is unavailable for this run.")
+        cases_dir = frozen_cases_dir.resolve()
+        destination = (cases_dir / f"{case_name}{FSQ_CASE_SUFFIX}").resolve()
+        try:
+            destination.relative_to(cases_dir)
+        except ValueError as exc:
+            raise ValueError("Saved YAML path escapes the configured cases directory.") from exc
+        _atomic_copy(recorded_case_path, destination)
+        return {
+            "savedPath": destination.relative_to(cases_dir).as_posix(),
+            "message": f"Saved YAML to cases/{snapshot['platform']}/{destination.name}.",
+        }
 
     def handle_replay_video_file(self, request_id: str, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
         return read_replay_video(self._terminal_run_dir(request_id), range_header)
@@ -379,6 +424,7 @@ class ControlPlaneServer:
             return 409, _exception_error("busy", exc, "Wait for the active run to finish or cancel it.")
         try:
             settings = self._load_settings(workspace_name, platform)
+            self.state.bind_cases_dir(request_id, Path(settings.cases.dir).resolve())
             source = self._run_source(body, settings)
             if source:
                 self.state.update_source(request_id, source)
@@ -457,6 +503,52 @@ def _strict_case_steps(prepared) -> list[dict[str, Any]]:
             }
         )
     return summaries
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with (
+            source.open("rb") as source_file,
+            tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file,
+        ):
+            temporary_path = Path(temporary_file.name)
+            while chunk := source_file.read(1024 * 1024):
+                temporary_file.write(chunk)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        temporary_path.replace(destination)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+
+
+def _save_case_name(body: dict[str, Any]) -> str:
+    if set(body) != {"caseName"}:
+        raise ValueError("Save yaml requires exactly caseName.")
+    case_name = body.get("caseName")
+    if not isinstance(case_name, str):
+        raise TypeError("caseName must be a string.")
+    case_name = case_name.strip()
+    if not case_name:
+        raise ValueError("caseName must be non-empty.")
+    if case_name.casefold().endswith(_FSQ_CASE_SUFFIX_LOWER):
+        raise ValueError("caseName must not include the .fsq.yaml suffix.")
+    if case_name.startswith(".") or case_name in {".."}:
+        raise ValueError("caseName must not start with a dot.")
+    if _SAVE_CASE_FORBIDDEN.search(case_name) or ".." in case_name:
+        raise ValueError("caseName must be a safe filename without path or wildcard characters.")
+    return case_name
 
 
 class _ControlPlaneHTTPServer(ThreadingHTTPServer):

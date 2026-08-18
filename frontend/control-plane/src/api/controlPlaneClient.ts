@@ -10,6 +10,8 @@ import type {
   ReadinessResponse,
   ReplayFramesResponse,
   ReplayVideoResponse,
+  SaveYamlResponse,
+  SaveYamlPayload,
   RunSnapshot,
   StartRunPayload,
   StartRunResponse,
@@ -172,6 +174,12 @@ function validateReplayVideo(value: unknown): ReplayVideoResponse {
   if (!record(value) || !bool(value.available) || !nullableString(value.videoUrl)
     || (value.mimeType !== undefined && !string(value.mimeType)) || (value.sizeBytes !== undefined && !nonNegativeInteger(value.sizeBytes))) invalidResponse('replay video', 'Invalid replay video fields.');
   return value as unknown as ReplayVideoResponse;
+}
+function validateSaveYaml(value: unknown): SaveYamlResponse {
+  if (!record(value) || !hasOnlyKeys(value, ['savedPath', 'message']) || !string(value.savedPath) || !value.savedPath || !string(value.message) || !value.message) {
+    invalidResponse('save yaml', 'Invalid Save yaml response fields.');
+  }
+  return value as unknown as SaveYamlResponse;
 }
 function validateConfig(value: unknown): ConfigResponse {
   if (!record(value) || !hasOnlyKeys(value, ['configured', 'provider']) || !bool(value.configured)) invalidResponse('config', 'Invalid configured state.');
@@ -349,7 +357,7 @@ export const controlPlaneClient = {
   cases: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
     jsonRequest(`/cases?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateCases, { signal }),
   startRun: (payload: StartRunPayload) => jsonRequest('/runs', validateStart, { method: 'POST', body: JSON.stringify(payload) }),
-  cancelRun: (requestId: string) => jsonRequest(`/runs/${encodeURIComponent(requestId)}/cancel`, (value) => validateRunSnapshot(value, 'cancel run'), { method: 'POST', body: '{}' }),
+  cancelRun: (requestId: string) => jsonRequest(`/runs/${encodeURIComponent(requestId)}/cancel`, (value) => validateRunSnapshot(value, 'cancel run'), { method: 'POST' }),
   runSnapshot: (requestId: string, signal?: AbortSignal) => jsonRequest(`/runs/${encodeURIComponent(requestId)}`, validateRunSnapshot, { signal }),
   streamUrl: (requestId: string, afterSequence: number) =>
     `${API_BASE}/runs/${encodeURIComponent(requestId)}/stream?afterSequence=${afterSequence}`,
@@ -374,21 +382,23 @@ export const controlPlaneClient = {
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { signal }),
   uploadReplayVideo: (requestId: string, mimeType: string, videoBase64: string, signal?: AbortSignal) =>
     jsonRequest(`/runs/${encodeURIComponent(requestId)}/replay-video`, validateReplayVideo, { method: 'POST', body: JSON.stringify({ mimeType, videoBase64 }), signal }),
+  saveYaml: (requestId: string, payload: SaveYamlPayload, signal?: AbortSignal) =>
+    jsonRequest(`/runs/${encodeURIComponent(requestId)}/save-yaml`, validateSaveYaml, { method: 'POST', body: JSON.stringify(payload), signal }),
   config: (signal?: AbortSignal) => jsonRequest('/config', validateConfig, { signal }),
   saveAzureConfig: (payload: AzureConfigPayload, signal?: AbortSignal) =>
     jsonRequest('/config/azure', validateConfig, { method: 'PUT', body: JSON.stringify(payload), signal }),
   startGithubDeviceFlow: (signal?: AbortSignal) =>
-    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', body: '{}', signal }),
+    jsonRequest('/config/github/device-flow', validateDeviceFlow, { method: 'POST', signal }),
   githubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { signal }),
   retryGithubModels: (authRequestId: string, signal?: AbortSignal) =>
-    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}/models`, validateDeviceFlow, { method: 'POST', body: '{}', signal }),
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}/models`, validateDeviceFlow, { method: 'POST', signal }),
   saveGithubModel: (authRequestId: string, modelName: string, signal?: AbortSignal) =>
     jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateConfig, { method: 'PUT', body: JSON.stringify({ modelName }), signal }),
   cancelGithubDeviceFlow: (authRequestId: string, signal?: AbortSignal) =>
-    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', body: '{}', signal }),
+    jsonRequest(`/config/github/device-flow/${encodeURIComponent(authRequestId)}`, validateDeviceFlow, { method: 'DELETE', signal }),
   testConnection: (signal?: AbortSignal) =>
-    jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', body: '{}', signal }),
+    jsonRequest('/config/test-connection', validateConnectionTest, { method: 'POST', signal }),
   workspaces: (signal?: AbortSignal) => jsonRequest('/workspaces', validateWorkspaceList, { signal }),
   workspace: (name: string, signal?: AbortSignal) =>
     jsonRequest(`/workspaces/${encodeURIComponent(name)}`, validateWorkspaceDetail, { signal }),

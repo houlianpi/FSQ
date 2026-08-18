@@ -92,6 +92,42 @@ it('encodes workspace names and file paths in client requests', async () => {
   );
 });
 
+it.each([
+  ['GitHub device-flow start', () => controlPlaneClient.startGithubDeviceFlow(), '/api/control-plane/config/github/device-flow', 'POST'],
+  ['GitHub model retry', () => controlPlaneClient.retryGithubModels('auth-1'), '/api/control-plane/config/github/device-flow/auth-1/models', 'POST'],
+  ['GitHub device-flow cancellation', () => controlPlaneClient.cancelGithubDeviceFlow('auth-1'), '/api/control-plane/config/github/device-flow/auth-1', 'DELETE'],
+  ['connection test', () => controlPlaneClient.testConnection(), '/api/control-plane/config/test-connection', 'POST'],
+])('sends no request fields for %s', async (_name, request, expectedUrl, expectedMethod) => {
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    savedPath: 'run-1.fsq.yaml',
+    message: 'Saved YAML.',
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await request().catch(() => undefined);
+
+  expect(fetch).toHaveBeenCalledWith(
+    expectedUrl,
+    expect.objectContaining({ method: expectedMethod }),
+  );
+  expect(fetch.mock.calls[0][1]).not.toHaveProperty('body');
+});
+
+it('sends the confirmed Save yaml case name without a suffix', async () => {
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    savedPath: 'checkout-flow.fsq.yaml',
+    message: 'Saved YAML to cases/web/checkout-flow.fsq.yaml.',
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+  await expect(controlPlaneClient.saveYaml('request-1', { caseName: 'checkout-flow' })).resolves.toEqual({
+    savedPath: 'checkout-flow.fsq.yaml',
+    message: 'Saved YAML to cases/web/checkout-flow.fsq.yaml.',
+  });
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/control-plane/runs/request-1/save-yaml',
+    expect.objectContaining({ method: 'POST', body: JSON.stringify({ caseName: 'checkout-flow' }) }),
+  );
+});
+
 it('requires step artifacts to contain readable content or an item error', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
     available: true, stepId: 'step-1', message: null,

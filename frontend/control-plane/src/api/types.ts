@@ -158,6 +158,11 @@ export interface ReplayVideoResponse {
   mimeType?: string;
   sizeBytes?: number;
 }
+export interface SaveYamlResponse {
+  savedPath: string;
+  message: string;
+}
+export interface SaveYamlPayload { caseName: string }
 
 export interface AzureProviderConfig {
   type: 'azure_openai';
