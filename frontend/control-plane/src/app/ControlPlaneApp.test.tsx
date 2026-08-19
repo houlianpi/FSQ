@@ -151,17 +151,38 @@ it('restores the previous workspace selection when creation is cancelled', async
 it('selects available registry entries and exposes unavailable entries only as repair guidance', async () => {
   vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
     { name: 'mobile', rootPath: 'C:\\projects\\mobile', status: 'available', message: 'Workspace is available.', platforms: [{ platform: 'android', configPath: 'C:\\projects\\mobile\\.fsq\\config\\config.android.yaml', status: 'available', message: 'Platform is available.' }] },
-    { name: 'broken', rootPath: 'C:\\projects\\broken', status: 'unavailable', message: 'Configuration is unavailable.', action: 'Repair config.yaml.', platforms: [] },
+    { name: 'broken', rootPath: 'C:\\projects\\broken', status: 'unavailable', message: 'Configuration is unavailable.', action: 'Repair config.yaml.', platforms: [{ platform: 'windows', configPath: 'C:\\projects\\broken\\.fsq\\config\\config.windows.yaml', status: 'unavailable', message: 'Platform is unavailable.', action: 'Repair config.windows.yaml.' }] },
   ] });
   const user = userEvent.setup();
   render(<ControlPlaneApp />);
 
   const broken = await screen.findByText('broken');
-  expect(broken.closest('[aria-disabled="true"]')).toHaveAttribute('title', 'Configuration is unavailable. Repair config.yaml.');
+  const brokenEntry = broken.closest('[aria-disabled="true"]');
+  expect(brokenEntry).toHaveAttribute('title', 'Configuration is unavailable. Repair config.yaml.');
+  expect(brokenEntry).toHaveTextContent('windows unavailable');
+  expect(brokenEntry).not.toHaveTextContent('C:\\projects');
   expect(screen.queryByRole('button', { name: /broken/i })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: /mobile/i }));
+  const mobile = screen.getByRole('button', { name: /mobile/i });
+  expect(mobile).toHaveTextContent('android');
+  expect(mobile).not.toHaveTextContent('available');
+  expect(mobile).not.toHaveTextContent('C:\\projects');
+  await user.click(mobile);
   expect(screen.getByText('Workspace mobile')).toBeVisible();
+});
+
+it('shows every configured platform and status for a partial workspace without its path', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'partial', rootPath: 'C:\\projects\\partial', status: 'partial', message: 'One platform needs repair.', platforms: [
+      { platform: 'android', configPath: 'android.yaml', status: 'available', message: 'Platform is available.' },
+      { platform: 'web', configPath: 'web.yaml', status: 'unavailable', message: 'Platform is unavailable.', action: 'Repair web config.' },
+    ] },
+  ] });
+  render(<ControlPlaneApp />);
+
+  const partial = await screen.findByRole('button', { name: /partial/i });
+  expect(partial).toHaveTextContent('android, web unavailable');
+  expect(partial).not.toHaveTextContent('C:\\projects');
 });
 
 it('uses the full-bleed outlet only for the selected workspace browser presentation', async () => {

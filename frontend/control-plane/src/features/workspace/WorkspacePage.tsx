@@ -34,8 +34,9 @@ const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'W
 
 export function WorkspaceTitlebar({ workspace, onConfigure }: { workspace: WorkspaceRegistryEntry; onConfigure: () => void }) {
   return <div className="cp-workspace-titlebar">
-    <div><div className="cp-workspace-title-row"><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><div className="cp-workspace-platforms" aria-label="Workspace platforms">{workspace.platforms.length ? workspace.platforms.map((platform) => <span key={platform.platform} className={`cp-workspace-platform cp-workspace-platform--${platform.status}`} aria-label={`${platformLabels[platform.platform]} ${platform.status}`}><strong>{platformLabels[platform.platform]}</strong></span>) : <span>No configured platforms</span>}</div></div><p className="mono">{workspace.rootPath}</p></div>
-    <button className="button" type="button" aria-label="Configure workspace" title="Configure workspace" onClick={onConfigure}><Settings aria-hidden="true" /><span>Configure</span></button>
+    <div className="cp-workspace-identity"><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><p className="mono">{workspace.rootPath}</p></div>
+    <div className="cp-workspace-platforms" aria-label="Workspace platforms">{workspace.platforms.length ? workspace.platforms.map((platform) => <span key={platform.platform} className={`cp-workspace-platform cp-workspace-platform--${platform.status}`} aria-label={`${platformLabels[platform.platform]} ${platform.status}`}><strong>{platformLabels[platform.platform]}</strong><span className="cp-workspace-platform-status" title={platform.status === 'available' ? 'Available' : 'Unavailable'} aria-hidden="true">{platform.status === 'available' ? <ShieldCheck /> : <><AlertCircle /><span>Unavailable</span></>}</span></span>) : <span>No configured platforms</span>}</div>
+    <button className="button cp-workspace-configure" type="button" aria-label="Configure workspace" title="Configure workspace" onClick={onConfigure}><Settings aria-hidden="true" /><span>Configure</span></button>
   </div>;
 }
 
