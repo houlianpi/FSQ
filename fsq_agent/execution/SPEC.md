@@ -27,7 +27,7 @@ The package exports its supported services and result contracts through `executi
 
 Public services accept already resolved Workspace/platform settings and explicit collaborators. They return normalized results and safe artifact references; adapters alone map them to CLI output, HTTP/SSE state, or Playground responses.
 
-The package-root `fsq_agent._strict_lifecycle` and `fsq_agent._strict_case_recording` modules are compatibility forwarders. Their supported symbols reference the canonical execution objects and do not duplicate implementation or mutable state.
+Execution services are imported from `fsq_agent.execution`. Package-root `_strict_lifecycle` and `_strict_case_recording` compatibility modules are absent.
 
 ## Internal Structure
 

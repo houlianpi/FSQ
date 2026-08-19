@@ -67,7 +67,7 @@ class ControlPlaneServer:
     def __init__(self, options: ControlPlaneServerOptions | None = None) -> None:
         self.options = options or ControlPlaneServerOptions()
         self.state = ControlPlaneState()
-        self._static_root = (self.options.static_path or Path(__file__).parents[2] / "control_plane" / "static").resolve()
+        self._static_root = (self.options.static_path or Path(__file__).parent / "static").resolve()
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
         self._handles: dict[str, ExecutionHandle] = {}

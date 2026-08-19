@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 from fsq_agent.config._settings import Settings
+from fsq_agent.execution.recording import record_dynamic_run_as_strict_case
 from fsq_agent.models import AndroidHarnessSettings, ConfigurationError, HarnessSettings, OutputSettings, ReportArtifact, RunEvent, Task, TaskResult, VerificationResult
 
 
@@ -543,7 +543,7 @@ def test_record_dynamic_goal_does_not_publish_when_generated_case_validation_fai
     def fail_validation(*_args, **_kwargs):
         raise ConfigurationError("invalid generated case")
 
-    monkeypatch.setattr("fsq_agent._strict_case_recording.FsqExecutableStepAdapter.to_executable_steps", fail_validation)
+    monkeypatch.setattr("fsq_agent.execution.recording.FsqExecutableStepAdapter.to_executable_steps", fail_validation)
 
     recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
 
@@ -562,7 +562,7 @@ def test_record_dynamic_goal_publication_failure_preserves_recording_and_existin
     def fail_replace(_source: Path, _destination: Path) -> None:
         raise OSError("replace failed")
 
-    monkeypatch.setattr("fsq_agent._strict_case_recording.os.replace", fail_replace)
+    monkeypatch.setattr("fsq_agent.execution.recording.os.replace", fail_replace)
 
     recording = record_dynamic_run_as_strict_case(run_dir=run_dir, task=task, result=result, settings=settings)
 

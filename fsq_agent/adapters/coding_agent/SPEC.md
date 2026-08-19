@@ -34,7 +34,7 @@ The runtime implements required public `run_task`, `run_pre_plan`, and `run_veri
 - Internal modules: all `_*.py` implementation files.
 - Domain boundaries: external Coding Agent SDK adaptation only.
 - Boundary models: cross-module values come from `models` or public Agent protocols.
-- Dependency direction: composition roots and compatibility forwarders may depend on this adapter. Inward packages never do during normal orchestration; the only temporary exception is the lazy default-factory import in legacy `FsqAgent.from_config()`, scheduled for Batch 8 retirement.
+- Dependency direction: composition roots depend on this adapter; inward packages never do.
 - Cross-module boundary: adapter implementation imports Agent-owned behavior only from `fsq_agent.agent`; imports from `fsq_agent.agent._*` are forbidden.
 - Rationale: SDK runtime assembly coordinates provider sessions, tools, streaming, structured output, and external failures without a DI container.
 

@@ -15,13 +15,14 @@ Adapters may import public APIs from `application`, `execution`, `models`, `conf
 - `adapters.control_plane.playground` owns `PlaygroundServer`, `PlaygroundServerOptions`, `run_playground`, and the documented Playground HTTP/static API.
 - `adapters.coding_agent` owns the OpenAI Agents SDK implementation of public Agent runtime protocols. Its concrete runtime and SDK tool adapters are private; composition roots consume its public runtime factory.
 
-The installed script and existing `fsq_agent.cli`, `fsq_agent.control_plane`, and `fsq_agent.playground` imports remain compatibility entries. Each public compatibility symbol references the canonical adapter object. Compatibility private submodule imports resolve to the canonical module object when mutable state or monkeypatch identity is observable.
+The installed scripts target canonical `fsq_agent.adapters.cli:main`. Existing `fsq_agent.cli`, `fsq_agent.control_plane`, and `fsq_agent.playground` packages remain compatibility entries for documented public symbols only, and each compatibility symbol references the canonical adapter object. Old private transport submodule imports are unsupported and absent.
 
 ## Internal Structure
 
 - `cli/`: CLI parsing, presentation, output modes, and exit mapping.
 - `control_plane/`: Control Plane HTTP/SSE/static transport, projections, and state.
-- `control_plane/playground/`: Playground HTTP/static transport and independent session/task state.
+- `control_plane/static/`: Generated Control Plane package data.
+- `control_plane/playground/`: Playground HTTP/static transport, independent session/task state, and generated `static/` package data.
 - `coding_agent/`: OpenAI Agents SDK runtime construction, SDK tool/schema conversion, stream-event/result adaptation, and public runtime factory.
 - Adapter-private `_*.py` files are not imported by inward modules.
 
@@ -40,7 +41,7 @@ Adapters map stable inward failures into documented exit codes or safe HTTP/SSE 
 
 ## Current Invariants
 
-- Canonical and compatibility paths do not duplicate transport implementations or mutable state.
+- Public compatibility packages do not duplicate transport implementations, package data, or mutable state.
 - CLI and Control Plane business operations continue through Application.
 - Control Plane and Playground remain behaviorally and statefully independent.
 - Static assets remain generated package data with unchanged URL and wheel behavior.

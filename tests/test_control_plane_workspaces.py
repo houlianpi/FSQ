@@ -202,7 +202,7 @@ def test_devices_cases_require_and_resolve_registered_workspace_platform(
         captured["cases"] = settings.cases.dir
         return {"platform": settings.harness.platform, "cases": [], "truncated": False}
 
-    monkeypatch.setattr("fsq_agent.control_plane._server.discover_cases", capture_cases)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.discover_cases", capture_cases)
 
     status, payload, _ = server.handle_get(
         "/api/control-plane/cases",
@@ -231,11 +231,11 @@ def test_devices_readiness_keeps_workspace_ready_when_selected_platform_is_absen
     server = _server(tmp_path)
     _create(server, parent)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._readiness.provider_readiness",
+        "fsq_agent.adapters.control_plane._readiness.provider_readiness",
         lambda _settings: pytest.fail("provider readiness must not run for an absent platform"),
     )
     monkeypatch.setattr(
-        "fsq_agent.control_plane._readiness.target_readiness",
+        "fsq_agent.adapters.control_plane._readiness.target_readiness",
         lambda _settings: pytest.fail("target readiness must not run for an absent platform"),
     )
 

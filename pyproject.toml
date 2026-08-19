@@ -43,12 +43,12 @@ macos = [
 ]
  
 [project.scripts]
-fsq = "fsq_agent.cli:main"
-fsq-agent = "fsq_agent.cli:main"
+fsq = "fsq_agent.adapters.cli:main"
+fsq-agent = "fsq_agent.adapters.cli:main"
  
 [tool.hatch.build.targets.wheel]
 packages = ["fsq_agent"]
-artifacts = ["fsq_agent/playground/static", "fsq_agent/control_plane/static"]
+artifacts = ["fsq_agent/adapters/control_plane/playground/static", "fsq_agent/adapters/control_plane/static"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "config.android.yaml" = "fsq_agent/resources/config.android.yaml"

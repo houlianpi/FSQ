@@ -30,8 +30,8 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - `playground/`: Independently specified Playground browser application.
 - `control-plane/`: Independently specified Control Plane browser application.
 - `../.frontend-dist/`: Untracked temporary Vite build staging.
-- `../fsq_agent/playground/static/`: Untracked generated build output consumed by Python packaging and production static serving; it is not authored frontend source.
-- `../fsq_agent/control_plane/static/`: Untracked generated build output consumed by Python packaging and production static serving; it is not authored frontend source.
+- `../fsq_agent/adapters/control_plane/playground/static/`: Untracked generated Playground build output consumed by canonical Python packaging and production static serving; it is not authored frontend source.
+- `../fsq_agent/adapters/control_plane/static/`: Untracked generated Control Plane build output consumed by canonical Python packaging and production static serving; it is not authored frontend source.
 
 ## Frontend Architecture
 

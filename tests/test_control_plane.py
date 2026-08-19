@@ -12,17 +12,26 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from fsq_agent.adapters.control_plane._cases import discover_cases, resolve_case
+from fsq_agent.adapters.control_plane._evidence import (
+    UI_SNAPSHOT_LIMIT_BYTES,
+    EvidenceProjection,
+    read_replay_frames,
+    read_screenshot,
+    read_step_artifacts,
+    read_ui_snapshot,
+    safe_exception_message,
+    safe_text,
+)
+from fsq_agent.adapters.control_plane._execution import _run_explore, _run_strict, prepare_run
+from fsq_agent.adapters.control_plane._readiness import provider_readiness, readiness
+from fsq_agent.adapters.control_plane._replay import read_replay_video, replay_video_metadata, store_replay_video
+from fsq_agent.adapters.control_plane._server import _RequestHandler
+from fsq_agent.adapters.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
+from fsq_agent.adapters.control_plane._targets import discover_targets
+from fsq_agent.case_dsl import FsqCaseLoader
 from fsq_agent.config import Settings
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
-from fsq_agent.control_plane._cases import discover_cases, resolve_case
-from fsq_agent.control_plane._evidence import UI_SNAPSHOT_LIMIT_BYTES, EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
-from fsq_agent.control_plane._execution import _run_explore, _run_strict, prepare_run
-from fsq_agent.control_plane._readiness import provider_readiness, readiness
-from fsq_agent.control_plane._replay import read_replay_video, replay_video_metadata, store_replay_video
-from fsq_agent.control_plane._server import _RequestHandler
-from fsq_agent.control_plane._state import BusyError, ControlPlaneState, TaskCancelledError
-from fsq_agent.control_plane._targets import discover_targets
-from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import (
     AndroidDevice,
     AndroidDeviceDiscoveryResult,
@@ -176,7 +185,7 @@ def test_state_cancel_on_terminal_task_is_idempotent_and_does_not_mutate() -> No
 def test_android_target_discovery_normalizes_online_offline_and_unauthorized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        "fsq_agent.adapters.control_plane._targets.AndroidDeviceDiscovery.discover",
         lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(
             devices=[
                 AndroidDevice(serial="emulator-5554", state="device", metadata={"product": "sdk", "model": "Pixel_8", "transport_id": "1"}),
@@ -204,7 +213,7 @@ def test_android_target_discovery_has_no_default_with_multiple_online_devices(
 ) -> None:
     settings = _settings(tmp_path)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        "fsq_agent.adapters.control_plane._targets.AndroidDeviceDiscovery.discover",
         lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
     )
 
@@ -225,7 +234,7 @@ def test_android_target_discovery_has_no_default_with_multiple_online_devices(
 def test_android_target_discovery_reports_command_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_code: str, target_id: str, status: str) -> None:
     settings = _settings(tmp_path)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._targets.AndroidDeviceDiscovery.discover",
+        "fsq_agent.adapters.control_plane._targets.AndroidDeviceDiscovery.discover",
         lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(error_code=error_code, error_message="Discovery failed."),
     )
     target = discover_targets(settings)["targets"][0]
@@ -233,8 +242,8 @@ def test_android_target_discovery_reports_command_failures(tmp_path: Path, monke
 
 
 def test_configured_targets_are_safe_and_config_owned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("fsq_agent.control_plane._targets.importlib.util.find_spec", lambda _name: object())
-    monkeypatch.setattr("fsq_agent.control_plane._targets.validate_strict_core_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._targets.importlib.util.find_spec", lambda _name: object())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._targets.validate_strict_core_settings", lambda _settings: None)
     expected = {"web": ("msedge-canary", "Browser"), "windows": ("windows-app", "Application"), "macos": ("macos-app", "Application")}
     for platform, (target_id, target_label) in expected.items():
         settings = _settings(tmp_path / platform, platform)
@@ -281,7 +290,7 @@ def test_case_discovery_rejects_symlink_escape_before_loading(tmp_path: Path, mo
         loaded.append(path)
         raise AssertionError("escaped case must not be read")
 
-    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._cases.FsqCaseLoader.load_case", track_load)
 
     payload = discover_cases(settings)
 
@@ -308,7 +317,7 @@ def test_case_discovery_rejects_lifecycle_symlink_escape_before_loading(tmp_path
         loaded.append(path.resolve())
         return original_load(loader, path)
 
-    monkeypatch.setattr("fsq_agent.control_plane._cases.FsqCaseLoader.load_case", track_load)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._cases.FsqCaseLoader.load_case", track_load)
 
     payload = discover_cases(settings)
 
@@ -355,7 +364,7 @@ def test_provider_readiness_is_noninteractive_and_closes_without_model_request(t
         captured["prepared"] = True
         return Session()
 
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.prepare_model_provider_session", prepare)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.prepare_model_provider_session", prepare)
 
     result = provider_readiness(_settings(tmp_path))
 
@@ -367,9 +376,9 @@ def test_explore_preparation_normalizes_goal_and_overrides_only_android_serial(t
     settings = _settings(tmp_path)
     settings.harness.android.serial = "configured-device"
     calls: list[str] = []
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, target: calls.append(f"target:{target}"))
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_runtime_settings", lambda _settings: calls.append("runtime"))
-    monkeypatch.setattr("fsq_agent.control_plane._execution.require_provider", lambda _settings: calls.append("provider"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, target: calls.append(f"target:{target}"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_runtime_settings", lambda _settings: calls.append("runtime"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda _settings: calls.append("provider"))
 
     prepared = prepare_run(
         request_id="request-1",
@@ -393,7 +402,7 @@ def test_strict_preparation_validates_lifecycle_children_before_harness_creation
         "schemaVersion: fsq.ai-test/v1\nname: Root\nplatform: android\nappId: com.example.app\nonCaseStart:\n  runCase: child.fsq.yaml\n---\n- waitMs:\n    duration_ms: 1\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, _target: None)
 
     with pytest.raises(ValueError, match="lifecycle child platform"):
         prepare_run(
@@ -421,8 +430,8 @@ def test_strict_preparation_rejects_lifecycle_symlink_escape_before_loading(tmp_
         loaded.append(path.resolve())
         return original_load(loader, path)
 
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.FsqCaseLoader.load_case", track_load)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.FsqCaseLoader.load_case", track_load)
 
     with pytest.raises(ValueError, match="escapes"):
         prepare_run(
@@ -438,12 +447,12 @@ def test_strict_preparation_builds_registry_and_resolved_steps_without_provider(
     settings = _settings(tmp_path)
     _case(settings.cases.dir / "strict.fsq.yaml")
     calls: list[bool] = []
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, _target: None)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._execution.validate_strict_core_settings",
+        "fsq_agent.adapters.control_plane._execution.validate_strict_core_settings",
         lambda _settings, requires_ai_assertion=False: calls.append(requires_ai_assertion),
     )
-    monkeypatch.setattr("fsq_agent.control_plane._execution.require_provider", lambda _settings: pytest.fail("provider must not be required"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda _settings: pytest.fail("provider must not be required"))
 
     prepared = prepare_run(
         request_id="request-1",
@@ -461,9 +470,9 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
     settings = _settings(tmp_path)
     _case(settings.cases.dir / "ai.fsq.yaml", command="assertWithAI:\n    prompt: Verify the page")
     calls: list[str] = []
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda _settings, requires_ai_assertion=False: calls.append(f"strict:{requires_ai_assertion}"))
-    monkeypatch.setattr("fsq_agent.control_plane._execution.require_provider", lambda _settings: calls.append("provider"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_strict_core_settings", lambda _settings, requires_ai_assertion=False: calls.append(f"strict:{requires_ai_assertion}"))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda _settings: calls.append("provider"))
 
     prepared = prepare_run(
         request_id="request-ai",
@@ -478,8 +487,8 @@ def test_strict_preparation_gates_provider_from_registry_metadata(tmp_path: Path
 def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     _case(settings.cases.dir / "wait.fsq.yaml")
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda _settings, _target: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda _settings, _target: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
     prepared = prepare_run(
         request_id="request-strict",
         settings=settings,
@@ -511,7 +520,7 @@ def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Pa
         def classify_error(self, error, phase, step):
             return "unknown"
 
-    monkeypatch.setattr("fsq_agent.control_plane._execution.HarnessFactory.create_harness", lambda *_args, **_kwargs: FakeHarness())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.HarnessFactory.create_harness", lambda *_args, **_kwargs: FakeHarness())
 
     _run_strict(prepared, state)
 
@@ -546,7 +555,7 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
             )
 
     monkeypatch.setattr(
-        "fsq_agent.control_plane._execution.FsqAgent.from_settings",
+        "fsq_agent.adapters.control_plane._execution.FsqAgent.from_settings",
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
 
@@ -554,7 +563,7 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
         captured["record"] = kwargs
         raise OSError("recording unavailable")
 
-    monkeypatch.setattr("fsq_agent.control_plane._execution.record_dynamic_run_as_strict_case", record)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.record_dynamic_run_as_strict_case", record)
 
     await _run_explore(prepared, state)
 
@@ -919,7 +928,7 @@ def test_control_plane_replay_video_storage_metadata_and_ranges(tmp_path: Path) 
 def test_server_terminal_evidence_and_replay_routes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path, "windows")
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     request_id = server.state.reserve(workspace_name="checkout", platform="windows", target_id="edge", mode="explore", source={"goal": "Go"})
     run_dir = settings.output.runs_dir / "run-1"
     artifact = run_dir / "artifacts" / "step.png"
@@ -953,7 +962,7 @@ def test_server_terminal_evidence_and_replay_routes(tmp_path: Path, monkeypatch:
 def test_server_save_yaml_copies_terminal_explore_recording_to_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path, "web")
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
@@ -975,7 +984,7 @@ def test_server_save_yaml_uses_frozen_cases_directory(tmp_path: Path, monkeypatc
     original_settings = _settings(tmp_path / "original", "web")
     changed_settings = _settings(tmp_path / "changed", "web")
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: changed_settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: changed_settings)
     request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     run_dir = original_settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
@@ -995,7 +1004,7 @@ def test_server_save_yaml_uses_frozen_cases_directory(tmp_path: Path, monkeypatc
 def test_server_save_yaml_rejects_strict_and_missing_recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     strict_request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="strict", source={"casePath": "case.fsq.yaml"})
     strict_run_dir = settings.output.runs_dir / "strict-run"
     strict_run_dir.mkdir(parents=True)
@@ -1019,7 +1028,7 @@ def test_server_save_yaml_rejects_strict_and_missing_recording(tmp_path: Path, m
 def test_server_save_yaml_rejects_unsafe_case_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: settings)
     request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="explore", source={"goal": "Go"})
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
@@ -1069,7 +1078,7 @@ def test_case_diagnostics_use_safe_sanitizer(tmp_path: Path, monkeypatch: pytest
     case_path = settings.cases.dir / "unsafe.fsq.yaml"
     case_path.write_text("broken", encoding="utf-8")
     monkeypatch.setattr(
-        "fsq_agent.control_plane._cases.FsqCaseLoader.load_case",
+        "fsq_agent.adapters.control_plane._cases.FsqCaseLoader.load_case",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError(f"Invalid {tmp_path / 'private.yaml'} token=secret-token")),
     )
 
@@ -1120,11 +1129,11 @@ def test_readiness_covers_all_supported_platforms(tmp_path: Path, monkeypatch: p
             "platforms": [type("PlatformStatus", (), {"platform": platform, "status": "available"})()],
         },
     )()
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.inspect_registered_workspace", lambda *_args: workspace_status)
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.load_control_plane_settings", lambda *_args: settings)
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.inspect_registered_workspace", lambda *_args: workspace_status)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
 
     payload = readiness("checkout", platform)
 
@@ -1145,11 +1154,11 @@ def test_readiness_and_case_discovery_do_not_require_cases_directory(tmp_path: P
             "platforms": [type("PlatformStatus", (), {"platform": "android", "status": "available"})()],
         },
     )()
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.inspect_registered_workspace", lambda *_args: workspace_status)
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.load_control_plane_settings", lambda *_args: settings)
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
-    monkeypatch.setattr("fsq_agent.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.inspect_registered_workspace", lambda *_args: workspace_status)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
 
     payload = readiness("checkout", "android")
 
@@ -1204,7 +1213,7 @@ def test_server_bootstrap_and_errors_use_structured_shape(tmp_path: Path) -> Non
 def test_server_error_boundary_redacts_validation_and_hides_unexpected_repr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     server = ControlPlaneServer(ControlPlaneServerOptions(static_path=tmp_path))
     monkeypatch.setattr(
-        "fsq_agent.control_plane._server.load_control_plane_settings",
+        "fsq_agent.adapters.control_plane._server.load_control_plane_settings",
         lambda *_args: (_ for _ in ()).throw(ValueError(f"Invalid file {tmp_path / 'secret' / 'config.yaml'} api_key=credential-value")),
     )
 
@@ -1230,11 +1239,11 @@ def test_server_run_start_busy_cancel_and_snapshot(tmp_path: Path, monkeypatch: 
             captured["cancelled"] = True
 
     monkeypatch.setattr(
-        "fsq_agent.control_plane._server.load_control_plane_settings",
+        "fsq_agent.adapters.control_plane._server.load_control_plane_settings",
         lambda workspace_name, platform, user_config_root: captured.update(workspaceName=workspace_name, platform=platform) or settings,
     )
-    monkeypatch.setattr("fsq_agent.control_plane._server.prepare_run", lambda **kwargs: kwargs)
-    monkeypatch.setattr("fsq_agent.control_plane._server.start_execution", lambda prepared, state: Handle())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.prepare_run", lambda **kwargs: kwargs)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.start_execution", lambda prepared, state: Handle())
 
     missing_status, missing = server.handle_post(
         "/api/control-plane/runs",
@@ -1290,12 +1299,12 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
     entry.write_text("control plane", encoding="utf-8")
     settings = _settings(tmp_path, "web")
     _case(settings.cases.dir / "strict.fsq.yaml", platform="web", app_id=False)
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", lambda *_args: settings)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_target", lambda *_args: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_runtime_settings", lambda *_args: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.require_provider", lambda *_args: None)
-    monkeypatch.setattr("fsq_agent.control_plane._execution.record_dynamic_run_as_strict_case", lambda **_kwargs: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", lambda *_args: settings)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_runtime_settings", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.record_dynamic_run_as_strict_case", lambda **_kwargs: None)
 
     class FakeAgent:
         async def run(self, task, event_sink=None):
@@ -1348,11 +1357,11 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
             return "unknown"
 
     monkeypatch.setattr(
-        "fsq_agent.control_plane._execution.FsqAgent.from_settings",
+        "fsq_agent.adapters.control_plane._execution.FsqAgent.from_settings",
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
     monkeypatch.setattr(
-        "fsq_agent.control_plane._execution.HarnessFactory.create_harness",
+        "fsq_agent.adapters.control_plane._execution.HarnessFactory.create_harness",
         lambda *_args, **kwargs: FakeHarness(kwargs["artifact_store"]),
     )
     server = ControlPlaneServer(ControlPlaneServerOptions(port=0, static_path=static, open_browser=False))

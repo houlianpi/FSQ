@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from fsq_agent._capability_bootstrap import build_capability_registry
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.core import EvidenceRecorder, StepRunner, StepSequenceRunner
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     ExecutableStep,
     FailureCategory,

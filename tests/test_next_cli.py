@@ -12,7 +12,7 @@ from fsq_agent.cli import main
 
 def _workspace(path: Path, monkeypatch=None) -> None:
     if monkeypatch is not None:
-        monkeypatch.setattr("fsq_agent.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": path.resolve()})())
+        monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": path.resolve()})())
 
 
 def test_public_command_tree() -> None:
@@ -54,7 +54,7 @@ def test_case_create_json_maps_application_result(tmp_path: Path, monkeypatch) -
     async def fake_create(_request, *, event_sink=None, agent_factory=None):
         return CaseCreateResult(run_id="run-1", task_id="task-1", status="success", summary="passed", report_path=tmp_path / "report.md", candidate_case_path=tmp_path / "recorded.fsq.yaml")
 
-    monkeypatch.setattr("fsq_agent.cli._main.create_case", fake_create)
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fake_create)
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(main, ["--output", "json", "case", "create", "--platform", "web", "--goal", "Verify search"])
@@ -63,7 +63,7 @@ def test_case_create_json_maps_application_result(tmp_path: Path, monkeypatch) -
 
 
 def test_case_test_failure_uses_exit_one_and_jsonl_terminal_record(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("fsq_agent.cli._main.test_case", lambda _request: CaseTestResult(run_id="run-1", status="failed", summary="failed", report_path=tmp_path / "core-report.md"))
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.test_case", lambda _request: CaseTestResult(run_id="run-1", status="failed", summary="failed", report_path=tmp_path / "core-report.md"))
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(main, ["--output", "jsonl", "case", "test", "--platform", "web", "search.fsq.yaml"])
@@ -91,12 +91,12 @@ def test_non_interactive_provider_configuration_is_rejected(tmp_path: Path, monk
 
 def test_ui_starts_control_plane_from_non_workspace_directory(tmp_path: Path, monkeypatch) -> None:
     captured = {}
-    monkeypatch.setattr("fsq_agent.cli._main.run_control_plane", lambda options: captured.update(options=options))
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.run_control_plane", lambda options: captured.update(options=options))
 
     def fail_if_workspace_required(_request) -> None:
         raise AssertionError("fsq ui must not require the current directory to be a workspace")
 
-    monkeypatch.setattr("fsq_agent.cli._main.require_initialized_workspace", fail_if_workspace_required)
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", fail_if_workspace_required)
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         assert not (Path.cwd() / ".fsq").exists()
@@ -112,8 +112,8 @@ def test_internal_error_human_output_exposes_only_safe_exception_type(monkeypatc
     def fail() -> None:
         raise RuntimeError("secret backend detail")
 
-    monkeypatch.setattr("fsq_agent.cli._main.list_providers", fail)
-    monkeypatch.setattr("fsq_agent.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", fail)
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
     result = CliRunner().invoke(main, ["providers", "list"])
     assert result.exit_code == 5
     assert "Diagnostic: RuntimeError" in result.output
@@ -125,8 +125,8 @@ def test_internal_error_machine_output_contains_only_safe_exception_type(monkeyp
     def fail() -> None:
         raise RuntimeError("secret backend detail")
 
-    monkeypatch.setattr("fsq_agent.cli._main.list_providers", fail)
-    monkeypatch.setattr("fsq_agent.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", fail)
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
     for output in ("json", "jsonl"):
         result = CliRunner().invoke(main, ["--output", output, "providers", "list"])
         assert result.exit_code == 5
@@ -142,7 +142,7 @@ def test_runs_logs_jsonl_emits_one_record_per_event(tmp_path: Path, monkeypatch)
         _workspace(Path.cwd(), monkeypatch)
         run = Path.cwd() / ".fsq" / "runs" / "run-1"
         run.mkdir(parents=True)
-        monkeypatch.setattr("fsq_agent.cli._main._runs_dir", lambda: Path.cwd() / ".fsq" / "runs")
+        monkeypatch.setattr("fsq_agent.adapters.cli._main._runs_dir", lambda: Path.cwd() / ".fsq" / "runs")
         lines = [json.dumps({"type": "started"}), json.dumps({"type": "completed"})]
         (run / "events.jsonl").write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
         result = runner.invoke(main, ["--output", "jsonl", "runs", "logs", "run-1"])
@@ -173,7 +173,7 @@ def test_runs_use_canonical_platform_directory(tmp_path: Path, monkeypatch) -> N
 def test_init_maps_web_options_to_application(monkeypatch, tmp_path: Path) -> None:
     captured = {}
     monkeypatch.setattr(
-        "fsq_agent.cli._main.initialize_workspace",
+        "fsq_agent.adapters.cli._main.initialize_workspace",
         lambda request: (
             captured.update(request=request)
             or WorkspaceInitializeResult(status="initialized", name="project", root_path=tmp_path, platform="web", driver_status="ready", browser_executable_path=tmp_path / "chrome")

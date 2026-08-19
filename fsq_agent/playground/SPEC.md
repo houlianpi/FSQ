@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Preserve existing `fsq_agent.playground` imports, server entry points, and package-data lookup as compatibility entries for the canonical `adapters.control_plane.playground` implementation. Canonical modules own the HTTP API, server-side session/task state, execution adaptation, safe YAML/run-artifact access, replay persistence, and production static serving. Compatibility paths resolve to the same module objects and own no duplicate transport behavior or state.
+Preserve documented `fsq_agent.playground` server entry symbols as compatibility exports for canonical `adapters.control_plane.playground`. Canonical modules own the HTTP API, generated package data, server-side session/task state, execution adaptation, safe YAML/run-artifact access, replay persistence, and production static serving. Old `fsq_agent.playground._*` private module paths are unsupported and absent.
 
 The authored browser application and browser-local interaction state are owned by `frontend/playground/SPEC.md`. This Python module is an entry-layer convenience surface that reuses existing FSQ-Agent execution, configuration, platform harness/tool provider, event, report, and recording contracts rather than implementing a separate agent loop or platform runner.
 
@@ -113,7 +113,7 @@ macOS playground behavior:
 - `_android.py`: Playground target/error projection over shared `core` Android discovery, setup schema generation, Android session metadata, and screenshot helper boundaries.
 - `_recording.py`: Playground presentation adapter for public recording results and recording failure normalization.
 - `_execution.py`: Provider-only settings refresh at the complete-task boundary plus transport task-state, cancellation, preview, collaborator, and result adaptation around public Execution services.
-- `static/`: Untracked Vite-generated production assets included as Python package data and served by the Playground HTTP server. Authored source ownership is defined by `frontend/playground/SPEC.md`.
+- `adapters/control_plane/playground/static/`: Untracked Vite-generated production assets included as Python package data beside the canonical Playground server. Authored source ownership is defined by `frontend/playground/SPEC.md`.
 - `SPEC.md`: Module design.
 
 ## Python Architecture

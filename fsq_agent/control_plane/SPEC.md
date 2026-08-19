@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Preserve existing `fsq_agent.control_plane` imports, server entry points, and package-data lookup as compatibility entries for the canonical `adapters.control_plane` implementation. Canonical modules own HTTP/static delivery, trusted-local Provider/workspace transport, directory selection, authorization state, Devices state, streaming, evidence projection, and replay transport. Compatibility paths resolve to the same module objects and own no duplicate routes or mutable state.
+Preserve documented `fsq_agent.control_plane` server entry symbols as compatibility exports for canonical `adapters.control_plane`. Canonical modules own HTTP/static delivery, generated package data, trusted-local Provider/workspace transport, directory selection, authorization state, Devices state, streaming, evidence projection, and replay transport. Old `fsq_agent.control_plane._*` private module paths are unsupported and absent.
 
 The module is an entry-layer application. Shared workspace initialization, target resolution, Driver readiness/install coordination, and Web executable discovery use the public Application boundary; Control Plane projects those results through HTTP and browser UI. Explore and Strict execution delegate to public Execution services while Control Plane retains task state, cancellation projection, streaming, and safe evidence presentation. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, recorder, evidence schema, report generator, platform driver, browser discovery table, installer, or Playground behavior.
 
@@ -128,7 +128,7 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - `_execution.py`: Transport task-state, cancellation, event, projection, and collaborator adaptation around public dynamic, deterministic, lifecycle, and recording Execution services.
 - `_evidence.py`: Safe event normalization, latest contained evidence projection, persisted per-step artifact lookup, and replay-frame discovery.
 - `_replay.py`: Bounded Control Plane replay-video validation, atomic run-local persistence, metadata lookup, and HTTP byte-range reads.
-- `static/`: Untracked Vite-generated Control Plane assets included in the wheel.
+- `adapters/control_plane/static/`: Untracked Vite-generated Control Plane assets included in the wheel beside their canonical server owner.
 - `SPEC.md`: Module contract.
 
 ## Python Architecture

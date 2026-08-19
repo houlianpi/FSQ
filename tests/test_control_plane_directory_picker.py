@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from fsq_agent.control_plane import _directory_picker as picker_module
-from fsq_agent.control_plane._directory_picker import DirectoryPicker, DirectoryPickerAPIError
+from fsq_agent.adapters.control_plane import _directory_picker as picker_module
+from fsq_agent.adapters.control_plane._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 
 
 class _Process:

@@ -14,7 +14,7 @@ from fsq_agent.config import load_settings, validate_provider_settings
 from fsq_agent.models import ConfigurationError
 from fsq_agent.providers import prepare_model_provider_session
 
-logger = logging.getLogger("fsq_agent.cli._llm_setup")
+logger = logging.getLogger("fsq_agent.adapters.cli._llm_setup")
 
 LLM_PROVIDER_ENV = "FSQ_LLM_PROVIDER"
 AZURE_OPENAI_BASE_URL_ENV = "AZURE_OPENAI_BASE_URL"

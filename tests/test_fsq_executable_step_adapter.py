@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError
 
 FSQ_CASE = """

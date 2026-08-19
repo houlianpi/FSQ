@@ -60,7 +60,7 @@ def test_machine_error_category_maps_to_exit_code(monkeypatch, category, expecte
     if category == ApplicationErrorCategory.UNAVAILABLE:
         code = ApplicationErrorCode.PROVIDER_UNAVAILABLE
     monkeypatch.setattr(
-        "fsq_agent.cli._main.test_case",
+        "fsq_agent.adapters.cli._main.test_case",
         lambda _request: (_ for _ in ()).throw(ApplicationError(code=code, category=category, message="failure")),
     )
     result = CliRunner().invoke(main, ["--output", "json", "case", "test", "--platform", "web", "case.fsq.yaml"])
@@ -83,11 +83,11 @@ def test_machine_usage_error_is_a_terminal_error_record(output: str) -> None:
 
 def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.cli._main.require_initialized_workspace",
+        "fsq_agent.adapters.cli._main.require_initialized_workspace",
         lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
     )
     monkeypatch.setattr(
-        "fsq_agent.cli._main.list_providers",
+        "fsq_agent.adapters.cli._main.list_providers",
         lambda: (_ for _ in ()).throw(RuntimeError("sensitive implementation detail")),
     )
     result = CliRunner().invoke(main, ["--output", "json", "providers", "list"])
@@ -101,10 +101,10 @@ def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> Non
 def test_jsonl_command_without_progress_emits_one_terminal_result(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "fsq_agent.cli._main.require_initialized_workspace",
+        "fsq_agent.adapters.cli._main.require_initialized_workspace",
         lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
     )
-    monkeypatch.setattr("fsq_agent.cli._main.list_providers", list)
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", list)
     result = CliRunner().invoke(main, ["--output", "jsonl", "providers", "list"])
     assert result.exit_code == 0
     records = [json.loads(line) for line in result.output.splitlines()]

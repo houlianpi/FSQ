@@ -114,8 +114,8 @@ def test_device_flow_is_independent_from_run_state_and_cancels_idempotently(tmp_
         raise ConfigurationError("GitHub device-code authentication was cancelled.")
 
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=complete),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=complete),
     ):
         status, started = server.handle_post(
             "/api/control-plane/config/github/device-flow",
@@ -174,13 +174,13 @@ def test_device_flow_discovers_models_and_saves_only_an_offered_selection(tmp_pa
         )
 
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
         patch(
-            "fsq_agent.control_plane._provider_auth.list_github_copilot_models",
+            "fsq_agent.adapters.control_plane._provider_auth.list_github_copilot_models",
             return_value=(GitHubCopilotModel(id="gpt-5", name="GPT 5"), GitHubCopilotModel(id="gpt-5.1", name="GPT 5.1")),
         ),
-        patch("fsq_agent.control_plane._provider_auth.activate_github_copilot_authorization", side_effect=activate),
+        patch("fsq_agent.adapters.control_plane._provider_auth.activate_github_copilot_authorization", side_effect=activate),
     ):
         status, started = server.handle_post(
             "/api/control-plane/config/github/device-flow",
@@ -225,11 +225,11 @@ def test_device_flow_save_failure_preserves_retryable_ready_state(tmp_path: Path
     server = _server(tmp_path)
     models = (GitHubCopilotModel(id="gpt-5", name="GPT 5"),)
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
-        patch("fsq_agent.control_plane._provider_auth.list_github_copilot_models", return_value=models),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.list_github_copilot_models", return_value=models),
         patch(
-            "fsq_agent.control_plane._provider_auth.activate_github_copilot_authorization",
+            "fsq_agent.adapters.control_plane._provider_auth.activate_github_copilot_authorization",
             side_effect=ConfigurationError("GitHub Provider activation failed."),
         ),
     ):
@@ -257,10 +257,10 @@ def test_pending_authorization_expires_after_ten_minutes_and_releases_busy_slot(
     server = _server(tmp_path)
     clock = [1_000.0]
     with (
-        patch("fsq_agent.control_plane._provider_auth.time.time", side_effect=lambda: clock[0]),
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
-        patch("fsq_agent.control_plane._provider_auth.list_github_copilot_models", return_value=()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.time.time", side_effect=lambda: clock[0]),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.list_github_copilot_models", return_value=()),
     ):
         _, started = server.handle_post("/api/control-plane/config/github/device-flow", {}, peer_host="127.0.0.1")
         deadline = time.monotonic() + 1
@@ -283,10 +283,10 @@ def test_pending_authorization_expires_after_ten_minutes_and_releases_busy_slot(
 def test_model_discovery_failure_retries_without_reauthorizing(tmp_path: Path) -> None:
     server = _server(tmp_path)
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()) as request_code,
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()) as complete,
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()) as request_code,
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", return_value=_authorization()) as complete,
         patch(
-            "fsq_agent.control_plane._provider_auth.list_github_copilot_models",
+            "fsq_agent.adapters.control_plane._provider_auth.list_github_copilot_models",
             side_effect=[ConfigurationError("GitHub Copilot model discovery failed."), (GitHubCopilotModel(id="gpt-5", name="GPT 5"),)],
         ),
     ):
@@ -316,7 +316,7 @@ def test_connection_endpoint_accepts_no_fields_and_returns_saved_result(tmp_path
     server = _server(tmp_path)
     result = ProviderConnectionTestResult(provider="azure_openai", model="saved-model", duration_seconds=0.125)
 
-    with patch("fsq_agent.control_plane._config.test_model_provider_connection", return_value=result) as test_connection:
+    with patch("fsq_agent.adapters.control_plane._config.test_model_provider_connection", return_value=result) as test_connection:
         status, payload = server.handle_post(
             "/api/control-plane/config/test-connection",
             {},
@@ -344,9 +344,9 @@ def test_control_plane_run_start_loads_latest_provider_from_configured_user_root
         captured.update(workspace_name=workspace_name, platform=platform, user_config_root=user_config_root)
         return settings
 
-    monkeypatch.setattr("fsq_agent.control_plane._server.load_control_plane_settings", load)
-    monkeypatch.setattr("fsq_agent.control_plane._server.prepare_run", lambda **kwargs: kwargs)
-    monkeypatch.setattr("fsq_agent.control_plane._server.start_execution", lambda prepared, state: object())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.load_control_plane_settings", load)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.prepare_run", lambda **kwargs: kwargs)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.start_execution", lambda prepared, state: object())
 
     status, _ = server.handle_post(
         "/api/control-plane/runs",
@@ -435,8 +435,8 @@ def test_concurrent_device_flow_starts_reserve_before_requesting_code(tmp_path: 
         )
 
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", side_effect=request_code),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=ConfigurationError("cancelled")),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", side_effect=request_code),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=ConfigurationError("cancelled")),
     ):
         first = Thread(target=start_flow)
         second = Thread(target=start_flow)
@@ -465,8 +465,8 @@ def test_server_stop_cancels_active_device_flow_worker(tmp_path: Path) -> None:
         raise ConfigurationError("cancelled")
 
     with (
-        patch("fsq_agent.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
-        patch("fsq_agent.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=complete),
+        patch("fsq_agent.adapters.control_plane._provider_auth.request_github_copilot_device_code", return_value=_device_code()),
+        patch("fsq_agent.adapters.control_plane._provider_auth.complete_github_copilot_device_flow", side_effect=complete),
     ):
         server.handle_post(
             "/api/control-plane/config/github/device-flow",

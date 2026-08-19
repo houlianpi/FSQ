@@ -8,7 +8,7 @@ from typing import Any
 
 from fsq_agent.models import RunEvent, TaskResult
 
-logger = logging.getLogger("fsq_agent.cli._formatting")
+logger = logging.getLogger("fsq_agent.adapters.cli._formatting")
 
 _GENERIC_REASONING_SUMMARY = "The model produced a reasoning summary."
 _TOOL_CALLS: dict[tuple[str, str, str], dict[str, Any]] = {}

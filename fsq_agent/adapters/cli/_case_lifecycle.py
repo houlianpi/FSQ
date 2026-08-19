@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from fsq_agent.config import Settings
 
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
-logger = logging.getLogger("fsq_agent.cli._case_lifecycle")
+logger = logging.getLogger("fsq_agent.adapters.cli._case_lifecycle")
 _PHASE_LABELS = {
     "onCaseStart": "before case",
     "case": "main case",

@@ -252,7 +252,7 @@ Config server state, pending request state, the Azure draft, and safe GitHub tra
 - Authored source lives under `frontend/control-plane`.
 - `frontend/control-plane/index.html` is the Control Plane input in the root Vite MPA configuration.
 - Development requests under `/api/control-plane` proxy to the local Control Plane Python server and preserve unbuffered SSE.
-- Production output is generated under `fsq_agent/control_plane/static`, remains untracked, and is included in the Python wheel.
+- Production output is generated under `fsq_agent/adapters/control_plane/static`, remains untracked, and is included in the Python wheel beside the canonical Control Plane adapter.
 - Installed-wheel use serves the generated entry and API from one Python process and requires no Node.js/network access.
 - Static route fallback is limited to the Control Plane entry and never falls back to Playground.
 - The root package manifest and lock file own all frontend dependencies. No nested package project or second lock file exists.

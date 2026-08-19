@@ -11,8 +11,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from fsq_agent.agent import OpenAIAgentsRuntime
-from fsq_agent.agent._harness_tools import HarnessToolAdapter
+from fsq_agent.adapters.coding_agent import OpenAIAgentsRuntime
+from fsq_agent.adapters.coding_agent._harness_tools import HarnessToolAdapter
 from fsq_agent.agent._pre_plan import build_pre_plan_input
 from fsq_agent.agent._prompt import PromptModelBuilder, PromptRenderer
 from fsq_agent.agent._verification_task import VerificationEvidenceBuilder
@@ -222,7 +222,7 @@ def _patch_runtime_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     import agents
     import agents.extensions
 
-    import fsq_agent.agent._openai_runtime as runtime_module
+    import fsq_agent.adapters.coding_agent._openai_runtime as runtime_module
 
     _FakeAgent.instances = []
     monkeypatch.setattr(runtime_module, "build_model_provider_session", lambda _settings: _FakeProviderSession())
@@ -416,7 +416,7 @@ def test_runtime_builds_configured_web_harness(monkeypatch: pytest.MonkeyPatch, 
         def __init__(self, **kwargs: Any) -> None:
             calls["driver"] = kwargs
 
-    import fsq_agent.agent._openai_runtime as runtime_module
+    import fsq_agent.adapters.coding_agent._openai_runtime as runtime_module
 
     monkeypatch.setattr("fsq_agent.drivers._factory.PlaywrightWebDriver", _FakeWebDriver)
     monkeypatch.setattr(runtime_module, "build_ai_assertion_evaluator", lambda _settings: "ai-evaluator")
@@ -473,7 +473,7 @@ def test_runtime_builds_configured_macos_harness(monkeypatch: pytest.MonkeyPatch
         def __init__(self, **kwargs: Any) -> None:
             calls["driver"] = kwargs
 
-    import fsq_agent.agent._openai_runtime as runtime_module
+    import fsq_agent.adapters.coding_agent._openai_runtime as runtime_module
 
     monkeypatch.setattr("fsq_agent.drivers._factory.AppiumMac2Driver", _FakeMacOSDriver)
     monkeypatch.setattr(runtime_module, "build_ai_assertion_evaluator", lambda _settings: "ai-evaluator")
@@ -783,7 +783,7 @@ def test_prompt_renderer_injects_model_into_configured_jinja_templates(tmp_path:
 
 @pytest.mark.asyncio
 async def test_harness_tool_adapter_delegates_to_step_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    import fsq_agent.agent._harness_tools as harness_tools_module
+    import fsq_agent.adapters.coding_agent._harness_tools as harness_tools_module
 
     runner_calls: list[tuple[Any, str, Any]] = []
 

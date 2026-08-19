@@ -92,7 +92,7 @@ class PlaygroundServer:
         self._httpd: _PlaygroundHTTPServer | None = None
         self._thread: Thread | None = None
         self._execution_handles: dict[str, PlaygroundExecutionHandle] = {}
-        self._static_root = (self.options.static_path or Path(__file__).parents[3] / "playground" / "static").resolve()
+        self._static_root = (self.options.static_path or Path(__file__).parent / "static").resolve()
 
     @property
     def url(self) -> str:

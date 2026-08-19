@@ -15,8 +15,12 @@ from urllib.request import Request, urlopen
 import pytest
 import yaml
 
+from fsq_agent.adapters.control_plane.playground._android import AndroidTarget, discover_adb_targets, resolve_auto_session
+from fsq_agent.adapters.control_plane.playground._execution import PlaygroundExecutionHandle, _event_sink, _PlaygroundEvidenceRecorder, _run_dynamic_task, task_from_case_yaml, task_from_goal
+from fsq_agent.adapters.control_plane.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
+from fsq_agent.adapters.control_plane.playground._state import BusyError, PlaygroundState
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config import Settings, save_azure_openai_provider
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     AndroidDevice,
     AndroidDeviceDiscoveryResult,
@@ -30,10 +34,6 @@ from fsq_agent.models import (
     TaskResult,
     VerificationResult,
 )
-from fsq_agent.playground._android import AndroidTarget, discover_adb_targets, resolve_auto_session
-from fsq_agent.playground._execution import PlaygroundExecutionHandle, _event_sink, _PlaygroundEvidenceRecorder, _run_dynamic_task, task_from_case_yaml, task_from_goal
-from fsq_agent.playground._server import STEP_ARTIFACT_TEXT_SIZE_LIMIT_BYTES, YAML_DISPLAY_SIZE_LIMIT_BYTES, PlaygroundServer, PlaygroundServerOptions
-from fsq_agent.playground._state import BusyError, PlaygroundState
 
 
 def _require_loopback(url: str) -> None:
@@ -66,7 +66,7 @@ def _preview_token(run_id: str, step_id: str) -> str:
 
 def test_android_discovery_projects_default_online_device(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        "fsq_agent.adapters.control_plane.playground._android.AndroidDeviceDiscovery.discover",
         lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(
             devices=[
                 AndroidDevice(
@@ -90,7 +90,7 @@ def test_android_discovery_projects_default_online_device(monkeypatch: pytest.Mo
 
 def test_android_discovery_has_no_default_when_multiple_devices_are_online(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.AndroidDeviceDiscovery.discover",
+        "fsq_agent.adapters.control_plane.playground._android.AndroidDeviceDiscovery.discover",
         lambda _self, **_kwargs: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
     )
 
@@ -162,7 +162,7 @@ def test_auto_session_ignores_settings_serial_when_multiple_devices_are_online(m
     settings = Settings()
     settings.harness.android.serial = "device-2"
     monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
+        "fsq_agent.adapters.control_plane.playground._android.discover_adb_targets",
         lambda: (
             [
                 AndroidTarget(id="device-1", label="device-1", is_default=True),
@@ -181,7 +181,7 @@ def test_auto_session_ignores_settings_serial_when_multiple_devices_are_online(m
 
 def test_auto_session_uses_single_online_device(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
+        "fsq_agent.adapters.control_plane.playground._android.discover_adb_targets",
         lambda: ([AndroidTarget(id="device-1", label="device-1", is_default=True)], None),
     )
 
@@ -194,7 +194,7 @@ def test_auto_session_uses_single_online_device(monkeypatch) -> None:
 
 def test_auto_session_requires_manual_selection_for_multiple_devices(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
+        "fsq_agent.adapters.control_plane.playground._android.discover_adb_targets",
         lambda: (
             [
                 AndroidTarget(id="device-1", label="device-1", is_default=True),
@@ -211,7 +211,7 @@ def test_auto_session_requires_manual_selection_for_multiple_devices(monkeypatch
 
 
 def test_auto_session_reports_no_devices(monkeypatch) -> None:
-    monkeypatch.setattr("fsq_agent.playground._android.discover_adb_targets", lambda: ([], None))
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._android.discover_adb_targets", lambda: ([], None))
 
     session, info = resolve_auto_session(Settings())
 
@@ -699,7 +699,7 @@ def test_playground_server_lifecycle_atomic_replace_failure_preserves_source(tmp
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
     _status, loaded = server.handle_get("/yaml/input", {"path": ["replace-failure.fsq.yaml"]})
     monkeypatch.setattr(
-        "fsq_agent.playground._yaml_lifecycle.os.replace",
+        "fsq_agent.adapters.control_plane.playground._yaml_lifecycle.os.replace",
         lambda source, destination: (_ for _ in ()).throw(OSError("replace failed")),
     )
 
@@ -729,7 +729,7 @@ def test_playground_server_lifecycle_temp_write_failure_returns_500(tmp_path: Pa
     server = PlaygroundServer(settings, PlaygroundServerOptions(static_path=tmp_path))
     _status, loaded = server.handle_get("/yaml/input", {"path": ["temp-failure.fsq.yaml"]})
     monkeypatch.setattr(
-        "fsq_agent.playground._yaml_lifecycle.tempfile.NamedTemporaryFile",
+        "fsq_agent.adapters.control_plane.playground._yaml_lifecycle.tempfile.NamedTemporaryFile",
         lambda **kwargs: (_ for _ in ()).throw(OSError("temp create failed")),
     )
 
@@ -770,7 +770,7 @@ def test_playground_server_lifecycle_serialization_failure_returns_400(tmp_path:
         def dump_all(self, documents: object, output: object) -> None:
             raise ValueError("serialize failed")
 
-    monkeypatch.setattr("fsq_agent.playground._yaml_lifecycle._round_trip_yaml", FailingYaml)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._yaml_lifecycle._round_trip_yaml", FailingYaml)
 
     status, payload = server.handle_put(
         "/yaml/input/lifecycle",
@@ -2114,7 +2114,7 @@ def test_playground_web_platform_does_not_require_android_session(monkeypatch) -
     def fake_start_dynamic_goal_execution(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(settings)
 
     status, payload = server.handle_post("/execute", {"goal": "Do it"})
@@ -2145,7 +2145,7 @@ def test_playground_execute_refreshes_only_provider_snapshot(tmp_path: Path, mon
         captured.update(kwargs)
         return PlaygroundExecutionHandle(request_id=kwargs["request_id"])
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(settings)
 
     status, _ = server.handle_post("/execute", {"goal": "Do it"})
@@ -2168,7 +2168,7 @@ def test_playground_macos_platform_does_not_require_android_session(monkeypatch)
     def fake_start_dynamic_goal_execution(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(settings)
 
     status, payload = server.handle_post("/execute", {"goal": "Do it"})
@@ -2216,7 +2216,7 @@ def test_playground_windows_platform_does_not_require_android_session(monkeypatc
     def fake_start_dynamic_goal_execution(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(settings)
 
     status, payload = server.handle_post("/execute", {"goal": "Do it"})
@@ -2407,7 +2407,7 @@ def test_playground_execute_starts_strict_yaml(monkeypatch) -> None:
     def fake_start_dynamic_goal_execution(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(Settings())
     server.state.create_session("device-1")
 
@@ -2428,7 +2428,7 @@ def test_playground_execute_passes_recording_options(monkeypatch) -> None:
     def fake_start_dynamic_goal_execution(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", fake_start_dynamic_goal_execution)
     server = PlaygroundServer(Settings(), PlaygroundServerOptions(record=False, record_on_failure=False))
     server.state.create_session("device-1")
 
@@ -2469,12 +2469,12 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
         captured.update(kwargs)
         return FakeRecording(kwargs["run_dir"] / "recording.json")
 
-    monkeypatch.setattr("fsq_agent.playground._execution.validate_runtime_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.validate_runtime_settings", lambda _settings: None)
     monkeypatch.setattr(
-        "fsq_agent.playground._execution.FsqAgent.from_settings",
+        "fsq_agent.adapters.control_plane.playground._execution.FsqAgent.from_settings",
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
-    monkeypatch.setattr("fsq_agent.playground._recording._record_dynamic_run_as_strict_case", fake_record_dynamic_run_as_strict_case)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._recording._record_dynamic_run_as_strict_case", fake_record_dynamic_run_as_strict_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -2514,9 +2514,9 @@ def test_playground_dynamic_goal_does_not_overwrite_cancelled_task(tmp_path: Pat
                 report=ReportArtifact(run_id="run-1", path=tmp_path / "report.md"),
             )
 
-    monkeypatch.setattr("fsq_agent.playground._execution.validate_runtime_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.validate_runtime_settings", lambda _settings: None)
     monkeypatch.setattr(
-        "fsq_agent.playground._execution.FsqAgent.from_settings",
+        "fsq_agent.adapters.control_plane.playground._execution.FsqAgent.from_settings",
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
 
@@ -2561,7 +2561,7 @@ platform: android
     replay_dir = settings.output.runs_dir / "strict_case" / "playground-replay"
     replay_dir.mkdir(parents=True)
     (replay_dir / "old-frame.png").write_bytes(b"old")
-    monkeypatch.setattr("fsq_agent.playground._server.start_dynamic_goal_execution", lambda **_kwargs: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._server.start_dynamic_goal_execution", lambda **_kwargs: None)
     server = PlaygroundServer(settings)
     server.state.create_session("device-1")
 
@@ -2615,7 +2615,7 @@ appId: com.microsoft.emmx
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.drivers._factory.UiAutomator2AndroidDriver", FakeDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -2693,7 +2693,7 @@ def test_playground_strict_yaml_executes_full_shared_lifecycle(tmp_path: Path, m
         def classify_error(self, error, phase, step):
             return "unknown"
 
-    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
     state = PlaygroundState()
     request_id = state.start_task("Strict lifecycle")
     active_steps: list[dict[str, object] | None] = []
@@ -2756,9 +2756,9 @@ def test_playground_strict_preflight_failure_runs_no_hooks_or_harness(tmp_path: 
     def record_harness_build(*_args: object, **_kwargs: object) -> None:
         harness_builds.append(True)
 
-    monkeypatch.setattr("fsq_agent._strict_lifecycle._run_shell_command", shell_calls.append)
+    monkeypatch.setattr("fsq_agent.execution.lifecycle._run_shell_command", shell_calls.append)
     monkeypatch.setattr(
-        "fsq_agent.playground._execution._build_strict_harness",
+        "fsq_agent.adapters.control_plane.playground._execution._build_strict_harness",
         record_harness_build,
     )
     state = PlaygroundState()
@@ -2807,8 +2807,8 @@ def test_playground_strict_without_hooks_still_uses_shared_service(tmp_path: Pat
         manifest_path.write_text("{}", encoding="utf-8")
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
-    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_shared)
-    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: object())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.run_strict_lifecycle_case", fake_shared)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution._build_strict_harness", lambda *args, **kwargs: object())
     state = PlaygroundState()
     request_id = state.start_task("No hooks")
 
@@ -2871,7 +2871,7 @@ def test_playground_child_run_case_is_active_before_child_steps_and_shares_manif
         def classify_error(self, error, phase, step):
             return "unknown"
 
-    monkeypatch.setattr("fsq_agent.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution._build_strict_harness", lambda *args, **kwargs: FakeHarness())
     state = PlaygroundState()
     request_id = state.start_task("Root child")
     active_ids: list[str] = []
@@ -2979,7 +2979,7 @@ platform: web
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.drivers._factory.PlaywrightWebDriver", FakeWebDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -3065,7 +3065,7 @@ platform: windows
         return ReportArtifact(run_id=kwargs["run_id"], path=report_path, evidence_manifest_path=manifest_path)
 
     monkeypatch.setattr("fsq_agent.drivers._factory.PywinautoWindowsDriver", FakeWindowsDriver)
-    monkeypatch.setattr("fsq_agent.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.run_strict_lifecycle_case", fake_run_strict_lifecycle_case)
 
     _run_dynamic_task(
         settings=settings,
@@ -3116,7 +3116,7 @@ def test_playground_strict_yaml_runs_outside_async_event_loop(monkeypatch) -> No
             report=ReportArtifact(run_id="run-1", path=Path("core-report.md")),
         )
 
-    monkeypatch.setattr("fsq_agent.playground._execution._run_strict_case_yaml", fake_run_strict_case_yaml)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution._run_strict_case_yaml", fake_run_strict_case_yaml)
 
     _run_dynamic_task(
         settings=settings,
@@ -3138,7 +3138,7 @@ def test_playground_strict_yaml_runs_outside_async_event_loop(monkeypatch) -> No
 
 def test_playground_auto_session_route_creates_single_device_session(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
+        "fsq_agent.adapters.control_plane.playground._android.discover_adb_targets",
         lambda: ([AndroidTarget(id="device-1", label="device-1", is_default=True)], None),
     )
     server = PlaygroundServer(Settings())
@@ -3152,7 +3152,7 @@ def test_playground_auto_session_route_creates_single_device_session(monkeypatch
 
 def test_playground_auto_session_route_requires_manual_selection(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.playground._android.discover_adb_targets",
+        "fsq_agent.adapters.control_plane.playground._android.discover_adb_targets",
         lambda: (
             [
                 AndroidTarget(id="device-1", label="device-1", is_default=True),

@@ -16,7 +16,7 @@ Provide SDK-neutral dynamic Goal/reference orchestration used by `execution`: lo
 - `skills`: Loads configured automation skill instruction bundles.
 - `report`: Supplies evidence/report contracts used by dynamic verification; complete run report coordination belongs to `execution`.
 
-The agent module consumes SDK-neutral models and public runtime protocols. Normal orchestration must not import adapters, OpenAI Agents SDK/OpenAI types, concrete SDK runtime classes, `capabilities`, or decorator internals. As a temporary compatibility exception, `FsqAgent.from_config()` may lazily import the default `adapters.coding_agent` factory so the legacy zero-injection construction call remains usable; composition roots and all other orchestration paths inject `CodingAgentRuntimeFactory`. This exception is retired in Batch 8.
+The agent module consumes SDK-neutral models and public runtime protocols. It does not import adapters, OpenAI Agents SDK/OpenAI types, concrete SDK runtime classes, `capabilities`, or decorator internals. All construction paths require an injected `CodingAgentRuntimeFactory`.
 
 ## Public Interface
 
@@ -26,12 +26,10 @@ Current `__init__.py` exports via `__all__`:
 - `CodingAgentRuntime`: Protocol for pre-plan, main execution, and evidence-based verification using SDK-neutral inputs and results.
 - `CodingAgentRuntimeFactory`: Composition contract for creating a runtime from validated settings and optional harness construction input.
 - `CodingAgentPolicy`: Public SDK-neutral facade for pre-plan instructions and knowledge lookup schemas, prompt construction, structured-output coercion/serialization, and verification evidence construction used by Coding Agent adapters.
-- `OpenAIAgentsRuntime`: Temporary same-object compatibility export for the canonical concrete class in `adapters.coding_agent`.
 - `Verifier`: Parses structured verifier-agent or runner final output and converts task status, evidence, and diagnostics into a `VerificationResult` for the task's single `verification_goal`.
 
 Current public call shape:
 
-- `FsqAgent.from_config(path: str | Path | None = None, workspace: str | Path | None = None) -> FsqAgent`
 - `FsqAgent.from_settings(settings: Settings, runtime_factory: CodingAgentRuntimeFactory, ...) -> FsqAgent`
 - `FsqAgent.run(task: Task, event_sink: RunEventSink | None = None) -> TaskResult`
 - `OpenAIAgentsRuntime.run_task(task: Task, knowledge: KnowledgeBundle, skills: list[SkillBundle], run_id: str, event_sink: RunEventSink | None = None) -> list[StepResult]`
@@ -41,11 +39,10 @@ Current public call shape:
 ## Internal Structure
 
 - `__init__.py`: Public exports only.
-- `_core.py`: `FsqAgent` orchestration and lifecycle, plus the temporary lazy `from_config()` compatibility composition shim.
+- `_core.py`: `FsqAgent` orchestration and lifecycle.
 - `_events.py`: Run event emission, sequencing, persistence fan-out, and user-sink dispatch.
 - `_runtime.py`: SDK-neutral Coding Agent runtime and factory protocols.
 - `_policy.py`: Implementation of the public `CodingAgentPolicy` facade over Agent-owned planning, prompt, structured-output, and verification-evidence policy.
-- `_openai_runtime.py` and `_harness_tools.py`: Compatibility forwarders to canonical Coding Agent adapter modules; they contain no SDK implementation.
 - `_pre_plan.py`: Internal prompt instructions and helpers for dynamic goal planning from loaded skills, optional project knowledge, optional page index knowledge, and on-demand page knowledge when directly invoked by `FsqAgent.run`.
 - `_prompt.py`: Prompt model construction and template rendering for agent instructions and task input.
 - `_structured_output.py`: Shared coercion helpers for SDK final output values and compatibility parsing of legacy/raw final JSON strings.
@@ -85,11 +82,11 @@ macOS runtime:
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
-- Public API: `FsqAgent`, `CodingAgentRuntime`, `CodingAgentRuntimeFactory`, `CodingAgentPolicy`, `OpenAIAgentsRuntime` compatibility export, and `Verifier` exported from `__init__.py`.
+- Public API: `FsqAgent`, `CodingAgentRuntime`, `CodingAgentRuntimeFactory`, `CodingAgentPolicy`, and `Verifier` exported from `__init__.py`. Concrete Coding Agent runtimes are selected only by adapter composition roots.
 - Internal modules: all `_*.py` files are private implementation modules.
 - Domain boundaries: this module owns SDK-neutral dynamic orchestration, pre-planning policy, event persistence, and verification policy. SDK runtime assembly and SDK event conversion belong to `adapters.coding_agent`; complete operation coordination and recording live in `execution`.
 - Boundary models: all tasks, final outputs, events, capability metadata, runner results, and report artifacts come from `models`.
-- Dependency direction: may depend on `models`, `config`, `providers`, `tools`, `observation`, `knowledge`, `skills`, and `report`; it must not import `execution`, `application`, adapters, or SDK packages during normal orchestration. Execution invokes Agent through its public API and composition roots inject the adapter runtime factory. The sole temporary exception is the lazy default-factory import inside legacy `FsqAgent.from_config()`, which is a compatibility composition shim scheduled for Batch 8 retirement and must not be used by Application, Execution, CLI, Control Plane, or Playground orchestration.
+- Dependency direction: may depend on `models`, `config`, `providers`, `tools`, `observation`, `knowledge`, `skills`, and `report`; it must not import `execution`, `application`, adapters, or SDK packages. Execution invokes Agent through its public API and composition roots inject the adapter runtime factory.
 - Rationale: dynamic execution coordinates external SDKs, providers, harnesses, tools, persisted events, and reports, so Level 3 is appropriate without adding repository/unit-of-work patterns.
 
 ## Error Handling

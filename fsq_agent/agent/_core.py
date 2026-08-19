@@ -4,14 +4,13 @@
 import inspect
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from fsq_agent._run_ids import new_run_id
 from fsq_agent.agent._events import RunEventEmitter
 from fsq_agent.agent._runtime import CodingAgentRuntime, CodingAgentRuntimeFactory
 from fsq_agent.agent._verifier import Verifier
-from fsq_agent.config import Settings, load_settings
+from fsq_agent.config import Settings
 from fsq_agent.knowledge import PrivateKnowledgeLoader
 from fsq_agent.models import KnowledgeBundle, PlanningError, RunEvent, RunEventSink, Task, TaskResult
 from fsq_agent.observation import ExecutionLogger
@@ -38,12 +37,6 @@ class FsqAgent:
         self.skill_loader = skill_loader
         self.runtime = runtime
         self.event_logger = event_logger
-
-    @classmethod
-    def from_config(cls, path: str | Path | None = None, workspace: str | Path | None = None) -> "FsqAgent":
-        from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
-
-        return cls.from_settings(load_settings(path, workspace), create_coding_agent_runtime)
 
     @classmethod
     def from_settings(

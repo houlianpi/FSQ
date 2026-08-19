@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 
 from fsq_agent import FsqAgent, Task
+from fsq_agent.adapters.coding_agent._openai_runtime import OpenAIAgentsRuntime, _RecentToolOutputInputFilter
 from fsq_agent.agent import Verifier
-from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime, _RecentToolOutputInputFilter
 from fsq_agent.config import Settings
 from fsq_agent.models import ConfigurationError, GoalPrePlan, KnowledgeBundle, ReportArtifact, RunEvent, SkillBundle, StepResult
 from fsq_agent.observation import ExecutionLogger
@@ -22,21 +22,6 @@ async def test_agent_run_requires_configured_model_provider_auth(tmp_path: Path,
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        """
-output:
-  root_dir: output
-workspace:
-  root_dir: workspace
-cases:
-  dir: cases
-agent_context:
-    knowledge:
-        root_dir: knowledge
-""",
-        encoding="utf-8",
-    )
     task = Task(
         id="smoke",
         name="Smoke",
@@ -44,8 +29,9 @@ agent_context:
         acceptance_criteria=["A report exists."],
     )
 
+    settings = Settings.model_validate({"openai_agents": {"provider": "azure_openai"}, "output": {"root_dir": tmp_path / "output"}})
     with pytest.raises(ConfigurationError, match="not configured"):
-        await FsqAgent.from_config(config_path).run(task)
+        await FsqAgent.from_settings(settings, lambda configured, *, harness_factory=None: OpenAIAgentsRuntime(configured, object())).run(task)
 
 
 class _KnowledgeLoader:

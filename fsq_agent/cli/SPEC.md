@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Preserve the installed `fsq` script and existing `fsq_agent.cli` imports as compatibility entries for the canonical `adapters.cli` implementation. Canonical CLI modules parse arguments, select presentation, invoke Application operations, render results/events, and map exit codes. Compatibility paths resolve to the same command and private module objects and own no duplicate behavior or mutable state.
+Preserve existing `fsq_agent.cli:main` as a public compatibility export for the canonical `adapters.cli` command while installed `fsq` and `fsq-agent` scripts target `fsq_agent.adapters.cli:main` directly. Canonical CLI modules parse arguments, select presentation, invoke Application operations, render results/events, and map exit codes. Old `fsq_agent.cli._*` private module paths are unsupported and absent.
 
 ## Dependencies
 
