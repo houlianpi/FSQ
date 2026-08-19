@@ -6,7 +6,7 @@ Own external protocol adaptation for the public CLI, local Control Plane, local 
 
 ## Dependencies
 
-Adapters may import public APIs from `application`, `execution`, `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`. Inward modules must not import `adapters`. Adapter subpackages must not form cycles.
+Adapters may import public APIs from `application`, `execution`, `models`, `config`, `providers`, `agent`, `case_dsl`, `core`, and `report`. Inward modules must not import `adapters`. Adapter subpackages must not form cycles.
 
 ## Public Interface
 

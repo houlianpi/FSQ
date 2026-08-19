@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
-from fsq_agent.core import PlatformRuntimeService
+from fsq_agent.environments import PlatformRuntimeService
 from fsq_agent.models import PlatformRuntimeCheck
 
 

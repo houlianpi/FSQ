@@ -4064,9 +4064,7 @@ def test_playground_static_yaml_section_is_left_side_context() -> None:
     assert "step-artifact-text-card" in styles
     assert "isXmlStepArtifact" in script
     assert "step-artifact-xml" in script
-    assert 'payload.get("xml")' in (
-        Path(__file__).parents[1] / "fsq_agent" / "adapters" / "control_plane" / "playground" / "_server.py"
-    ).read_text(encoding="utf-8")
+    assert 'payload.get("xml")' in (Path(__file__).parents[1] / "fsq_agent" / "adapters" / "control_plane" / "playground" / "_server.py").read_text(encoding="utf-8")
     assert "pre.step-artifact-xml" in styles
     assert "border-left-color: #86efac" in styles
     assert "step-artifact-connector" in styles

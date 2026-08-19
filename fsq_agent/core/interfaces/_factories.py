@@ -34,14 +34,24 @@ class HarnessFactory:
         self.driver_factory = driver_factory or DriverFactory()
 
     def create_harness(
-        self, *, platform: HarnessPlatform, harness_settings: HarnessSettings, artifact_store: ArtifactStore | None = None,
-        ai_assertion_evaluator: Any | None = None, runtime_secret_settings: RuntimeSecretSettings | None = None,
-        app_id: str | None = None, serial: str | None = None,
+        self,
+        *,
+        platform: HarnessPlatform,
+        harness_settings: HarnessSettings,
+        artifact_store: ArtifactStore | None = None,
+        ai_assertion_evaluator: Any | None = None,
+        runtime_secret_settings: RuntimeSecretSettings | None = None,
+        app_id: str | None = None,
+        serial: str | None = None,
     ) -> Any:
         from fsq_agent.harnesses._factory import _HarnessFactoryImplementation
 
         return _HarnessFactoryImplementation(self.driver_factory).create_harness(
-            platform=platform, harness_settings=harness_settings, artifact_store=artifact_store,
-            ai_assertion_evaluator=ai_assertion_evaluator, runtime_secret_settings=runtime_secret_settings,
-            app_id=app_id, serial=serial,
+            platform=platform,
+            harness_settings=harness_settings,
+            artifact_store=artifact_store,
+            ai_assertion_evaluator=ai_assertion_evaluator,
+            runtime_secret_settings=runtime_secret_settings,
+            app_id=app_id,
+            serial=serial,
         )

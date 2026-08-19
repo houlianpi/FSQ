@@ -38,9 +38,17 @@ def test_cli_deterministic_compatibility_module_is_canonical_module() -> None:
 
 def test_recording_result_is_immutable(tmp_path) -> None:
     result = execution.RecordingResult(
-        status="recorded", recording_path=tmp_path / "recording.json", recorded_case_path=None,
-        published_case_path=None, command_count=0, required_runtime_secret_names=(), warnings=(),
-        skipped_tool_calls=(), errors=(), validation_status="passed", draft=False,
+        status="recorded",
+        recording_path=tmp_path / "recording.json",
+        recorded_case_path=None,
+        published_case_path=None,
+        command_count=0,
+        required_runtime_secret_names=(),
+        warnings=(),
+        skipped_tool_calls=(),
+        errors=(),
+        validation_status="passed",
+        draft=False,
     )
 
     with pytest.raises(FrozenInstanceError):

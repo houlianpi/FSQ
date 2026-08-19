@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import yaml
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 
 if TYPE_CHECKING:
@@ -89,24 +89,37 @@ class RecordingService:
         self._recorder = recorder or record_dynamic_run_as_strict_case
 
     def record(
-        self, *, run_dir: Path, task: Task, result: TaskResult, settings: Settings, allow_failure: bool = False,
+        self,
+        *,
+        run_dir: Path,
+        task: Task,
+        result: TaskResult,
+        settings: Settings,
+        allow_failure: bool = False,
         publication_directory: Path | None = None,
     ) -> RecordingResult:
         recording = self._recorder(
-            run_dir=run_dir, task=task, result=result, settings=settings, allow_failure=allow_failure,
+            run_dir=run_dir,
+            task=task,
+            result=result,
+            settings=settings,
+            allow_failure=allow_failure,
             publication_directory=publication_directory,
         )
         if isinstance(recording, StrictCaseRecording):
             return RecordingResult.from_recording(recording)
         payload = recording.to_json()
         return RecordingResult(
-            status=payload.get("status", "failed"), recording_path=Path(payload["recording_path"]),
+            status=payload.get("status", "failed"),
+            recording_path=Path(payload["recording_path"]),
             recorded_case_path=Path(payload["recorded_case_path"]) if payload.get("recorded_case_path") else None,
             published_case_path=Path(payload["published_case_path"]) if payload.get("published_case_path") else None,
             command_count=int(payload.get("command_count", 0)),
             required_runtime_secret_names=tuple(payload.get("required_runtime_secret_names", [])),
-            warnings=tuple(payload.get("warnings", [])), skipped_tool_calls=tuple(payload.get("skipped_tool_calls", [])),
-            errors=tuple(payload.get("errors", [])), validation_status=str(payload.get("validation_status", "not_run")),
+            warnings=tuple(payload.get("warnings", [])),
+            skipped_tool_calls=tuple(payload.get("skipped_tool_calls", [])),
+            errors=tuple(payload.get("errors", [])),
+            validation_status=str(payload.get("validation_status", "not_run")),
             draft=bool(payload.get("draft", False)),
         )
 
@@ -186,15 +199,8 @@ def record_dynamic_run_as_strict_case(
         recording.status = "failed"
         recording.validation_status = "failed"
         recording.errors.append(str(exc))
-    effective_publication_directory = (
-        settings.cases.dir if publication_directory is _DEFAULT_PUBLICATION else publication_directory
-    )
-    if (
-        effective_publication_directory is not None
-        and recording.status == "recorded"
-        and recording.validation_status == "passed"
-        and task.planning_reference_kind == "goal"
-    ):
+    effective_publication_directory = settings.cases.dir if publication_directory is _DEFAULT_PUBLICATION else publication_directory
+    if effective_publication_directory is not None and recording.status == "recorded" and recording.validation_status == "passed" and task.planning_reference_kind == "goal":
         publication_root = effective_publication_directory.resolve()
         published_case_path = (publication_root / f"{result.report.run_id}{FSQ_CASE_SUFFIX}").resolve()
         if published_case_path.parent != publication_root:

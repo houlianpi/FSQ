@@ -32,7 +32,7 @@ from fsq_agent.adapters.control_plane.playground._yaml_lifecycle import (
     save_lifecycle,
     yaml_revision,
 )
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 from fsq_agent.report import resolve_report_path
 

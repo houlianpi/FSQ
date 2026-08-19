@@ -11,8 +11,10 @@ from fsq_agent.models import ConfigurationError, HarnessPlatform
 
 _BACKENDS = {"android": "uiautomator2", "web": "playwright", "windows": "pywinauto", "macos": "appium_mac2"}
 _DRIVER_CLASSES: dict[HarnessPlatform, type[object]] = {
-    "android": cast("type[object]", UiAutomator2AndroidDriver), "web": cast("type[object]", PlaywrightWebDriver),
-    "windows": cast("type[object]", PywinautoWindowsDriver), "macos": cast("type[object]", AppiumMac2Driver),
+    "android": cast("type[object]", UiAutomator2AndroidDriver),
+    "web": cast("type[object]", PlaywrightWebDriver),
+    "windows": cast("type[object]", PywinautoWindowsDriver),
+    "macos": cast("type[object]", AppiumMac2Driver),
 }
 
 
@@ -43,4 +45,11 @@ class _DriverFactoryImplementation:
 
     def create_macos_driver(self, settings):
         _ensure_backend("macos", settings.backend)
-        return AppiumMac2Driver(server_url=settings.appium_server_url or "", bundle_id=settings.bundle_id, app_path=settings.app_path, page_source_max_depth=settings.page_source_max_depth, action_timeout_seconds=settings.action_timeout_seconds, new_command_timeout_seconds=settings.new_command_timeout_seconds)
+        return AppiumMac2Driver(
+            server_url=settings.appium_server_url or "",
+            bundle_id=settings.bundle_id,
+            app_path=settings.app_path,
+            page_source_max_depth=settings.page_source_max_depth,
+            action_timeout_seconds=settings.action_timeout_seconds,
+            new_command_timeout_seconds=settings.new_command_timeout_seconds,
+        )

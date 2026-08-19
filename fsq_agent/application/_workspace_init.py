@@ -10,7 +10,7 @@ from fsq_agent.config import add_workspace_platform as persist_workspace_platfor
 from fsq_agent.config import create_workspace as persist_workspace
 from fsq_agent.config import initialize_workspace_root
 from fsq_agent.config import update_workspace_platform as persist_workspace_platform_update
-from fsq_agent.core import PlatformRuntimeService
+from fsq_agent.environments import PlatformRuntimeService
 from fsq_agent.models import AndroidWorkspaceTarget, ConfigurationError, MacOSWorkspaceTarget, WebWorkspaceTarget, WindowsWorkspaceTarget, WorkspaceConfig
 
 
@@ -57,13 +57,9 @@ def add_workspace_platform(*, name: str, root_path: Path, platform: str, target:
     return persist_workspace_platform(name=name, platform=platform, target=resolved, env=env, user_config_root=user_config_root)
 
 
-def update_workspace_platform(
-    *, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], expected_revision: str, user_config_root: Path | None = None
-):
+def update_workspace_platform(*, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], expected_revision: str, user_config_root: Path | None = None):
     resolved, _ = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
-    return persist_workspace_platform_update(
-        name=name, platform=platform, target=resolved, env=env, expected_revision=expected_revision, user_config_root=user_config_root
-    )
+    return persist_workspace_platform_update(name=name, platform=platform, target=resolved, env=env, expected_revision=expected_revision, user_config_root=user_config_root)
 
 
 def _resolve_config_target(config: WorkspaceConfig | dict[str, object]) -> WorkspaceConfig:

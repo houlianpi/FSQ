@@ -46,3 +46,17 @@ def test_concrete_driver_and_harness_compatibility_modules_alias_canonical_modul
 
     for legacy_name, canonical_name in pairs:
         assert importlib.import_module(legacy_name) is importlib.import_module(canonical_name)
+
+
+def test_case_dsl_and_runtime_compatibility_objects_are_canonical() -> None:
+    legacy_fsq = importlib.import_module("fsq_agent.fsq")
+    canonical_fsq = importlib.import_module("fsq_agent.case_dsl")
+    assert legacy_fsq.FsqCaseLoader is canonical_fsq.FsqCaseLoader
+    assert legacy_fsq.FsqExecutableStepAdapter is canonical_fsq.FsqExecutableStepAdapter
+    assert importlib.import_module("fsq_agent.fsq._loader") is importlib.import_module("fsq_agent.case_dsl._loader")
+    assert importlib.import_module("fsq_agent.fsq._step_adapter") is importlib.import_module("fsq_agent.case_dsl._step_adapter")
+
+    core = importlib.import_module("fsq_agent.core")
+    environments = importlib.import_module("fsq_agent.environments")
+    assert core.PlatformRuntimeService is environments.PlatformRuntimeService
+    assert importlib.import_module("fsq_agent.core._platform_runtime") is importlib.import_module("fsq_agent.environments._service")

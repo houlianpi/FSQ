@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Literal
 
 from fsq_agent.adapters.cli._strict_replay import resolve_strict_replay_steps
 from fsq_agent.adapters.cli._task_loader import resolve_case_yaml_path
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     CapabilityRegistrySnapshot,
     CaseLifecycleSettings,

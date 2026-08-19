@@ -4,7 +4,7 @@
 from pathlib import Path
 
 from fsq_agent._workspace_paths import resolve_discovered_case_path, resolve_workspace_cases_path
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, is_fsq_case_file
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 
 

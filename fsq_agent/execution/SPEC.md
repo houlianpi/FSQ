@@ -7,7 +7,7 @@ Coordinate complete dynamic and deterministic Case execution independently of CL
 ## Dependencies
 
 - `agent`: Runs SDK-neutral dynamic Goal/reference tasks and returns normalized task results and events.
-- `fsq`: Loads and adapts deterministic Case input through its public Case DSL contracts.
+- `case_dsl`: Loads and adapts deterministic Case input through its public Case DSL contracts.
 - `core`: Executes canonical steps, records evidence, resolves runtime secrets, and supplies harness interfaces.
 - `models`: Supplies task, Case, lifecycle, runner, evidence, event, and result contracts.
 - `config`: Supplies validated lifecycle settings and contained Workspace Case paths.
@@ -43,7 +43,7 @@ The package-root `fsq_agent._strict_lifecycle` and `fsq_agent._strict_case_recor
 - Architecture level: Level 3 Layered Application.
 - Public API: the four execution services and their immutable Request/Result contracts exported from `execution.__init__`.
 - Internal modules: private helpers are confined to this package; the four named service modules are public resource boundaries.
-- Domain boundaries: Execution owns operation-level orchestration and lifecycle/recording policy. Agent owns dynamic planning and verification; FSQ owns Case syntax; Core owns individual capability execution and evidence mechanics; Report owns report rendering; adapters own presentation and task-state transport.
+- Domain boundaries: Execution owns operation-level orchestration and lifecycle/recording policy. Agent owns dynamic planning and verification; Case DSL owns Case syntax; Core owns individual capability execution and evidence mechanics; Report owns report rendering; adapters own presentation and task-state transport.
 - Boundary models: execution Request/Result records wrap public shared models and safe path/artifact references without Click, HTTP, SSE, or frontend values.
 - Dependency direction: adapters and Application may depend on Execution; Execution depends only on inward public APIs and injected collaborators; inward modules never import Execution unless the root architecture diagram explicitly permits it.
 - Rationale: complete runs coordinate multiple side-effecting authorities, cancellation, lifecycle phases, evidence, reports, and recording, so Level 3 is warranted without Repository, Unit of Work, Clean Architecture, or DDD layers.

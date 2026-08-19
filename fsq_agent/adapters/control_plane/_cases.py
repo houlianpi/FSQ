@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fsq_agent._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 from fsq_agent.execution import collect_strict_lifecycle_cases
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 
 from ._evidence import safe_exception_message
 

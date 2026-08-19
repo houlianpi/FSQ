@@ -11,10 +11,12 @@ class WorkspaceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     current_directory: Path = Field(description="Current directory selected by the calling adapter.")
 
+
 class WorkspaceResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     current_directory: Path
     workspace: Path
+
 
 class WorkspaceInitializeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -32,6 +34,7 @@ class WorkspaceInitializeRequest(BaseModel):
     install_driver: bool = False
     update_existing: bool = False
     user_config_root: Path | None = None
+
 
 class WorkspaceInitializeResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

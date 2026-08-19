@@ -120,7 +120,9 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | tools | fsq_agent/tools/SPEC.md | Provides dynamic-only AgentTool providers, scoped file helpers, bounded artifact lookup helpers, and the OpenAI Agents SDK AgentTool adapter. |
 | observation | fsq_agent/observation/SPEC.md | Persists run event timelines; screenshots, UI trees, and other observations are represented by platform evidence artifacts or AgentTool artifact refs. |
 | knowledge | fsq_agent/knowledge/SPEC.md | Loads project-specific application knowledge and task-referenced knowledge assets. |
-| fsq | fsq_agent/fsq/SPEC.md | Loads FSQ AI Test DSL YAML cases, validates case lifecycle hook metadata, resolves authored action aliases through the capability registry, validates replay references, and converts parsed command documents into canonical deterministic executable steps. |
+| case_dsl | fsq_agent/case_dsl/SPEC.md | Canonically loads and validates FSQ AI Test DSL Cases and converts deterministic commands into executable steps. |
+| fsq | fsq_agent/fsq/SPEC.md | Forwards legacy imports to the canonical `case_dsl` API without duplicate behavior or state. |
+| environments | fsq_agent/environments/SPEC.md | Owns host/runtime support, readiness, bounded installation/recheck, and Web executable discovery through platform providers. |
 | skills | fsq_agent/skills/SPEC.md | Loads complete configured automation skill instruction bundles and skips or fails broken bundles according to requiredness. |
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Navigates platform-neutral Core ownership across Runner, Evidence, Interfaces, current capability/runtime services, and compatibility composition. |
@@ -162,7 +164,8 @@ flowchart TD
     Application --> Agent[agent]
     Application --> Execution
     Application --> Core[core]
-    Application --> FSQ[fsq]
+    Application --> CaseDSL[case_dsl]
+    Application --> Environments[environments]
     Application --> Config[config]
     Application --> Providers[providers]
     Application --> Models[models]
@@ -179,7 +182,7 @@ flowchart TD
     Execution --> Agent
     Execution --> CoreRunner[core/runner]
     Execution --> CoreEvidence[core/evidence]
-    Execution --> FSQ
+    Execution --> CaseDSL
     Execution --> Config
     Execution --> Models
     Execution --> Report
@@ -189,7 +192,8 @@ flowchart TD
     Tools --> Models
     Observation --> Models
     Knowledge --> Models
-    FSQ --> Models
+    CaseDSL --> Models
+    Environments --> Models
     Skills --> Models
     Report --> Models
     CoreRunner --> CoreInterfaces[core/interfaces]
@@ -202,6 +206,7 @@ flowchart TD
     Drivers --> CoreInterfaces
     Capabilities[capabilities] --> Models
     Core --> Capabilities
+    Core -->|PlatformRuntimeService compatibility export| Environments
     Frontend[frontend] --> FrontendPlayground[frontend/playground]
     Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendPlayground --> Playground
@@ -235,7 +240,7 @@ flowchart TD
 ## Python Architecture Rules
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
-- `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
+- `models`, `capabilities`, `tools`, `case_dsl`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
 - `core`, `agent`, `execution`, `application`, `adapters`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

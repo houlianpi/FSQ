@@ -1,8 +1,8 @@
-# Module: fsq
+# Module: fsq compatibility
 
 ## Purpose
 
-Load and validate FSQ AI Test DSL `*.fsq.yaml` Cases, including generated candidate Cases, pure waits, and case lifecycle hook metadata; resolve authored action names through the platform-selected capability registry; and convert parsed case command documents into deterministic canonical execution-core steps. Application invokes this authority for existing-Case testing; adapters do not parse Cases themselves.
+Forward legacy FSQ Case DSL imports to the canonical `case_dsl` package without duplicate parsing behavior or mutable state. The behavior contracts below describe the canonical objects exposed through both package paths.
 
 Goal-only FSQ cases may omit the command document or provide an empty command list; parsed goal-only cases produce no executable steps.
 
@@ -10,7 +10,7 @@ Goal-only FSQ cases may omit the command document or provide an empty command li
 
 - `models`: Uses `FsqCase`, `FsqCaseConfig`, FSQ lifecycle hook models, shared configuration errors, execution-core contracts such as `ExecutableStep` and `SourceRef`, capability registry snapshots, replay policy metadata, and shared capability parameter models for deterministic command payload normalization and step kind classification.
 
-The fsq module must not import `capabilities`, `core`, or `tools`. It receives a `CapabilityRegistrySnapshot` from entry code and resolves authored command names through that serializable snapshot.
+The compatibility package imports only `case_dsl`. Canonical `case_dsl` must not import `capabilities`, `core`, or `tools`; it receives a serializable `CapabilityRegistrySnapshot`.
 
 ## Public Interface
 
@@ -135,8 +135,8 @@ Malformed command entries that cannot be reduced to one FSQ action must raise `C
 ## Internal Structure
 
 - `__init__.py`: Public exports only.
-- `_loader.py`: YAML parsing, validation of FSQ document shape, lifecycle hook metadata validation/normalization, goal-only case normalization, and batch discovery.
-- `_step_adapter.py`: Converts loaded FSQ commands into ordered canonical `ExecutableStep` records using a capability registry snapshot.
+- `_loader.py`: Compatibility alias to canonical `case_dsl._loader`.
+- `_step_adapter.py`: Compatibility alias to canonical `case_dsl._step_adapter`.
 - `SPEC.md`: Module design.
 
 ## Python Architecture
@@ -144,7 +144,7 @@ Malformed command entries that cannot be reduced to one FSQ action must raise `C
 - Architecture level: 2 Simple Package.
 - Public API: `FsqCaseLoader`, `FsqExecutableStepAdapter`, and `is_fsq_case_file` exported from `__init__.py`.
 - Internal modules: `_loader.py` and `_step_adapter.py` are private implementation modules.
-- Domain boundaries: this module owns deterministic YAML loading, lifecycle hook metadata validation, and conversion to shared executable-step contracts. It does not execute steps or hooks, resolve real secrets, resolve hook file paths, run shell commands, construct registries, create harnesses, or generate reports.
+- Domain boundaries: canonical `case_dsl` owns deterministic YAML loading, lifecycle hook metadata validation, and conversion to shared executable-step contracts. It does not execute steps or hooks, resolve real secrets, resolve hook file paths, run shell commands, construct registries, create harnesses, or generate reports.
 - Boundary models: parsed cases, lifecycle hooks, executable steps, text-entry runtime secret fields, and capability metadata models come from `models`.
 - Dependency direction: imports public `models` only; registry snapshots are passed in by entry modules.
 - Rationale: focused parsing/normalization behavior fits Level 2 and does not require orchestration layers.

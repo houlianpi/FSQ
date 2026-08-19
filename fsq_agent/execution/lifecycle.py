@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
     CapabilityRegistrySnapshot,
     ConfigurationError,
@@ -75,12 +75,8 @@ class LifecycleExecutionService:
     def __init__(self, *, runner: Callable[..., ReportArtifact] | None = None) -> None:
         self._runner = runner or run_strict_lifecycle_case
 
-    def collect_cases(
-        self, *, case_path: Path, case: FsqCase, settings: Settings, validate_case_path: CasePathValidator | None = None
-    ) -> list[tuple[Path, FsqCase]]:
-        return collect_strict_lifecycle_cases(
-            case_path=case_path, case=case, settings=settings, validate_case_path=validate_case_path
-        )
+    def collect_cases(self, *, case_path: Path, case: FsqCase, settings: Settings, validate_case_path: CasePathValidator | None = None) -> list[tuple[Path, FsqCase]]:
+        return collect_strict_lifecycle_cases(case_path=case_path, case=case, settings=settings, validate_case_path=validate_case_path)
 
     def execute(self, request: LifecycleExecutionRequest) -> LifecycleExecutionResult:
         return LifecycleExecutionResult(report=self._runner(**request.__dict__))

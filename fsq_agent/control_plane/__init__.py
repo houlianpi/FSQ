@@ -7,8 +7,19 @@ import sys
 from fsq_agent.adapters.control_plane import ControlPlaneServer, ControlPlaneServerOptions, run_control_plane
 
 _PRIVATE_MODULES = (
-    "_cases", "_config", "_directory_picker", "_evidence", "_execution", "_provider_auth",
-    "_readiness", "_replay", "_server", "_state", "_targets", "_workspace_files", "_workspaces",
+    "_cases",
+    "_config",
+    "_directory_picker",
+    "_evidence",
+    "_execution",
+    "_provider_auth",
+    "_readiness",
+    "_replay",
+    "_server",
+    "_state",
+    "_targets",
+    "_workspace_files",
+    "_workspaces",
 )
 for _module_name in _PRIVATE_MODULES:
     _module = importlib.import_module(f"fsq_agent.adapters.control_plane.{_module_name}")

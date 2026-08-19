@@ -14,6 +14,7 @@ class CaseCreateRequest(BaseModel):
     platform: Literal["android", "web", "windows", "macos"]
     goal: str
 
+
 class CaseCreateResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     run_id: str
@@ -23,7 +24,9 @@ class CaseCreateResult(BaseModel):
     report_path: Path
     candidate_case_path: Path | None = None
 
+
 CaseCreateEventSink = RunEventSink
+
 
 class CaseTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -31,6 +34,7 @@ class CaseTestRequest(BaseModel):
     platform: Literal["android", "web", "windows", "macos"]
     case_path: Path
     suggest: bool = False
+
 
 class CaseTestResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

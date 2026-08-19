@@ -53,16 +53,15 @@ async def create_case(
     task = _task_from_goal(normalized_goal)
     execution = await DynamicExecutionService(agent=agent_factory(settings)).execute(
         DynamicExecutionRequest(
-            task=task, settings=settings, event_sink=event_sink, record=True,
+            task=task,
+            settings=settings,
+            event_sink=event_sink,
+            record=True,
             publication_directory=getattr(getattr(settings, "cases", None), "dir", None),
         )
     )
     result = execution.task_result
-    candidate_case_path = (
-        execution.recording.recorded_case_path
-        if execution.recording is not None and execution.recording.status == "recorded"
-        else None
-    )
+    candidate_case_path = execution.recording.recorded_case_path if execution.recording is not None and execution.recording.status == "recorded" else None
     return CaseCreateResult(
         run_id=result.report.run_id,
         task_id=result.task_id,

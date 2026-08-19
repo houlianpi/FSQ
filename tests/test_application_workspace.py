@@ -14,7 +14,7 @@ from fsq_agent.application import (
     initialize_workspace,
     require_initialized_workspace,
 )
-from fsq_agent.core import PlatformRuntimeService
+from fsq_agent.environments import PlatformRuntimeService
 from fsq_agent.models import PlatformRuntimeCheck
 
 
@@ -83,7 +83,9 @@ def test_initialize_workspace_resolves_web_browser_before_config_mutation(tmp_pa
 
 
 def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing", action="pip install fsq-agent[web]"))
+    monkeypatch.setattr(
+        PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing", action="pip install fsq-agent[web]")
+    )
     monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("config mutation must not run"))
 
     with pytest.raises(ApplicationError, match="missing"):

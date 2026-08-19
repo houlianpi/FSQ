@@ -12,7 +12,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader
 from fsq_agent.models import FsqCaseHook, FsqCaseHookAction
 
 

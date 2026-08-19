@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         WindowsDriverInterface,
     )
 
+
 class _DriverFactoryProtocol(Protocol):
     def create_android_driver(
         self,

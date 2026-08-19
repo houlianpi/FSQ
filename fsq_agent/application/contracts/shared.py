@@ -41,7 +41,11 @@ class ApplicationError(Exception):
         self.code, self.category, self.message, self.action, self.details = code, category, message, action, details or {}
 
     def to_record(self, *, operation: str = "unknown") -> dict[str, object]:
-        return {**_record_metadata(operation=operation, status="error"), "type": ApplicationRecordType.ERROR.value, "error": {"code": self.code.value, "category": self.category.value, "message": self.message, "action": self.action, "details": self.details}}
+        return {
+            **_record_metadata(operation=operation, status="error"),
+            "type": ApplicationRecordType.ERROR.value,
+            "error": {"code": self.code.value, "category": self.category.value, "message": self.message, "action": self.action, "details": self.details},
+        }
 
 
 def result_record(result: object, *, operation: str = "unknown", status: str = "success", warnings: list[str] | None = None) -> dict[str, object]:

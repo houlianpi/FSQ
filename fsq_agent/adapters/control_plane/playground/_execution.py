@@ -18,6 +18,7 @@ from fsq_agent._run_ids import new_run_id
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.adapters.control_plane.playground import _recording as playground_recording
 from fsq_agent.agent import FsqAgent
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
     ArtifactStore,
@@ -35,7 +36,6 @@ from fsq_agent.execution import (
     collect_strict_lifecycle_cases,
     run_strict_lifecycle_case,
 )
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.providers import build_ai_assertion_evaluator
 
@@ -269,14 +269,26 @@ async def _run_dynamic_task_async(
             validate_runtime_settings(run_settings)
             task = task_from_goal(goal)
             result = await _run_agent_task_async(
-                run_settings, state, request_id, task, handle, record=record, allow_recording_failure=record_on_failure,
+                run_settings,
+                state,
+                request_id,
+                task,
+                handle,
+                record=record,
+                allow_recording_failure=record_on_failure,
                 recording_sink=execution_recordings,
             )
         elif case_yaml_path:
             validate_runtime_settings(run_settings)
             task = task_from_case_yaml(case_yaml_path, run_settings)
             result = await _run_agent_task_async(
-                run_settings, state, request_id, task, handle, record=record, allow_recording_failure=record_on_failure,
+                run_settings,
+                state,
+                request_id,
+                task,
+                handle,
+                record=record,
+                allow_recording_failure=record_on_failure,
                 recording_sink=execution_recordings,
             )
         elif strict_case_yaml_path:
@@ -292,12 +304,17 @@ async def _run_dynamic_task_async(
         if execution_recordings:
             value = execution_recordings[0]
             recording = {
-                "status": value.status, "recording_path": str(value.recording_path),
+                "status": value.status,
+                "recording_path": str(value.recording_path),
                 "recorded_case_path": str(value.recorded_case_path) if value.recorded_case_path else None,
                 "published_case_path": str(value.published_case_path) if value.published_case_path else None,
-                "command_count": value.command_count, "required_runtime_secret_names": list(value.required_runtime_secret_names),
-                "warnings": list(value.warnings), "skipped_tool_calls": list(value.skipped_tool_calls),
-                "errors": list(value.errors), "validation_status": value.validation_status, "draft": value.draft,
+                "command_count": value.command_count,
+                "required_runtime_secret_names": list(value.required_runtime_secret_names),
+                "warnings": list(value.warnings),
+                "skipped_tool_calls": list(value.skipped_tool_calls),
+                "errors": list(value.errors),
+                "validation_status": value.validation_status,
+                "draft": value.draft,
             }
         state.finish_task(request_id, result, recording=recording)
     except asyncio.CancelledError:
@@ -330,12 +347,14 @@ async def _run_agent_task_async(
 ) -> TaskResult:
     harness_factory = _preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform in {"web", "windows", "macos"} else None
     agent = FsqAgent.from_settings(settings, harness_factory=harness_factory) if harness_factory is not None else FsqAgent.from_settings(settings)
-    execution = await DynamicExecutionService(
-        agent=agent, recording_service=RecordingService(recorder=playground_recording._record_dynamic_run_as_strict_case)
-    ).execute(
+    execution = await DynamicExecutionService(agent=agent, recording_service=RecordingService(recorder=playground_recording._record_dynamic_run_as_strict_case)).execute(
         DynamicExecutionRequest(
-            task=task, settings=settings, event_sink=_event_sink(state, request_id), record=record,
-            allow_recording_failure=allow_recording_failure, publication_directory=settings.cases.dir,
+            task=task,
+            settings=settings,
+            event_sink=_event_sink(state, request_id),
+            record=record,
+            allow_recording_failure=allow_recording_failure,
+            publication_directory=settings.cases.dir,
             cancellation_check=lambda: _raise_if_cancelled(state, request_id),
         )
     )
@@ -389,18 +408,29 @@ def _run_strict_case_yaml(
         handle.bind_harness(harness)
     cancellable_harness = _CancellableHarness(harness, state, request_id)
     recorder = _PlaygroundEvidenceRecorder(run_id=run_id, output_dir=run_dir, state=state, request_id=request_id)
-    artifact = LifecycleExecutionService(runner=run_strict_lifecycle_case).execute(
-        LifecycleExecutionRequest(
-            case_path=case_path, case=case, settings=settings, harness=cancellable_harness, output_dir=run_dir,
-            run_id=run_id, registry=registry, registry_snapshot=registry_snapshot,
-            post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-            runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets), recorder=recorder,
-            resolve_steps=lambda steps, _case: _resolve_strict_replay_steps(steps, settings, registry_snapshot),
-            resolved_steps_by_path=resolved_steps_by_path,
-            cases_by_path={lifecycle_path.resolve(): lifecycle_case for lifecycle_path, lifecycle_case in lifecycle_cases},
-            cancellation_check=lambda: _raise_if_cancelled(state, request_id),
+    artifact = (
+        LifecycleExecutionService(runner=run_strict_lifecycle_case)
+        .execute(
+            LifecycleExecutionRequest(
+                case_path=case_path,
+                case=case,
+                settings=settings,
+                harness=cancellable_harness,
+                output_dir=run_dir,
+                run_id=run_id,
+                registry=registry,
+                registry_snapshot=registry_snapshot,
+                post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+                runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
+                recorder=recorder,
+                resolve_steps=lambda steps, _case: _resolve_strict_replay_steps(steps, settings, registry_snapshot),
+                resolved_steps_by_path=resolved_steps_by_path,
+                cases_by_path={lifecycle_path.resolve(): lifecycle_case for lifecycle_path, lifecycle_case in lifecycle_cases},
+                cancellation_check=lambda: _raise_if_cancelled(state, request_id),
+            )
         )
-    ).report
+        .report
+    )
     status, summary = _strict_report_status(artifact)
     state.add_event(
         request_id,

@@ -17,7 +17,7 @@ from threading import Thread
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fsq_agent.fsq import FSQ_CASE_SUFFIX
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX
 from fsq_agent.models import FsqAgentError
 
 from ._cases import discover_cases, resolve_case

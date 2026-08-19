@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from fsq_agent.core import PlatformRuntimeService
+from fsq_agent.environments import PlatformRuntimeService
 from fsq_agent.models import PlatformRuntimeCheck, web_executable_matches_channel
 
 CHANNEL_PATHS = {
@@ -33,7 +33,7 @@ def test_runtime_check_requires_consistent_explicit_status() -> None:
 def test_web_discovery_returns_exact_channel_candidates(tmp_path: Path, monkeypatch) -> None:
     chrome = tmp_path / "Google Chrome"
     edge = tmp_path / "Microsoft Edge Canary"
-    monkeypatch.setattr("fsq_agent.core._platform_runtime._web_candidate_paths", lambda _channel: [chrome, edge])
+    monkeypatch.setattr("fsq_agent.environments._service._web_candidate_paths", lambda _channel: [chrome, edge])
     monkeypatch.setattr(Path, "is_file", lambda self: self in {chrome, edge})
 
     assert PlatformRuntimeService().discover_web_executables("msedge-canary") == [edge.resolve()]
@@ -43,7 +43,7 @@ def test_web_discovery_checks_windows_install_locations(tmp_path: Path, monkeypa
     edge = tmp_path / "Microsoft" / "Edge" / "Application" / "msedge.exe"
     edge.parent.mkdir(parents=True)
     edge.write_text("", encoding="utf-8")
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Windows")
+    monkeypatch.setattr("fsq_agent.environments._service.platform.system", lambda: "Windows")
     monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
     monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
@@ -52,8 +52,8 @@ def test_web_discovery_checks_windows_install_locations(tmp_path: Path, monkeypa
 
 
 def test_runtime_check_reports_unsupported_host_before_module_lookup(monkeypatch) -> None:
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Linux")
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.importlib.util.find_spec", lambda _module: object())
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.importlib.util.find_spec", lambda _module: object())
 
     check = PlatformRuntimeService().check("windows")
 
@@ -63,8 +63,8 @@ def test_runtime_check_reports_unsupported_host_before_module_lookup(monkeypatch
 
 
 def test_runtime_install_does_not_invoke_pip_on_unsupported_host(monkeypatch) -> None:
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Windows")
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pip must not run")))
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Windows")
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pip must not run")))
 
     check = PlatformRuntimeService().install("macos")
 
@@ -158,7 +158,7 @@ def test_windows_discovery_covers_every_supported_channel(tmp_path: Path, monkey
     executable = tmp_path / relative
     executable.parent.mkdir(parents=True)
     executable.write_text("", encoding="utf-8")
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Windows")
+    monkeypatch.setattr("fsq_agent.environments._service.platform.system", lambda: "Windows")
     monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
     monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
@@ -168,8 +168,8 @@ def test_windows_discovery_covers_every_supported_channel(tmp_path: Path, monkey
 
 @pytest.mark.parametrize(("installed", "status"), [(True, "ready"), (False, "missing")])
 def test_runtime_check_reports_ready_or_missing(monkeypatch, installed: bool, status: str) -> None:
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Linux")
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.importlib.util.find_spec", lambda _module: object() if installed else None)
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.importlib.util.find_spec", lambda _module: object() if installed else None)
 
     check = PlatformRuntimeService().check("web")
 
@@ -181,9 +181,9 @@ def test_runtime_check_reports_ready_or_missing(monkeypatch, installed: bool, st
 
 def test_runtime_install_success_uses_fixed_bounded_command_and_rechecks(monkeypatch) -> None:
     calls: list[tuple[object, dict[str, object]]] = []
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
     monkeypatch.setattr(
-        "fsq_agent.core._platform_runtime.subprocess.run",
+        "fsq_agent.environments.providers._runtime.subprocess.run",
         lambda command, **kwargs: calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0),
     )
     monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
@@ -208,14 +208,14 @@ def test_runtime_install_success_uses_fixed_bounded_command_and_rechecks(monkeyp
     ],
 )
 def test_runtime_install_failures_are_missing_and_do_not_disclose_output(monkeypatch, failure: BaseException | subprocess.CompletedProcess) -> None:
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
 
     def fail(*args, **kwargs):
         if isinstance(failure, BaseException):
             raise failure
         return failure
 
-    monkeypatch.setattr("fsq_agent.core._platform_runtime.subprocess.run", fail)
+    monkeypatch.setattr("fsq_agent.environments.providers._runtime.subprocess.run", fail)
 
     check = PlatformRuntimeService().install("web")
 
