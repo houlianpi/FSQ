@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
 from fsq_agent.agent import FsqAgent
 from fsq_agent.application.contracts import (
     ApplicationError,
@@ -21,6 +20,7 @@ from fsq_agent.application.contracts import (
 )
 from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.config import Settings, load_platform_settings
+from fsq_agent.execution import DynamicExecutionRequest, DynamicExecutionService
 from fsq_agent.models import Task, TaskResult
 
 
@@ -51,19 +51,18 @@ async def create_case(
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=request.current_directory))
     settings = settings_loader(request.platform, workspace.workspace)
     task = _task_from_goal(normalized_goal)
-    result = await agent_factory(settings).run(task, event_sink=event_sink)
-    candidate_case_path = None
-    try:
-        recording = record_dynamic_run_as_strict_case(
-            run_dir=Path(settings.output.runs_dir) / result.report.run_id,
-            task=task,
-            result=result,
-            settings=settings,
+    execution = await DynamicExecutionService(agent=agent_factory(settings)).execute(
+        DynamicExecutionRequest(
+            task=task, settings=settings, event_sink=event_sink, record=True,
+            publication_directory=getattr(getattr(settings, "cases", None), "dir", None),
         )
-        if recording.status == "recorded":
-            candidate_case_path = recording.recorded_case_path
-    except (AttributeError, OSError, ValueError):
-        candidate_case_path = None
+    )
+    result = execution.task_result
+    candidate_case_path = (
+        execution.recording.recorded_case_path
+        if execution.recording is not None and execution.recording.status == "recorded"
+        else None
+    )
     return CaseCreateResult(
         run_id=result.report.run_id,
         task_id=result.task_id,

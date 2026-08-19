@@ -6,11 +6,11 @@ Preserve the installed `fsq` script and existing `fsq_agent.cli` imports as comp
 
 ## Dependencies
 
-- `application`: The only boundary used for CLI business operations and their Request, Result, Event, and Error contracts.
+- `application`: The boundary used for CLI business operations and their Request, Result, Event, and Error contracts. Application Case operations delegate complete run orchestration to Execution.
 - `control_plane`: Public server startup boundary for `fsq ui`; business operations behind that server still use Application.
 - `models`: Shared primitive/domain values only where required by Application contracts.
 
-CLI must not directly compose `agent`, `fsq`, `core`, `report`, concrete drivers, or provider implementations. Lower modules must not import CLI.
+CLI must not directly compose `agent`, `execution`, `fsq`, `core`, `report`, concrete drivers, or provider implementations. Lower modules must not import CLI.
 
 ## Public Interface
 

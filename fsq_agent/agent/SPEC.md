@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Coordinate dynamic goal/reference testing workflows using OpenAI Agents SDK: load runtime settings, construct or receive dynamic-only AgentTool hosts plus active platform harness/backend bindings, obtain the shared provider session from `providers`, build the validated platform-selected capability registry, build the OpenAI-compatible agent from AgentTools plus registry-backed CommonTool/PlatformTool capabilities, load relevant project knowledge and complete configured skills, derive execution key actions and a final verification goal from a natural-language goal or raw reference content, execute every concrete recordable capability invocation through `StepRunner`, persist safe normalized capability event metadata for post-run recording, derive verification status by checking the final verification goal against execution evidence, and trigger report generation.
+Provide the dynamic Goal/reference agent runtime used by `execution`: load runtime settings, construct or receive dynamic-only AgentTool hosts plus active platform harness/backend bindings, obtain the shared provider session from `providers`, build the validated platform-selected capability registry, build the OpenAI-compatible agent from AgentTools plus registry-backed CommonTool/PlatformTool capabilities, load relevant project knowledge and complete configured skills, derive execution key actions and a final verification goal, execute every concrete recordable capability invocation through `StepRunner`, persist safe normalized capability event metadata, and derive verification status from execution evidence. Complete operation coordination, transport cancellation, report publication, and candidate Case recording belong to `execution`.
 
 ## Dependencies
 
@@ -14,7 +14,7 @@ Coordinate dynamic goal/reference testing workflows using OpenAI Agents SDK: loa
 - `observation`: Captures evidence after steps.
 - `knowledge`: Loads private knowledge.
 - `skills`: Loads configured automation skill instruction bundles.
-- `report`: Generates reports and evidence bundles.
+- `report`: Supplies evidence/report contracts used by dynamic verification; complete run report coordination belongs to `execution`.
 
 The agent module consumes validated capability registry definitions and runner results. It must not import `capabilities` or decorator internals; declaration mechanics are completed before dynamic SDK tool exposure.
 
@@ -82,9 +82,9 @@ macOS runtime:
 - Architecture level: 3 Layered Application.
 - Public API: `FsqAgent`, `OpenAIAgentsRuntime`, and `Verifier` exported from `__init__.py`.
 - Internal modules: all `_*.py` files are private implementation modules.
-- Domain boundaries: this module owns dynamic run orchestration, SDK runtime assembly, pre-planning, event persistence, and verification task construction. Recordable capability execution routing lives in `core`; provider/session creation lives in `providers`; dynamic-only AgentTool behavior lives in `tools`; report writing lives in `report`.
+- Domain boundaries: this module owns the dynamic agent loop, SDK runtime assembly, pre-planning, event persistence, and verification task construction. Complete operation coordination and recording live in `execution`; recordable capability execution routing lives in `core`; provider/session creation lives in `providers`; dynamic-only AgentTool behavior lives in `tools`; report writing lives in `report`.
 - Boundary models: all tasks, final outputs, events, capability metadata, runner results, and report artifacts come from `models`.
-- Dependency direction: may depend on `models`, `config`, `providers`, `core`, `tools`, `observation`, `knowledge`, `skills`, and `report`; it must not import `application`, `cli`, or `control_plane`. Application may orchestrate Agent through its public API.
+- Dependency direction: may depend on `models`, `config`, `providers`, `core`, `tools`, `observation`, `knowledge`, `skills`, and `report`; it must not import `execution`, `application`, or adapters. Execution invokes Agent through its public API.
 - Rationale: dynamic execution coordinates external SDKs, providers, harnesses, tools, persisted events, and reports, so Level 3 is appropriate without adding repository/unit-of-work patterns.
 
 ## Error Handling

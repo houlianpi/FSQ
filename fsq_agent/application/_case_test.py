@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 from fsq_agent._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
-from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.application.contracts import (
     ApplicationError,
     ApplicationErrorCategory,
@@ -18,6 +17,7 @@ from fsq_agent.application.contracts import (
 from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.config import load_platform_settings, validate_strict_core_settings
 from fsq_agent.core import ArtifactStore, HarnessFactory, RuntimeSecretStore
+from fsq_agent.execution import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.providers import build_ai_assertion_evaluator
 

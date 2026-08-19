@@ -125,6 +125,7 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Defines execution orchestration, platform-runtime prerequisite checks/install and browser discovery, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factories, private backends, and evidence coordination. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
+| execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
 | application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
 | adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, Playground, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
@@ -151,7 +152,10 @@ flowchart TD
     CLI --> ControlPlane
     ControlPlane --> Application
     ControlPlane --> Playground[adapters/control_plane/playground]
+    ControlPlane --> Execution[execution]
+    Playground --> Execution
     Application --> Agent[agent]
+    Application --> Execution
     Application --> Core[core]
     Application --> FSQ[fsq]
     Application --> Config[config]
@@ -167,6 +171,12 @@ flowchart TD
     Agent --> Knowledge[knowledge]
     Agent --> Skills[skills]
     Agent --> Report[report]
+    Execution --> Agent
+    Execution --> Core
+    Execution --> FSQ
+    Execution --> Config
+    Execution --> Models
+    Execution --> Report
     Config --> Models
     Providers --> Config
     Providers --> Models
@@ -213,6 +223,6 @@ flowchart TD
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
 - `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
-- `core`, `agent`, `application`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
+- `core`, `agent`, `execution`, `application`, `adapters`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

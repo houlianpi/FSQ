@@ -6,7 +6,7 @@ Own external protocol adaptation for the public CLI, local Control Plane, local 
 
 ## Dependencies
 
-Adapters may import public APIs from `application`, `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`, plus root-SPEC-approved package-private entry composition helpers. Inward modules must not import `adapters`. Adapter subpackages must not form cycles.
+Adapters may import public APIs from `application`, `execution`, `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`. Inward modules must not import `adapters`. Adapter subpackages must not form cycles.
 
 ## Public Interface
 
@@ -43,4 +43,5 @@ Adapters map stable inward failures into documented exit codes or safe HTTP/SSE 
 - CLI and Control Plane business operations continue through Application.
 - Control Plane and Playground remain behaviorally and statefully independent.
 - Static assets remain generated package data with unchanged URL and wheel behavior.
+- CLI, Control Plane, and Playground use the same public Execution services; adapter-private modules do not implement lifecycle or recording policy.
 - Module relocation does not change CLI, HTTP, SSE, frontend, workspace, Case, evidence, report, Provider, or Runs contracts.

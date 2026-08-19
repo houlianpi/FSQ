@@ -6,7 +6,7 @@ Provide the shared, transport-neutral Application layer used by the FSQ CLI, Con
 
 ## Dependencies
 
-Application may consume public APIs from `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`. It must not import `cli`, `control_plane`, frontend code, Click, HTTP/SSE frameworks, terminal rendering, or concrete UI types. Lower-level modules must not import `application`.
+Application may consume public APIs from `models`, `config`, `providers`, `agent`, `execution`, `fsq`, `core`, and `report`. It must not import adapters, frontend code, Click, HTTP/SSE frameworks, terminal rendering, or concrete UI types. Lower-level modules must not import `application`.
 
 ## Public Interface
 
@@ -35,6 +35,7 @@ Canonical resource modules are:
 Application owns cross-module orchestration, shared request validation, workspace enforcement, operation-level event production, and consistent results/errors for all adapters. It delegates authoritative behavior to existing modules:
 
 - `agent` owns AI planning, model/tool orchestration, and dynamic verification.
+- `execution` owns complete dynamic/deterministic run coordination, Case lifecycle semantics, cancellation/teardown ordering, and candidate Case recording.
 - `fsq` owns Case DSL parsing, validation, and canonical deterministic-step adaptation.
 - `core` owns capability execution, runtime-secret handling, evidence policy, and Harness/Driver routing.
 - `report` owns transformation of persisted execution facts into reports and failure analysis.
@@ -86,3 +87,4 @@ Application normalizes expected operation failures into stable application Error
 - Run resource organization does not add or alter `fsq runs` behavior.
 - Transport concerns remain in adapters.
 - Domain and runtime rules remain in their owning modules.
+- Case operations coordinate through public Execution services and do not import package-root or adapter-private execution helpers.

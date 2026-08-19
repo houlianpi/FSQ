@@ -12,11 +12,18 @@ from pathlib import Path
 from typing import Any
 
 from fsq_agent._capability_bootstrap import steps_require_provider
-from fsq_agent._strict_case_recording import record_dynamic_run_as_strict_case
-from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings, workspace_revision
 from fsq_agent.core import ArtifactStore, EvidenceRecorder, HarnessFactory, RuntimeSecretStore
+from fsq_agent.execution import (
+    DynamicExecutionRequest,
+    DynamicExecutionService,
+    LifecycleExecutionRequest,
+    LifecycleExecutionService,
+    collect_strict_lifecycle_cases,
+    record_dynamic_run_as_strict_case,
+    run_strict_lifecycle_case,
+)
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ExecutableStep, FsqCase, RunnerEvent, RunnerStepResult, Task
 from fsq_agent.providers import build_ai_assertion_evaluator
@@ -192,33 +199,31 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
         state.raise_if_cancelled(request_id)
         state.transition(request_id, "running", summary="Explore run is executing.")
         task = _task_from_goal(prepared.goal or "", request_id)
-        result = await FsqAgent.from_settings(settings).run(task, event_sink=projection.project_run_event)
+        from fsq_agent.execution import RecordingService
+        execution = await DynamicExecutionService(
+            agent=FsqAgent.from_settings(settings), recording_service=RecordingService(recorder=record_dynamic_run_as_strict_case)
+        ).execute(
+            DynamicExecutionRequest(
+                task=task,
+                settings=settings,
+                event_sink=projection.project_run_event,
+                record=True,
+                allow_recording_failure=True,
+                publication_directory=settings.cases.dir,
+                cancellation_check=lambda: state.raise_if_cancelled(request_id),
+                recording_error_sink=lambda exc: state.add_event(
+                    request_id,
+                    {"time": None, "phase": "finalizing", "label": "Dynamic recording", "tool": None,
+                     "status": "failed", "durationMs": None,
+                     "message": projection.safe_text(f"Recording failed: {exc}"), "level": "warning"},
+                ),
+            )
+        )
+        result = execution.task_result
         if state.is_cancel_requested(request_id):
             _raise_async_cancelled()
         projection.bind_run(result.report.run_id)
         state.transition(request_id, "finalizing", summary="Finalizing evidence, report, and recording.")
-        try:
-            record_dynamic_run_as_strict_case(
-                run_dir=Path(settings.output.runs_dir) / result.report.run_id,
-                task=task,
-                result=result,
-                settings=settings,
-                allow_failure=True,
-            )
-        except Exception as exc:  # noqa: BLE001 - recording never changes the run result.
-            state.add_event(
-                request_id,
-                {
-                    "time": None,
-                    "phase": "finalizing",
-                    "label": "Dynamic recording",
-                    "tool": None,
-                    "status": "failed",
-                    "durationMs": None,
-                    "message": projection.safe_text(f"Recording failed: {exc}"),
-                    "level": "warning",
-                },
-            )
         projection.load_persisted_manifest()
         projection.load_persisted_step_ids()
         state.finish(
@@ -257,23 +262,19 @@ def _run_strict(prepared: PreparedRun, state: ControlPlaneState) -> None:
             serial=prepared.target_id if settings.harness.platform == "android" else None,
         )
         recorder = _ProjectionEvidenceRecorder(run_id=run_id, output_dir=run_dir, projection=projection)
-        artifact = run_strict_lifecycle_case(
-            case_path=prepared.case_path,
-            case=prepared.case,
-            settings=settings,
-            harness=_CancellableHarness(harness, state, request_id),
-            output_dir=run_dir,
-            run_id=run_id,
-            registry=prepared.registry,
-            registry_snapshot=prepared.registry_snapshot,
-            resolve_steps=lambda steps, _case: _preflight_steps(steps, prepared.registry_snapshot, RuntimeSecretStore.from_settings(settings.runtime_secrets)),
-            post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-            runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
-            recorder=recorder,
-            resolved_steps_by_path=prepared.resolved_steps_by_path,
-            cases_by_path={path.resolve(): case for path, case in prepared.lifecycle_cases},
-            cancellation_check=lambda: state.raise_if_cancelled(request_id),
-        )
+        artifact = LifecycleExecutionService(runner=run_strict_lifecycle_case).execute(
+            LifecycleExecutionRequest(
+                case_path=prepared.case_path, case=prepared.case, settings=settings,
+                harness=_CancellableHarness(harness, state, request_id), output_dir=run_dir, run_id=run_id,
+                registry=prepared.registry, registry_snapshot=prepared.registry_snapshot,
+                resolve_steps=lambda steps, _case: _preflight_steps(steps, prepared.registry_snapshot, RuntimeSecretStore.from_settings(settings.runtime_secrets)),
+                post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+                runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets), recorder=recorder,
+                resolved_steps_by_path=prepared.resolved_steps_by_path,
+                cases_by_path={path.resolve(): case for path, case in prepared.lifecycle_cases},
+                cancellation_check=lambda: state.raise_if_cancelled(request_id),
+            )
+        ).report
         state.raise_if_cancelled(request_id)
         state.transition(request_id, "finalizing", summary="Finalizing strict evidence and report.")
         projection.load_persisted_manifest()

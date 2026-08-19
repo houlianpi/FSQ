@@ -12,10 +12,10 @@ The authored browser application and browser-local interaction state are owned b
 - `config`: Receives validated workspace-platform startup settings, refreshes only the user-provider portion at each complete execution boundary, and applies the same runtime/provider/strict validation policy used by CLI entry points.
 - `providers`: Builds the provider-backed AI assertion evaluator used by configured dynamic and strict execution.
 - `agent`: Runs dynamic goal/raw-reference tasks through `FsqAgent.run` and receives live events through an event sink.
+- `execution`: Coordinates shared dynamic, deterministic, lifecycle, cancellation/teardown, report-input, and recording behavior.
 - `fsq`: Loads strict FSQ YAML cases and converts them into executable steps for strict mode.
 - `core`: Uses shared Android device discovery, active platform harnesses, platform CommonTool providers, and driver capabilities for session metadata, screenshot capture, and strict-core step execution.
 - `report`: Resolves generated report paths for completed runs.
-- Package-private entry-layer helpers: `fsq_agent._capability_bootstrap` builds the active capability registry, `fsq_agent._strict_lifecycle` collects and runs shared strict lifecycle cases, and `fsq_agent._strict_case_recording` is consumed through the Playground recording adapter.
 - External dependencies: Pydantic supplies validation errors at the execution boundary. PyYAML is used only by playground HTTP display endpoints to parse YAML into a safe presentation model. `ruamel.yaml` is used only for round-trip mutation of editable Input YAML lifecycle metadata. Presentation parsing and round-trip mutation must not replace `fsq` strict case loading, lifecycle validation, or executable-step conversion. Generated browser assets are supplied by the frontend workspace at the package/static-serving boundary; Python runtime code does not depend on Node.js or authored frontend modules.
 The module must not be imported by `models`, `config`, `providers`, `tools`, `observation`, `knowledge`, `skills`, `fsq`, `core`, `agent`, or `report`. `cli` may import `playground` to expose the public command.
 
@@ -111,8 +111,8 @@ macOS playground behavior:
 - `_yaml_lifecycle.py`: Private Input YAML lifecycle editing service. It validates structured hooks through public FSQ models, computes revisions, performs `ruamel.yaml` round-trip first-document mutation, validates temporary complete cases through `FsqCaseLoader`, preserves unrelated documents and formatting where supported, and atomically replaces source files.
 - `_state.py`: In-memory session/task state, one-task lock, progress event buffering with optional sequence-window projection, final result summaries, and request id generation.
 - `_android.py`: Playground target/error projection over shared `core` Android discovery, setup schema generation, Android session metadata, and screenshot helper boundaries.
-- `_recording.py`: Playground-owned dynamic post-run recording adapter around package-private `fsq_agent._strict_case_recording`, including recording failure normalization.
-- `_execution.py`: Provider-only settings refresh at the complete-task boundary, dynamic goal/raw-case execution adapter around `FsqAgent.run`, strict YAML execution adapter around core runner contracts, platform-dispatching harness/backend construction, configured post-action delay settings, event capture, result/report shaping, recording, and error normalization.
+- `_recording.py`: Playground presentation adapter for public recording results and recording failure normalization.
+- `_execution.py`: Provider-only settings refresh at the complete-task boundary plus transport task-state, cancellation, preview, collaborator, and result adaptation around public Execution services.
 - `static/`: Untracked Vite-generated production assets included as Python package data and served by the Playground HTTP server. Authored source ownership is defined by `frontend/playground/SPEC.md`.
 - `SPEC.md`: Module design.
 
@@ -121,9 +121,9 @@ macOS playground behavior:
 - Architecture level: Level 3 Layered Application.
 - Public API: `PlaygroundServer`, `PlaygroundServerOptions`, `run_playground`, and the local HTTP endpoints listed in this SPEC.
 - Internal modules: `_server.py`, `_state.py`, `_android.py`, `_recording.py`, `_execution.py`, `_yaml_lifecycle.py`, and generated package assets under `static`.
-- Domain boundaries: playground owns HTTP behavior, Input YAML lifecycle editing, safe run-artifact lookup, replay persistence, execution adaptation, and task/session state. Shared models and `fsq` own lifecycle syntax and case validation; the package-private shared strict lifecycle service owns strict lifecycle execution. The frontend Playground module owns browser-local rendering, view state, interaction, and replay generation.
+- Domain boundaries: playground owns HTTP behavior, Input YAML lifecycle editing, safe run-artifact lookup, replay persistence, execution presentation adaptation, and task/session state. Shared models and `fsq` own lifecycle syntax and case validation; Execution owns dynamic/deterministic coordination, lifecycle execution, and recording. The frontend Playground module owns browser-local rendering, view state, interaction, and replay generation.
 - Boundary models: JSON request and response payloads returned by `_server.py`, ordered `FsqCaseHook`/`FsqCaseHookAction` values consumed for lifecycle validation, shared `Settings`, `Task`, `TaskResult`, `RunEvent`, report artifacts, and session/task progress dictionaries.
-- Dependency direction: playground may import public APIs from `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`, plus package-private entry-layer composition from `fsq_agent._capability_bootstrap`, `fsq_agent._strict_lifecycle`, and `fsq_agent._strict_case_recording`; those modules must not import playground. Playground must not import CLI-private modules, `capabilities`, decorator internals, or authored frontend source. Python runtime code consumes generated assets only at the packaging and static-serving boundary.
+- Dependency direction: playground may import public APIs from `execution`, `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`; those modules must not import playground. Playground must not import package-root composition helpers, CLI-private modules, `capabilities`, decorator internals, or authored frontend source. Python runtime code consumes generated assets only at the packaging and static-serving boundary.
 - Rationale: playground coordinates HTTP transport, runtime state, execution adapters, filesystem-safe artifact access, replay persistence, reports, and recording summaries, so Level 3 remains appropriate. Browser-local application behavior is a separate frontend ownership boundary and does not require another Python layer.
 
 ## Error Handling
@@ -155,6 +155,7 @@ Step artifact endpoints are read-only and must read only under the resolved run 
 ### Execution and Ownership
 
 - Goal, YAML, and Strict YAML preserve the corresponding CLI execution semantics: dynamic goal task construction, non-strict raw UTF-8 YAML reference material, and registry-backed deterministic strict execution with core evidence reporting.
+- Playground delegates complete run ordering, lifecycle, and recording policy to public Execution services and retains only transport/session adaptation.
 - Each `/execute` captures the latest complete Provider snapshot while preserving startup workspace/platform/config/session/path policy. Active tasks never change Provider in place, and Playground never infers or switches platform.
 - Capability declaration and discovery remain bootstrap concerns. Playground consumes validated registry metadata, public execution APIs, and normalized results rather than decorator internals or platform action catalogs.
 - Completed dynamic runs use post-run recording with `allow_failure=True`; validated Goal recordings and drafts atomically publish a run-id-named copy to the selected platform cases directory. Recording or publication failure does not change execution status, and publication failure does not change a valid recording status.
