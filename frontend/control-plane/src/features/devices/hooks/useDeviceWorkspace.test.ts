@@ -188,7 +188,7 @@ it('rejects stale platform responses by request generation', async () => {
   expect(result.current.readiness.data?.platformId).toBe('web');
 });
 
-it('clears platform selection when changing to a workspace that supports the same platform', async () => {
+it('clears platform selection on workspace change when multiple platforms remain available', async () => {
   const client = {
     bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),

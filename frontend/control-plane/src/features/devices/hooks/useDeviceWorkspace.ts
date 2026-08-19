@@ -137,7 +137,8 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     if (workspaceChanged) pendingCasePathRef.current = null;
     const activeTask = bootstrap.data?.activeTask;
     const restoringActiveTask = activeTask?.workspaceName === workspaceName && activeTask.platform === platform;
-    if (!workspaceName || (workspaceChanged && !restoringActiveTask) || (platform && !platforms.some((item) => item.id === platform))) {
+    const platformAvailable = Boolean(platform && platforms.some((item) => item.id === platform));
+    if (!workspaceName || (workspaceChanged && !restoringActiveTask) || (platform && !platformAvailable)) {
       setPlatformState('');
       return;
     }

@@ -19,6 +19,7 @@ interface RunTimelineProps {
 
 const emptySaveYamlState: RequestResource<SaveYamlResponse> = { state: 'idle', data: null, error: null };
 const FSQ_CASE_SUFFIX = '.fsq.yaml';
+const MAX_DEFAULT_CASE_NAME_LENGTH = 60;
 
 function formatTime(value?: string) {
   if (!value) return '';
@@ -106,7 +107,7 @@ function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }:
 }
 
 function defaultCaseName(snapshot: RunSnapshot) {
-  return (snapshot.runId || 'recorded-case').replace(/\.fsq\.yaml$/i, '');
+  return (snapshot.runId || 'recorded-case').replace(/\.fsq\.yaml$/i, '').slice(0, MAX_DEFAULT_CASE_NAME_LENGTH);
 }
 
 function invalidCaseName(caseName: string) {
