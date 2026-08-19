@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from fsq_agent.agent import FsqAgent
 from fsq_agent.application.contracts import (
     ApplicationError,
     ApplicationErrorCategory,
@@ -37,7 +36,7 @@ async def create_case(
     *,
     event_sink: CaseCreateEventSink | None = None,
     settings_loader: SettingsLoader = load_platform_settings,
-    agent_factory: AgentFactory = FsqAgent.from_settings,
+    agent_factory: AgentFactory | None = None,
 ) -> CaseCreateResult:
     normalized_goal = " ".join(request.goal.split())
     if not normalized_goal:
@@ -50,6 +49,13 @@ async def create_case(
 
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=request.current_directory))
     settings = settings_loader(request.platform, workspace.workspace)
+    if agent_factory is None:
+        raise ApplicationError(
+            code=ApplicationErrorCode.CONFIGURATION_INVALID,
+            category=ApplicationErrorCategory.CONFIGURATION,
+            message="A Coding Agent runtime is not configured.",
+            action="Start this operation through a supported FSQ adapter.",
+        )
     task = _task_from_goal(normalized_goal)
     execution = await DynamicExecutionService(agent=agent_factory(settings)).execute(
         DynamicExecutionRequest(

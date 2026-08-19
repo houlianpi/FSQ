@@ -135,6 +135,7 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
 | application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
 | adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, Playground, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
+| adapters.coding_agent | fsq_agent/adapters/coding_agent/SPEC.md | Implements Agent runtime protocols through OpenAI Agents SDK tool, session, stream, and result adaptation. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
 | control_plane | fsq_agent/control_plane/SPEC.md | Adapts Application operations to local HTTP/SSE/static delivery, cancellation transport, and browser evidence projection. |
 | cli | fsq_agent/cli/SPEC.md | Adapts the public `fsq` command tree to Application operations with human, JSON, and JSONL output and stable exit categories. |
@@ -160,7 +161,10 @@ flowchart TD
     ControlPlane --> Application
     ControlPlane --> Playground[adapters/control_plane/playground]
     ControlPlane --> Execution[execution]
+    CLI --> CodingAgent[adapters/coding_agent]
+    ControlPlane --> CodingAgent
     Playground --> Execution
+    Playground --> CodingAgent
     Application --> Agent[agent]
     Application --> Execution
     Application --> Core[core]
@@ -179,6 +183,10 @@ flowchart TD
     Agent --> Knowledge[knowledge]
     Agent --> Skills[skills]
     Agent --> Report[report]
+    CodingAgent --> Agent
+    CodingAgent --> Providers
+    CodingAgent --> Core
+    CodingAgent --> Tools
     Execution --> Agent
     Execution --> CoreRunner[core/runner]
     Execution --> CoreEvidence[core/evidence]

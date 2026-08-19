@@ -9,7 +9,7 @@ from typing import Any
 
 from fsq_agent._run_ids import new_run_id
 from fsq_agent.agent._events import RunEventEmitter
-from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime
+from fsq_agent.agent._runtime import CodingAgentRuntime, CodingAgentRuntimeFactory
 from fsq_agent.agent._verifier import Verifier
 from fsq_agent.config import Settings, load_settings
 from fsq_agent.knowledge import PrivateKnowledgeLoader
@@ -18,7 +18,6 @@ from fsq_agent.observation import ExecutionLogger
 from fsq_agent.providers import refresh_model_provider_session
 from fsq_agent.report import ReportGenerator
 from fsq_agent.skills import SkillLoader
-from fsq_agent.tools import AgentToolAdapter, AgentToolRegistry, DefaultAgentToolProvider, FileOps
 
 
 class FsqAgent:
@@ -29,7 +28,7 @@ class FsqAgent:
         reporter: ReportGenerator,
         knowledge_loader: PrivateKnowledgeLoader,
         skill_loader: SkillLoader,
-        runtime: OpenAIAgentsRuntime,
+        runtime: CodingAgentRuntime,
         event_logger: ExecutionLogger | None = None,
     ) -> None:
         self.settings = settings
@@ -42,29 +41,20 @@ class FsqAgent:
 
     @classmethod
     def from_config(cls, path: str | Path | None = None, workspace: str | Path | None = None) -> "FsqAgent":
-        return cls.from_settings(load_settings(path, workspace))
+        from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
+
+        return cls.from_settings(load_settings(path, workspace), create_coding_agent_runtime)
 
     @classmethod
-    def from_settings(cls, settings: Settings, harness_factory: Callable[[str], Any] | None = None) -> "FsqAgent":
-        output_root = settings.output.root_dir
+    def from_settings(
+        cls,
+        settings: Settings,
+        runtime_factory: CodingAgentRuntimeFactory,
+        harness_factory: Callable[[str], Any] | None = None,
+    ) -> "FsqAgent":
         knowledge = settings.agent_context.knowledge
         knowledge_root = knowledge.root_dir
         skills_dir = knowledge.skills.dir
-        pre_plan_knowledge_dir = knowledge.pre_plan.dir or knowledge_root
-        file_ops = FileOps(
-            read_roots=[settings.cases.dir, knowledge_root, skills_dir, pre_plan_knowledge_dir, output_root],
-            write_root=output_root / "artifacts",
-        )
-        agent_tool_provider = DefaultAgentToolProvider(
-            file_ops,
-            runtime_secret_settings=settings.runtime_secrets,
-            local_tool_output_settings=settings.openai_agents.local_tool_output,
-            runs_dir=settings.output.runs_dir,
-        )
-        agent_tool_adapter = AgentToolAdapter(
-            AgentToolRegistry.from_providers([agent_tool_provider]),
-            local_tool_output_settings=settings.openai_agents.local_tool_output,
-        )
         knowledge_loader = PrivateKnowledgeLoader(knowledge_root)
         skill_loader = SkillLoader(skills_dir)
         reporter = ReportGenerator(settings.output.runs_dir, secret_values=cls._runtime_secret_values(settings))
@@ -75,7 +65,7 @@ class FsqAgent:
             reporter,
             knowledge_loader,
             skill_loader,
-            OpenAIAgentsRuntime(settings, agent_tool_adapter, harness_factory=harness_factory),
+            runtime_factory(settings, harness_factory=harness_factory),
             event_logger,
         )
 
@@ -106,9 +96,7 @@ class FsqAgent:
             task = await self._augment_goal_only_task_with_pre_plan(task, skills, run_id, emitter)
             results = await self.runtime.run_task(task, knowledge, skills, run_id, emitter.emit)
             events_path = self.event_logger.log_root / run_id / "events.jsonl" if self.event_logger else None
-            run_verification_task = getattr(self.runtime, "_run_verification_task", None)
-            if callable(run_verification_task):
-                results.extend(await run_verification_task(task, results, run_id, events_path, emitter.emit))
+            results.extend(await self.runtime.run_verification(task, results, run_id, events_path, emitter.emit))
             verification = await self.verifier.verify(task, results, events_path=events_path)
             report = self.reporter.generate(run_id, task, results, verification)
             duration_ms = int((time.perf_counter() - started) * 1000)

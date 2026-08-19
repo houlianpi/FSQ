@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fsq_agent._capability_bootstrap import steps_require_provider
+from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
 from fsq_agent.agent import FsqAgent
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config import Settings, validate_runtime_settings, validate_strict_core_settings, workspace_revision
@@ -201,7 +202,10 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
         task = _task_from_goal(prepared.goal or "", request_id)
         from fsq_agent.execution import RecordingService
 
-        execution = await DynamicExecutionService(agent=FsqAgent.from_settings(settings), recording_service=RecordingService(recorder=record_dynamic_run_as_strict_case)).execute(
+        execution = await DynamicExecutionService(
+            agent=FsqAgent.from_settings(settings, create_coding_agent_runtime),
+            recording_service=RecordingService(recorder=record_dynamic_run_as_strict_case),
+        ).execute(
             DynamicExecutionRequest(
                 task=task,
                 settings=settings,

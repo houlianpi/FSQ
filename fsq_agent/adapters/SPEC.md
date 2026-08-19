@@ -13,7 +13,7 @@ Adapters may import public APIs from `application`, `execution`, `models`, `conf
 - `adapters.cli` owns the `fsq` Click command tree and exports `main`.
 - `adapters.control_plane` owns `ControlPlaneServer`, `ControlPlaneServerOptions`, `run_control_plane`, and the documented HTTP/SSE/static API.
 - `adapters.control_plane.playground` owns `PlaygroundServer`, `PlaygroundServerOptions`, `run_playground`, and the documented Playground HTTP/static API.
-- `adapters.coding_agent` is not introduced by this transport migration.
+- `adapters.coding_agent` owns the OpenAI Agents SDK implementation of public Agent runtime protocols. Its concrete runtime and SDK tool adapters are private; composition roots consume its public runtime factory.
 
 The installed script and existing `fsq_agent.cli`, `fsq_agent.control_plane`, and `fsq_agent.playground` imports remain compatibility entries. Each public compatibility symbol references the canonical adapter object. Compatibility private submodule imports resolve to the canonical module object when mutable state or monkeypatch identity is observable.
 
@@ -22,12 +22,13 @@ The installed script and existing `fsq_agent.cli`, `fsq_agent.control_plane`, an
 - `cli/`: CLI parsing, presentation, output modes, and exit mapping.
 - `control_plane/`: Control Plane HTTP/SSE/static transport, projections, and state.
 - `control_plane/playground/`: Playground HTTP/static transport and independent session/task state.
+- `coding_agent/`: OpenAI Agents SDK runtime construction, SDK tool/schema conversion, stream-event/result adaptation, and public runtime factory.
 - Adapter-private `_*.py` files are not imported by inward modules.
 
 ## Python Architecture
 
 - Architecture level: Level 3 Layered Application.
-- Public API: adapter entry points and documented transport contracts.
+- Public API: transport entry points plus the Coding Agent runtime factory consumed by composition roots.
 - Domain boundaries: external protocol decoding and presentation only.
 - Boundary models: Click values and HTTP/JSON/SSE dictionaries remain at adapter boundaries.
 - Dependency direction: adapters depend inward; Application and lower modules never import adapters.
@@ -44,4 +45,5 @@ Adapters map stable inward failures into documented exit codes or safe HTTP/SSE 
 - Control Plane and Playground remain behaviorally and statefully independent.
 - Static assets remain generated package data with unchanged URL and wheel behavior.
 - CLI, Control Plane, and Playground use the same public Execution services; adapter-private modules do not implement lifecycle or recording policy.
+- CLI, Control Plane, and Playground composition roots inject the same Coding Agent runtime implementation into SDK-neutral Agent orchestration. Application and inward packages never import `adapters.coding_agent`.
 - Module relocation does not change CLI, HTTP, SSE, frontend, workspace, Case, evidence, report, Provider, or Runs contracts.

@@ -95,6 +95,16 @@ class _Runtime:
             )
         ]
 
+    async def run_verification(
+        self,
+        task: Task,
+        results: list[StepResult],
+        run_id: str,
+        events_path: Path | None,
+        event_sink: object | None = None,
+    ) -> list[StepResult]:
+        return []
+
 
 class _GoalRunRuntime(_Runtime):
     def __init__(self) -> None:
@@ -160,6 +170,16 @@ class _CancelledRuntime:
         event_sink: object | None = None,
     ) -> list[StepResult]:
         raise asyncio.CancelledError()
+
+    async def run_verification(
+        self,
+        task: Task,
+        results: list[StepResult],
+        run_id: str,
+        events_path: Path | None,
+        event_sink: object | None = None,
+    ) -> list[StepResult]:
+        return []
 
 
 class _FakeArtifactStore:

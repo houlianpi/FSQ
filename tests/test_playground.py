@@ -2470,7 +2470,10 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
         return FakeRecording(kwargs["run_dir"] / "recording.json")
 
     monkeypatch.setattr("fsq_agent.playground._execution.validate_runtime_settings", lambda _settings: None)
-    monkeypatch.setattr("fsq_agent.playground._execution.FsqAgent.from_settings", lambda _settings: FakeAgent())
+    monkeypatch.setattr(
+        "fsq_agent.playground._execution.FsqAgent.from_settings",
+        lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
+    )
     monkeypatch.setattr("fsq_agent.playground._recording._record_dynamic_run_as_strict_case", fake_record_dynamic_run_as_strict_case)
 
     _run_dynamic_task(
@@ -2512,7 +2515,10 @@ def test_playground_dynamic_goal_does_not_overwrite_cancelled_task(tmp_path: Pat
             )
 
     monkeypatch.setattr("fsq_agent.playground._execution.validate_runtime_settings", lambda _settings: None)
-    monkeypatch.setattr("fsq_agent.playground._execution.FsqAgent.from_settings", lambda _settings: FakeAgent())
+    monkeypatch.setattr(
+        "fsq_agent.playground._execution.FsqAgent.from_settings",
+        lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
+    )
 
     _run_dynamic_task(
         settings=settings,

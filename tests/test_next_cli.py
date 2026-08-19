@@ -51,7 +51,7 @@ def test_supporting_commands_require_current_workspace(tmp_path: Path, monkeypat
 
 
 def test_case_create_json_maps_application_result(tmp_path: Path, monkeypatch) -> None:
-    async def fake_create(_request, *, event_sink=None):
+    async def fake_create(_request, *, event_sink=None, agent_factory=None):
         return CaseCreateResult(run_id="run-1", task_id="task-1", status="success", summary="passed", report_path=tmp_path / "report.md", candidate_case_path=tmp_path / "recorded.fsq.yaml")
 
     monkeypatch.setattr("fsq_agent.cli._main.create_case", fake_create)

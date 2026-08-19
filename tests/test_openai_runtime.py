@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import ast
 import asyncio
 import json
 import time
@@ -304,7 +305,7 @@ async def test_runtime_constructs_sdk_agents_with_explicit_medium_model_settings
 
     await runtime.run_pre_plan("Open the app.", KnowledgeBundle(), [], "explicit-model-settings-run")
     await runtime.run_task(task, KnowledgeBundle(), [], "explicit-model-settings-run")
-    await runtime._run_verification_task(task, [], "explicit-model-settings-run")
+    await runtime.run_verification(task, [], "explicit-model-settings-run", None)
 
     assert [agent.kwargs["name"] for agent in _FakeAgent.instances] == [
         "fsq-agent pre-planner",
@@ -1647,3 +1648,15 @@ def test_runtime_input_filter_rejects_screenshot_images_outside_output_root(tmp_
     filtered = input_filter(data)
 
     assert filtered.input == data.model_data.input
+
+
+def test_coding_agent_adapter_does_not_import_agent_private_modules() -> None:
+    adapter_root = Path(__file__).parents[1] / "fsq_agent" / "adapters" / "coding_agent"
+    private_imports: list[str] = []
+    for source_path in adapter_root.glob("*.py"):
+        for node in ast.walk(ast.parse(source_path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("fsq_agent.agent._"):
+                private_imports.append(f"{source_path.name}:{node.lineno}:{node.module}")
+            if isinstance(node, ast.Import):
+                private_imports.extend(f"{source_path.name}:{node.lineno}:{alias.name}" for alias in node.names if alias.name.startswith("fsq_agent.agent._"))
+    assert private_imports == []

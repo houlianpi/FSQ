@@ -545,7 +545,10 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
                 report=ReportArtifact(run_id="run-1", path=report_path),
             )
 
-    monkeypatch.setattr("fsq_agent.control_plane._execution.FsqAgent.from_settings", lambda _settings: FakeAgent())
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._execution.FsqAgent.from_settings",
+        lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
+    )
 
     def record(**kwargs):
         captured["record"] = kwargs
@@ -1344,7 +1347,10 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
         def classify_error(self, error, phase, step):
             return "unknown"
 
-    monkeypatch.setattr("fsq_agent.control_plane._execution.FsqAgent.from_settings", lambda _settings: FakeAgent())
+    monkeypatch.setattr(
+        "fsq_agent.control_plane._execution.FsqAgent.from_settings",
+        lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
+    )
     monkeypatch.setattr(
         "fsq_agent.control_plane._execution.HarnessFactory.create_harness",
         lambda *_args, **kwargs: FakeHarness(kwargs["artifact_store"]),
