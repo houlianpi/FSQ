@@ -24,6 +24,7 @@ const runSnapshot = (requestId = 'request-1', platform: 'android' | 'web' = 'and
 });
 const platforms = bootstrap.platforms;
 const deviceContext = { workspaceName: 'test', platforms, onWorkspaceChange: vi.fn() };
+const singlePlatformContext = { workspaceName: 'test', platforms: [platforms[0]], onWorkspaceChange: vi.fn() };
 
 it('does not discover until a platform is explicitly selected', async () => {
   const client = {
@@ -37,6 +38,22 @@ it('does not discover until a platform is explicitly selected', async () => {
   expect(client.readiness).not.toHaveBeenCalled();
   expect(client.targets).not.toHaveBeenCalled();
   expect(client.cases).not.toHaveBeenCalled();
+});
+
+it('automatically selects and discovers the sole valid configured platform', async () => {
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
+    targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace(singlePlatformContext, client));
+
+  await waitFor(() => expect(result.current.platform).toBe('android'));
+  await waitFor(() => expect(result.current.targets.state).toBe('ready'));
+
+  expect(client.readiness).toHaveBeenCalledWith('test', 'android', expect.any(AbortSignal));
+  expect(client.targets).toHaveBeenCalledWith('test', 'android', expect.any(AbortSignal));
+  expect(client.cases).toHaveBeenCalledWith('test', 'android', expect.any(AbortSignal));
 });
 
 it('rejects stale platform responses by request generation', async () => {
@@ -58,7 +75,7 @@ it('rejects stale platform responses by request generation', async () => {
   expect(result.current.readiness.data?.platformId).toBe('web');
 });
 
-it('clears platform selection when changing to a workspace that supports the same platform', async () => {
+it('clears platform selection on workspace change when multiple platforms remain available', async () => {
   const client = {
     bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),

@@ -101,9 +101,17 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     setCases(emptyResource());
     const activeTask = bootstrap.data?.activeTask;
     const restoringActiveTask = activeTask?.workspaceName === workspaceName && activeTask.platform === platform;
-    if (!workspaceName || (workspaceChanged && !restoringActiveTask) || (platform && !platforms.some((item) => item.id === platform))) {
+    const onlyPlatform = platforms.length === 1 ? platforms[0].id : '';
+    const platformAvailable = Boolean(platform && platforms.some((item) => item.id === platform));
+    if (!workspaceName) {
       setPlatformState('');
       return;
+    }
+    if (!restoringActiveTask && (workspaceChanged || !platformAvailable)) {
+      if (!onlyPlatform || onlyPlatform !== platform) {
+        setPlatformState(onlyPlatform);
+        return;
+      }
     }
     if (!platform) return;
     loadDiscovery(workspaceName, platform, true);
