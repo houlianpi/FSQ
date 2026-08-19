@@ -24,6 +24,8 @@ interface WorkspacePageProps {
   onCancelCreate: () => void;
   onConfigurationOpenChange: (open: boolean) => void;
   onPresentationChange?: (presentation: 'default' | 'full-bleed') => void;
+  onRecordCase?: () => void;
+  onReplayCase?: (platform: PlatformId, casePath: string) => void;
   onCreated: (detail: WorkspaceDetail) => void;
   onRegistryChanged: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -56,7 +58,7 @@ function platformRevision(detail: WorkspaceDetail): string {
   return detail.platforms.map((platform) => `${platform.platform}:${platform.revision ?? platform.status}`).join('|');
 }
 
-export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
+export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onRecordCase, onReplayCase, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiErrorBody | null>(null);
@@ -193,5 +195,5 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
   </section></div>;
   }
 
-  return <div className="cp-workspace-page cp-workspace-page--browser"><WorkspaceBrowser key={platformRevision(detail)} workspaceName={detail.name} /></div>;
+  return <div className="cp-workspace-page cp-workspace-page--browser"><WorkspaceBrowser key={platformRevision(detail)} workspaceName={detail.name} onRecordCase={onRecordCase} onReplayCase={onReplayCase} /></div>;
 }

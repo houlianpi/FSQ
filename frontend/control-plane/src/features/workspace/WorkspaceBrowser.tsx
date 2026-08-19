@@ -1,10 +1,14 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { AlertCircle, FileText, RefreshCw } from 'lucide-react';
+import { AlertCircle, FileText, Play, Plus, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { controlPlaneClient, toApiError } from '../../api/controlPlaneClient';
-import type { ApiErrorBody, WorkspaceEntriesResponse, WorkspaceEntry, WorkspaceFileResponse } from '../../api/types';
+import type { ApiErrorBody, PlatformId, WorkspaceEntriesResponse, WorkspaceEntry, WorkspaceFileResponse } from '../../api/types';
 
-interface WorkspaceBrowserProps { workspaceName: string }
+interface WorkspaceBrowserProps {
+  workspaceName: string;
+  onRecordCase?: () => void;
+  onReplayCase?: (platform: PlatformId, casePath: string) => void;
+}
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return 'Directory';
@@ -14,6 +18,11 @@ function formatBytes(bytes: number | null): string {
 
 function isYamlFile(name: string): boolean {
   return /\.ya?ml$/i.test(name);
+}
+
+function replayContext(path: string): { platform: PlatformId; casePath: string } | null {
+  const match = path.match(/^cases\/(android|web|windows|macos)\/(.+\.fsq\.yaml)$/);
+  return match ? { platform: match[1] as PlatformId, casePath: match[2] } : null;
 }
 
 function renderYamlScalar(value: string): ReactNode {
@@ -89,7 +98,7 @@ function TreeEntry({ entry, depth, expanded, childrenByPath, loadingPaths, selec
   </li>;
 }
 
-export function WorkspaceBrowser({ workspaceName }: WorkspaceBrowserProps) {
+export function WorkspaceBrowser({ workspaceName, onRecordCase, onReplayCase }: WorkspaceBrowserProps) {
   const markdownPanelId = useId();
   const markdownPreviewTabId = useId();
   const markdownCodeTabId = useId();
@@ -187,10 +196,12 @@ export function WorkspaceBrowser({ workspaceName }: WorkspaceBrowserProps) {
     });
   };
 
+  const selectedReplayContext = file ? replayContext(file.path) : null;
+
   return <section className="cp-workspace-browser" aria-label={`Workspace files for ${workspaceName}`}>
     <div className="cp-browser-grid">
       <section className="cp-tree-pane" aria-label="Workspace file tree">
-        <header className="cp-tree-header"><span aria-hidden="true">◧</span><h2>Files</h2></header>
+        <header className="cp-tree-header"><span aria-hidden="true">◧</span><h2>Files</h2><button className="cp-tree-add-case" type="button" aria-label="Record new case" title="Record new case" onClick={onRecordCase}><Plus aria-hidden="true" /></button></header>
         <div className="cp-tree-content">
           {treeError && <div className="cp-inline-error"><AlertCircle aria-hidden="true" /><span><strong>{treeError.message}</strong><small>{treeError.action}</small></span><button className="cp-icon-button" type="button" aria-label="Retry workspace files" onClick={loadRoot}><RefreshCw aria-hidden="true" /></button></div>}
           {!root && !treeError && <p className="cp-pane-state">Loading workspace files…</p>}
@@ -213,7 +224,9 @@ export function WorkspaceBrowser({ workspaceName }: WorkspaceBrowserProps) {
               {file.presentation === 'markdown'
                 ? <div className="cp-file-tabs" role="tablist" aria-label="Markdown presentation"><button id={markdownPreviewTabId} type="button" role="tab" aria-selected={fileTab === 'preview'} aria-controls={markdownPanelId} onClick={() => setFileTab('preview')}>Preview</button><button id={markdownCodeTabId} type="button" role="tab" aria-selected={fileTab === 'code'} aria-controls={markdownPanelId} onClick={() => setFileTab('code')}>Code</button></div>
                 : <span className="cp-file-mode">Code</span>}
-              <span>{file.lineCount} lines · {formatBytes(file.size)}</span>
+              {selectedReplayContext
+                ? <button className="button cp-replay-case" type="button" onClick={() => onReplayCase?.(selectedReplayContext.platform, selectedReplayContext.casePath)}><Play aria-hidden="true" />Replay Case</button>
+                : <span>{file.lineCount} lines · {formatBytes(file.size)}</span>}
             </div>
             <div className="cp-file-content" id={file.presentation === 'markdown' ? markdownPanelId : undefined} role={file.presentation === 'markdown' ? 'tabpanel' : undefined} aria-labelledby={file.presentation === 'markdown' ? (fileTab === 'preview' ? markdownPreviewTabId : markdownCodeTabId) : undefined}>
               {file.presentation === 'markdown' && fileTab === 'preview'
