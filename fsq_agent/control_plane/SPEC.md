@@ -1,8 +1,8 @@
-# Module: control_plane
+# Module: control_plane compatibility entry
 
 ## Purpose
 
-Serve the local, single-user FSQ Control Plane browser application. The module owns Control Plane HTTP and static delivery; trusted-local Provider and multi-platform workspace-management transport; host-native workspace parent-directory selection; pending GitHub authorization/model-selection transaction state; connection-test orchestration; registry-backed workspace list/create/summary/platform-detail/platform-add/platform-update and bounded read-only browsing; and workspace-aware Devices selection, readiness, target/case discovery, one-active-run state, cancellation, resumable progress streaming, current and per-step evidence projection, persisted screenshot replay frames, and replay-video storage/range transport.
+Preserve existing `fsq_agent.control_plane` imports, server entry points, and package-data lookup as compatibility entries for the canonical `adapters.control_plane` implementation. Canonical modules own HTTP/static delivery, trusted-local Provider/workspace transport, directory selection, authorization state, Devices state, streaming, evidence projection, and replay transport. Compatibility paths resolve to the same module objects and own no duplicate routes or mutable state.
 
 The module is an entry-layer application. Shared workspace initialization, target resolution, Driver readiness/install coordination, and Web executable discovery use the public Application boundary; Control Plane projects those results through HTTP and browser UI. The module composes existing configuration, dynamic-agent, strict FSQ, execution-core, provider, evidence, recording, and report contracts for remaining documented entry flows. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, evidence schema, report generator, platform driver, browser discovery table, installer, or Playground behavior.
 

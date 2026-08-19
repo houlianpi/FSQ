@@ -125,7 +125,8 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Defines execution orchestration, platform-runtime prerequisite checks/install and browser discovery, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factories, private backends, and evidence coordination. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
-| application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations and shared Request, Result, Event, and Error contracts. |
+| application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
+| adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, Playground, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
 | control_plane | fsq_agent/control_plane/SPEC.md | Adapts Application operations to local HTTP/SSE/static delivery, cancellation transport, and browser evidence projection. |
 | cli | fsq_agent/cli/SPEC.md | Adapts the public `fsq` command tree to Application operations with human, JSON, and JSONL output and stable exit categories. |
@@ -144,9 +145,12 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 
 ```mermaid
 flowchart TD
-    CLI[cli] --> Application[application]
-    CLI --> ControlPlane[control_plane]
+    Adapters[adapters] --> CLI[adapters/cli]
+    Adapters --> ControlPlane[adapters/control_plane]
+    CLI --> Application[application]
+    CLI --> ControlPlane
     ControlPlane --> Application
+    ControlPlane --> Playground[adapters/control_plane/playground]
     Application --> Agent[agent]
     Application --> Core[core]
     Application --> FSQ[fsq]
@@ -188,6 +192,7 @@ flowchart TD
 ## Development Rules
 
 - Each Python module exposes public symbols only from `__init__.py` using explicit `__all__`.
+- A package may organize one module's public implementation into resource-owned public modules and subpackages while retaining `__init__.py` as its complete convenience export boundary. Public resource modules must not duplicate contracts or behavior.
 - `pyproject.toml` is the source of truth for the repository's pinned Ruff version, lint policy, formatter policy, thresholds, and scoped exclusions. Repository-owned Python must conform to that configuration without separate lint baselines or blanket suppression mechanisms.
 - Repository Python changes must pass the locked Ruff lint and format validation plus the complete pytest suite. Formatting or remediation must preserve current public interfaces, runtime behavior, module ownership, and dependency direction.
 - Frontend dependency changes update the root npm manifest and lock file. Generated frontend assets and `node_modules` remain untracked; source-checkout production startup requires a successful frontend build, while installed wheels contain the generated assets.
@@ -196,6 +201,7 @@ flowchart TD
 - Internal Python implementation files are prefixed with `_`.
 - Shared data structures and exceptions live only in the `models` module. Capability declaration decorators, catalog-backed platform validation, and decorated-method discovery live only in the `capabilities` module.
 - Module imports must follow the DAG in the architecture diagram.
+- Transport implementation lives under `adapters`. The legacy `cli`, `control_plane`, and `playground` paths are compatibility entries exposing the same canonical adapter objects and modules without duplicate transport behavior or mutable state.
 - Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer capability bootstrap, registry-metadata-based provider requirement detection, strict lifecycle orchestration, and dynamic-run recording used by CLI, Playground, and Control Plane. Provider requirement detection compares the active platform registry with and without provider-backed capabilities and resolves executable steps through the registry snapshot rather than branching on action names. These helpers must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
 - `capabilities` may import `models` only among project modules. It must not import `tools`, `core`, `agent`, `cli`, `fsq`, `providers`, `report`, `playground`, SDK objects, concrete drivers, or backend runtime types.
 - Provider construction lives in `providers`; `core` must use provider-neutral protocols and must not import provider/runtime modules.

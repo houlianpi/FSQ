@@ -17,6 +17,7 @@ from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent._run_ids import new_run_id
 from fsq_agent._strict_lifecycle import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
+from fsq_agent.adapters.control_plane.playground._recording import record_dynamic_result
 from fsq_agent.agent import FsqAgent
 from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
 from fsq_agent.core import (
@@ -28,14 +29,13 @@ from fsq_agent.core import (
 )
 from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
-from fsq_agent.playground._recording import record_dynamic_result
 from fsq_agent.providers import build_ai_assertion_evaluator
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from fsq_agent.adapters.control_plane.playground._state import PlaygroundState
     from fsq_agent.config import Settings
-    from fsq_agent.playground._state import PlaygroundState
 
 
 class PlaygroundTaskCancelledError(RuntimeError):

@@ -8,8 +8,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from fsq_agent.adapters.control_plane.playground._state import PlaygroundSession
 from fsq_agent.core import AndroidDeviceDiscovery, DriverFactory
-from fsq_agent.playground._state import PlaygroundSession
 
 if TYPE_CHECKING:
     from fsq_agent.config import Settings

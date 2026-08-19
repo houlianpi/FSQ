@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from fsq_agent.cli._capability_bootstrap import build_capability_registry
+from fsq_agent.adapters.cli._capability_bootstrap import build_capability_registry
 from fsq_agent.config import Settings
 from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep
 

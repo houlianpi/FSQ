@@ -1,8 +1,8 @@
-# Module: cli
+# Module: cli compatibility entry
 
 ## Purpose
 
-Provide the public `fsq` command-line adapter for people, CI systems, and Coding Agents. CLI parses arguments, selects human or machine presentation, invokes resource-grouped Application operations, renders results/events, and maps errors to process exit codes. It does not independently orchestrate Agent, Core, FSQ, Report, Driver, Provider, or Environment behavior.
+Preserve the installed `fsq` script and existing `fsq_agent.cli` imports as compatibility entries for the canonical `adapters.cli` implementation. Canonical CLI modules parse arguments, select presentation, invoke Application operations, render results/events, and map exit codes. Compatibility paths resolve to the same command and private module objects and own no duplicate behavior or mutable state.
 
 ## Dependencies
 
@@ -14,7 +14,7 @@ CLI must not directly compose `agent`, `fsq`, `core`, `report`, concrete drivers
 
 ## Public Interface
 
-`__init__.py` exports `main`. The primary executable is `fsq`. The public command tree is:
+`__init__.py` exports the canonical `adapters.cli.main` object. The primary executable remains `fsq`. The public command tree is:
 
 ```text
 fsq

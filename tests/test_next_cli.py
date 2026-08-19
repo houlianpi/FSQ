@@ -89,12 +89,17 @@ def test_non_interactive_provider_configuration_is_rejected(tmp_path: Path, monk
     assert "interactive terminal" in result.output
 
 
-def test_ui_starts_control_plane_with_current_public_options(tmp_path: Path, monkeypatch) -> None:
+def test_ui_starts_control_plane_from_non_workspace_directory(tmp_path: Path, monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("fsq_agent.cli._main.run_control_plane", lambda options: captured.update(options=options))
+
+    def fail_if_workspace_required(_request) -> None:
+        raise AssertionError("fsq ui must not require the current directory to be a workspace")
+
+    monkeypatch.setattr("fsq_agent.cli._main.require_initialized_workspace", fail_if_workspace_required)
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        _workspace(Path.cwd(), monkeypatch)
+        assert not (Path.cwd() / ".fsq").exists()
         result = runner.invoke(main, ["ui", "--host", "127.0.0.2", "--port", "9000", "--no-open-browser"])
     assert result.exit_code == 0
     options = captured["options"]

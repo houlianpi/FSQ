@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from fsq_agent.cli._capability_bootstrap import build_capability_registry
+from fsq_agent.adapters.cli._capability_bootstrap import build_capability_registry
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import EvidenceBundle, ExecutableStep, PostActionDelaySettings, ReportArtifact, ReportGenerationError

@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fsq_agent.application._contracts import (
+from fsq_agent.application.contracts import (
     ApplicationError,
     ApplicationErrorCategory,
     ApplicationErrorCode,

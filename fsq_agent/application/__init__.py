@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fsq_agent.application._case import create_case
-from fsq_agent.application._case_test import test_case
-from fsq_agent.application._contracts import (
+from fsq_agent.application._errors import normalize_application_error
+from fsq_agent.application.cases import create_case, test_case
+from fsq_agent.application.contracts import (
     ApplicationError,
     ApplicationErrorCategory,
     ApplicationErrorCode,
@@ -23,11 +23,10 @@ from fsq_agent.application._contracts import (
     event_record,
     result_record,
 )
-from fsq_agent.application._errors import normalize_application_error
-from fsq_agent.application._provider import configure_provider, provider_status
-from fsq_agent.application._queries import list_environments, list_providers, list_runs, read_run_logs, show_run
-from fsq_agent.application._workspace import require_initialized_workspace
-from fsq_agent.application._workspace_init import add_workspace_platform, create_workspace, initialize_workspace, resolve_workspace_target, update_workspace_platform
+from fsq_agent.application.environments import list_environments
+from fsq_agent.application.providers import configure_provider, list_providers, provider_status
+from fsq_agent.application.runs import list_runs, read_run_logs, show_run
+from fsq_agent.application.workspace import add_workspace_platform, create_workspace, initialize_workspace, require_initialized_workspace, resolve_workspace_target, update_workspace_platform
 
 __all__ = [
     "ApplicationError",

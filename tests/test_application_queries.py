@@ -36,7 +36,7 @@ def test_run_queries_reject_escape_and_missing_runs(tmp_path: Path, run_id: str)
 
 def test_configure_provider_preserves_unrelated_env_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.application._provider.require_initialized_workspace",
+        "fsq_agent.application.providers.require_initialized_workspace",
         lambda _request: type("Workspace", (), {"workspace": tmp_path})(),
     )
     env = tmp_path / ".env"

@@ -10,8 +10,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
-from fsq_agent.cli._strict_replay import resolve_strict_replay_steps
-from fsq_agent.cli._task_loader import resolve_case_yaml_path
+from fsq_agent.adapters.cli._strict_replay import resolve_strict_replay_steps
+from fsq_agent.adapters.cli._task_loader import resolve_case_yaml_path
 from fsq_agent.core import CapabilityRegistry, EvidenceRecorder, HarnessInterface, RuntimeSecretStore, StepRunner, StepSequenceRunner
 from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import (
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from fsq_agent.config import Settings
 
 LifecyclePhase = Literal["onCaseStart", "case", "onCaseComplete"]
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("fsq_agent.cli._case_lifecycle")
 _PHASE_LABELS = {
     "onCaseStart": "before case",
     "case": "main case",

@@ -1,8 +1,8 @@
-# Module: playground
+# Module: playground compatibility entry
 
 ## Purpose
 
-Serve the Python runtime boundary for the local, single-user FSQ-Agent Playground after CLI has resolved one explicit registered workspace and configured platform. The module owns the HTTP API, server-side session and task state, execution adaptation, safe platform-scoped YAML and run-artifact access, replay persistence, production static serving, and package integration.
+Preserve existing `fsq_agent.playground` imports, server entry points, and package-data lookup as compatibility entries for the canonical `adapters.control_plane.playground` implementation. Canonical modules own the HTTP API, server-side session/task state, execution adaptation, safe YAML/run-artifact access, replay persistence, and production static serving. Compatibility paths resolve to the same module objects and own no duplicate transport behavior or state.
 
 The authored browser application and browser-local interaction state are owned by `frontend/playground/SPEC.md`. This Python module is an entry-layer convenience surface that reuses existing FSQ-Agent execution, configuration, platform harness/tool provider, event, report, and recording contracts rather than implementing a separate agent loop or platform runner.
 

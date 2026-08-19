@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from fsq_agent.application._contracts import ApplicationError, ApplicationErrorCategory, ApplicationErrorCode, WorkspaceInitializeRequest, WorkspaceInitializeResult
+from fsq_agent.application.contracts import ApplicationError, ApplicationErrorCategory, ApplicationErrorCode, WorkspaceInitializeRequest, WorkspaceInitializeResult
 from fsq_agent.config import add_workspace_platform as persist_workspace_platform
 from fsq_agent.config import create_workspace as persist_workspace
 from fsq_agent.config import initialize_workspace_root

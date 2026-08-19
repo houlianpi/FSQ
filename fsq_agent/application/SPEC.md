@@ -10,7 +10,7 @@ Application may consume public APIs from `models`, `config`, `providers`, `agent
 
 ## Public Interface
 
-The package exports transport-neutral operations and their Request, Result, Event, and Error contracts through `__init__.py`. Operations are organized by resource domain rather than exposed through one generic `execute(command)` facade:
+The package exports transport-neutral operations and their Request, Result, Event, and Error contracts through `__init__.py`. The same symbols are available from their canonical resource modules so callers may depend on the narrow boundary they use. Operations are organized by resource domain rather than exposed through one generic `execute(command)` facade:
 
 - Workspace operations support the shared workspace precondition, platform target resolution, Driver readiness/install coordination, and workspace initialization needed by adapters.
 - Case operations support creating a Case from a Goal and testing an existing Case, including the optional suggestion policy.
@@ -18,7 +18,17 @@ The package exports transport-neutral operations and their Request, Result, Even
 - Provider operations support listing, configuration, and readiness status.
 - Environment operations support listing and diagnostics.
 
-Requests contain application inputs, Results contain operation outcomes and safe artifact references, Events describe transport-neutral progress, and Errors contain stable codes plus safe structured details. These contracts contain no Click, HTTP, SSE, terminal, or frontend types. Exact operation class/function decomposition is an implementation decision as long as the resource boundaries and contracts remain explicit.
+Requests contain application inputs, Results contain operation outcomes and safe artifact references, Events describe transport-neutral progress, and Errors contain stable codes plus safe structured details. These contracts contain no Click, HTTP, SSE, terminal, or frontend types. `application.contracts` is the canonical owner of these types and groups them by shared, Workspace, Case, Run, Provider, and Environment concerns. Resource operation modules import those canonical contract objects rather than defining transport-specific or duplicate equivalents.
+
+Canonical resource modules are:
+
+- `application.workspace`: Workspace operations.
+- `application.cases`: Case creation and testing operations.
+- `application.runs`: persisted Run query and log operations.
+- `application.providers`: Provider operations.
+- `application.environments`: Environment operations.
+
+`application.runs` preserves the currently supported Run query behavior and does not expand Run storage, platform selection, or execution semantics.
 
 ## Ownership Boundaries
 
@@ -48,6 +58,17 @@ Application owns the transport-neutral workspace initialization, platform readin
 - Dependency direction: CLI and Control Plane adapters depend on Application; Application depends on owning module public APIs; owning modules do not depend on Application.
 - Rationale: the package coordinates several existing authorities and presents one consistent application boundary to multiple transports without introducing repositories, a database, a daemon, a queue, or Clean Architecture ceremony.
 
+## Internal Structure
+
+- `__init__.py`: Complete convenience exports for the public Application API.
+- `contracts/`: Canonical transport-neutral Request, Result, Event, Error, summary, and machine-record contracts grouped by resource concern.
+- `workspace.py`: Public Workspace operation boundary and private Workspace orchestration helpers.
+- `cases.py`: Public Case creation/testing operation boundary and private Case orchestration helpers.
+- `runs.py`: Public persisted Run query/log boundary.
+- `providers.py`: Public Provider operation boundary.
+- `environments.py`: Public Environment operation boundary.
+- Private `_*.py` files may support these public modules but are not imported across package boundaries.
+
 ## Error Handling
 
 Application normalizes expected operation failures into stable application Errors and preserves safe structured details. It never exposes secrets, hidden model reasoning, backend objects, transport status codes, or tracebacks. Adapters map Application Errors to exit codes, HTTP statuses, and presentation text.
@@ -60,5 +81,8 @@ Application normalizes expected operation failures into stable application Error
 - All CLI and Control Plane workspace mutations flow through Application; Config remains the persistence and transaction owner.
 - Application is a real Python package and an architectural layer, not a documentation-only label.
 - There is no generic command-string facade.
+- Application contracts have one canonical definition under `application.contracts`; package-root and resource-module exports reference the same objects.
+- Resource modules contain the authoritative implementation for their operation group; compatibility exports do not copy behavior or state.
+- Run resource organization does not add or alter `fsq runs` behavior.
 - Transport concerns remain in adapters.
 - Domain and runtime rules remain in their owning modules.

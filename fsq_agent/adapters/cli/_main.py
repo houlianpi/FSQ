@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from fsq_agent.adapters.control_plane import ControlPlaneServerOptions, run_control_plane
 from fsq_agent.application import (
     ApplicationError,
     ApplicationErrorCategory,
@@ -31,7 +32,6 @@ from fsq_agent.application import (
     show_run,
     test_case,
 )
-from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 
 PLATFORMS = click.Choice(["android", "web", "windows", "macos"])
 OUTPUTS = click.Choice(["human", "json", "jsonl"])
@@ -283,7 +283,6 @@ def case_test(context: click.Context, case_path: Path, platform: str, suggest: b
 @click.option("--port", type=click.IntRange(1, 65535), default=8879)
 @click.option("--open-browser/--no-open-browser", default=True)
 def ui(host: str, port: int, open_browser: bool) -> None:
-    require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
     run_control_plane(ControlPlaneServerOptions(host=host, port=port, open_browser=open_browser))
 
 

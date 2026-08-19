@@ -19,8 +19,8 @@ from fsq_agent.models import PlatformRuntimeCheck
 
 
 def test_require_initialized_workspace_returns_exact_registered_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("fsq_agent.application._workspace.list_workspace_registry", lambda: [type("Entry", (), {"name": "project", "root_path": tmp_path})()])
-    monkeypatch.setattr("fsq_agent.application._workspace.inspect_registered_workspace", lambda _name: type("Status", (), {"status": "available"})())
+    monkeypatch.setattr("fsq_agent.application.workspace.list_workspace_registry", lambda: [type("Entry", (), {"name": "project", "root_path": tmp_path})()])
+    monkeypatch.setattr("fsq_agent.application.workspace.inspect_registered_workspace", lambda _name: type("Status", (), {"status": "available"})())
 
     result = require_initialized_workspace(WorkspaceRequest(current_directory=tmp_path))
 
@@ -28,7 +28,7 @@ def test_require_initialized_workspace_returns_exact_registered_root(tmp_path: P
 
 
 def test_require_initialized_workspace_does_not_search_parent_directories(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("fsq_agent.application._workspace.list_workspace_registry", lambda: [type("Entry", (), {"name": "project", "root_path": tmp_path})()])
+    monkeypatch.setattr("fsq_agent.application.workspace.list_workspace_registry", lambda: [type("Entry", (), {"name": "project", "root_path": tmp_path})()])
     child = tmp_path / "project"
     child.mkdir()
 

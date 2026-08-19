@@ -21,12 +21,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 import yaml
 
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
-from fsq_agent.models import ConfigurationError
-from fsq_agent.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
-from fsq_agent.playground._execution import PlaygroundExecutionHandle, refresh_execution_settings, start_dynamic_goal_execution
-from fsq_agent.playground._state import BusyError, PlaygroundState
-from fsq_agent.playground._yaml_lifecycle import (
+from fsq_agent.adapters.control_plane.playground._android import build_android_setup_schema, capture_android_screenshot, resolve_auto_session
+from fsq_agent.adapters.control_plane.playground._execution import PlaygroundExecutionHandle, refresh_execution_settings, start_dynamic_goal_execution
+from fsq_agent.adapters.control_plane.playground._state import BusyError, PlaygroundState
+from fsq_agent.adapters.control_plane.playground._yaml_lifecycle import (
     YamlLifecycleConflictError,
     YamlLifecycleValidationError,
     YamlLifecycleWriteError,
@@ -34,6 +32,8 @@ from fsq_agent.playground._yaml_lifecycle import (
     save_lifecycle,
     yaml_revision,
 )
+from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
+from fsq_agent.models import ConfigurationError
 from fsq_agent.report import resolve_report_path
 
 if TYPE_CHECKING:
@@ -92,7 +92,7 @@ class PlaygroundServer:
         self._httpd: _PlaygroundHTTPServer | None = None
         self._thread: Thread | None = None
         self._execution_handles: dict[str, PlaygroundExecutionHandle] = {}
-        self._static_root = (self.options.static_path or Path(__file__).parent / "static").resolve()
+        self._static_root = (self.options.static_path or Path(__file__).parents[3] / "playground" / "static").resolve()
 
     @property
     def url(self) -> str:
