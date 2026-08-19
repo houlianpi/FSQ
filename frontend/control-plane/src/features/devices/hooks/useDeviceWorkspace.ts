@@ -22,11 +22,18 @@ const loadingResource = <T,>(previous: T | null = null): RequestResource<T> => (
 interface DeviceWorkspaceContext {
   workspaceName: string | null;
   platforms: readonly PlatformOption[];
+  platformsReady?: boolean;
   onWorkspaceChange: (workspaceName: string) => void;
+  launchIntent?: DevicesLaunchIntent | null;
+  onLaunchIntentConsumed?: (intentId: number) => void;
 }
 
+export type DevicesLaunchIntent =
+  | { id: number; mode: 'explore'; workspaceName: string }
+  | { id: number; mode: 'strict'; workspaceName: string; platform: PlatformId; casePath: string };
+
 export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: ControlPlaneClient = controlPlaneClient) {
-  const { workspaceName, platforms, onWorkspaceChange } = context;
+  const { workspaceName, platforms, platformsReady = true, onWorkspaceChange, launchIntent, onLaunchIntentConsumed } = context;
   const [bootstrap, setBootstrap] = useState<RequestResource<BootstrapResponse>>(emptyResource);
   const [platform, setPlatformState] = useState<PlatformId | ''>('');
   const [targetId, setTargetId] = useState('');
@@ -44,6 +51,8 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const generationRef = useRef(0);
   const previousWorkspaceRef = useRef<string | null>(workspaceName);
   const discoveryControllerRef = useRef<AbortController | null>(null);
+  const pendingCasePathRef = useRef<string | null>(null);
+  const consumedLaunchIntentRef = useRef<number | null>(null);
   const { snapshot, connection, error: streamError } = useRunStream(requestId, client);
 
   const loadDiscovery = useCallback((selectedWorkspace: string, selectedPlatform: PlatformId, clearSelection: boolean) => {
@@ -69,7 +78,11 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     void client.cases(selectedWorkspace, selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setCases({ state: 'ready', data, error: null });
-      setCasePath((current) => data.cases.some((item) => item.path === current && item.selectable) ? current : '');
+      setCasePath((current) => {
+        const candidate = pendingCasePathRef.current ?? current;
+        if (pendingCasePathRef.current !== null) pendingCasePathRef.current = null;
+        return data.cases.some((item) => item.path === candidate && item.selectable) ? candidate : '';
+      });
     }).catch((error) => { if (applies()) setCases({ state: 'error', data: null, error: toApiError(error) }); });
   }, [client]);
 
@@ -90,6 +103,28 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   }, [client, onWorkspaceChange]);
 
   useEffect(() => {
+    if (!launchIntent || bootstrap.state !== 'ready' || consumedLaunchIntentRef.current === launchIntent.id) return;
+    if (launchIntent.mode === 'strict' && launchIntent.workspaceName === workspaceName && !platformsReady) {
+      setMode('strict');
+      return;
+    }
+    consumedLaunchIntentRef.current = launchIntent.id;
+    onLaunchIntentConsumed?.(launchIntent.id);
+    if (bootstrap.data?.activeTask) {
+      pendingCasePathRef.current = null;
+      return;
+    }
+    setMode(launchIntent.mode);
+    if (launchIntent.mode === 'strict' && launchIntent.workspaceName === workspaceName && platforms.some((item) => item.id === launchIntent.platform)) {
+      pendingCasePathRef.current = launchIntent.casePath;
+      setPlatformState(launchIntent.platform);
+      return;
+    }
+    pendingCasePathRef.current = null;
+    setPlatformState('');
+  }, [bootstrap.data?.activeTask, bootstrap.state, launchIntent, onLaunchIntentConsumed, platforms, platformsReady, workspaceName]);
+
+  useEffect(() => {
     const workspaceChanged = previousWorkspaceRef.current !== workspaceName;
     previousWorkspaceRef.current = workspaceName;
     discoveryControllerRef.current?.abort();
@@ -99,19 +134,13 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     setReadiness(emptyResource());
     setTargets(emptyResource());
     setCases(emptyResource());
+    if (workspaceChanged) pendingCasePathRef.current = null;
     const activeTask = bootstrap.data?.activeTask;
     const restoringActiveTask = activeTask?.workspaceName === workspaceName && activeTask.platform === platform;
-    const onlyPlatform = platforms.length === 1 ? platforms[0].id : '';
     const platformAvailable = Boolean(platform && platforms.some((item) => item.id === platform));
-    if (!workspaceName) {
+    if (!workspaceName || (workspaceChanged && !restoringActiveTask) || (platform && !platformAvailable)) {
       setPlatformState('');
       return;
-    }
-    if (!restoringActiveTask && (workspaceChanged || !platformAvailable)) {
-      if (!onlyPlatform || onlyPlatform !== platform) {
-        setPlatformState(onlyPlatform);
-        return;
-      }
     }
     if (!platform) return;
     loadDiscovery(workspaceName, platform, true);
@@ -120,6 +149,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
 
   useEffect(() => {
     if (!snapshot) return;
+    pendingCasePathRef.current = null;
     onWorkspaceChange(snapshot.workspaceName);
     setPlatformState(snapshot.platform);
     setTargetId(snapshot.targetId);
@@ -163,7 +193,10 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const canStart = Boolean(commonReady && sourceReady && !active && bootstrap.state === 'ready' && !bootstrap.data?.busy);
 
   const setPlatform = (next: PlatformId | '') => {
-    if (!controlsLocked && (!next || platforms.some((item) => item.id === next))) setPlatformState(next);
+    if (!controlsLocked && (!next || platforms.some((item) => item.id === next))) {
+      pendingCasePathRef.current = null;
+      setPlatformState(next);
+    }
   };
   const refresh = () => { if (!controlsLocked && workspaceName && platform) loadDiscovery(workspaceName, platform, false); };
   const start = async () => {

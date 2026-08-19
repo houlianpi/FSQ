@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { controlPlaneClient } from '../../api/controlPlaneClient';
 import type { WorkspaceDetail, WorkspacePlatformDetail } from '../../api/types';
-import { WorkspacePage } from './WorkspacePage';
+import { WorkspacePage, WorkspaceTitlebar } from './WorkspacePage';
 
 const summary = (name: string): WorkspaceDetail => ({
   name,
@@ -34,6 +34,30 @@ function deferred<T>() {
 
 afterEach(() => vi.restoreAllMocks());
 
+it('groups the workspace name and full path separately from platform metadata', () => {
+  const onConfigure = vi.fn();
+  render(<WorkspaceTitlebar workspace={{
+    name: 'edge',
+    rootPath: 'D:\\fsq\\edge',
+    status: 'available',
+    message: 'Available.',
+    platforms: [
+      { platform: 'android', configPath: 'android.yaml', status: 'available', message: 'Available.' },
+      { platform: 'web', configPath: 'web.yaml', status: 'unavailable', message: 'Unavailable.', action: 'Repair web config.' },
+    ],
+  }} onConfigure={onConfigure} />);
+
+  const heading = screen.getByRole('heading', { name: 'edge' });
+  const path = screen.getByText('D:\\fsq\\edge');
+  const platforms = screen.getByLabelText('Workspace platforms');
+  expect(heading.parentElement).toContainElement(path);
+  expect(heading.parentElement).not.toContainElement(platforms);
+  expect(heading.parentElement?.parentElement).toContainElement(platforms);
+  expect(screen.getByLabelText('Android available').querySelector('[title="Available"] svg')).toBeVisible();
+  expect(screen.getByLabelText('Web unavailable')).toHaveTextContent('Unavailable');
+  expect(screen.getByRole('button', { name: 'Configure workspace' })).toHaveAttribute('title', 'Configure workspace');
+});
+
 it('discards an aborted platform detail response after the workspace changes', async () => {
   const oldDetail = deferred<WorkspacePlatformDetail>();
   vi.spyOn(controlPlaneClient, 'workspace').mockImplementation((name) => Promise.resolve(summary(name)));
@@ -64,4 +88,17 @@ it('implements selected tab-panel relationships and keyboard navigation', async 
   expect(web).toHaveFocus();
   expect(web).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', web.id);
+});
+it('reports full-bleed presentation only while the loaded browser is visible', async () => {
+  const detail = deferred<WorkspaceDetail>();
+  vi.spyOn(controlPlaneClient, 'workspace').mockReturnValue(detail.promise);
+  const onPresentationChange = vi.fn();
+  const { rerender } = render(<WorkspacePage {...props} configurationOpen={false} selectedName="alpha" onPresentationChange={onPresentationChange} />);
+
+  expect(onPresentationChange).toHaveBeenLastCalledWith('default');
+  await act(async () => detail.resolve(summary('alpha')));
+  await waitFor(() => expect(onPresentationChange).toHaveBeenLastCalledWith('full-bleed'));
+
+  rerender(<WorkspacePage {...props} configurationOpen selectedName="alpha" onPresentationChange={onPresentationChange} />);
+  await waitFor(() => expect(onPresentationChange).toHaveBeenLastCalledWith('default'));
 });

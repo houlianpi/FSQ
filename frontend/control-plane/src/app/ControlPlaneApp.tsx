@@ -4,15 +4,13 @@ import type { ControlPlanePageId, WorkspaceNavigationItem } from './shell/naviga
 import { controlPlaneClient, toApiError } from '../api/controlPlaneClient';
 import type { ApiErrorBody, WorkspaceRegistryEntry } from '../api/types';
 import { ConfigPage } from '../features/config/ConfigPage';
-import { DevicesPage } from '../features/devices/DevicesPage';
+import { DevicesPage, type DevicesLaunchIntent } from '../features/devices/DevicesPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { WorkspacePage, WorkspaceTitlebar } from '../features/workspace/WorkspacePage';
 
-function parentPath(rootPath: string): string {
-  const normalized = rootPath.replace(/[\\/]+$/, '');
-  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-  return index > 0 ? normalized.slice(0, index) : normalized;
-}
+type DevicesLaunchRequest =
+  | Omit<Extract<DevicesLaunchIntent, { mode: 'explore' }>, 'id'>
+  | Omit<Extract<DevicesLaunchIntent, { mode: 'strict' }>, 'id'>;
 
 export function ControlPlaneApp() {
   const [activePage, setActivePage] = useState<'overview' | 'workspace' | 'devices' | 'config'>('overview');
@@ -24,7 +22,10 @@ export function ControlPlaneApp() {
   const [selectedWorkspaceName, setSelectedWorkspaceName] = useState<string | null>(null);
   const [createRequested, setCreateRequested] = useState(false);
   const [workspaceConfigurationOpen, setWorkspaceConfigurationOpen] = useState(false);
+  const [workspaceOutletPresentation, setWorkspaceOutletPresentation] = useState<'default' | 'full-bleed'>('default');
+  const [devicesLaunchIntent, setDevicesLaunchIntent] = useState<DevicesLaunchIntent | null>(null);
   const workspaceRegistryRequest = useRef(0);
+  const devicesLaunchSequence = useRef(0);
   const workspaceCreateInitiator = useRef<{ element: HTMLElement; id: string | null } | null>(null);
   const workspaceCreateFocusRestore = useRef<(() => void) | null>(null);
   const workspaceCreatePreviousSelection = useRef<string | null>(null);
@@ -70,6 +71,8 @@ export function ControlPlaneApp() {
     workspaceCreateInitiator.current = null;
     workspaceCreateFocusRestore.current = null;
     workspaceCreatePreviousSelection.current = null;
+    setWorkspaceOutletPresentation('default');
+    setDevicesLaunchIntent(null);
     if (page === 'workspace') {
       setSelectedWorkspaceName(null);
       setCreateRequested(false);
@@ -87,15 +90,26 @@ export function ControlPlaneApp() {
     workspaceCreateFocusRestore.current = restoreFocus ?? null;
     workspaceCreatePreviousSelection.current = selectedWorkspaceName;
     setWorkspaceDirty(false);
+    setWorkspaceOutletPresentation('default');
     setSelectedWorkspaceName(null);
     setCreateRequested(true);
     setWorkspaceConfigurationOpen(false);
     setActivePage('workspace');
   };
 
+  const launchDevices = (intent: DevicesLaunchRequest) => {
+    if (!canDiscardDraft('devices')) return;
+    setConfigDirty(false);
+    setWorkspaceDirty(false);
+    setWorkspaceOutletPresentation('default');
+    setDevicesLaunchIntent({ ...intent, id: ++devicesLaunchSequence.current } as DevicesLaunchIntent);
+    setActivePage('devices');
+  };
+
   const cancelWorkspaceCreation = () => {
     setCreateRequested(false);
     setWorkspaceDirty(false);
+    setWorkspaceOutletPresentation('default');
     setSelectedWorkspaceName(workspaceCreatePreviousSelection.current);
     void refreshWorkspaces();
     requestAnimationFrame(() => {
@@ -120,6 +134,7 @@ export function ControlPlaneApp() {
     workspaceCreateInitiator.current = null;
     workspaceCreateFocusRestore.current = null;
     workspaceCreatePreviousSelection.current = null;
+    setWorkspaceOutletPresentation('default');
     setCreateRequested(false);
     setSelectedWorkspaceName(name);
     setWorkspaceConfigurationOpen(false);
@@ -129,9 +144,8 @@ export function ControlPlaneApp() {
   const workspaceNavigation: WorkspaceNavigationItem[] = workspaces.map((workspace) => ({
     id: workspace.name,
     label: workspace.name,
-    description: workspace.status !== 'unavailable'
-      ? `${workspace.platforms.filter((item) => item.status === 'available').map((item) => item.platform).join(', ') || 'No available platforms'} · ${parentPath(workspace.rootPath)}`
-      : `${parentPath(workspace.rootPath)} · unavailable`,
+    description: workspace.platforms.map((item) => `${item.platform}${item.status === 'available' ? '' : ` ${item.status}`}`).join(', ')
+      || (workspace.status === 'unavailable' ? 'unavailable' : 'No configured platforms'),
     available: workspace.status !== 'unavailable',
     message: workspace.status === 'unavailable' ? `${workspace.message} ${workspace.action}` : undefined,
   }));
@@ -151,7 +165,8 @@ export function ControlPlaneApp() {
 
   if (activePage === 'workspace') return <ControlPlaneShell
     activePage="workspace" title="Workspace" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
-    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => setWorkspaceConfigurationOpen(true)} /> : undefined}
+    outletPresentation={workspaceOutletPresentation}
+    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => { setWorkspaceOutletPresentation('default'); setWorkspaceConfigurationOpen(true); }} /> : undefined}
     onNavigate={navigate} {...shellWorkspaceProps}
   ><WorkspacePage
       selectedName={selectedWorkspaceName}
@@ -162,8 +177,11 @@ export function ControlPlaneApp() {
       onRequestCreate={requestCreateWorkspace}
       onCancelCreate={cancelWorkspaceCreation}
       onConfigurationOpenChange={setWorkspaceConfigurationOpen}
-      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); refreshWorkspaces(); }}
-      onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); refreshWorkspaces(); }}
+      onPresentationChange={setWorkspaceOutletPresentation}
+      onRecordCase={() => selectedWorkspaceName && launchDevices({ mode: 'explore', workspaceName: selectedWorkspaceName })}
+      onReplayCase={(platform, casePath) => selectedWorkspaceName && launchDevices({ mode: 'strict', workspaceName: selectedWorkspaceName, platform, casePath })}
+      onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
+      onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onDirtyChange={setWorkspaceDirty}
     /></ControlPlaneShell>;
 
@@ -172,7 +190,10 @@ export function ControlPlaneApp() {
     onNavigate={navigate} {...shellWorkspaceProps}
   ><ConfigPage onDirtyChange={setConfigDirty} /></ControlPlaneShell>;
 
-  return <DevicesPage workspaces={workspaces} selectedWorkspaceName={selectedWorkspaceName} onWorkspaceChange={setSelectedWorkspaceName} renderShell={(toolbar, content) => <ControlPlaneShell
+  return <DevicesPage workspaces={workspaces} workspaceRegistryReady={!workspaceRegistryLoading && workspaceRegistryError === null} selectedWorkspaceName={selectedWorkspaceName} onWorkspaceChange={setSelectedWorkspaceName}
+    launchIntent={devicesLaunchIntent}
+    onLaunchIntentConsumed={(intentId) => setDevicesLaunchIntent((current) => current?.id === intentId ? null : current)}
+    renderShell={(toolbar, content) => <ControlPlaneShell
     activePage="devices" title="Device workspace"
     description="Select a target, choose how FSQ should test it, and follow real evidence while the run progresses."
     titleActions={toolbar} onNavigate={navigate} {...shellWorkspaceProps}
