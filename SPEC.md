@@ -127,6 +127,8 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | core.runner | fsq_agent/core/runner/SPEC.md | Owns metadata-driven single-step and ordered deterministic capability execution. |
 | core.evidence | fsq_agent/core/evidence/SPEC.md | Owns Run-contained artifacts and normalized execution evidence persistence. |
 | core.interfaces | fsq_agent/core/interfaces/SPEC.md | Owns public platform-neutral protocols and stable driver/harness factory boundaries. |
+| drivers | fsq_agent/drivers/SPEC.md | Owns concrete Android, Web, Windows, and macOS automation backends behind Core interfaces. |
+| harnesses | fsq_agent/harnesses/SPEC.md | Owns concrete runtime gateways that combine CommonTools, injected drivers, runtime context, and evidence services. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
 | execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
 | application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
@@ -195,6 +197,9 @@ flowchart TD
     CoreRunner --> Models
     CoreEvidence --> Models
     CoreInterfaces --> Models
+    Harnesses[harnesses] --> CoreInterfaces
+    Harnesses --> Drivers[drivers/*]
+    Drivers --> CoreInterfaces
     Capabilities[capabilities] --> Models
     Core --> Capabilities
     Frontend[frontend] --> FrontendPlayground[frontend/playground]

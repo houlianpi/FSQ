@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide the Core package navigation and compatibility surface for platform-neutral Runner, Evidence, and Interfaces ownership plus current capability registry, runtime-secret, platform-runtime, CommonTool, and composition services. `core.runner`, `core.evidence`, and `core.interfaces` are the canonical owners of their respective public contracts. Concrete harnesses and drivers remain private implementation details until their dedicated platform migration.
+Provide the Core package navigation and compatibility surface for platform-neutral Runner, Evidence, and Interfaces ownership plus current capability registry, runtime-secret, platform-runtime, and CommonTool services. `core.runner`, `core.evidence`, and `core.interfaces` are the canonical owners of their respective public contracts. Concrete runtime gateways belong to `harnesses`; concrete automation backends belong to `drivers`.
 
 The module does not parse CLI arguments, parse FSQ YAML, construct provider sessions, construct OpenAI Agents SDK tools, own dynamic-only AgentTools, or generate reports. Entry modules build settings, providers, artifact stores, and registries, then request `HarnessInterface` and driver protocol implementations through public core factory classes instead of importing concrete platform harness or backend driver classes.
 
@@ -11,6 +11,8 @@ The module does not parse CLI arguments, parse FSQ YAML, construct provider sess
 - `core.runner`: canonical step and sequence execution services.
 - `core.evidence`: canonical artifact and evidence services.
 - `core.interfaces`: canonical public protocols and stable construction boundaries.
+- `harnesses`: private concrete runtime gateways reached through the public Harness factory.
+- `drivers`: private concrete automation backends reached through public Driver interfaces and factories.
 
 - Internal project dependencies: `models` and `capabilities` only.
 - External dependencies: standard library typing/time/path modules and optional platform backend imports only inside concrete backend modules with lazy import behavior.
@@ -153,30 +155,22 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `__init__.py`: Public exports only.
 - `_capabilities.py`: Capability registry, alias resolution, duplicate validation, and snapshot creation.
 - `_default_capabilities.py`: `CapabilityDefinitionFactory` plus internal platform/backend PlatformTool capability definition helpers used by entry-layer registry bootstrap without constructing a real backend connection.
-- `harness/_factory.py`: `DriverFactory`, `HarnessFactory`, private factory typing protocols, and private platform/backend dispatch tables for current built-in harnesses and drivers.
+- `interfaces/_factories.py`: public `DriverFactory` and `HarnessFactory` forwarding boundaries; concrete driver selection belongs to `drivers`, and concrete harness composition belongs to `harnesses`.
 - `runner/__init__.py`: Runner subpackage exports only.
 - `runner/_runner.py`: `StepRunner` implementation for single-step capability execution.
 - `runner/_sequence.py`: `StepSequenceRunner` implementation for ordered execution and evidence recording.
 - `_platform_tools.py`: CommonPlatformTools and platform-default `wait_ms` implementation.
 - `_platform_runtime.py`: Public `PlatformRuntimeService` implementation for host support, prerequisite checks, bounded installation, and exact-channel browser discovery; shared result models come from `models`.
 - `_runtime_secrets.py`: RuntimeSecretStore implementation for workspace-owned runtime text-secret names/private values and in-memory resolution used by `StepRunner`.
-- `harness/_ai_assertion_tool.py`: Shared backend support for decorated platform `assert_with_ai` driver tools, including evaluator invocation, screenshot artifact capture, and backend-shaped result conversion.
-- `harness/__init__.py`: Harness subpackage exports only. It exports harness and driver protocols plus public factory classes, not concrete platform harnesses or backend drivers.
-- `harness/_interface.py`: `HarnessInterface` and `AIAssertionEvaluatorProtocol` protocols.
-- `harness/_android.py`: Built-in `AndroidHarness` implementation and Android runtime-service delegation.
+- `harness/_ai_assertion_tool.py`: Compatibility forwarder to driver-owned shared AI assertion support.
+- `harness/__init__.py`: Compatibility surface only. It exports canonical Core Interfaces and public factory classes, not concrete platform harnesses or backend drivers.
+- `harness/_interface.py`: Compatibility forwarder to `core.interfaces` protocols.
+- `harness/_android.py`: Compatibility forwarder to the canonical Android harness implementation.
 - `harness/_android_devices.py`: `AndroidDeviceDiscovery` service implementation plus private fixed-command parsing helpers.
-- `harness/_android_driver.py`: `AndroidDriverInterface` protocol and driver-owned contracts.
-- `harness/_web.py`: Built-in `WebHarness` implementation and Web runtime-service delegation.
-- `harness/_web_driver.py`: `WebDriverInterface` protocol and driver-owned contracts.
-- `harness/_windows.py`: Built-in `WindowsHarness` implementation and Windows runtime-service delegation.
-- `harness/_windows_driver.py`: `WindowsDriverInterface` protocol and driver-owned contracts.
-- `harness/_macos.py`: Built-in `MacOSHarness` implementation and macOS runtime-service delegation.
-- `harness/_macos_driver.py`: `MacOSDriverInterface` protocol and driver-owned contracts.
-- `harness/_driver_tools.py`: Internal platform declaration helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
-- `harness/_uiautomator2_driver.py`: Optional uiautomator2 backend implementation with lazy dependency import and fake-device injection for tests.
-- `harness/_playwright_driver.py`: Optional Playwright backend implementation with lazy dependency import, browser/page lifecycle management, and fake-page injection for tests.
-- `harness/_pywinauto_driver.py`: Optional pywinauto backend implementation with lazy dependency import, application/window lifecycle management, and fake-window injection for tests.
-- `harness/_appium_mac2_driver.py`: Optional Appium Mac2 backend implementation with lazy dependency import, Mac2 session lifecycle management, page-source simplification, macOS command execution, and fake-client injection for tests.
+- `harness/_android_driver.py`, `_web_driver.py`, `_windows_driver.py`, `_macos_driver.py`: Compatibility forwarders to `core.interfaces` driver protocols.
+- `harness/_web.py`, `_windows.py`, `_macos.py`: Compatibility forwarders to canonical platform harness implementations.
+- `harness/_driver_tools.py`: Compatibility forwarder to driver-owned capability declaration and discovery support.
+- `harness/_uiautomator2_driver.py`, `_playwright_driver.py`, `_pywinauto_driver.py`, `_appium_mac2_driver.py`: Compatibility forwarders to canonical platform driver implementations.
 - `evidence/__init__.py`: Evidence subpackage exports only.
 - `evidence/_recorder.py`: `EvidenceRecorder` implementation.
 - `evidence/_artifact_store.py`: `ArtifactStore` implementation for run-local artifact paths and file writing.
@@ -220,7 +214,7 @@ Sensitive capabilities must return values in the standard normalized shape `outp
 - `CommonPlatformTools` remains a public CommonTool provider because entry-layer registry bootstrap and tests need direct access to inherited CommonTool capability definitions and invocation behavior. This is not a concrete platform implementation-selection class.
 - `CapabilityDefinitionFactory` is the public class-based boundary for PlatformTool capability definition discovery. Function-style capability definition helpers, concrete backend classes, and driver declaration helpers may remain internal implementation details, but they are not exported public API.
 - `DriverFactory` is the public class-based boundary for selecting private concrete backend drivers behind public platform driver protocols. It dispatches on current config-owned platform backend settings and creates only the selected backend implementation; it is not named `Default` because config, not the factory name, identifies the selected implementation.
-- `HarnessFactory` is the public class-based boundary for constructing runtime harnesses. It returns `HarnessInterface`, delegates driver selection to `DriverFactory`, and keeps concrete platform harness classes private to `core`; it is not named `Default` because each platform currently has exactly one harness implementation and the factory is only a composition convenience.
+- `HarnessFactory` is the public class-based boundary for constructing runtime harnesses. It returns `HarnessInterface`, delegates driver selection to `DriverFactory`, and keeps concrete platform harness classes private to `harnesses`; it is not named `Default` because each platform currently has exactly one harness implementation and the factory is only a composition convenience.
 - `StepRunner` owns execution control, metadata-driven routing, evidence policy application, result normalization, sensitivity handling, and structured event emission.
 - `StepRunner` owns post-action stabilization delay. It applies `time.sleep` only through a runner-local private helper after invoke and before finalize when the effective delay is positive. Entry layers pass loaded delay settings into `StepRunner`; `core` must not import `config`.
 - Post-action delay is metadata/config-driven timing only. Capability metadata can override the configured executor-kind default, including explicit zero to disable delay. The delay must not become a `waitMs` command, replay entry, evidence step, or action result.

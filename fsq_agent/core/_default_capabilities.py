@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fsq_agent.core.harness._driver_tools import _discover_driver_capability_definitions
-from fsq_agent.core.harness._factory import _driver_class_for_backend
+from fsq_agent.drivers._capabilities import _discover_driver_capability_definitions
+from fsq_agent.drivers._factory import _driver_class_for_backend
 from fsq_agent.models import CapabilityDefinition, HarnessPlatform
 
 
