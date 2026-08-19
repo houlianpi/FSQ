@@ -8,12 +8,6 @@ import { DevicesPage } from '../features/devices/DevicesPage';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { WorkspacePage, WorkspaceTitlebar } from '../features/workspace/WorkspacePage';
 
-function parentPath(rootPath: string): string {
-  const normalized = rootPath.replace(/[\\/]+$/, '');
-  const index = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-  return index > 0 ? normalized.slice(0, index) : normalized;
-}
-
 export function ControlPlaneApp() {
   const [activePage, setActivePage] = useState<'overview' | 'workspace' | 'devices' | 'config'>('overview');
   const [configDirty, setConfigDirty] = useState(false);
@@ -134,9 +128,8 @@ export function ControlPlaneApp() {
   const workspaceNavigation: WorkspaceNavigationItem[] = workspaces.map((workspace) => ({
     id: workspace.name,
     label: workspace.name,
-    description: workspace.status !== 'unavailable'
-      ? `${workspace.platforms.filter((item) => item.status === 'available').map((item) => item.platform).join(', ') || 'No available platforms'} · ${parentPath(workspace.rootPath)}`
-      : `${parentPath(workspace.rootPath)} · unavailable`,
+    description: workspace.platforms.map((item) => `${item.platform}${item.status === 'available' ? '' : ` ${item.status}`}`).join(', ')
+      || (workspace.status === 'unavailable' ? 'unavailable' : 'No configured platforms'),
     available: workspace.status !== 'unavailable',
     message: workspace.status === 'unavailable' ? `${workspace.message} ${workspace.action}` : undefined,
   }));
