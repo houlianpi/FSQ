@@ -2,11 +2,15 @@
 
 ## Purpose
 
-Define the shared execution-core orchestration layer for FSQ-Agent. The core module owns `StepRunner` as the single execution manager for canonical CommonTool and PlatformTool invocations, runner-owned post-action delay resolution/application, `StepSequenceRunner` ordering, bounded Android device discovery, harness and driver protocols, factory boundaries for default capability definitions, driver selection, harness construction, platform CommonTool providers, backend driver capability exposure, and evidence-recording coordination points used by strict replay and dynamic execution.
+Provide the Core package navigation and compatibility surface for platform-neutral Runner, Evidence, and Interfaces ownership plus current capability registry, runtime-secret, platform-runtime, CommonTool, and composition services. `core.runner`, `core.evidence`, and `core.interfaces` are the canonical owners of their respective public contracts. Concrete harnesses and drivers remain private implementation details until their dedicated platform migration.
 
 The module does not parse CLI arguments, parse FSQ YAML, construct provider sessions, construct OpenAI Agents SDK tools, own dynamic-only AgentTools, or generate reports. Entry modules build settings, providers, artifact stores, and registries, then request `HarnessInterface` and driver protocol implementations through public core factory classes instead of importing concrete platform harness or backend driver classes.
 
 ## Dependencies
+
+- `core.runner`: canonical step and sequence execution services.
+- `core.evidence`: canonical artifact and evidence services.
+- `core.interfaces`: canonical public protocols and stable construction boundaries.
 
 - Internal project dependencies: `models` and `capabilities` only.
 - External dependencies: standard library typing/time/path modules and optional platform backend imports only inside concrete backend modules with lazy import behavior.

@@ -74,7 +74,7 @@ class _HarnessFactoryProtocol(Protocol):
     ) -> HarnessInterface: ...
 
 
-class DriverFactory:
+class _DriverFactoryImplementation:
     def create_android_driver(
         self,
         settings: AndroidHarnessSettings,
@@ -119,9 +119,9 @@ class DriverFactory:
         )
 
 
-class HarnessFactory:
+class _HarnessFactoryImplementation:
     def __init__(self, driver_factory: _DriverFactoryProtocol | None = None) -> None:
-        self.driver_factory = driver_factory or DriverFactory()
+        self.driver_factory = driver_factory or _DriverFactoryImplementation()
 
     def create_harness(
         self,

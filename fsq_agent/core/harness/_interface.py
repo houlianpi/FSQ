@@ -1,57 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from typing import Protocol, runtime_checkable
+import sys
 
-from fsq_agent.models import (
-    AIAssertionRequest,
-    AIAssertionResult,
-    ExecutableStep,
-    FailureCategory,
-    HarnessActionResult,
-    HarnessArtifactRef,
-    HarnessContext,
-    HarnessFunctionSchema,
-    StepPhase,
-)
+from fsq_agent.core.interfaces import _harness as _canonical
 
-
-@runtime_checkable
-class AIAssertionEvaluatorProtocol(Protocol):
-    def evaluate(self, request: AIAssertionRequest) -> AIAssertionResult: ...
-
-
-@runtime_checkable
-class DriverObservationInterface(Protocol):
-    def screenshot(self, params: object | None = None) -> bytes: ...
-
-    def ui_snapshot(self, params: object | None = None) -> dict[str, object]: ...
-
-
-@runtime_checkable
-class HarnessInterface(Protocol):
-    def get_context(self) -> HarnessContext: ...
-
-    def action_space(self) -> list[HarnessFunctionSchema]: ...
-
-    def before_action(self, step: ExecutableStep, context: HarnessContext) -> None: ...
-
-    def invoke_action(self, step: ExecutableStep, context: HarnessContext) -> HarnessActionResult: ...
-
-    def after_action(
-        self,
-        step: ExecutableStep,
-        context: HarnessContext,
-        action_result: HarnessActionResult,
-    ) -> None: ...
-
-    def capture_artifact(
-        self,
-        kind: str,
-        reason: str,
-        context: HarnessContext,
-        step_id: str,
-        phase: StepPhase,
-    ) -> HarnessArtifactRef: ...
-
-    def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory: ...
+sys.modules[__name__] = _canonical

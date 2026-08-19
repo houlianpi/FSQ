@@ -7,15 +7,19 @@ from fsq_agent.core._platform_runtime import PlatformRuntimeService
 from fsq_agent.core._platform_tools import CommonPlatformTools
 from fsq_agent.core._runtime_secrets import RuntimeSecretStore
 from fsq_agent.core.evidence import ArtifactStore, EvidenceRecorder
-from fsq_agent.core.harness import (
+from fsq_agent.core.harness import AndroidDeviceDiscovery
+from fsq_agent.core.interfaces import (
     AIAssertionEvaluatorProtocol,
-    AndroidDeviceDiscovery,
     AndroidDriverInterface,
+    CancellationCheck,
+    CapabilityRegistryInterface,
     DriverFactory,
     DriverObservationInterface,
+    EvidenceSink,
     HarnessFactory,
     HarnessInterface,
     MacOSDriverInterface,
+    RuntimeSecretResolver,
     WebDriverInterface,
     WindowsDriverInterface,
 )
@@ -26,16 +30,20 @@ __all__ = [
     "AndroidDeviceDiscovery",
     "AndroidDriverInterface",
     "ArtifactStore",
+    "CancellationCheck",
     "CapabilityDefinitionFactory",
     "CapabilityRegistry",
+    "CapabilityRegistryInterface",
     "CommonPlatformTools",
     "DriverFactory",
     "DriverObservationInterface",
     "EvidenceRecorder",
+    "EvidenceSink",
     "HarnessFactory",
     "HarnessInterface",
     "MacOSDriverInterface",
     "PlatformRuntimeService",
+    "RuntimeSecretResolver",
     "RuntimeSecretStore",
     "StepRunner",
     "StepSequenceRunner",

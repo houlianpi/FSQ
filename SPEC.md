@@ -123,7 +123,10 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | fsq | fsq_agent/fsq/SPEC.md | Loads FSQ AI Test DSL YAML cases, validates case lifecycle hook metadata, resolves authored action aliases through the capability registry, validates replay references, and converts parsed command documents into canonical deterministic executable steps. |
 | skills | fsq_agent/skills/SPEC.md | Loads complete configured automation skill instruction bundles and skips or fails broken bundles according to requiredness. |
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
-| core | fsq_agent/core/SPEC.md | Defines execution orchestration, platform-runtime prerequisite checks/install and browser discovery, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factories, private backends, and evidence coordination. |
+| core | fsq_agent/core/SPEC.md | Navigates platform-neutral Core ownership across Runner, Evidence, Interfaces, current capability/runtime services, and compatibility composition. |
+| core.runner | fsq_agent/core/runner/SPEC.md | Owns metadata-driven single-step and ordered deterministic capability execution. |
+| core.evidence | fsq_agent/core/evidence/SPEC.md | Owns Run-contained artifacts and normalized execution evidence persistence. |
+| core.interfaces | fsq_agent/core/interfaces/SPEC.md | Owns public platform-neutral protocols and stable driver/harness factory boundaries. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
 | execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
 | application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
@@ -172,7 +175,8 @@ flowchart TD
     Agent --> Skills[skills]
     Agent --> Report[report]
     Execution --> Agent
-    Execution --> Core
+    Execution --> CoreRunner[core/runner]
+    Execution --> CoreEvidence[core/evidence]
     Execution --> FSQ
     Execution --> Config
     Execution --> Models
@@ -186,7 +190,11 @@ flowchart TD
     FSQ --> Models
     Skills --> Models
     Report --> Models
-    Core --> Models
+    CoreRunner --> CoreInterfaces[core/interfaces]
+    CoreEvidence --> CoreInterfaces
+    CoreRunner --> Models
+    CoreEvidence --> Models
+    CoreInterfaces --> Models
     Capabilities[capabilities] --> Models
     Core --> Capabilities
     Frontend[frontend] --> FrontendPlayground[frontend/playground]
