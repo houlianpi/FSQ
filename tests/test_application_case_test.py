@@ -18,9 +18,7 @@ def test_case_test_request_supports_all_public_platforms(platform: str, tmp_path
 
 
 def test_case_test_rejects_missing_case_with_stable_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = tmp_path / ".fsq-agent-workspace"
-    workspace.mkdir()
-    (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
+    monkeypatch.setattr(case_test_module, "require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
     settings = SimpleNamespace(cases=SimpleNamespace(dir=tmp_path / "cases"))
     monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
 

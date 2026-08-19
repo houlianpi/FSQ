@@ -45,10 +45,26 @@ fsq case test --platform web tests/search.fsq.yaml
 fsq case test --platform web tests/search.fsq.yaml --suggest
 ```
 
+Workspace initialization uses the current directory as the workspace root and derives its default workspace name from that directory's final path component:
+
+```bash
+fsq init --platform web --browser-channel chrome
+fsq init --platform web --browser-channel msedge-canary --browser-executable-path /path/to/edge-canary --install-driver
+fsq init --platform android --app-id com.example.app
+fsq init --platform windows --app-path /path/to/application
+fsq init --platform macos --bundle-id com.example.app
+```
+
+`init` accepts the same complete platform target shapes as Control Plane: Android requires `--app-id`; Web requires `--browser-channel` while `--browser-executable-path` is optional; Windows requires `--app-path` and accepts `--window-title-re` and `--launch-args`; macOS requires at least one of `--bundle-id` and `--app-path`. Target options for another platform are rejected. When the Web path is omitted, Application discovers an executable compatible with the exact selected channel on the current host. One unambiguous compatible candidate is selected; no candidate or multiple distinct candidates fail before workspace mutation with safe guidance to install the channel or pass an explicit path. An explicit path is normalized and validated against the channel through the same shared operation.
+
+`init` always checks selected-platform Driver readiness before workspace mutation. `--install-driver` authorizes Application to invoke the platform-owned supported installer only when readiness is missing, and then requires a successful bounded recheck. Without the flag, readiness failure is read-only and returns the exact safe install action. Unsupported automatic installation fails with an explicit manual action; it never reports success or falls through to workspace writes. Driver installation is limited to FSQ-owned platform runtime prerequisites and must not install or modify the application under test, create emulators/VMs, connect to a device, start Appium, authenticate, or install system package managers.
+
+`--name` may override the derived name but does not change the root. `--env NAME=VALUE` may be repeated and supplies the complete private environment mapping. `--update-existing` permits replacement of a differing existing platform target/environment; without it, equal configuration is unchanged and differing configuration is a conflict. `--provider` is not part of workspace initialization; Provider configuration remains under `providers configure` or Control Plane Config. Public option spelling uses hyphens, including `--install-driver`; underscore aliases are not accepted.
+
 - `case create` accepts a natural-language Goal, performs AI-participating testing, and may produce a Run-local candidate `*.fsq.yaml` Case.
 - `case test` executes an existing FSQ Case as authored. The source Case is immutable.
 - `case test --suggest` permits AI analysis and Run-local suggestions or a candidate Case while preserving original execution facts and never overwriting the source Case.
-- `runs` addresses persisted execution records: `list` discovers Runs, `show` returns one Run's status/results/artifacts, and `logs` returns its event/log stream.
+- `runs` is not a complete supported multi-platform contract in this specification. Its platform-selection, aggregation, and complete query behavior require a separate confirmed specification before being treated as complete.
 - `providers` exposes safe provider inventory, configuration, and readiness.
 - `environments` exposes Environment inventory and diagnostics. Mutation is not public in this phase.
 - `doctor` performs workspace-level diagnostics; `ui` starts the Control Plane adapter.
@@ -57,7 +73,9 @@ The first phase does not expose extension management, public capability/action d
 
 ## Workspace Rule
 
-Except for `init`, every command requires `.fsq-agent-workspace` in the current working directory. Commands do not search parent directories, auto-initialize, or accept an alternate workspace flag. Failure uses Application error code `workspace.not_initialized` and tells a human to run `fsq init` or change to an initialized Workspace. Detailed `init` redesign is outside this change; existing supported initialization behavior remains until separately specified.
+The exact current directory is the CLI workspace root. A valid CLI workspace is registered in the user workspace registry at that exact normalized root and contains at least one valid `.fsq/config/config.<platform>.yaml`; `.fsq-agent-workspace` markers are neither created nor accepted. Commands do not search parent directories, auto-initialize, or accept an alternate workspace flag. Commands requiring only workspace context validate the exact registered root; platform-specific commands additionally require the selected platform config. Failure uses Application error code `workspace.not_initialized` and tells a human to run `fsq init` in the intended root or change to an initialized Workspace. Control Plane continues to list all registered workspaces and does not derive selection or execution paths from the CLI process startup directory.
+
+`fsq init` is the only CLI command that may establish this precondition. It validates all input, resolves the complete target, and completes Driver readiness before workspace mutation; it then initializes or updates exactly one platform at the current root through the shared Application and Config workspace operation, and reports success only after workspace files and registry truth are committed. It safely adopts an existing non-empty project directory only when `.fsq` and legacy workspace markers are absent; it preserves unrelated project files. It creates `.fsq/config/config.<platform>.yaml`, `.fsq/runs/<platform>/`, `cases/<platform>/`, `knowledge/<platform>/project.md`, and the user registry entry. Repetition is idempotent. A partially initialized, unregistered, mismatched, invalid, or Driver-unready workspace fails with safe repair guidance rather than being treated as ready.
 
 ## Global Machine Contract
 
@@ -81,11 +99,11 @@ The executable and command hierarchy change explicitly to `fsq`. Legacy `fsq-age
 
 ## Error Handling
 
-CLI maps stable Application Errors to the documented exit categories and presentation protocol. Malformed command syntax and unsupported legacy options fail before invoking Application. Interrupted operations exit `130`. Machine-mode errors remain valid JSON or JSONL and never include tracebacks, secrets, or hidden reasoning.
+CLI maps stable Application Errors to the documented exit categories and presentation protocol. Malformed command syntax and unsupported legacy options fail before invoking Application. Interrupted operations exit `130`. Unexpected exceptions are normalized as internal errors with only the exception type retained as safe diagnostic detail. Human internal-error output includes that safe exception type; machine-mode errors include it in the structured error details. Neither form includes the exception message, traceback, arguments, secrets, hidden reasoning, or unrestricted backend values. Machine-mode errors remain valid JSON or JSONL.
 
 ## Verification Scope
 
-Verification covers command/option parsing, workspace precondition presentation, Application request mapping, human/JSON/JSONL rendering, non-interactive behavior, exit-code mapping, legacy rejection/migration guidance, and absence of direct domain/runtime orchestration.
+Verification covers command/option parsing, platform-target exclusivity, required Web channel and optional executable path, unambiguous shared Web discovery and explicit-path validation, read-only Driver readiness, authorized install/recheck and unsupported-install failure, no workspace mutation before readiness, current-directory name derivation/override, existing-project adoption, idempotent initialization/update/conflict behavior, registry and directory creation, workspace precondition presentation, Application request mapping, human/JSON/JSONL rendering, non-interactive behavior, exit-code mapping, safe unexpected-exception diagnostics, `ui` startup through the current public Control Plane server options without startup-directory workspace selection, legacy rejection/migration guidance, and absence of direct domain/runtime orchestration.
 
 ## Current Invariants
 

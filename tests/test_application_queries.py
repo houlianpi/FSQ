@@ -34,8 +34,11 @@ def test_run_queries_reject_escape_and_missing_runs(tmp_path: Path, run_id: str)
         show_run(runs, run_id)
 
 
-def test_configure_provider_preserves_unrelated_env_lines(tmp_path: Path) -> None:
-    _workspace(tmp_path)
+def test_configure_provider_preserves_unrelated_env_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.application._provider.require_initialized_workspace",
+        lambda _request: type("Workspace", (), {"workspace": tmp_path})(),
+    )
     env = tmp_path / ".env"
     env.write_text("OTHER=value\nFSQ_LLM_PROVIDER=github_copilot\n", encoding="utf-8")
 

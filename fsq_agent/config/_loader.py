@@ -11,7 +11,11 @@ from pydantic import ValidationError
 from fsq_agent.config._paths import resolve_runtime_paths, resolve_workspace_runtime_paths
 from fsq_agent.config._settings import Settings
 from fsq_agent.config._user_provider import refresh_provider_settings
-from fsq_agent.config._workspace import WEB_CHANNEL_EXECUTABLE_NAMES, _is_macos_app_bundle_or_executable, load_workspace_config
+from fsq_agent.config._workspace import (
+    WEB_CHANNEL_EXECUTABLE_NAMES,
+    _is_macos_app_bundle_or_executable,
+    load_workspace_config,
+)
 from fsq_agent.models import (
     AndroidWorkspaceTarget,
     ConfigurationError,
@@ -19,6 +23,7 @@ from fsq_agent.models import (
     WebWorkspaceTarget,
     WindowsWorkspaceTarget,
     WorkspaceSettings,
+    web_executable_matches_channel,
 )
 
 DEFAULT_CONFIG_PATHS = (Path("config.yaml"), Path("config.yml"))
@@ -348,7 +353,7 @@ def _validate_web_browser_executable_path(settings: Settings) -> None:
             context={"config_key": "target.browser_executable_path", "path": str(browser_path)},
         )
     expected_names = WEB_CHANNEL_EXECUTABLE_NAMES[settings.harness.web.channel]
-    if browser_path.name.casefold() not in expected_names:
+    if not web_executable_matches_channel(settings.harness.web.channel, browser_path):
         raise ConfigurationError(
             "Configured Web browser executable path does not match harness.web.channel.",
             context={

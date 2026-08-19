@@ -33,10 +33,9 @@ def _task_result(tmp_path: Path) -> TaskResult:
 
 
 @pytest.mark.asyncio
-async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Path) -> None:
-    workspace = tmp_path / ".fsq-agent-workspace"
-    workspace.mkdir()
-    (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
+async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path
+    monkeypatch.setattr("fsq_agent.application._case.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": workspace})())
     settings = object()
     loaded: list[tuple[str, Path]] = []
     agent = _FakeAgent(_task_result(tmp_path))
@@ -60,10 +59,8 @@ async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_create_case_forwards_transport_neutral_event_sink(tmp_path: Path) -> None:
-    workspace = tmp_path / ".fsq-agent-workspace"
-    workspace.mkdir()
-    (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
+async def test_create_case_forwards_transport_neutral_event_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fsq_agent.application._case.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
     agent = _FakeAgent(_task_result(tmp_path))
     events: list[object] = []
     sink = events.append

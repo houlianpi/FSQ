@@ -14,6 +14,7 @@ from fsq_agent.application import (
     ApplicationErrorCode,
     CaseCreateRequest,
     CaseTestRequest,
+    WorkspaceInitializeRequest,
     WorkspaceRequest,
     configure_provider,
     create_case,
@@ -30,7 +31,6 @@ from fsq_agent.application import (
     show_run,
     test_case,
 )
-from fsq_agent.cli._llm_setup import setup_llm_provider
 from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 
 PLATFORMS = click.Choice(["android", "web", "windows", "macos"])
@@ -139,6 +139,7 @@ def _top_level_error(error: ApplicationError, output: str, operation: str, stand
         click.echo(f"Error: {error.message}", err=True)
         if error.action:
             click.echo(f"Action: {error.action}", err=True)
+        _emit_safe_internal_diagnostic(error)
     else:
         click.echo(json.dumps(error.to_record(operation=operation), ensure_ascii=False, default=str))
     exit_code = _error_exit_code(error)
@@ -158,23 +159,71 @@ def main(context: click.Context, output_format: str, non_interactive: bool) -> N
 
 @main.command()
 @click.option("--platform", type=PLATFORMS, required=True)
-@click.option("--provider", type=click.Choice(["github_copilot", "azure_openai"]), default=None)
+@click.option("--name", default=None)
+@click.option("--app-id", default=None)
+@click.option("--browser-channel", type=click.Choice(["chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"]), default=None)
+@click.option("--browser-executable-path", type=click.Path(path_type=Path, dir_okay=False), default=None)
+@click.option("--app-path", type=click.Path(path_type=Path), default=None)
+@click.option("--window-title-re", default=None)
+@click.option("--launch-args", default=None)
+@click.option("--bundle-id", default=None)
+@click.option("--env", "env_values", multiple=True, metavar="NAME=VALUE")
+@click.option("--install-driver", is_flag=True, default=False)
+@click.option("--update-existing", is_flag=True, default=False)
 @click.pass_context
-def init(context: click.Context, platform: str, provider: str | None) -> None:
-    if provider:
-        setup_llm_provider(provider=provider)
-    workspace = initialize_workspace(Path.cwd(), platform)
+def init(
+    context: click.Context,
+    platform: str,
+    name: str | None,
+    app_id: str | None,
+    browser_channel: str | None,
+    browser_executable_path: Path | None,
+    app_path: Path | None,
+    window_title_re: str | None,
+    launch_args: str | None,
+    bundle_id: str | None,
+    env_values: tuple[str, ...],
+    install_driver: bool,
+    update_existing: bool,
+) -> None:
+    env: dict[str, str] = {}
+    for value in env_values:
+        key, separator, secret = value.partition("=")
+        if not separator or not key or not secret:
+            raise click.UsageError("Each --env must use non-empty NAME=VALUE syntax.")
+        if key in env:
+            raise click.UsageError("Each --env name may be supplied only once.")
+        env[key] = secret
+    workspace = initialize_workspace(
+        WorkspaceInitializeRequest(
+            current_directory=Path.cwd(),
+            platform=platform,
+            name=name,
+            app_id=app_id,
+            browser_channel=browser_channel,
+            browser_executable_path=browser_executable_path,
+            app_path=app_path,
+            window_title_re=window_title_re,
+            launch_args=launch_args,
+            bundle_id=bundle_id,
+            env=env,
+            install_driver=install_driver,
+            update_existing=update_existing,
+        )
+    )
     if context.obj["output"] == "human":
-        click.echo(f"Initialized FSQ Workspace: {workspace}")
+        click.echo(f"Workspace {workspace.name} {workspace.status}: {workspace.platform} at {workspace.root_path}")
+        if workspace.browser_executable_path is not None:
+            click.echo(f"Browser: {workspace.browser_executable_path}")
     else:
-        _emit_terminal(context, {"status": "success", "workspace": str(workspace)})
+        _emit_terminal(context, workspace.model_dump(mode="json"))
 
 
 @main.command()
 @click.pass_context
 def doctor(context: click.Context) -> None:
-    _workspace(context)
-    _emit(context, {"status": "ready", "workspace": str(Path.cwd() / ".fsq-agent-workspace")})
+    workspace = _workspace(context)
+    _emit(context, {"status": "ready", "workspace": str(workspace)})
 
 
 @main.group(name="case")
@@ -234,8 +283,8 @@ def case_test(context: click.Context, case_path: Path, platform: str, suggest: b
 @click.option("--port", type=click.IntRange(1, 65535), default=8879)
 @click.option("--open-browser/--no-open-browser", default=True)
 def ui(host: str, port: int, open_browser: bool) -> None:
-    workspace = require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
-    run_control_plane(ControlPlaneServerOptions(host=host, port=port, open_browser=open_browser, workspace_path=workspace.workspace))
+    require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
+    run_control_plane(ControlPlaneServerOptions(host=host, port=port, open_browser=open_browser))
 
 
 @main.group()
@@ -276,7 +325,17 @@ def runs() -> None:
 
 def _runs_dir() -> Path:
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
-    return workspace.workspace / "output" / "runs"
+    config_paths = sorted((workspace.workspace / ".fsq" / "config").glob("config.*.yaml"))
+    platforms = [path.name.removeprefix("config.").removesuffix(".yaml") for path in config_paths]
+    if len(platforms) != 1:
+        raise ApplicationError(
+            code=ApplicationErrorCode.CONFIGURATION_INVALID,
+            category=ApplicationErrorCategory.CONFIGURATION,
+            message="Run lookup requires exactly one configured workspace platform.",
+            action="Use a workspace with exactly one configured platform.",
+            details={"platforms": platforms},
+        )
+    return workspace.workspace / ".fsq" / "runs" / platforms[0]
 
 
 @runs.command(name="list")
@@ -322,11 +381,12 @@ def environments_doctor(context: click.Context, name: str) -> None:
     _emit(context, [item.model_dump(mode="json") for item in values])
 
 
-def _workspace(context: click.Context) -> None:
+def _workspace(context: click.Context) -> Path:
     try:
-        require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
+        return require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd())).workspace
     except ApplicationError as exc:
         _application_error(context, exc)
+    raise AssertionError("unreachable")
 
 
 def _emit(context: click.Context, value: object) -> None:
@@ -372,9 +432,18 @@ def _application_error(context: click.Context, error: ApplicationError) -> None:
         click.echo(f"Error: {error.message}", err=True)
         if error.action:
             click.echo(f"Action: {error.action}", err=True)
+        _emit_safe_internal_diagnostic(error)
     else:
         click.echo(json.dumps(error.to_record(operation=_context_operation(context)), ensure_ascii=False, default=str))
     raise click.exceptions.Exit(_error_exit_code(error))
+
+
+def _emit_safe_internal_diagnostic(error: ApplicationError) -> None:
+    if error.code != ApplicationErrorCode.INTERNAL_ERROR:
+        return
+    exception_type = error.details.get("exception_type")
+    if isinstance(exception_type, str) and exception_type:
+        click.echo(f"Diagnostic: {exception_type}", err=True)
 
 
 def _error_exit_code(error: ApplicationError) -> ExitCode:

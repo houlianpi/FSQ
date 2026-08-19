@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import json
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -82,6 +83,10 @@ def test_machine_usage_error_is_a_terminal_error_record(output: str) -> None:
 
 def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> None:
     monkeypatch.setattr(
+        "fsq_agent.cli._main.require_initialized_workspace",
+        lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
+    )
+    monkeypatch.setattr(
         "fsq_agent.cli._main.list_providers",
         lambda: (_ for _ in ()).throw(RuntimeError("sensitive implementation detail")),
     )
@@ -94,10 +99,11 @@ def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> Non
 
 
 def test_jsonl_command_without_progress_emits_one_terminal_result(monkeypatch, tmp_path) -> None:
-    workspace = tmp_path / ".fsq-agent-workspace"
-    workspace.mkdir()
-    (workspace / ".fsq-agent-workspace").write_text("fsq-agent workspace\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "fsq_agent.cli._main.require_initialized_workspace",
+        lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
+    )
     monkeypatch.setattr("fsq_agent.cli._main.list_providers", list)
     result = CliRunner().invoke(main, ["--output", "jsonl", "providers", "list"])
     assert result.exit_code == 0

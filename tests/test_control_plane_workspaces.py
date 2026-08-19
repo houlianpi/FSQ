@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
+from fsq_agent.core import PlatformRuntimeService
+from fsq_agent.models import PlatformRuntimeCheck
 
 
 def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
@@ -250,11 +252,12 @@ def test_devices_readiness_keeps_workspace_ready_when_selected_platform_is_absen
 
 
 @pytest.mark.parametrize("platform", ["web", "windows", "macos"])
-def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str) -> None:
+def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
-    executable = tmp_path / ("chrome.exe" if platform == "web" else "target.exe")
+    executable = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe" if platform == "web" else tmp_path / "target.exe"
+    executable.parent.mkdir(parents=True, exist_ok=True)
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
     targets: dict[str, dict[str, object]] = {
@@ -262,6 +265,13 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
         "windows": {"appPath": str(executable), "windowTitleRe": ".*Checkout", "launchArgs": '--mode "test run"'},
         "macos": {"bundleId": "com.example.Checkout"},
     }
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
+    if platform == "web":
+        monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [executable.resolve()])
 
     status, detail = _create(server, parent, platform=platform, target=targets[platform])
 
@@ -270,23 +280,52 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
     assert detail["platforms"][0]["target"] == targets[platform]
 
 
+def test_workspace_create_discovers_omitted_web_executable_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    executable = tmp_path / "Google Chrome" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [executable.resolve()])
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
+
+    status, detail = _create(
+        _server(tmp_path),
+        parent,
+        platform="web",
+        target={"browserChannel": "chrome"},
+    )
+
+    assert status == 201
+    assert detail["platforms"][0]["target"] == {
+        "browserChannel": "chrome",
+        "browserExecutablePath": str(executable),
+    }
+
+
 def test_workspace_create_rejects_web_executable_incompatible_with_preset_channel(tmp_path: Path) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     firefox = tmp_path / "firefox.exe"
     firefox.write_text("", encoding="utf-8")
+    firefox.chmod(0o755)
     server = _server(tmp_path)
 
     status, error = _create(
         server,
         parent,
         platform="web",
-        target={"browserExecutablePath": str(firefox)},
+        target={"browserChannel": "chrome", "browserExecutablePath": str(firefox)},
     )
 
     assert status == 400
     assert error["code"] == "invalid_workspace"
-    assert "preset channel" in error["message"]
+    assert "selected channel" in error["message"]
 
 
 def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path) -> None:

@@ -16,6 +16,9 @@ Current `__init__.py` exports via `__all__`:
 
 Platform-neutral task, run, report, knowledge, capability, and execution exports:
 
+- `PlatformRuntimeCheck`: Frozen Pydantic boundary model for one platform prerequisite result. It requires explicit `status=ready|missing|unsupported`, platform, readiness, safe message, and optional safe action; validation rejects status/readiness contradictions and it never carries raw subprocess output.
+- `web_executable_matches_channel(channel: str, executable: Path) -> bool`: Pure shared Web executable identity contract used by Core, Config, and tests. It normalizes path components without checking filesystem state, requires a product-compatible executable basename plus exact product/channel directory or application-bundle components for every channel including stable Chrome and Edge, rejects arbitrary shared basenames and conflicting channel identities, and accepts non-standard installation roots only when their contained path structure proves the selected identity.
+
 - `Task`: Pydantic model describing a dynamic LLM goal/reference task, optional metadata, optional explicit planning reference kind/text, optional execution key actions, one final `verification_goal`, retry limits, timeout, and knowledge references. Only `description` is required. `planning_reference_kind` may identify first-party planning inputs such as `goal` or `raw_case`; `planning_reference_text` stores the authoritative text the pre-planner should use before falling back to legacy goal/description behavior. Execution key actions are planning context only; final verification checks `verification_goal` against execution evidence.
 - `AGENT_FINAL_OUTPUT_SCHEMA_VERSION`: Constant containing the current supported final-output schema version. The runtime supports only the current schema; compatible schema evolution may add fields, while breaking changes replace the current schema rather than exposing a user-selectable schema configuration.
 - `AgentTaskInput`: Pydantic model describing the structured task envelope rendered into the model input. It includes a schema version, the task, complete key actions for execution planning, the single `verification_goal`, optional runtime policy text, and the final output contract name expected for the run.
@@ -221,6 +224,7 @@ macOS contracts:
 - `_task.py`: Task, plan, step, result, and verification models.
 - `_agent_io.py`: Structured agent task input, final output, plan item, schema version, and normalized tool-call record models.
 - `_events.py`: Live run event model and event sink type alias.
+- `_platform_runtime.py`: Shared `PlatformRuntimeCheck` boundary model, its status/readiness invariants, and the pure Web executable product/channel identity contract. It does not discover installed browsers, inspect filesystem existence or permissions, install runtimes, or own host-specific candidate paths.
 - `_fsq.py`: FSQ AI Test DSL case metadata, reusable lifecycle hook models, config lifecycle hook settings, and case models.
 - `_tools.py`: Unified capability metadata, replay policy, invocation/result contracts, registry snapshot models, AgentTool definition/call/result models, and temporary backward-compatible diagnostic aliases.
 - `_ai_assertion.py`: Provider-backed platform AI assertion request/result models.

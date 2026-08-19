@@ -33,7 +33,8 @@ output:
 
 
 def _chrome_executable(tmp_path: Path) -> Path:
-    chrome_path = tmp_path / "chrome.exe"
+    chrome_path = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe"
+    chrome_path.parent.mkdir(parents=True)
     chrome_path.write_text("", encoding="utf-8")
     chrome_path.chmod(0o755)
     return chrome_path
