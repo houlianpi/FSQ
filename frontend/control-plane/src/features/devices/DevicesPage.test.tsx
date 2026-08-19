@@ -24,6 +24,7 @@ it('announces live run truth and locks target controls without moving focus', ()
 
   render(<DevicesPage
     workspaces={[{ name: 'test', rootPath: 'C:\\test', status: 'available', message: 'Available.', platforms: [{ platform: 'web', configPath: 'C:\\test\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Available.' }] }]}
+    workspaceRegistryReady
     selectedWorkspaceName="test" onWorkspaceChange={vi.fn()} renderShell={(toolbar, content) => <>{toolbar}{content}</>}
   />);
 
