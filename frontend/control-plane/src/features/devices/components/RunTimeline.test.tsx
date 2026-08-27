@@ -82,6 +82,23 @@ it('hides Save yaml for terminal strict replay runs and reports save status', as
   expect(screen.getByRole('button', { name: 'New run' })).toBeInTheDocument();
 });
 
+it('truncates the default Save yaml case name to 60 characters', async () => {
+  const longRunId = 'open-edge1-3-launch-the-browser-1-4-open-the-about-microsoft-f7f3c6be-2026-08-19_13-29-48-670629-29748f81';
+  const explore: RunSnapshot = {
+    requestId: 'request', runId: longRunId, workspaceName: 'test', platform: 'windows', targetId: 'edge', mode: 'explore', status: 'success',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: '', cancelRequested: false,
+    events: [], activeStep: null, result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+  render(<RunTimeline snapshot={explore} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Save yaml' }));
+
+  const expected = longRunId.slice(0, 60);
+  expect(screen.getByLabelText('Case name')).toHaveValue(expected);
+  expect(screen.getByText(`cases/windows/${expected}.fsq.yaml`)).toBeInTheDocument();
+});
+
 it('shows Save yaml failures in a result dialog without adding bottom text', async () => {
   const explore: RunSnapshot = {
     requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'success',

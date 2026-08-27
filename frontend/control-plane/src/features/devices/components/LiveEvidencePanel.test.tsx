@@ -116,12 +116,42 @@ it('shows selected Action screenshot comparison and UI Tree diff', async () => {
       { kind: 'ui_snapshot', phase: 'after', timestamp: null, mimeType: 'application/json', content: '{"value":"after"}' },
     ],
   });
-  const { rerender } = render(<LiveEvidencePanel tab="screen" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
+  const { container, rerender } = render(<LiveEvidencePanel tab="screen" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
   expect(await screen.findByRole('img', { name: 'before screenshot for selected Action' })).toBeInTheDocument();
   expect(screen.getByRole('img', { name: 'after screenshot for selected Action' })).toBeInTheDocument();
+  expect([...container.querySelectorAll('.step-screenshot-card figcaption')].map((caption) => caption.textContent)).toEqual(['Before', 'After']);
   rerender(<LiveEvidencePanel tab="ui-tree" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
   expect(await screen.findByLabelText('Before and After UI Tree diff')).toHaveTextContent('before');
   expect(screen.getByLabelText('Before and After UI Tree diff')).toHaveTextContent('after');
+});
+
+it('keeps selected Action screenshots visible while the next Action evidence loads', async () => {
+  let resolveStep2!: (value: Awaited<ReturnType<typeof controlPlaneClient.stepArtifacts>>) => void;
+  vi.spyOn(controlPlaneClient, 'stepArtifacts').mockImplementation((_requestId, stepId) => stepId === 'step-1'
+    ? Promise.resolve({
+      available: true,
+      stepId: 'step-1',
+      message: null,
+      artifacts: [{ kind: 'screenshot', phase: 'before', timestamp: null, mimeType: 'image/png', contentBase64: 'c3RlcC0x' }],
+    })
+    : new Promise((resolve) => { resolveStep2 = resolve; }));
+  const terminal = { ...snapshot, terminal: true, status: 'success' as const, completedAt: '2026-08-11T12:00:10Z' };
+  const { rerender } = render(<LiveEvidencePanel tab="screen" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
+
+  expect(await screen.findByRole('img', { name: 'before screenshot for selected Action' })).toHaveAttribute('src', 'data:image/png;base64,c3RlcC0x');
+  rerender(<LiveEvidencePanel tab="screen" snapshot={terminal} selectedStepId="step-2" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
+
+  expect(screen.queryByText('Loading Action evidence')).not.toBeInTheDocument();
+  expect(screen.queryByText('Reading persisted Before and After artifacts…')).not.toBeInTheDocument();
+  expect(screen.getByRole('img', { name: 'before screenshot for selected Action' })).toHaveAttribute('src', 'data:image/png;base64,c3RlcC0x');
+  expect(screen.getByRole('status')).toHaveTextContent('Updating selected Action evidence');
+  resolveStep2({
+    available: true,
+    stepId: 'step-2',
+    message: null,
+    artifacts: [{ kind: 'screenshot', phase: 'before', timestamp: null, mimeType: 'image/png', contentBase64: 'c3RlcC0y' }],
+  });
+  expect(await screen.findByRole('img', { name: 'before screenshot for selected Action' })).toHaveAttribute('src', 'data:image/png;base64,c3RlcC0y');
 });
 
 it('diffs selected XML UI Tree evidence after structured formatting', async () => {

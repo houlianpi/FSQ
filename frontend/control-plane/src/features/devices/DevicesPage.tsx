@@ -4,18 +4,23 @@ import { LiveEvidencePanel } from './components/LiveEvidencePanel';
 import { OperationComposer } from './components/OperationComposer';
 import { RunTimeline } from './components/RunTimeline';
 import { TargetToolbar } from './components/TargetToolbar';
-import { useDeviceWorkspace } from './hooks/useDeviceWorkspace';
+import { useDeviceWorkspace, type DevicesLaunchIntent } from './hooks/useDeviceWorkspace';
+
+export type { DevicesLaunchIntent } from './hooks/useDeviceWorkspace';
 
 interface DevicesPageProps {
   workspaces: readonly WorkspaceRegistryEntry[];
+  workspaceRegistryReady: boolean;
   selectedWorkspaceName: string | null;
   onWorkspaceChange: (workspaceName: string | null) => void;
+  launchIntent?: DevicesLaunchIntent | null;
+  onLaunchIntentConsumed?: (intentId: number) => void;
   renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode;
 }
 
 const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'Web', windows: 'Windows', macos: 'macOS' };
 
-export function DevicesPage({ workspaces, selectedWorkspaceName, onWorkspaceChange, renderShell }: DevicesPageProps) {
+export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorkspaceName, onWorkspaceChange, launchIntent, onLaunchIntentConsumed, renderShell }: DevicesPageProps) {
   const selectedWorkspace = workspaces.find((item) => item.name === selectedWorkspaceName) ?? null;
   const platforms = useMemo<PlatformOption[]>(() => (selectedWorkspace?.platforms ?? [])
     .filter((item) => item.status === 'available')
@@ -23,7 +28,10 @@ export function DevicesPage({ workspaces, selectedWorkspaceName, onWorkspaceChan
   const workspace = useDeviceWorkspace({
     workspaceName: selectedWorkspaceName,
     platforms,
+    platformsReady: workspaceRegistryReady,
     onWorkspaceChange,
+    launchIntent,
+    onLaunchIntentConsumed,
   });
   const primaryInputRef = useRef<HTMLTextAreaElement | HTMLSelectElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);

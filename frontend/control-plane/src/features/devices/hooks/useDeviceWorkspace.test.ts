@@ -39,6 +39,136 @@ it('does not discover until a platform is explicitly selected', async () => {
   expect(client.cases).not.toHaveBeenCalled();
 });
 
+it('applies a strict replay intent after validating current case discovery', async () => {
+  const onLaunchIntentConsumed = vi.fn();
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('web')),
+    targets: vi.fn().mockResolvedValue(targets('web')), cases: vi.fn().mockResolvedValue(cases('web')),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace({
+    ...deviceContext,
+    launchIntent: { id: 1, mode: 'strict', workspaceName: 'test', platform: 'web', casePath: 'web.fsq.yaml' },
+    onLaunchIntentConsumed,
+  }, client));
+
+  await waitFor(() => expect(result.current.cases.state).toBe('ready'));
+  expect(result.current.platform).toBe('web');
+  expect(result.current.mode).toBe('strict');
+  expect(result.current.casePath).toBe('web.fsq.yaml');
+  expect(onLaunchIntentConsumed).toHaveBeenCalledWith(1);
+});
+
+it('waits for workspace platform options before consuming a strict replay intent', async () => {
+  const onLaunchIntentConsumed = vi.fn();
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('web')),
+    targets: vi.fn().mockResolvedValue(targets('web')), cases: vi.fn().mockResolvedValue(cases('web')),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const launchIntent = { id: 5, mode: 'strict' as const, workspaceName: 'test', platform: 'web' as const, casePath: 'web.fsq.yaml' };
+  const { result, rerender } = renderHook(
+    ({ currentPlatforms, platformsReady }) => useDeviceWorkspace({
+      ...deviceContext,
+      platforms: currentPlatforms,
+      platformsReady,
+      launchIntent,
+      onLaunchIntentConsumed,
+    }, client),
+    { initialProps: { currentPlatforms: [] as typeof platforms, platformsReady: false } },
+  );
+
+  await waitFor(() => expect(result.current.bootstrap.state).toBe('ready'));
+  expect(onLaunchIntentConsumed).not.toHaveBeenCalled();
+  expect(client.cases).not.toHaveBeenCalled();
+
+  rerender({ currentPlatforms: platforms, platformsReady: true });
+
+  await waitFor(() => expect(result.current.cases.state).toBe('ready'));
+  expect(result.current.platform).toBe('web');
+  expect(result.current.casePath).toBe('web.fsq.yaml');
+  expect(onLaunchIntentConsumed).toHaveBeenCalledWith(5);
+});
+
+it('keeps Strict Replay empty when an intended case is no longer selectable', async () => {
+  const unavailableCases = { ...cases('web'), cases: [{ ...cases('web').cases[0], selectable: false }] };
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('web')),
+    targets: vi.fn().mockResolvedValue(targets('web')), cases: vi.fn().mockResolvedValue(unavailableCases),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace({
+    ...deviceContext,
+    launchIntent: { id: 2, mode: 'strict', workspaceName: 'test', platform: 'web', casePath: 'web.fsq.yaml' },
+    onLaunchIntentConsumed: vi.fn(),
+  }, client));
+
+  await waitFor(() => expect(result.current.cases.state).toBe('ready'));
+  expect(result.current.platform).toBe('web');
+  expect(result.current.mode).toBe('strict');
+  expect(result.current.casePath).toBe('');
+  expect(result.current.canStart).toBe(false);
+});
+
+it('keeps Strict Replay empty when an intended case is missing from discovery', async () => {
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('web')),
+    targets: vi.fn().mockResolvedValue(targets('web')), cases: vi.fn().mockResolvedValue({ ...cases('web'), cases: [] }),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace({
+    ...deviceContext,
+    launchIntent: { id: 6, mode: 'strict', workspaceName: 'test', platform: 'web', casePath: 'missing.fsq.yaml' },
+    onLaunchIntentConsumed: vi.fn(),
+  }, client));
+
+  await waitFor(() => expect(result.current.cases.state).toBe('ready'));
+  expect(result.current.platform).toBe('web');
+  expect(result.current.mode).toBe('strict');
+  expect(result.current.casePath).toBe('');
+  expect(result.current.canStart).toBe(false);
+});
+
+it('does not force an intended platform that is unavailable for the workspace', async () => {
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn(), targets: vi.fn(), cases: vi.fn(),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn(), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace({
+    ...deviceContext,
+    launchIntent: { id: 4, mode: 'strict', workspaceName: 'test', platform: 'macos', casePath: 'desktop.fsq.yaml' },
+    onLaunchIntentConsumed: vi.fn(),
+  }, client));
+
+  await waitFor(() => expect(result.current.bootstrap.state).toBe('ready'));
+  expect(result.current.mode).toBe('strict');
+  expect(result.current.platform).toBe('');
+  expect(result.current.casePath).toBe('');
+  expect(client.cases).not.toHaveBeenCalled();
+});
+
+it('restores an active task instead of applying a Workspace launch intent', async () => {
+  const activeBootstrap: BootstrapResponse = {
+    ...bootstrap,
+    busy: true,
+    activeTask: { requestId: 'active-request', runId: null, workspaceName: 'test', platform: 'android', targetId: 'android-target', mode: 'explore', status: 'running' },
+  };
+  const client = {
+    bootstrap: vi.fn().mockResolvedValue(activeBootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
+    targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),
+    startRun: vi.fn(), cancelRun: vi.fn(), runSnapshot: vi.fn().mockResolvedValue(runSnapshot('active-request')), streamUrl: vi.fn(), screenUrl: vi.fn(), uiSnapshot: vi.fn(),
+  } as unknown as ControlPlaneClient;
+  const { result } = renderHook(() => useDeviceWorkspace({
+    ...deviceContext,
+    launchIntent: { id: 3, mode: 'strict', workspaceName: 'test', platform: 'web', casePath: 'web.fsq.yaml' },
+    onLaunchIntentConsumed: vi.fn(),
+  }, client));
+
+  await waitFor(() => expect(result.current.requestId).toBe('active-request'));
+  expect(result.current.platform).toBe('android');
+  expect(result.current.mode).toBe('explore');
+});
+
 it('rejects stale platform responses by request generation', async () => {
   const oldReadiness = deferred<ReadinessResponse>();
   const client = {
@@ -58,7 +188,7 @@ it('rejects stale platform responses by request generation', async () => {
   expect(result.current.readiness.data?.platformId).toBe('web');
 });
 
-it('clears platform selection when changing to a workspace that supports the same platform', async () => {
+it('clears platform selection on workspace change when multiple platforms remain available', async () => {
   const client = {
     bootstrap: vi.fn().mockResolvedValue(bootstrap), readiness: vi.fn().mockResolvedValue(readiness('android')),
     targets: vi.fn().mockResolvedValue(targets('android')), cases: vi.fn().mockResolvedValue(cases('android')),

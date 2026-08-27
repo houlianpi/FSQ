@@ -103,9 +103,63 @@ it('shows the real workspace path and a non-interactive Code presentation for te
   expect(breadcrumb).toHaveTextContent('alpha / cases / scenario.yaml');
   expect(screen.getByText('Code')).toBeVisible();
   expect(screen.queryByRole('tab', { name: 'Code' })).not.toBeInTheDocument();
+  expect(screen.getByText(/1 lines · \d+ B/)).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Replay Case' })).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Read-only YAML source' })).toBeVisible();
   expect(screen.getByText('name')).toHaveClass('cp-yaml-key');
   expect(screen.getByText('"https://example.test"')).toHaveClass('cp-yaml-string');
+});
+
+it('offers recording and extracts an eligible FSQ replay context', async () => {
+  vi.mocked(controlPlaneClient.workspaceEntries)
+    .mockResolvedValueOnce(entries('', ['cases']))
+    .mockResolvedValueOnce(entries('cases', ['web']))
+    .mockResolvedValueOnce(entries('cases/web', ['flows']))
+    .mockResolvedValueOnce(entries('cases/web/flows', ['login.fsq.yaml']));
+  vi.mocked(controlPlaneClient.workspaceFile).mockResolvedValue({
+    ...file('login.fsq.yaml', 'name: login\ncommands: []'),
+    path: 'cases/web/flows/login.fsq.yaml',
+    lineCount: 2,
+    size: 24,
+  });
+  const onRecordCase = vi.fn();
+  const onReplayCase = vi.fn();
+  const user = userEvent.setup();
+
+  render(<WorkspaceBrowser workspaceName="alpha" onRecordCase={onRecordCase} onReplayCase={onReplayCase} />);
+  await user.click(screen.getByRole('button', { name: 'Record new case' }));
+  expect(onRecordCase).toHaveBeenCalledOnce();
+
+  await user.click(await screen.findByRole('button', { name: 'cases' }));
+  await user.click(await screen.findByRole('button', { name: 'web' }));
+  await user.click(await screen.findByRole('button', { name: 'flows' }));
+  await user.click(await screen.findByRole('button', { name: 'login.fsq.yaml' }));
+
+  const replayCase = await screen.findByRole('button', { name: 'Replay Case' });
+  expect(screen.queryByText('2 lines · 24 B')).not.toBeInTheDocument();
+  await user.click(replayCase);
+  expect(onReplayCase).toHaveBeenCalledWith('web', 'flows/login.fsq.yaml');
+});
+
+it('extracts a top-level FSQ replay case path', async () => {
+  vi.mocked(controlPlaneClient.workspaceEntries)
+    .mockResolvedValueOnce(entries('', ['cases']))
+    .mockResolvedValueOnce(entries('cases', ['android']))
+    .mockResolvedValueOnce(entries('cases/android', ['smoke.fsq.yaml']));
+  vi.mocked(controlPlaneClient.workspaceFile).mockResolvedValue({
+    ...file('smoke.fsq.yaml', 'name: smoke\ncommands: []'),
+    path: 'cases/android/smoke.fsq.yaml',
+  });
+  const onReplayCase = vi.fn();
+  const user = userEvent.setup();
+
+  render(<WorkspaceBrowser workspaceName="alpha" onReplayCase={onReplayCase} />);
+  await user.click(await screen.findByRole('button', { name: 'cases' }));
+  await user.click(await screen.findByRole('button', { name: 'android' }));
+  await user.click(await screen.findByRole('button', { name: 'smoke.fsq.yaml' }));
+  await user.click(await screen.findByRole('button', { name: 'Replay Case' }));
+
+  expect(onReplayCase).toHaveBeenCalledWith('android', 'smoke.fsq.yaml');
 });
 
 it('ignores stale root and nested responses after the selected workspace changes', async () => {
