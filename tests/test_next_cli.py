@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from fsq_agent.application import (
     WorkspaceInitializeResult,
 )
 from fsq_agent.cli import main
+from fsq_agent.models import RunEvent
 
 
 def _workspace(path: Path, monkeypatch=None) -> None:
@@ -68,6 +70,92 @@ def test_case_create_json_maps_application_result(tmp_path: Path, monkeypatch) -
         result = runner.invoke(main, ["--output", "json", "case", "create", "--platform", "web", "--goal", "Verify search"])
     assert result.exit_code == 0
     assert json.loads(result.output)["result"]["candidate_case_path"].endswith("recorded.fsq.yaml")
+
+
+@pytest.mark.parametrize("platform", ["android", "web", "windows", "macos"])
+def test_case_create_maps_each_platform_and_current_directory(tmp_path: Path, monkeypatch, platform: str) -> None:
+    captured = {}
+
+    async def fake_create(request, *, event_sink=None, agent_factory=None):
+        captured["request"] = request
+        return CaseCreateResult(run_id="run-1", task_id="task-1", status="success", summary="passed", report_path=tmp_path / "report.md")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fake_create)
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(main, ["case", "create", "--platform", platform, "--goal", "Verify search"])
+        expected_directory = Path.cwd()
+
+    assert result.exit_code == 0
+    assert captured["request"].platform == platform
+    assert captured["request"].goal == "Verify search"
+    assert captured["request"].current_directory == expected_directory
+
+
+@pytest.mark.parametrize("arguments", [["--goal", "Verify search"], ["--platform", "web"]])
+def test_case_create_requires_platform_and_goal(arguments: list[str]) -> None:
+    result = CliRunner().invoke(main, ["--output", "json", "case", "create", *arguments])
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["type"] == "error"
+    assert payload["operation"] == "case.create"
+
+
+def test_case_create_jsonl_emits_events_then_one_terminal_result(tmp_path: Path, monkeypatch) -> None:
+    async def fake_create(_request, *, event_sink=None, agent_factory=None):
+        assert event_sink is not None
+        event_sink(RunEvent(run_id="run-1", task_id="task-1", type="run_started", title="Started", sequence=1, timestamp=datetime(2026, 1, 1, tzinfo=UTC)))
+        event_sink(RunEvent(run_id="run-1", task_id="task-1", type="run_completed", title="Completed", sequence=2, timestamp=datetime(2026, 1, 1, tzinfo=UTC)))
+        return CaseCreateResult(run_id="run-1", task_id="task-1", status="success", summary="passed", report_path=tmp_path / "report.md")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fake_create)
+    result = CliRunner().invoke(main, ["--output", "jsonl", "case", "create", "--platform", "web", "--goal", "Verify search"])
+    records = [json.loads(line) for line in result.output.splitlines()]
+
+    assert result.exit_code == 0
+    assert [record["type"] for record in records] == ["event", "event", "result"]
+    assert all(record["operation"] == "case.create" for record in records)
+    assert records[-1]["result"]["candidate_case_path"] is None
+
+
+def test_case_create_failed_result_uses_exit_one(tmp_path: Path, monkeypatch) -> None:
+    async def fake_create(_request, *, event_sink=None, agent_factory=None):
+        return CaseCreateResult(run_id="run-1", task_id="task-1", status="failed", summary="failed", report_path=tmp_path / "report.md")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fake_create)
+    result = CliRunner().invoke(main, ["--output", "json", "case", "create", "--platform", "web", "--goal", "Verify search"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["result"]["status"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_exit"),
+    [
+        (ApplicationErrorCategory.REQUEST_VALIDATION, 2),
+        (ApplicationErrorCategory.WORKSPACE_CONFIGURATION, 3),
+        (ApplicationErrorCategory.CONFIGURATION, 3),
+        (ApplicationErrorCategory.UNAVAILABLE, 4),
+        (ApplicationErrorCategory.INTERNAL, 5),
+    ],
+)
+def test_case_create_maps_application_error_categories(monkeypatch, category: ApplicationErrorCategory, expected_exit: int) -> None:
+    async def fail(_request, *, event_sink=None, agent_factory=None):
+        raise ApplicationError(code=ApplicationErrorCode.INTERNAL_ERROR, category=category, message="safe failure")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fail)
+    result = CliRunner().invoke(main, ["--output", "json", "case", "create", "--platform", "web", "--goal", "Verify search"])
+    assert result.exit_code == expected_exit
+    assert json.loads(result.output)["type"] == "error"
+
+
+def test_case_create_unexpected_error_is_safe(monkeypatch) -> None:
+    async def fail(_request, *, event_sink=None, agent_factory=None):
+        raise RuntimeError("secret backend detail")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.create_case", fail)
+    result = CliRunner().invoke(main, ["--output", "json", "case", "create", "--platform", "web", "--goal", "Verify search"])
+    assert result.exit_code == 5
+    assert "RuntimeError" in result.output
+    assert "secret backend detail" not in result.output
 
 
 def test_case_test_failure_uses_exit_one_and_jsonl_terminal_record(tmp_path: Path, monkeypatch) -> None:

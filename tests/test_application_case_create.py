@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from fsq_agent.application import ApplicationError, ApplicationErrorCode, CaseCreateRequest, create_case
+from fsq_agent.execution import DynamicExecutionResult, RecordingResult
 from fsq_agent.models import ReportArtifact, Task, TaskResult, VerificationResult
 
 
@@ -95,3 +96,88 @@ async def test_create_case_rejects_blank_goal_before_loading_settings(tmp_path: 
 
     assert called is False
     assert error.value.code == ApplicationErrorCode.CASE_GOAL_INVALID
+
+
+@pytest.mark.asyncio
+async def test_create_case_requires_workspace_before_settings_or_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def reject_workspace(_request):
+        calls.append("workspace")
+        raise ApplicationError(
+            code=ApplicationErrorCode.WORKSPACE_NOT_INITIALIZED,
+            category="workspace_configuration",
+            message="not initialized",
+        )
+
+    monkeypatch.setattr("fsq_agent.application.cases.require_initialized_workspace", reject_workspace)
+
+    with pytest.raises(ApplicationError) as error:
+        await create_case(
+            CaseCreateRequest(current_directory=tmp_path, platform="web", goal="Verify search"),
+            settings_loader=lambda _platform, _path: calls.append("settings"),
+            agent_factory=lambda _settings: calls.append("agent"),
+        )
+
+    assert error.value.code == ApplicationErrorCode.WORKSPACE_NOT_INITIALIZED
+    assert calls == ["workspace"]
+
+
+@pytest.mark.asyncio
+async def test_create_case_settings_failure_does_not_create_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("fsq_agent.application.cases.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
+    agent_created = False
+
+    def fail_settings(_platform: str, _path: Path):
+        raise ApplicationError(code=ApplicationErrorCode.PROVIDER_UNAVAILABLE, category="unavailable", message="provider unavailable")
+
+    def create_agent(_settings):
+        nonlocal agent_created
+        agent_created = True
+
+    with pytest.raises(ApplicationError) as error:
+        await create_case(
+            CaseCreateRequest(current_directory=tmp_path, platform="web", goal="Verify search"),
+            settings_loader=fail_settings,
+            agent_factory=create_agent,
+        )
+
+    assert error.value.code == ApplicationErrorCode.PROVIDER_UNAVAILABLE
+    assert agent_created is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("recording_status", "has_candidate"), [("recorded", True), ("skipped", False), ("failed", False)])
+async def test_create_case_only_returns_recorded_run_local_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording_status: str, has_candidate: bool) -> None:
+    monkeypatch.setattr("fsq_agent.application.cases.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
+    candidate = tmp_path / "runs" / "run-1" / "candidate.fsq.yaml"
+    recording = RecordingResult(
+        status=recording_status,
+        recording_path=tmp_path / "runs" / "run-1" / "recording.json",
+        recorded_case_path=candidate,
+        published_case_path=None,
+        command_count=1,
+        required_runtime_secret_names=(),
+        warnings=(),
+        skipped_tool_calls=(),
+        errors=(),
+        validation_status="valid",
+        draft=False,
+    )
+
+    class FakeExecutionService:
+        def __init__(self, *, agent) -> None:
+            pass
+
+        async def execute(self, request) -> DynamicExecutionResult:
+            assert request.record is True
+            return DynamicExecutionResult(task_result=_task_result(tmp_path), recording=recording)
+
+    monkeypatch.setattr("fsq_agent.application.cases.DynamicExecutionService", FakeExecutionService)
+    result = await create_case(
+        CaseCreateRequest(current_directory=tmp_path, platform="web", goal="Verify search"),
+        settings_loader=lambda _platform, _path: object(),
+        agent_factory=lambda _settings: object(),
+    )
+
+    assert (result.candidate_case_path == candidate) is has_candidate
