@@ -24,7 +24,7 @@ Capability registry bootstrap is platform-selected. Entry layers register the ac
 
 ## Case Creation And Testing
 
-The public Case workflows are `fsq case create` and `fsq case test`. Case creation accepts a natural-language Goal, uses AI during real testing, and may write a Run-local candidate `*.fsq.yaml`. Case testing accepts an existing `*.fsq.yaml` and preserves the source file. With `--suggest`, AI may produce suggestions and a Run-local candidate while preserving original execution facts; without it, testing does not permit AI-driven Case modification. Adapters invoke both workflows through the shared Application package.
+The public Case workflows are `fsq case create` and `fsq case test`. Case creation accepts a natural-language Goal, uses AI during real testing, and may write a Run-local candidate `*.fsq.yaml`. Case testing accepts an existing `*.fsq.yaml`, executes it exactly once through the deterministic path, and preserves the source file. With `--suggest`, a separate post-execution AI analysis may produce Run-local suggestions and a candidate Case from the parsed source and persisted execution facts; that analysis has no UI-action capabilities and cannot change the completed execution result. Without `--suggest`, testing performs no AI-driven Case analysis or modification. Adapters invoke both workflows through the shared Application package.
 
 `*.fsq.yaml` is canonical. `*.codex.yaml` may be accepted for one deprecation cycle with a structured warning. `*.intent.yaml` and `fsq.test-intent/v1` are unsupported. Top-level public execution commands named `test`, `replay`, or `run` are not part of the target CLI.
 
@@ -40,9 +40,9 @@ FSQ Case metadata may declare optional deterministic lifecycle hooks through `on
 
 ## Dynamic LLM Pre-Plan and Goal Verification
 
-Goal-based Case creation and suggestion-enabled Case testing use pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional project/page knowledge, and the active capability summary. It produces ordered `key_actions` and one `verification_goal` before external UI actions.
+Goal-based Case creation uses pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional project/page knowledge, and the active capability summary. It produces ordered `key_actions` and one `verification_goal` before external UI actions.
 
-Existing-Case testing parses the Case through FSQ rather than treating YAML as untyped planning text. Suggestion-enabled testing may use the parsed Case and execution facts as AI context, but source steps remain immutable and candidate changes are Run-local artifacts.
+Existing-Case testing parses the Case through FSQ rather than treating YAML as untyped planning text. Suggestion-enabled testing first completes the same single deterministic execution as ordinary Case testing, then gives the parsed Case and bounded persisted execution facts to a read-only AI analysis that cannot invoke Harness, Driver, Core capabilities, or other UI actions. The analysis preserves the authoritative execution status and facts, keeps source steps immutable, and writes suggestions and any candidate Case only inside that Run directory.
 
 ## Runtime Configuration Defaults
 

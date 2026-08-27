@@ -63,7 +63,8 @@ fsq init --platform macos --bundle-id com.example.app
 
 - `case create` accepts a natural-language Goal, performs AI-participating testing, and may produce a Run-local candidate `*.fsq.yaml` Case.
 - `case test` executes an existing FSQ Case as authored. The source Case is immutable.
-- `case test --suggest` permits AI analysis and Run-local suggestions or a candidate Case while preserving original execution facts and never overwriting the source Case.
+- `case test --suggest` executes the authored Case exactly once, then permits read-only AI analysis of the parsed Case and bounded persisted execution facts. It may return Run-local suggestions or a candidate Case while preserving the completed execution result and never overwriting the source Case or configured Case directory.
+- When suggestion analysis produces an artifact, Human output displays each Run-local suggestion or candidate Case path and states that the source Case was not modified. JSON and JSONL terminal results expose the same paths through `suggestion_path` and `candidate_case_path`; absent artifacts remain `null`.
 - `runs` is not a complete supported multi-platform contract in this specification. Its platform-selection, aggregation, and complete query behavior require a separate confirmed specification before being treated as complete.
 - `providers` exposes safe provider inventory, configuration, and readiness.
 - `environments` exposes Environment inventory and diagnostics. Mutation is not public in this phase.

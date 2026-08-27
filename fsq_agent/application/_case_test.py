@@ -2,8 +2,12 @@
 # Licensed under the MIT License.
 
 import json
+import os
+import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from fsq_agent._capability_bootstrap import build_capability_registry, provider_required_capability_names, steps_require_provider
 from fsq_agent.application.contracts import (
@@ -16,14 +20,26 @@ from fsq_agent.application.contracts import (
 )
 from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.config import load_platform_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, load_platform_settings, validate_strict_core_settings
 from fsq_agent.core import ArtifactStore, HarnessFactory, RuntimeSecretStore
 from fsq_agent.execution import collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.models import ConfigurationError
-from fsq_agent.providers import build_ai_assertion_evaluator
+from fsq_agent.providers import CaseSuggestionAnalysis, build_ai_assertion_evaluator
+
+_MAX_FACT_ITEMS = 100
+_MAX_FACT_STRING = 2_000
+_MAX_FACT_BYTES = 200_000
 
 
-def test_case(request: CaseTestRequest) -> CaseTestResult:
+class _SuggestionAnalyzer(Protocol):
+    def analyze(self, *, parsed_case: dict[str, object], execution_report: dict[str, object]) -> CaseSuggestionAnalysis: ...
+
+
+def execute_case_test(
+    request: CaseTestRequest,
+    *,
+    suggestion_analyzer_factory: Callable[[Settings], _SuggestionAnalyzer] | None,
+) -> CaseTestResult:
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=request.current_directory))
     settings = load_platform_settings(request.platform, workspace.workspace)
     try:
@@ -86,7 +102,44 @@ def test_case(request: CaseTestRequest) -> CaseTestResult:
     if case_path.read_bytes() != source_before:
         raise RuntimeError("Case source was modified during testing.")
     status, summary = _report_status(artifact.path)
-    suggestion_path = _write_suggestion(run_dir, case_path, status, summary) if request.suggest else None
+    suggestion_path = None
+    candidate_case_path = None
+    if request.suggest:
+        if suggestion_analyzer_factory is None:
+            raise ApplicationError(
+                code=ApplicationErrorCode.CASE_SUGGESTION_FAILED,
+                category=ApplicationErrorCategory.INTERNAL,
+                message="Case suggestion analysis is not configured.",
+                action="Start this operation through a supported FSQ adapter.",
+                details={"run_id": run_id, "report_path": str(artifact.path)},
+            )
+        try:
+            report = json.loads(artifact.path.with_suffix(".json").read_text(encoding="utf-8"))
+            analysis = suggestion_analyzer_factory(settings).analyze(
+                parsed_case={
+                    "config": case.config.model_dump(mode="json", by_alias=True),
+                    "commands": case.commands,
+                },
+                execution_report=_bounded_execution_facts(report),
+            )
+            suggestion_path, candidate_case_path = _write_analysis_artifacts(
+                run_dir=run_dir,
+                source_case=case_path,
+                source_platform=case.config.platform,
+                execution_status=status,
+                execution_summary=summary,
+                analysis=analysis,
+            )
+        except ApplicationError:
+            raise
+        except Exception as exc:
+            raise ApplicationError(
+                code=ApplicationErrorCode.CASE_SUGGESTION_FAILED,
+                category=ApplicationErrorCategory.UNAVAILABLE,
+                message="Case suggestion analysis failed.",
+                action="The completed Run is preserved. Check Provider readiness and retry suggestion analysis.",
+                details={"run_id": run_id, "report_path": str(artifact.path)},
+            ) from exc
     return CaseTestResult(
         run_id=run_id,
         status="success" if status == "passed" else "failed",
@@ -94,6 +147,7 @@ def test_case(request: CaseTestRequest) -> CaseTestResult:
         report_path=artifact.path,
         evidence_manifest_path=artifact.evidence_manifest_path,
         suggestion_path=suggestion_path,
+        candidate_case_path=candidate_case_path,
         warnings=["case.suffix_deprecated: rename this Case to *.fsq.yaml"] if case_path.name.endswith(".codex.yaml") else [],
     )
 
@@ -124,36 +178,82 @@ def _report_status(path: Path) -> tuple[str, str]:
     return status, "Case passed." if status == "passed" else f"Case failed with {failed} failed step(s)."
 
 
-def _write_suggestion(run_dir: Path, case_path: Path, status: str, summary: str) -> Path:
-    suggestions = (
-        [
-            {
-                "kind": "review_failed_steps",
-                "message": "Review failed step evidence before changing the Case.",
-                "evidence": "core-report.json",
-            }
-        ]
-        if status != "passed"
-        else [
-            {
-                "kind": "no_change_recommended",
-                "message": "The Case passed; no source modification is recommended from this Run.",
-                "evidence": "core-report.json",
-            }
-        ]
-    )
-    path = run_dir / "case-suggestions.json"
-    path.write_text(
+def _bounded_execution_facts(report: dict[str, object]) -> dict[str, object]:
+    facts = {key: _bound_value(report[key]) for key in ("run_id", "summary", "steps", "events") if key in report}
+    encoded = json.dumps(facts, ensure_ascii=False, default=str).encode("utf-8")
+    if len(encoded) > _MAX_FACT_BYTES:
+        facts = {
+            "run_id": facts.get("run_id"),
+            "summary": facts.get("summary"),
+            "truncated": True,
+        }
+    return facts
+
+
+def _bound_value(value: object) -> object:
+    if isinstance(value, str):
+        return value[:_MAX_FACT_STRING]
+    if isinstance(value, list):
+        return [_bound_value(item) for item in value[:_MAX_FACT_ITEMS]]
+    if isinstance(value, dict):
+        return {str(key)[:_MAX_FACT_STRING]: _bound_value(item) for key, item in list(value.items())[:_MAX_FACT_ITEMS]}
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    return str(value)[:_MAX_FACT_STRING]
+
+
+def _write_analysis_artifacts(
+    *,
+    run_dir: Path,
+    source_case: Path,
+    source_platform: str,
+    execution_status: str,
+    execution_summary: str,
+    analysis: CaseSuggestionAnalysis,
+) -> tuple[Path, Path | None]:
+    candidate_path = None
+    if analysis.candidate_case_yaml is not None:
+        candidate_path = run_dir / "candidate.fsq.yaml"
+        _validate_candidate(analysis.candidate_case_yaml, candidate_path, source_platform)
+        _atomic_write(candidate_path, analysis.candidate_case_yaml)
+    suggestion_path = run_dir / "case-suggestions.json"
+    _atomic_write(
+        suggestion_path,
         json.dumps(
             {
-                "source_case": str(case_path),
+                "source_case": str(source_case),
                 "source_case_immutable": True,
-                "status": status,
-                "summary": summary,
-                "suggestions": suggestions,
+                "execution_status": execution_status,
+                "execution_summary": execution_summary,
+                "analysis_summary": analysis.summary,
+                "suggestions": list(analysis.suggestions),
+                "candidate_case_path": str(candidate_path) if candidate_path else None,
             },
             indent=2,
+            ensure_ascii=False,
         ),
-        encoding="utf-8",
     )
-    return path
+    return suggestion_path, candidate_path
+
+
+def _validate_candidate(content: str, destination: Path, source_platform: str) -> None:
+    with tempfile.TemporaryDirectory(dir=destination.parent) as temporary_directory:
+        temporary_path = Path(temporary_directory) / destination.name
+        temporary_path.write_text(content, encoding="utf-8")
+        candidate = FsqCaseLoader().load_case(temporary_path)
+    if candidate.config.platform != source_platform:
+        raise ValueError("Candidate Case platform does not match the source Case.")
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = Path(temporary.name)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()

@@ -225,6 +225,26 @@ def test_case_test_json_exposes_run_local_artifacts_and_warning(tmp_path: Path, 
     assert payload["result"]["candidate_case_path"].endswith("candidate.fsq.yaml")
 
 
+def test_case_test_human_suggest_reports_artifacts_and_source_immutability(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.adapters.cli._main.test_case",
+        lambda _request: CaseTestResult(
+            run_id="run-1",
+            status="success",
+            summary="passed",
+            report_path=tmp_path / "report.md",
+            suggestion_path=tmp_path / "case-suggestions.json",
+            candidate_case_path=tmp_path / "candidate.fsq.yaml",
+        ),
+    )
+    result = CliRunner().invoke(main, ["case", "test", "--platform", "web", "search.fsq.yaml", "--suggest"])
+
+    assert result.exit_code == 0
+    assert f"Suggestions: {tmp_path / 'case-suggestions.json'}" in result.output
+    assert f"Candidate Case: {tmp_path / 'candidate.fsq.yaml'}" in result.output
+    assert "Source Case was not modified." in result.output
+
+
 @pytest.mark.parametrize(
     ("category", "expected_exit"),
     [

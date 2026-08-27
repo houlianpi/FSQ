@@ -267,7 +267,17 @@ def case_create(context: click.Context, platform: str, goal: str) -> None:
 def case_test(context: click.Context, case_path: Path, platform: str, suggest: bool) -> None:
     try:
         result = test_case(CaseTestRequest(current_directory=Path.cwd(), platform=platform, case_path=case_path, suggest=suggest))
-        _emit_terminal(context, result.model_dump(mode="json"))
+        if context.obj["output"] == "human":
+            click.echo(f"Case {result.status}: {result.summary}")
+            click.echo(f"Report: {result.report_path}")
+            if result.suggestion_path is not None:
+                click.echo(f"Suggestions: {result.suggestion_path}")
+            if result.candidate_case_path is not None:
+                click.echo(f"Candidate Case: {result.candidate_case_path}")
+            if suggest:
+                click.echo("Source Case was not modified.")
+        else:
+            _emit_terminal(context, result.model_dump(mode="json"))
     except ApplicationError as exc:
         _application_error(context, exc)
     except KeyboardInterrupt as exc:

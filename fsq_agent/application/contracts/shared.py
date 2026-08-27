@@ -11,6 +11,7 @@ class ApplicationErrorCode(StrEnum):
     CASE_GOAL_INVALID = "case.goal_invalid"
     CASE_NOT_FOUND = "case.not_found"
     CASE_INVALID = "case.invalid"
+    CASE_SUGGESTION_FAILED = "case.suggestion_failed"
     CONFIGURATION_INVALID = "configuration.invalid"
     PROVIDER_UNAVAILABLE = "provider.unavailable"
     ENVIRONMENT_UNAVAILABLE = "environment.unavailable"

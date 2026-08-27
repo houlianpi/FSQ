@@ -21,6 +21,7 @@ from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.config import Settings, load_platform_settings
 from fsq_agent.execution import DynamicExecutionRequest, DynamicExecutionService
 from fsq_agent.models import Task, TaskResult
+from fsq_agent.providers import build_case_suggestion_analyzer
 
 
 class _Agent(Protocol):
@@ -98,12 +99,12 @@ def _goal_task_id(goal: str) -> str:
     return slug[:80] or "goal-task"
 
 
-from fsq_agent.application._case_test import test_case as _test_case
+from fsq_agent.application._case_test import execute_case_test
 
 
 def test_case(request: CaseTestRequest) -> CaseTestResult:
     """Execute the canonical Case testing use case through its private strict helper."""
-    return _test_case(request)
+    return execute_case_test(request, suggestion_analyzer_factory=build_case_suggestion_analyzer)
 
 
 __all__ = ["create_case", "test_case"]

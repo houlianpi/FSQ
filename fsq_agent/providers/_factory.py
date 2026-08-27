@@ -4,6 +4,7 @@
 from fsq_agent.config import Settings
 from fsq_agent.providers._ai_assertion import AIAssertionEvaluator
 from fsq_agent.providers._azure_openai import build_azure_openai_client_config
+from fsq_agent.providers._case_suggestion import CaseSuggestionAnalyzer
 from fsq_agent.providers._github_copilot import build_github_copilot_client_config, refresh_github_copilot_client_config
 from fsq_agent.providers._session import ModelProviderSession
 
@@ -46,3 +47,7 @@ def refresh_model_provider_session(settings: Settings) -> ModelProviderSession:
 
 def build_ai_assertion_evaluator(settings: Settings) -> AIAssertionEvaluator:
     return ModelProviderFactory(settings).build_ai_assertion_evaluator()
+
+
+def build_case_suggestion_analyzer(settings: Settings) -> CaseSuggestionAnalyzer:
+    return CaseSuggestionAnalyzer(ModelProviderFactory(settings).build_session())
