@@ -28,6 +28,23 @@ def test_case_test_rejects_missing_case_with_stable_error(tmp_path: Path, monkey
     assert error.value.code == ApplicationErrorCode.CASE_NOT_FOUND
 
 
+def test_case_test_rejects_invalid_case_with_stable_request_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(case_test_module, "require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    invalid_case = cases_dir / "invalid.fsq.yaml"
+    invalid_case.write_text("schemaVersion: unsupported/v1\nname: Invalid schema\nplatform: web\n", encoding="utf-8")
+    settings = SimpleNamespace(cases=SimpleNamespace(dir=cases_dir))
+    monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
+
+    with pytest.raises(ApplicationError) as error:
+        case_test_module.test_case(CaseTestRequest(current_directory=tmp_path, platform="web", case_path=invalid_case))
+
+    assert error.value.code == ApplicationErrorCode.CASE_INVALID
+    assert error.value.category.value == "request_validation"
+    assert error.value.details["schemaVersion"] == "unsupported/v1"
+
+
 def test_suggestion_artifact_is_fact_based_and_source_immutable(tmp_path: Path) -> None:
     source = tmp_path / "search.fsq.yaml"
     original = "schemaVersion: fsq.ai-test/v1\n"

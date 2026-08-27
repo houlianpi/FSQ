@@ -169,6 +169,93 @@ def test_case_test_failure_uses_exit_one_and_jsonl_terminal_record(tmp_path: Pat
     assert terminal["result"]["status"] == "failed"
 
 
+@pytest.mark.parametrize("platform", ["android", "web", "windows", "macos"])
+@pytest.mark.parametrize("suggest", [False, True])
+def test_case_test_maps_platform_path_suggest_and_current_directory(tmp_path: Path, monkeypatch, platform: str, suggest: bool) -> None:
+    captured = {}
+
+    def fake_test(request):
+        captured["request"] = request
+        return CaseTestResult(run_id="run-1", status="success", summary="passed", report_path=tmp_path / "report.md")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.test_case", fake_test)
+    arguments = ["case", "test", "--platform", platform, "search.fsq.yaml"]
+    if suggest:
+        arguments.append("--suggest")
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(main, arguments)
+        expected_directory = Path.cwd()
+
+    assert result.exit_code == 0
+    assert captured["request"].platform == platform
+    assert captured["request"].case_path == Path("search.fsq.yaml")
+    assert captured["request"].suggest is suggest
+    assert captured["request"].current_directory == expected_directory
+
+
+@pytest.mark.parametrize("arguments", [["search.fsq.yaml"], ["--platform", "web"]])
+def test_case_test_requires_platform_and_case_path(arguments: list[str]) -> None:
+    result = CliRunner().invoke(main, ["--output", "json", "case", "test", *arguments])
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["type"] == "error"
+    assert payload["operation"] == "case.test"
+
+
+def test_case_test_json_exposes_run_local_artifacts_and_warning(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.adapters.cli._main.test_case",
+        lambda _request: CaseTestResult(
+            run_id="run-1",
+            status="success",
+            summary="passed",
+            report_path=tmp_path / "report.md",
+            evidence_manifest_path=tmp_path / "evidence.json",
+            suggestion_path=tmp_path / "case-suggestions.json",
+            candidate_case_path=tmp_path / "candidate.fsq.yaml",
+            warnings=["case.suffix_deprecated: rename this Case to *.fsq.yaml"],
+        ),
+    )
+    result = CliRunner().invoke(main, ["--output", "json", "case", "test", "--platform", "web", "legacy.codex.yaml", "--suggest"])
+    payload = json.loads(result.output)
+
+    assert result.exit_code == 0
+    assert payload["warnings"] == ["case.suffix_deprecated: rename this Case to *.fsq.yaml"]
+    assert payload["result"]["suggestion_path"].endswith("case-suggestions.json")
+    assert payload["result"]["candidate_case_path"].endswith("candidate.fsq.yaml")
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_exit"),
+    [
+        (ApplicationErrorCategory.REQUEST_VALIDATION, 2),
+        (ApplicationErrorCategory.WORKSPACE_CONFIGURATION, 3),
+        (ApplicationErrorCategory.CONFIGURATION, 3),
+        (ApplicationErrorCategory.UNAVAILABLE, 4),
+        (ApplicationErrorCategory.INTERNAL, 5),
+    ],
+)
+def test_case_test_maps_application_error_categories(monkeypatch, category: ApplicationErrorCategory, expected_exit: int) -> None:
+    def fail(_request):
+        raise ApplicationError(code=ApplicationErrorCode.INTERNAL_ERROR, category=category, message="safe failure")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.test_case", fail)
+    result = CliRunner().invoke(main, ["--output", "json", "case", "test", "--platform", "web", "search.fsq.yaml"])
+    assert result.exit_code == expected_exit
+    assert json.loads(result.output)["type"] == "error"
+
+
+def test_case_test_unexpected_error_is_safe(monkeypatch) -> None:
+    def fail(_request):
+        raise RuntimeError("secret backend detail")
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.test_case", fail)
+    result = CliRunner().invoke(main, ["--output", "json", "case", "test", "--platform", "web", "search.fsq.yaml"])
+    assert result.exit_code == 5
+    assert "RuntimeError" in result.output
+    assert "secret backend detail" not in result.output
+
+
 def test_legacy_commands_are_rejected_as_usage_errors() -> None:
     for command in ("run", "replay", "report", "playground", "control-plane"):
         result = CliRunner().invoke(main, [command])

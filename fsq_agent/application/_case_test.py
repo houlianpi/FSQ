@@ -19,6 +19,7 @@ from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config import load_platform_settings, validate_strict_core_settings
 from fsq_agent.core import ArtifactStore, HarnessFactory, RuntimeSecretStore
 from fsq_agent.execution import collect_strict_lifecycle_cases, run_strict_lifecycle_case
+from fsq_agent.models import ConfigurationError
 from fsq_agent.providers import build_ai_assertion_evaluator
 
 
@@ -35,7 +36,10 @@ def test_case(request: CaseTestRequest) -> CaseTestResult:
             action="Provide an existing *.fsq.yaml Case path.",
         ) from exc
     source_before = case_path.read_bytes()
-    case = FsqCaseLoader().load_case(case_path)
+    try:
+        case = FsqCaseLoader().load_case(case_path)
+    except ConfigurationError as exc:
+        raise _invalid_case_error(exc) from exc
     if case.config.platform != request.platform:
         raise ApplicationError(
             code=ApplicationErrorCode.CASE_INVALID,
@@ -46,8 +50,11 @@ def test_case(request: CaseTestRequest) -> CaseTestResult:
 
     registry = build_capability_registry(platform=request.platform)
     snapshot = registry.snapshot()
-    lifecycle_cases = collect_strict_lifecycle_cases(case_path=case_path, case=case, settings=settings)
-    resolved_steps = {path.resolve(): FsqExecutableStepAdapter(registry_snapshot=snapshot).to_executable_steps(item) for path, item in lifecycle_cases}
+    try:
+        lifecycle_cases = collect_strict_lifecycle_cases(case_path=case_path, case=case, settings=settings)
+        resolved_steps = {path.resolve(): FsqExecutableStepAdapter(registry_snapshot=snapshot).to_executable_steps(item) for path, item in lifecycle_cases}
+    except ConfigurationError as exc:
+        raise _invalid_case_error(exc) from exc
     requires_ai = any(steps_require_provider(steps, snapshot, provider_required_capability_names(request.platform)) for steps in resolved_steps.values())
     validate_strict_core_settings(settings, requires_ai_assertion=requires_ai)
     run_id = f"{case.id}-{time.strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -97,6 +104,16 @@ def _resolve_case_path(value: Path, cases_dir: Path, current_directory: Path) ->
         if candidate.is_file():
             return candidate.resolve()
     raise FileNotFoundError(f"Case not found: {value}")
+
+
+def _invalid_case_error(error: ConfigurationError) -> ApplicationError:
+    return ApplicationError(
+        code=ApplicationErrorCode.CASE_INVALID,
+        category=ApplicationErrorCategory.REQUEST_VALIDATION,
+        message=str(error).splitlines()[0],
+        action="Correct the FSQ Case and retry.",
+        details=error.context,
+    )
 
 
 def _report_status(path: Path) -> tuple[str, str]:
