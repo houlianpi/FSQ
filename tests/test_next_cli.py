@@ -4,9 +4,17 @@
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
-from fsq_agent.application import CaseCreateResult, CaseTestResult, WorkspaceInitializeResult
+from fsq_agent.application import (
+    ApplicationError,
+    ApplicationErrorCategory,
+    ApplicationErrorCode,
+    CaseCreateResult,
+    CaseTestResult,
+    WorkspaceInitializeResult,
+)
 from fsq_agent.cli import main
 
 
@@ -192,3 +200,115 @@ def test_init_rejects_install_driver_option() -> None:
 
     assert result.exit_code == 2
     assert "No such option: --install-driver" in result.output
+
+
+@pytest.mark.parametrize(
+    ("arguments", "platform", "expected"),
+    [
+        (["--platform", "android", "--app-id", "com.example.app"], "android", {"app_id": "com.example.app"}),
+        (["--platform", "web", "--browser-channel", "msedge-canary", "--browser-executable-path", "browser"], "web", {"browser_channel": "msedge-canary"}),
+        (
+            ["--platform", "windows", "--app-path", "application.exe", "--window-title-re", "Example.*", "--launch-args", "--safe-mode"],
+            "windows",
+            {"window_title_re": "Example.*", "launch_args": "--safe-mode"},
+        ),
+        (["--platform", "macos", "--bundle-id", "com.example.app"], "macos", {"bundle_id": "com.example.app"}),
+    ],
+)
+def test_init_maps_each_platform_request(monkeypatch, tmp_path: Path, arguments: list[str], platform: str, expected: dict[str, object]) -> None:
+    captured = {}
+    monkeypatch.setattr(
+        "fsq_agent.adapters.cli._main.initialize_workspace",
+        lambda request: captured.update(request=request) or WorkspaceInitializeResult(status="initialized", name="project", root_path=tmp_path, platform=platform, driver_status="ready"),
+    )
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        Path("browser").write_text("", encoding="utf-8")
+        Path("application.exe").write_text("", encoding="utf-8")
+        result = runner.invoke(main, ["init", *arguments, "--name", "custom", "--env", "TOKEN=secret=value", "--update-existing"])
+
+    assert result.exit_code == 0
+    request = captured["request"]
+    assert request.platform == platform
+    assert request.name == "custom"
+    assert request.env == {"TOKEN": "secret=value"}
+    assert request.update_existing is True
+    for field, value in expected.items():
+        assert getattr(request, field) == value
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--platform", "android"],
+        ["--platform", "web"],
+        ["--platform", "windows"],
+        ["--platform", "macos"],
+        ["--platform", "android", "--app-id", "com.example", "--browser-channel", "chrome"],
+    ],
+)
+def test_init_invalid_platform_target_fails_before_workspace_mutation(tmp_path: Path, monkeypatch, arguments: list[str]) -> None:
+    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("workspace must not mutate"))
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(main, ["init", *arguments])
+
+    assert result.exit_code == 3
+
+
+@pytest.mark.parametrize(
+    "env_arguments",
+    [
+        ["--env", "MISSING_EQUALS"],
+        ["--env", "=value"],
+        ["--env", "EMPTY="],
+        ["--env", "TOKEN=one", "--env", "TOKEN=two"],
+    ],
+)
+def test_init_rejects_invalid_env_syntax_before_application(monkeypatch, env_arguments: list[str]) -> None:
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.initialize_workspace", lambda _request: pytest.fail("application must not run"))
+
+    result = CliRunner().invoke(main, ["init", "--platform", "android", "--app-id", "com.example", *env_arguments])
+
+    assert result.exit_code == 2
+    assert "TOKEN=one" not in result.output
+    assert "TOKEN=two" not in result.output
+
+
+@pytest.mark.parametrize("output", ["json", "jsonl"])
+def test_init_machine_success_is_one_terminal_result(tmp_path: Path, monkeypatch, output: str) -> None:
+    monkeypatch.setattr(
+        "fsq_agent.adapters.cli._main.initialize_workspace",
+        lambda _request: WorkspaceInitializeResult(status="initialized", name="project", root_path=tmp_path, platform="android", driver_status="ready"),
+    )
+
+    result = CliRunner().invoke(main, ["--output", output, "init", "--platform", "android", "--app-id", "com.example"])
+
+    assert result.exit_code == 0
+    records = [json.loads(line) for line in result.output.splitlines()]
+    assert len(records) == 1
+    assert records[0]["type"] == "result"
+    assert records[0]["operation"] == "init"
+    assert records[0]["result"]["driver_status"] == "ready"
+
+
+@pytest.mark.parametrize("output", ["json", "jsonl"])
+def test_init_readiness_failure_is_safe_machine_error_without_workspace_mutation(tmp_path: Path, monkeypatch, output: str) -> None:
+    def fail(_request):
+        raise ApplicationError(
+            code=ApplicationErrorCode.ENVIRONMENT_UNAVAILABLE,
+            category=ApplicationErrorCategory.UNAVAILABLE,
+            message="web Python runtime dependency is missing",
+            action="Reinstall or repair fsq-agent.",
+        )
+
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.initialize_workspace", fail)
+
+    result = CliRunner().invoke(main, ["--output", output, "init", "--platform", "web", "--browser-channel", "chrome"])
+
+    assert result.exit_code == 4
+    record = json.loads(result.output)
+    assert record["type"] == "error"
+    assert record["operation"] == "init"
+    assert record["error"]["code"] == "environment.unavailable"
+    assert "pip" not in result.output
+    assert not (tmp_path / ".fsq").exists()

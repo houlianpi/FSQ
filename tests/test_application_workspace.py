@@ -137,3 +137,72 @@ def test_initialize_workspace_persists_normalized_windows_path(tmp_path: Path, m
     )
 
     assert target.app_path == executable.resolve()
+
+
+@pytest.mark.parametrize(
+    ("platform", "request_values"),
+    [
+        ("android", {"app_id": "com.example.app"}),
+        ("web", {"browser_channel": "chrome"}),
+        ("windows", {"app_path": Path("application.exe")}),
+        ("macos", {"bundle_id": "com.example.app"}),
+    ],
+)
+def test_initialize_workspace_checks_readiness_before_persistence_for_every_platform(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, request_values: dict[str, object]) -> None:
+    browser = tmp_path / "Google Chrome" / "chrome.exe"
+    browser.parent.mkdir(parents=True)
+    browser.write_text("", encoding="utf-8")
+    browser.chmod(0o755)
+    application = tmp_path / "application.exe"
+    application.write_text("", encoding="utf-8")
+    application.chmod(0o755)
+    if platform == "windows":
+        request_values = {**request_values, "app_path": application}
+
+    calls: list[str] = []
+    monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [browser])
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: calls.append(f"check:{selected}") or PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
+    monkeypatch.setattr(
+        "fsq_agent.application._workspace_init.initialize_workspace_root",
+        lambda **kwargs: calls.append("persist") or type("Result", (), {"status": "initialized", "name": "project", "root_path": tmp_path.resolve(), "platform": platform})(),
+    )
+
+    result = initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform=platform, **request_values))
+
+    assert calls == [f"check:{platform}", "persist"]
+    assert result.platform == platform
+    assert result.driver_status == "ready"
+
+
+@pytest.mark.parametrize("platform", ["android", "web", "windows", "macos"])
+def test_initialize_workspace_readiness_failure_never_persists_for_any_platform(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
+    browser = tmp_path / "Google Chrome" / "chrome.exe"
+    browser.parent.mkdir(parents=True)
+    browser.write_text("", encoding="utf-8")
+    browser.chmod(0o755)
+    application = tmp_path / "application.exe"
+    application.write_text("", encoding="utf-8")
+    application.chmod(0o755)
+    request_values = {
+        "android": {"app_id": "com.example.app"},
+        "web": {"browser_channel": "chrome"},
+        "windows": {"app_path": application},
+        "macos": {"bundle_id": "com.example.app"},
+    }[platform]
+    monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [browser])
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="missing", ready=False, message="runtime missing", action="Reinstall or repair fsq-agent."),
+    )
+    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("workspace must not persist"))
+
+    with pytest.raises(ApplicationError) as error:
+        initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform=platform, **request_values))
+
+    assert error.value.code == ApplicationErrorCode.ENVIRONMENT_UNAVAILABLE
+    assert error.value.details == {"platform": platform}
