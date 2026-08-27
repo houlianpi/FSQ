@@ -16,16 +16,14 @@ from fsq_agent.models import AndroidWorkspaceTarget, ConfigurationError, MacOSWo
 
 def initialize_workspace(request: WorkspaceInitializeRequest) -> WorkspaceInitializeResult:
     root = request.current_directory.expanduser().resolve()
-    target, installed = resolve_workspace_target(request)
+    target = resolve_workspace_target(request)
     try:
         config = WorkspaceConfig(version=2, name=request.name or root.name, root_path=root, platform=request.platform, target=target, env=request.env)
         result = initialize_workspace_root(root_path=root, config=config, update_existing=request.update_existing, user_config_root=request.user_config_root)
     except (ConfigurationError, ValidationError, ValueError) as exc:
         raise _configuration_error(exc) from exc
     browser_path = target.browser_executable_path if isinstance(target, WebWorkspaceTarget) else None
-    return WorkspaceInitializeResult(
-        status=result.status, name=result.name, root_path=result.root_path, platform=result.platform, driver_status="installed" if installed else "ready", browser_executable_path=browser_path
-    )
+    return WorkspaceInitializeResult(status=result.status, name=result.name, root_path=result.root_path, platform=result.platform, driver_status="ready", browser_executable_path=browser_path)
 
 
 def resolve_workspace_target(request: WorkspaceInitializeRequest):
@@ -36,15 +34,11 @@ def resolve_workspace_target(request: WorkspaceInitializeRequest):
     except (ConfigurationError, ValidationError, ValueError) as exc:
         raise _configuration_error(exc) from exc
     check = runtime.check(request.platform)
-    installed = False
-    if check.status == "missing" and request.install_driver:
-        check = runtime.install(request.platform)
-        installed = check.ready
     if not check.ready:
         raise ApplicationError(
             code=ApplicationErrorCode.ENVIRONMENT_UNAVAILABLE, category=ApplicationErrorCategory.UNAVAILABLE, message=check.message, action=check.action, details={"platform": request.platform}
         )
-    return target, installed
+    return target
 
 
 def create_workspace(*, parent_path: Path, configs: list[WorkspaceConfig | dict[str, object]], user_config_root: Path | None = None):
@@ -53,12 +47,12 @@ def create_workspace(*, parent_path: Path, configs: list[WorkspaceConfig | dict[
 
 
 def add_workspace_platform(*, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], user_config_root: Path | None = None):
-    resolved, _ = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
+    resolved = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
     return persist_workspace_platform(name=name, platform=platform, target=resolved, env=env, user_config_root=user_config_root)
 
 
 def update_workspace_platform(*, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], expected_revision: str, user_config_root: Path | None = None):
-    resolved, _ = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
+    resolved = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
     return persist_workspace_platform_update(name=name, platform=platform, target=resolved, env=env, expected_revision=expected_revision, user_config_root=user_config_root)
 
 
@@ -71,10 +65,10 @@ def _resolve_config_target(config: WorkspaceConfig | dict[str, object]) -> Works
         if not isinstance(target, dict) or not isinstance(env, dict):
             raise TypeError("Workspace target and environment must be objects.")
         request = _request_from_target(root_path, platform, target, env)  # type: ignore[arg-type]
-        resolved, _ = resolve_workspace_target(request)
+        resolved = resolve_workspace_target(request)
         return WorkspaceConfig.model_validate({**config, "target": resolved})
     request = _request_from_target(config.root_path, config.platform, config.target.model_dump(), dict(config.env))
-    resolved, _ = resolve_workspace_target(request)
+    resolved = resolve_workspace_target(request)
     return config.model_copy(update={"target": resolved})
 
 

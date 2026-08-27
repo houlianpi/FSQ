@@ -122,7 +122,7 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | knowledge | fsq_agent/knowledge/SPEC.md | Loads project-specific application knowledge and task-referenced knowledge assets. |
 | case_dsl | fsq_agent/case_dsl/SPEC.md | Canonically loads and validates FSQ AI Test DSL Cases and converts deterministic commands into executable steps. |
 | fsq | fsq_agent/fsq/SPEC.md | Preserves the documented legacy Case DSL public import surface by forwarding to canonical `case_dsl` objects. |
-| environments | fsq_agent/environments/SPEC.md | Owns host/runtime support, readiness, bounded installation/recheck, and Web executable discovery through platform providers. |
+| environments | fsq_agent/environments/SPEC.md | Owns host/runtime support, read-only readiness checks, and Web executable discovery through platform providers. |
 | skills | fsq_agent/skills/SPEC.md | Loads complete configured automation skill instruction bundles and skips or fails broken bundles according to requiredness. |
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
 | core | fsq_agent/core/SPEC.md | Navigates platform-neutral Core ownership across Runner, Evidence, Interfaces, current capability/runtime services, and compatibility composition. |
@@ -227,6 +227,7 @@ flowchart TD
 
 ## Development Rules
 
+- The base `fsq-agent` Python distribution includes the supported Android, Web, Windows, and macOS Python platform dependencies. Runtime commands do not invoke Python or system package managers. Host-specific services, browser/application targets, devices, and system prerequisites remain externally provisioned and are checked read-only before Workspace mutation or execution.
 - Each Python module exposes public symbols only from `__init__.py` using explicit `__all__`.
 - A package may organize one module's public implementation into resource-owned public modules and subpackages while retaining `__init__.py` as its complete convenience export boundary. Public resource modules must not duplicate contracts or behavior.
 - `pyproject.toml` is the source of truth for the repository's pinned Ruff version, lint policy, formatter policy, thresholds, and scoped exclusions. Repository-owned Python must conform to that configuration without separate lint baselines or blanket suppression mechanisms.

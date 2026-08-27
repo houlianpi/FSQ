@@ -34,9 +34,6 @@ class PlatformRuntimeService:
     def check(self, platform: Platform) -> PlatformRuntimeCheck:
         return _PROVIDERS[platform].check()
 
-    def install(self, platform: Platform) -> PlatformRuntimeCheck:
-        return _PROVIDERS[platform].install()
-
     def discover_web_executables(self, channel: str) -> list[Path]:
         candidates = _web_candidate_paths(channel)
         if platform.system() == "Windows":

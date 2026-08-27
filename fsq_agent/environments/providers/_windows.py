@@ -3,4 +3,4 @@
 
 from fsq_agent.environments.providers._runtime import RuntimeProvider
 
-WINDOWS_RUNTIME_PROVIDER = RuntimeProvider(platform="windows", module="pywinauto", extra="windows", required_host="Windows")
+WINDOWS_RUNTIME_PROVIDER = RuntimeProvider(platform="windows", module="pywinauto", required_host="Windows")

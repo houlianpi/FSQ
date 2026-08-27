@@ -419,7 +419,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "Appium Python client is required for AppiumMac2Driver.",
-                context={"install": "pip install Appium-Python-Client"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         options = Mac2Options().load_capabilities(capabilities)
         self._session = webdriver.Remote(self.server_url, options=options)
@@ -546,7 +546,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "Selenium action builder is required for Appium Mac2 pointer actions.",
-                context={"install": "pip install selenium"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         actions = ActionBuilder(session)
         pointer = actions.pointer_action
@@ -564,7 +564,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "Selenium action builder is required for Appium Mac2 pointer actions.",
-                context={"install": "pip install selenium"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         actions = ActionBuilder(session)
         actions.pointer_action.move_to_location(point.x, point.y)
@@ -577,7 +577,7 @@ class AppiumMac2Driver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "Selenium action builder is required for Appium Mac2 pointer actions.",
-                context={"install": "pip install selenium"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         actions = ActionBuilder(session)
         pointer = actions.pointer_action

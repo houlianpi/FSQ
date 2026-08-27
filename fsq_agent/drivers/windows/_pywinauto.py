@@ -337,7 +337,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         if image is None:
             raise ConfigurationError(
                 "Windows screenshot capture returned no image. Pillow is required for pywinauto screenshots.",
-                context={"install": "pip install fsq-agent[windows]"},
+                context={"action": "Reinstall or repair fsq-agent."},
             )
         buffer = BytesIO()
         image.save(buffer, format="PNG")
@@ -366,7 +366,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "pywinauto is required for PywinautoWindowsDriver.",
-                context={"install": "pip install fsq-agent[windows]"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         return Application
 
@@ -376,7 +376,7 @@ class PywinautoWindowsDriver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "pywinauto is required for Windows mouse actions.",
-                context={"install": "pip install fsq-agent[windows]"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         return mouse
 

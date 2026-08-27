@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from fsq_agent.application import (
     ApplicationError,
@@ -84,7 +85,9 @@ def test_initialize_workspace_resolves_web_browser_before_config_mutation(tmp_pa
 
 def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing", action="pip install fsq-agent[web]")
+        PlatformRuntimeService,
+        "check",
+        lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing", action="Reinstall or repair fsq-agent."),
     )
     monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("config mutation must not run"))
 
@@ -92,17 +95,21 @@ def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: P
         initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="web", browser_channel="chrome"))
 
 
-def test_initialize_workspace_validates_target_before_driver_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_initialize_workspace_request_rejects_install_driver(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        WorkspaceInitializeRequest.model_validate({"current_directory": tmp_path, "platform": "android", "app_id": "example", "install_driver": True})
+
+
+def test_initialize_workspace_validates_target_before_readiness_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing"))
-    monkeypatch.setattr(PlatformRuntimeService, "install", lambda self, platform: pytest.fail("invalid target must not install"))
 
     with pytest.raises(ApplicationError) as error:
-        initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="android", app_id="example", browser_channel="chrome", install_driver=True))
+        initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="android", app_id="example", browser_channel="chrome"))
 
     assert error.value.code == ApplicationErrorCode.CONFIGURATION_INVALID
 
 
-def test_initialize_workspace_does_not_install_unsupported_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_initialize_workspace_rejects_unsupported_runtime_without_mutation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     executable = tmp_path / "app.exe"
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
@@ -111,10 +118,10 @@ def test_initialize_workspace_does_not_install_unsupported_runtime(tmp_path: Pat
         "check",
         lambda self, platform: PlatformRuntimeCheck(platform=platform, status="unsupported", ready=False, message="unsupported"),
     )
-    monkeypatch.setattr(PlatformRuntimeService, "install", lambda self, platform: pytest.fail("unsupported runtime must not install"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("config mutation must not run"))
 
     with pytest.raises(ApplicationError, match="unsupported"):
-        initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="windows", app_path=executable, install_driver=True))
+        initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="windows", app_path=executable))
 
 
 def test_initialize_workspace_persists_normalized_windows_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,7 +132,7 @@ def test_initialize_workspace_persists_normalized_windows_path(tmp_path: Path, m
     monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
     monkeypatch.chdir(tmp_path)
 
-    target, _ = __import__("fsq_agent.application", fromlist=["resolve_workspace_target"]).resolve_workspace_target(
+    target = __import__("fsq_agent.application", fromlist=["resolve_workspace_target"]).resolve_workspace_target(
         WorkspaceInitializeRequest(current_directory=tmp_path, platform="windows", app_path=Path("bin/app.exe"))
     )
 

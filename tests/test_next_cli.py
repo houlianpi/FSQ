@@ -181,8 +181,14 @@ def test_init_maps_web_options_to_application(monkeypatch, tmp_path: Path) -> No
     )
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(main, ["init", "--platform", "web", "--browser-channel", "chrome", "--install-driver"])
+        result = runner.invoke(main, ["init", "--platform", "web", "--browser-channel", "chrome"])
     assert result.exit_code == 0
     assert captured["request"].browser_channel == "chrome"
     assert captured["request"].browser_executable_path is None
-    assert captured["request"].install_driver is True
+
+
+def test_init_rejects_install_driver_option() -> None:
+    result = CliRunner().invoke(main, ["init", "--platform", "web", "--browser-channel", "chrome", "--install-driver"])
+
+    assert result.exit_code == 2
+    assert "No such option: --install-driver" in result.output

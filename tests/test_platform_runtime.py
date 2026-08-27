@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -62,13 +61,8 @@ def test_runtime_check_reports_unsupported_host_before_module_lookup(monkeypatch
     assert check.action == "Run Windows platform tests on a Windows host."
 
 
-def test_runtime_install_does_not_invoke_pip_on_unsupported_host(monkeypatch) -> None:
-    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Windows")
-    monkeypatch.setattr("fsq_agent.environments.providers._runtime.subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pip must not run")))
-
-    check = PlatformRuntimeService().install("macos")
-
-    assert check.status == "unsupported"
+def test_runtime_service_does_not_expose_install() -> None:
+    assert not hasattr(PlatformRuntimeService(), "install")
 
 
 def test_explicit_nonstandard_web_path_can_match_selected_channel(tmp_path: Path) -> None:
@@ -175,51 +169,9 @@ def test_runtime_check_reports_ready_or_missing(monkeypatch, installed: bool, st
 
     assert check.status == status
     assert check.ready is installed
+    if installed:
+        assert check.action is None
+    else:
+        assert check.action == "Reinstall or repair fsq-agent; the web Python runtime dependency is missing."
     assert "stdout" not in check.model_dump()
     assert "stderr" not in check.model_dump()
-
-
-def test_runtime_install_success_uses_fixed_bounded_command_and_rechecks(monkeypatch) -> None:
-    calls: list[tuple[object, dict[str, object]]] = []
-    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
-    monkeypatch.setattr(
-        "fsq_agent.environments.providers._runtime.subprocess.run",
-        lambda command, **kwargs: calls.append((command, kwargs)) or subprocess.CompletedProcess(command, 0),
-    )
-    monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
-
-    check = PlatformRuntimeService().install("web")
-
-    assert check.status == "ready"
-    assert calls == [
-        (
-            [__import__("sys").executable, "-m", "pip", "install", "fsq-agent[web]"],
-            {"check": False, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "timeout": 300},
-        )
-    ]
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        subprocess.TimeoutExpired(["pip"], 300, output=b"secret-output", stderr=b"secret-error"),
-        OSError("secret launch failure"),
-        subprocess.CompletedProcess(["pip"], 9, stdout=b"secret-output", stderr=b"secret-error"),
-    ],
-)
-def test_runtime_install_failures_are_missing_and_do_not_disclose_output(monkeypatch, failure: BaseException | subprocess.CompletedProcess) -> None:
-    monkeypatch.setattr("fsq_agent.environments.providers._runtime.platform.system", lambda: "Linux")
-
-    def fail(*args, **kwargs):
-        if isinstance(failure, BaseException):
-            raise failure
-        return failure
-
-    monkeypatch.setattr("fsq_agent.environments.providers._runtime.subprocess.run", fail)
-
-    check = PlatformRuntimeService().install("web")
-
-    assert check.status == "missing"
-    assert check.ready is False
-    assert "secret" not in check.message
-    assert "secret" not in (check.action or "")

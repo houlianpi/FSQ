@@ -315,7 +315,7 @@ class UiAutomator2AndroidDriver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "uiautomator2 is required for UiAutomator2AndroidDriver.",
-                context={"install": "pip install fsq-agent[android]"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         return u2.connect(serial)
 

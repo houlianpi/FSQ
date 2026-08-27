@@ -113,7 +113,7 @@ Results are judged by an evidence-based verifier, not the agent claiming success
 ### 1. Install
 
 ```bash
-pip install fsq-agent[web]
+pip install fsq-agent
 ```
 
 <details>
@@ -121,7 +121,7 @@ pip install fsq-agent[web]
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync --extra dev --extra web
+uv sync --extra dev
 ```
 
 </details>
@@ -221,22 +221,22 @@ It listens on `127.0.0.1:8879` and opens a browser by default. Use `--host`, `--
 <tr>
 <td>🌐 <b>Web</b></td>
 <td>Playwright</td>
-<td><code>pip install fsq-agent[web]</code></td>
+<td>Included with <code>fsq-agent</code></td>
 </tr>
 <tr>
 <td>📱 <b>Android</b></td>
 <td>uiautomator2</td>
-<td><code>pip install fsq-agent[android]</code></td>
+<td>Included with <code>fsq-agent</code></td>
 </tr>
 <tr>
 <td>🖥️ <b>Windows</b></td>
 <td>pywinauto</td>
-<td><code>pip install fsq-agent[windows]</code></td>
+<td>Included with <code>fsq-agent</code></td>
 </tr>
 <tr>
 <td>🍎 <b>macOS</b></td>
 <td>Appium Mac2</td>
-<td><code>pip install fsq-agent[macos]</code></td>
+<td>Included with <code>fsq-agent</code></td>
 </tr>
 </table>
 

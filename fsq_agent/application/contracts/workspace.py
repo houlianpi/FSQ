@@ -31,7 +31,6 @@ class WorkspaceInitializeRequest(BaseModel):
     launch_args: str | None = None
     bundle_id: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
-    install_driver: bool = False
     update_existing: bool = False
     user_config_root: Path | None = None
 
@@ -42,5 +41,5 @@ class WorkspaceInitializeResult(BaseModel):
     name: str
     root_path: Path
     platform: Literal["android", "web", "windows", "macos"]
-    driver_status: Literal["ready", "installed"]
+    driver_status: Literal["ready"]
     browser_executable_path: Path | None = None

@@ -6,7 +6,7 @@ Own private Android, Web, Windows, and macOS host/runtime providers used by `Pla
 
 ## Dependencies
 
-Providers use standard-library host, import, filesystem, and subprocess facilities plus public Models contracts. They must not import adapters, Application, Config persistence, concrete drivers or harnesses, Execution, or top-level LLM `providers`.
+Providers use standard-library host, import, and filesystem facilities plus public Models contracts. They must not invoke package managers or import adapters, Application, Config persistence, concrete drivers or harnesses, Execution, or top-level LLM `providers`.
 
 ## Public Interface
 
@@ -28,4 +28,4 @@ No public package API. Providers are selected internally by `environments`.
 
 ## Error Handling
 
-Providers bound commands, time, and captured output and return safe normalized outcomes. Unsupported providers do not install.
+Providers perform read-only checks and return safe normalized outcomes. They never install or modify Python packages, system dependencies, services, targets, applications, devices, emulators, or virtual machines.

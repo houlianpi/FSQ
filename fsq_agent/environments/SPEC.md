@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Own host/runtime discovery, support classification, readiness checks, supported installation, bounded recheck, and target discovery. Platform automation and Workspace persistence are outside this module.
+Own host/runtime discovery, support classification, read-only readiness checks, and target discovery. Platform automation, package installation, and Workspace persistence are outside this module.
 
 ## Dependencies
 
@@ -13,7 +13,7 @@ The module must not import Application, adapters, Config persistence, concrete d
 
 ## Public Interface
 
-`PlatformRuntimeService` is the stable service for `check`, explicitly authorized `install`, bounded recheck, exact-channel Web executable discovery, and explicit executable validation. `PlatformRuntimeCheck` remains owned by Models. Core's legacy export references the canonical service class.
+`PlatformRuntimeService` is the stable service for read-only `check`, exact-channel Web executable discovery, and explicit executable validation. `PlatformRuntimeCheck` remains owned by Models. Core's legacy export references the canonical service class.
 
 ## Internal Structure
 
@@ -26,14 +26,14 @@ The module must not import Application, adapters, Config persistence, concrete d
 - Architecture level: Level 3 Layered Application.
 - Public API: `PlatformRuntimeService`.
 - Internal modules: service implementation and platform providers.
-- Domain boundaries: host support/readiness/install/recheck and target discovery only.
+- Domain boundaries: host support/readiness and target discovery only.
 - Boundary models: normalized status facts come from `models`.
 - Dependency direction: Application depends on Environments; Environments depends on Models, never Application or adapters.
-- Rationale: the service coordinates host-specific side effects and normalized failures.
+- Rationale: the service coordinates host-specific discovery and normalized readiness failures.
 
 ## Error Handling
 
-Unsupported combinations never install. Installation uses fixed no-shell commands, fixed timeouts, bounded output, no raw-output disclosure, and one bounded readiness recheck after successful exit. Missing dependencies, launch failure, timeout, and non-zero exit return consistent safe facts.
+Readiness checks never install or modify software. Missing Python platform dependencies identify an incomplete `fsq-agent` installation and provide safe reinstall/repair guidance. Missing external host services or system prerequisites provide safe provisioning guidance without executing it.
 
 ## Current Invariants
 

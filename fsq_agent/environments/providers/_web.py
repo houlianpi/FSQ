@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fsq_agent.environments.providers._runtime import RuntimeProvider
 
-WEB_RUNTIME_PROVIDER = RuntimeProvider(platform="web", module="playwright", extra="web")
+WEB_RUNTIME_PROVIDER = RuntimeProvider(platform="web", module="playwright")
 WEB_NAMES = {
     "chromium": ("chromium",),
     "chrome": ("google chrome", "google-chrome", "chrome.exe"),

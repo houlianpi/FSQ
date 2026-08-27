@@ -170,7 +170,6 @@ def main(context: click.Context, output_format: str, non_interactive: bool) -> N
 @click.option("--launch-args", default=None)
 @click.option("--bundle-id", default=None)
 @click.option("--env", "env_values", multiple=True, metavar="NAME=VALUE")
-@click.option("--install-driver", is_flag=True, default=False)
 @click.option("--update-existing", is_flag=True, default=False)
 @click.pass_context
 def init(
@@ -185,7 +184,6 @@ def init(
     launch_args: str | None,
     bundle_id: str | None,
     env_values: tuple[str, ...],
-    install_driver: bool,
     update_existing: bool,
 ) -> None:
     env: dict[str, str] = {}
@@ -209,7 +207,6 @@ def init(
             launch_args=launch_args,
             bundle_id=bundle_id,
             env=env,
-            install_driver=install_driver,
             update_existing=update_existing,
         )
     )

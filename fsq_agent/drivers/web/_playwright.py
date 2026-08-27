@@ -397,7 +397,7 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
         except ImportError as exc:
             raise ConfigurationError(
                 "playwright is required for PlaywrightWebDriver.",
-                context={"install": "pip install fsq-agent[web] && playwright install"},
+                context={"action": "Reinstall or repair fsq-agent."},
             ) from exc
         playwright = sync_playwright().start()
         browser_factory = getattr(playwright, "chromium", None)
