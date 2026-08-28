@@ -44,7 +44,7 @@ Adapters map stable inward failures into documented exit codes or safe HTTP/SSE 
 - Public compatibility packages do not duplicate transport implementations, package data, or mutable state.
 - CLI and Control Plane business operations continue through Application.
 - Control Plane and Playground remain behaviorally and statefully independent.
-- Static assets remain generated package data with unchanged URL and wheel behavior.
+- Control Plane and Playground HTML entry points, JavaScript, CSS, `entry-assets.json`, and all referenced generated assets are runtime package data included in both wheel and source distribution, with unchanged serving URLs. Installed `fsq ui` resolves these resources from the installed package without a frontend source tree, Node.js, or runtime asset download.
 - CLI, Control Plane, and Playground use the same public Execution services; adapter-private modules do not implement lifecycle or recording policy.
 - CLI, Control Plane, and Playground composition roots inject the same Coding Agent runtime implementation into SDK-neutral Agent orchestration. Application and inward packages never import `adapters.coding_agent`.
 - CLI keeps this composition in a private helper rather than in command handlers. The helper may construct `FsqAgent` with the public Coding Agent runtime factory and return the SDK-neutral collaborator expected by Application, but it does not validate requests or own execution policy.
