@@ -20,17 +20,17 @@ from fsq_agent.application import (
     DoctorRequest,
     WorkspaceInitializeRequest,
     WorkspaceRequest,
-    configure_provider,
+    complete_github_configuration,
+    configure_azure_openai,
     create_case,
     diagnose_workspace,
     event_record,
     initialize_workspace,
-    list_environments,
-    list_providers,
     list_runs,
     normalize_application_error,
     provider_status,
     read_run_logs,
+    request_github_device_code,
     require_initialized_workspace,
     result_record,
     show_run,
@@ -127,7 +127,7 @@ def _requested_operation(args: list[str] | None) -> str:
         positional.append(value)
     if not positional:
         return "fsq"
-    if positional[0] in {"case", "providers", "runs", "environments"} and len(positional) > 1:
+    if positional[0] in {"case", "providers", "runs"} and len(positional) > 1:
         return ".".join(positional[:2])
     return positional[0]
 
@@ -308,30 +308,67 @@ def providers() -> None:
     pass
 
 
-@providers.command(name="list")
-@click.pass_context
-def providers_list(context: click.Context) -> None:
-    _workspace(context)
-    _emit(context, [item.model_dump(mode="json") for item in list_providers()])
-
-
 @providers.command(name="configure")
 @click.argument("name", type=click.Choice(["github_copilot", "azure_openai"]))
+@click.option("--base-url", default=None)
+@click.option("--model", default=None)
+@click.option("--api-key", default=None)
 @click.pass_context
-def providers_configure(context: click.Context, name: str) -> None:
-    _workspace(context)
-    if context.obj["non_interactive"]:
-        raise click.UsageError("providers configure requires an interactive terminal")
-    _emit(context, configure_provider(Path.cwd(), name).model_dump(mode="json"))
+def providers_configure(context: click.Context, name: str, base_url: str | None, model: str | None, api_key: str | None) -> None:
+    machine = context.obj["output"] != "human"
+    if name == "github_copilot":
+        if base_url is not None or api_key is not None:
+            raise click.UsageError("--base-url and --api-key apply only to azure_openai")
+        if machine or context.obj["non_interactive"]:
+            raise click.UsageError("GitHub Copilot configuration requires Human interactive mode")
+        device = request_github_device_code()
+        click.echo(f"Open: {device.verification_uri}")
+        click.echo(f"Code: {device.user_code}")
+
+        def select_model(models):
+            if not models:
+                raise click.UsageError("GitHub Copilot returned no eligible models")
+            if len(models) == 1:
+                return models[0].id
+            choices = {str(index): item.id for index, item in enumerate(models, start=1)}
+            for index, item in enumerate(models, start=1):
+                click.echo(f"{index}. {item.name} ({item.id})")
+            return choices[click.prompt("Select model", type=click.Choice(list(choices)))]
+
+        result = complete_github_configuration(device, model=model, select_model=select_model, cancel_requested=lambda: False)
+    else:
+        if not base_url:
+            if machine or context.obj["non_interactive"]:
+                raise click.UsageError("--base-url, --model, and --api-key are required")
+            base_url = click.prompt("Azure OpenAI base URL")
+        if not model:
+            if machine or context.obj["non_interactive"]:
+                raise click.UsageError("--base-url, --model, and --api-key are required")
+            model = click.prompt("Azure OpenAI model")
+        if not api_key:
+            if machine or context.obj["non_interactive"]:
+                raise click.UsageError("--base-url, --model, and --api-key are required")
+            api_key = click.prompt("Azure OpenAI API key", hide_input=True)
+        result = configure_azure_openai(base_url=base_url, model=model, api_key=api_key)
+    _emit_terminal(context, result.model_dump(mode="json"))
 
 
 @providers.command(name="status")
-@click.argument("name", required=False)
 @click.pass_context
-def providers_status(context: click.Context, name: str | None) -> None:
-    _workspace(context)
-    values = provider_status(name)
-    _emit(context, [item.model_dump(mode="json") for item in values])
+def providers_status(context: click.Context) -> None:
+    result = provider_status()
+    value = result.model_dump(mode="json")
+    if context.obj["output"] == "human":
+        click.echo(f"Provider: {result.provider or 'not configured'}")
+        click.echo(f"Model: {result.model or 'not configured'}")
+        click.echo(f"Status: {result.status}")
+        click.echo(result.message)
+        if result.action:
+            click.echo(f"Action: {result.action}")
+    else:
+        _emit_terminal(context, value)
+    if result.status != "ready":
+        raise click.exceptions.Exit(ExitCode.UNAVAILABLE)
 
 
 @main.group()
@@ -373,28 +410,6 @@ def runs_show(context: click.Context, run_id: str) -> None:
 def runs_logs(context: click.Context, run_id: str) -> None:
     events = read_run_logs(_runs_dir(), run_id)
     _emit_terminal(context, {"run_id": run_id, "event_count": len(events)}, events=events)
-
-
-@main.group()
-def environments() -> None:
-    pass
-
-
-@environments.command(name="list")
-@click.option("--platform", type=PLATFORMS, default=None)
-@click.pass_context
-def environments_list(context: click.Context, platform: str | None) -> None:
-    _workspace(context)
-    _emit(context, [item.model_dump(mode="json") for item in list_environments(Path.cwd(), platform)])
-
-
-@environments.command(name="doctor")
-@click.argument("name")
-@click.pass_context
-def environments_doctor(context: click.Context, name: str) -> None:
-    _workspace(context)
-    values = [item for item in list_environments(Path.cwd()) if item.name == name]
-    _emit(context, [item.model_dump(mode="json") for item in values])
 
 
 def _workspace(context: click.Context) -> Path:

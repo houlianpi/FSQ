@@ -25,16 +25,12 @@ fsq
 │   └── test
 ├── ui
 ├── providers
-│   ├── list
 │   ├── configure NAME
-│   └── status [NAME]
+│   └── status
 ├── runs
 │   ├── list
 │   ├── show RUN_ID
 │   └── logs RUN_ID
-└── environments
-    ├── list
-    └── doctor NAME
 ```
 
 Core Case forms are:
@@ -66,17 +62,34 @@ fsq init --platform macos --bundle-id com.example.app
 - `case test --suggest` executes the authored Case exactly once, then permits read-only AI analysis of the parsed Case and bounded persisted execution facts. It may return Run-local suggestions or a candidate Case while preserving the completed execution result and never overwriting the source Case or configured Case directory.
 - When suggestion analysis produces an artifact, Human output displays each Run-local suggestion or candidate Case path and states that the source Case was not modified. JSON and JSONL terminal results expose the same paths through `suggestion_path` and `candidate_case_path`; absent artifacts remain `null`.
 - `runs` is not a complete supported multi-platform contract in this specification. Its platform-selection, aggregation, and complete query behavior require a separate confirmed specification before being treated as complete.
-- `providers` exposes safe provider inventory, configuration, and readiness.
-- `environments` exposes Environment inventory and diagnostics. Mutation is not public in this phase.
+- `providers` exposes only user-level active-Provider configuration and readiness. Provider inventory is not a public CLI capability in the first release.
 - `doctor` performs read-only Workspace diagnostics across every identifiable configured platform and reports fixed component checks plus readiness for `case test`, `case test --suggest`, and `case create`; `ui` starts the Control Plane adapter.
 
-The first phase does not expose extension management, public capability/action discovery, Environment mutation, Run mutation, a daemon, async queues, sharding, or workers. `test`, `replay`, and `run` are not public top-level execution commands and are not retained as silent aliases.
+The CLI does not expose Environment inventory, Environment diagnostics, extension management, public capability/action discovery, Environment mutation, Run mutation, a daemon, async queues, sharding, or workers. Environment readiness remains an internal/public Python module capability consumed by Workspace initialization and `fsq doctor`. `environments`, `test`, `replay`, and `run` are not public top-level commands and are not retained as silent aliases.
 
 ## Workspace Rule
 
 The exact current directory is the CLI workspace root. A valid CLI workspace is registered in the user workspace registry at that exact normalized root and contains at least one valid `.fsq/config/config.<platform>.yaml`; `.fsq-agent-workspace` markers are neither created nor accepted. Commands do not search parent directories, auto-initialize, or accept an alternate workspace flag. Commands requiring only workspace context validate the exact registered root; platform-specific commands additionally require the selected platform config. Failure uses Application error code `workspace.not_initialized` and tells a human to run `fsq init` in the intended root or change to an initialized Workspace. Control Plane continues to list all registered workspaces and does not derive selection or execution paths from the CLI process startup directory.
 
 `fsq init` is the only CLI command that may establish this precondition. It validates all input, resolves the complete target, and completes Driver readiness before workspace mutation; it then initializes or updates exactly one platform at the current root through the shared Application and Config workspace operation, and reports success only after workspace files and registry truth are committed. It safely adopts an existing non-empty project directory only when `.fsq` and legacy workspace markers are absent; it preserves unrelated project files. It creates `.fsq/config/config.<platform>.yaml`, `.fsq/runs/<platform>/`, `cases/<platform>/`, `knowledge/<platform>/project.md`, and the user registry entry. Repetition is idempotent. A partially initialized, unregistered, mismatched, invalid, or Driver-unready workspace fails with safe repair guidance rather than being treated as ready.
+
+`providers configure` and `providers status` are user-level commands and are exempt from the Workspace precondition. They operate on the same active Provider under `~/.fsq` as Control Plane Config and never read or write a Workspace `.env` or platform configuration.
+
+## Provider Commands
+
+The supported configuration forms are:
+
+```bash
+fsq providers configure github_copilot [--model MODEL]
+fsq providers configure azure_openai [--base-url URL] [--model MODEL] [--api-key KEY]
+fsq providers status
+```
+
+In Human interactive mode, GitHub Copilot configuration requests a device code, displays only its verification URL and user code, waits with the Provider-owned polling policy, discovers eligible models, and asks the user to select one when `--model` did not select an offered model. It atomically activates the completed authorization and selected model only after all steps succeed. Because the device flow requires an observable user action before a terminal result exists, it is rejected under `--non-interactive`, JSON, and JSONL in the first release with guidance to use Human interactive mode. An explicitly requested model must be present in the discovered eligible model set.
+
+Azure OpenAI configuration requires base URL, model/deployment name, and API key. Human interactive mode securely prompts for omitted values and hides the API key. JSON, JSONL, and `--non-interactive` never prompt and require all three options. Configuration validates and atomically saves the complete candidate through the shared user Config API. No output or error includes the API key. A failed GitHub or Azure replacement leaves the previously active Provider and its credentials usable.
+
+`providers status` loads the real active user Provider and model, checks local authentication and non-interactive readiness through Application, and never starts device login or sends model inference. It returns one result with `status` (`ready` or `unavailable`), `configured`, `provider`, `model`, `authenticated`, a safe `message`, and a safe repair `action` when needed. Human, JSON, and JSONL expose equivalent facts; JSONL emits one terminal record and no synthetic event. Ready exits `0`; a completed unconfigured, unauthenticated, or otherwise unavailable result exits `4`. Invalid user configuration is a configuration error, and unrecoverable orchestration failure is an internal error. Output never includes tokens, API keys, authorization data, raw backend responses, exception messages, or tracebacks.
 
 ## Global Machine Contract
 
@@ -108,7 +121,7 @@ CLI maps stable Application Errors to the documented exit categories and present
 
 ## Verification Scope
 
-Verification covers command/option parsing, rejection of `--install-driver`, platform-target exclusivity, required Web channel and optional executable path, unambiguous shared Web discovery and explicit-path validation, read-only runtime readiness, incomplete-distribution and external-prerequisite guidance, no workspace mutation before readiness, current-directory name derivation/override, existing-project adoption, idempotent initialization/update/conflict behavior, registry and directory creation, workspace precondition presentation, Doctor platform ordering, command dependency/status aggregation, component error isolation, no-side-effect boundary, Human/JSON/JSONL Doctor rendering and exit codes, Application request mapping, non-interactive behavior, safe unexpected-exception diagnostics, `ui` startup through the current public Control Plane server options without startup-directory workspace selection, legacy rejection/migration guidance, and absence of direct domain/runtime orchestration.
+Verification covers command/option parsing; absence and rejection of public `environments` and `providers list`; rejection of `--install-driver`; platform-target exclusivity; required Web channel and optional executable path; unambiguous shared Web discovery and explicit-path validation; read-only runtime readiness; incomplete-distribution and external-prerequisite guidance; no workspace mutation before readiness; current-directory name derivation/override; existing-project adoption; idempotent initialization/update/conflict behavior; registry and directory creation; workspace precondition presentation; Provider commands outside a Workspace; shared CLI/Control Plane user configuration in both directions; complete Azure interactive and non-interactive configuration; GitHub device flow, model discovery/selection, cancellation, and machine/non-interactive rejection; atomic Provider replacement failure preservation; real safe Provider status; Human/JSON/JSONL rendering and exit codes; Doctor platform ordering, command dependency/status aggregation, component error isolation, and no-side-effect boundary; Application request mapping; safe unexpected-exception diagnostics; `ui` startup through the current public Control Plane server options without startup-directory workspace selection; legacy rejection/migration guidance; and absence of direct domain/runtime orchestration.
 
 ## Current Invariants
 

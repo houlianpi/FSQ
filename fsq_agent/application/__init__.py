@@ -21,7 +21,8 @@ from fsq_agent.application.contracts import (
     DoctorStatusDetail,
     DoctorWorkspaceSummary,
     EnvironmentSummary,
-    ProviderSummary,
+    ProviderConfigurationResult,
+    ProviderStatusResult,
     RunSummary,
     WorkspaceInitializeRequest,
     WorkspaceInitializeResult,
@@ -32,7 +33,7 @@ from fsq_agent.application.contracts import (
 )
 from fsq_agent.application.doctor import diagnose_workspace
 from fsq_agent.application.environments import list_environments
-from fsq_agent.application.providers import configure_provider, list_providers, provider_status
+from fsq_agent.application.providers import complete_github_configuration, configure_azure_openai, provider_status, request_github_device_code
 from fsq_agent.application.runs import list_runs, read_run_logs, show_run
 from fsq_agent.application.workspace import add_workspace_platform, create_workspace, initialize_workspace, require_initialized_workspace, resolve_workspace_target, update_workspace_platform
 
@@ -54,25 +55,27 @@ __all__ = [
     "DoctorStatusDetail",
     "DoctorWorkspaceSummary",
     "EnvironmentSummary",
-    "ProviderSummary",
+    "ProviderConfigurationResult",
+    "ProviderStatusResult",
     "RunSummary",
     "WorkspaceInitializeRequest",
     "WorkspaceInitializeResult",
     "WorkspaceRequest",
     "WorkspaceResult",
     "add_workspace_platform",
-    "configure_provider",
+    "complete_github_configuration",
+    "configure_azure_openai",
     "create_case",
     "create_workspace",
     "diagnose_workspace",
     "event_record",
     "initialize_workspace",
     "list_environments",
-    "list_providers",
     "list_runs",
     "normalize_application_error",
     "provider_status",
     "read_run_logs",
+    "request_github_device_code",
     "require_initialized_workspace",
     "resolve_workspace_target",
     "result_record",

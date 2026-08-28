@@ -12,8 +12,9 @@ def test_resource_modules_export_the_package_public_objects() -> None:
     assert runs.list_runs is application.list_runs
     assert runs.show_run is application.show_run
     assert runs.read_run_logs is application.read_run_logs
-    assert providers.list_providers is application.list_providers
-    assert providers.configure_provider is application.configure_provider
+    assert providers.configure_azure_openai is application.configure_azure_openai
+    assert providers.request_github_device_code is application.request_github_device_code
+    assert providers.complete_github_configuration is application.complete_github_configuration
     assert providers.provider_status is application.provider_status
     assert environments.list_environments is application.list_environments
     assert workspace.require_initialized_workspace is application.require_initialized_workspace

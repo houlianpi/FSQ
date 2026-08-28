@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -11,6 +10,7 @@ from fsq_agent.application import (
     ApplicationError,
     ApplicationErrorCategory,
     ApplicationErrorCode,
+    ProviderStatusResult,
     event_record,
     normalize_application_error,
     result_record,
@@ -83,14 +83,10 @@ def test_machine_usage_error_is_a_terminal_error_record(output: str) -> None:
 
 def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> None:
     monkeypatch.setattr(
-        "fsq_agent.adapters.cli._main.require_initialized_workspace",
-        lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
-    )
-    monkeypatch.setattr(
-        "fsq_agent.adapters.cli._main.list_providers",
+        "fsq_agent.adapters.cli._main.provider_status",
         lambda: (_ for _ in ()).throw(RuntimeError("sensitive implementation detail")),
     )
-    result = CliRunner().invoke(main, ["--output", "json", "providers", "list"])
+    result = CliRunner().invoke(main, ["--output", "json", "providers", "status"])
     assert result.exit_code == 5
     record = json.loads(result.output)
     assert record["error"]["code"] == "internal.error"
@@ -101,13 +97,19 @@ def test_unexpected_command_exception_is_safe_internal_error(monkeypatch) -> Non
 def test_jsonl_command_without_progress_emits_one_terminal_result(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "fsq_agent.adapters.cli._main.require_initialized_workspace",
-        lambda _request: type("Workspace", (), {"workspace": Path.cwd()})(),
+        "fsq_agent.adapters.cli._main.provider_status",
+        lambda: ProviderStatusResult(
+            status="ready",
+            configured=True,
+            provider="azure_openai",
+            model="gpt-5",
+            authenticated=True,
+            message="Ready.",
+        ),
     )
-    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", list)
-    result = CliRunner().invoke(main, ["--output", "jsonl", "providers", "list"])
+    result = CliRunner().invoke(main, ["--output", "jsonl", "providers", "status"])
     assert result.exit_code == 0
     records = [json.loads(line) for line in result.output.splitlines()]
     assert len(records) == 1
     assert records[0]["type"] == "result"
-    assert records[0]["operation"] == "providers.list"
+    assert records[0]["operation"] == "providers.status"

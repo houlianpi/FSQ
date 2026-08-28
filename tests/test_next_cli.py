@@ -34,10 +34,23 @@ def _workspace(path: Path, monkeypatch=None) -> None:
 def test_public_command_tree() -> None:
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
-    for command in ("init", "doctor", "case", "ui", "providers", "runs", "environments"):
+    for command in ("init", "doctor", "case", "ui", "providers", "runs"):
         assert command in result.output
-    for removed in ("run", "report", "playground", "control-plane"):
+    for removed in ("environments", "run", "report", "playground", "control-plane"):
         assert f"  {removed} " not in result.output
+
+
+@pytest.mark.parametrize("output", ["human", "json", "jsonl"])
+def test_environments_command_is_rejected(output: str) -> None:
+    result = CliRunner().invoke(main, ["--output", output, "environments"])
+
+    assert result.exit_code == 2
+    if output == "human":
+        assert "No such command 'environments'" in result.output
+    else:
+        payload = json.loads(result.output)
+        assert payload["type"] == "error"
+        assert payload["error"]["category"] == "request_validation"
 
 
 def test_workspace_error_is_machine_readable(tmp_path: Path) -> None:
@@ -112,14 +125,10 @@ def test_case_test_exposes_suggest_option() -> None:
     assert "--suggest" in result.output
 
 
-def test_supporting_commands_require_current_workspace(tmp_path: Path, monkeypatch) -> None:
-    runner = CliRunner()
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        _workspace(Path.cwd(), monkeypatch)
-        result = runner.invoke(main, ["--output", "json", "providers", "list"])
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert len(payload["result"]) == 2
+def test_providers_list_is_not_public() -> None:
+    result = CliRunner().invoke(main, ["providers", "list"])
+    assert result.exit_code == 2
+    assert "No such command" in result.output
 
 
 def test_case_create_json_maps_application_result(tmp_path: Path, monkeypatch) -> None:
@@ -351,7 +360,7 @@ def test_non_interactive_provider_configuration_is_rejected(tmp_path: Path, monk
         _workspace(Path.cwd(), monkeypatch)
         result = runner.invoke(main, ["--non-interactive", "providers", "configure", "github_copilot"])
     assert result.exit_code == 2
-    assert "interactive terminal" in result.output
+    assert "Human interactive mode" in result.output
 
 
 def test_ui_starts_control_plane_from_non_workspace_directory(tmp_path: Path, monkeypatch) -> None:
@@ -377,9 +386,8 @@ def test_internal_error_human_output_exposes_only_safe_exception_type(monkeypatc
     def fail() -> None:
         raise RuntimeError("secret backend detail")
 
-    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", fail)
-    monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
-    result = CliRunner().invoke(main, ["providers", "list"])
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.provider_status", fail)
+    result = CliRunner().invoke(main, ["providers", "status"])
     assert result.exit_code == 5
     assert "Diagnostic: RuntimeError" in result.output
     assert "secret backend detail" not in result.output
@@ -390,10 +398,9 @@ def test_internal_error_machine_output_contains_only_safe_exception_type(monkeyp
     def fail() -> None:
         raise RuntimeError("secret backend detail")
 
-    monkeypatch.setattr("fsq_agent.adapters.cli._main.list_providers", fail)
-    monkeypatch.setattr("fsq_agent.adapters.cli._main.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": Path.cwd()})())
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.provider_status", fail)
     for output in ("json", "jsonl"):
-        result = CliRunner().invoke(main, ["--output", output, "providers", "list"])
+        result = CliRunner().invoke(main, ["--output", output, "providers", "status"])
         assert result.exit_code == 5
         payload = json.loads(result.output)
         assert payload["error"]["details"] == {"exception_type": "RuntimeError"}

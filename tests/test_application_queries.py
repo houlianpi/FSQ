@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from fsq_agent.application import configure_provider, list_runs, read_run_logs, show_run
+from fsq_agent.application import configure_azure_openai, list_runs, read_run_logs, show_run
+from fsq_agent.config import load_user_provider_config
 
 
 def _workspace(root: Path) -> None:
@@ -34,16 +35,12 @@ def test_run_queries_reject_escape_and_missing_runs(tmp_path: Path, run_id: str)
         show_run(runs, run_id)
 
 
-def test_configure_provider_preserves_unrelated_env_lines(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "fsq_agent.application.providers.require_initialized_workspace",
-        lambda _request: type("Workspace", (), {"workspace": tmp_path})(),
-    )
-    env = tmp_path / ".env"
-    env.write_text("OTHER=value\nFSQ_LLM_PROVIDER=github_copilot\n", encoding="utf-8")
+def test_configure_provider_uses_user_config_without_workspace(tmp_path: Path) -> None:
+    result = configure_azure_openai(base_url="https://example.openai.azure.com", model="gpt-5", api_key="secret", user_config_root=tmp_path)
 
-    result = configure_provider(tmp_path, "azure_openai")
-
-    assert result.name == "azure_openai"
-    assert result.selected is True
-    assert env.read_text(encoding="utf-8") == "OTHER=value\nFSQ_LLM_PROVIDER=azure_openai\n"
+    saved = load_user_provider_config(tmp_path)
+    assert result.provider == "azure_openai"
+    assert result.model == "gpt-5"
+    assert saved.provider is not None
+    assert saved.provider.type == "azure_openai"
+    assert not (tmp_path / ".env").exists()
