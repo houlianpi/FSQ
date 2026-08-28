@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import webbrowser
 from enum import IntEnum
 from pathlib import Path
 
@@ -18,6 +19,10 @@ from fsq_agent.application import (
     CaseCreateRequest,
     CaseTestRequest,
     DoctorRequest,
+    GenerateRunHtmlRequest,
+    ListRunsRequest,
+    ReadRunLogsRequest,
+    ShowRunRequest,
     WorkspaceInitializeRequest,
     WorkspaceRequest,
     complete_github_configuration,
@@ -25,6 +30,7 @@ from fsq_agent.application import (
     create_case,
     diagnose_workspace,
     event_record,
+    generate_run_html,
     initialize_workspace,
     list_runs,
     normalize_application_error,
@@ -39,6 +45,7 @@ from fsq_agent.application import (
 
 PLATFORMS = click.Choice(["android", "web", "windows", "macos"])
 OUTPUTS = click.Choice(["human", "json", "jsonl"])
+RUN_STATUSES = click.Choice(["preparing", "running", "finalizing", "success", "failed", "inconclusive", "cancelled", "error", "interrupted"])
 
 
 class ExitCode(IntEnum):
@@ -376,40 +383,94 @@ def runs() -> None:
     pass
 
 
-def _runs_dir() -> Path:
-    workspace = require_initialized_workspace(WorkspaceRequest(current_directory=Path.cwd()))
-    config_paths = sorted((workspace.workspace / ".fsq" / "config").glob("config.*.yaml"))
-    platforms = [path.name.removeprefix("config.").removesuffix(".yaml") for path in config_paths]
-    if len(platforms) != 1:
-        raise ApplicationError(
-            code=ApplicationErrorCode.CONFIGURATION_INVALID,
-            category=ApplicationErrorCategory.CONFIGURATION,
-            message="Run lookup requires exactly one configured workspace platform.",
-            action="Use a workspace with exactly one configured platform.",
-            details={"platforms": platforms},
-        )
-    return workspace.workspace / ".fsq" / "runs" / platforms[0]
-
-
 @runs.command(name="list")
+@click.option("--platform", type=PLATFORMS)
+@click.option("--status", "statuses", type=RUN_STATUSES, multiple=True)
+@click.option("--mode", type=click.Choice(["strict", "explore"]))
+@click.option("--since")
+@click.option("--case", "case_id")
+@click.option("--limit", type=click.IntRange(1, 200), default=20)
 @click.pass_context
-def runs_list(context: click.Context) -> None:
-    _emit(context, [item.model_dump(mode="json") for item in list_runs(_runs_dir())])
+def runs_list(context: click.Context, platform: str | None, statuses: tuple[str, ...], mode: str | None, since: str | None, case_id: str | None, limit: int) -> None:
+    result = list_runs(ListRunsRequest(current_directory=Path.cwd(), platform=platform, statuses=statuses, mode=mode, since=since, case_id=case_id, limit=limit))
+    if context.obj["output"] == "human":
+        click.echo("RUN ID  PLATFORM  MODE  STATUS  STARTED  DURATION  CASE/GOAL")
+        for item in result.runs:
+            source = item.source.case_id or item.source.goal_summary if item.source else "—"
+            click.echo(f"{item.run_id}  {item.platform}  {item.mode or '—'}  {item.status}  {item.started_at or '—'}  {item.duration_ms or '—'}  {source}")
+    else:
+        _emit_terminal(context, result.model_dump(mode="json"))
 
 
 @runs.command(name="show")
 @click.argument("run_id")
+@click.option("--platform", type=PLATFORMS)
+@click.option("--open", "open_report", is_flag=True)
 @click.pass_context
-def runs_show(context: click.Context, run_id: str) -> None:
-    _emit(context, show_run(_runs_dir(), run_id))
+def runs_show(context: click.Context, run_id: str, platform: str | None, open_report: bool) -> None:
+    if open_report and (context.obj["output"] != "human" or context.obj["non_interactive"]):
+        raise click.UsageError("--open requires Human interactive mode")
+    request = ShowRunRequest(current_directory=Path.cwd(), run_id=run_id, platform=platform)
+    shown = show_run(request)
+    if open_report:
+        generated = generate_run_html(GenerateRunHtmlRequest(**request.model_dump()))
+        if not webbrowser.open((Path.cwd() / generated.html_path).as_uri()):
+            raise ApplicationError(
+                code=ApplicationErrorCode.RUN_REPORT_OPEN_FAILED,
+                category=ApplicationErrorCategory.INTERNAL,
+                message="The static Run report could not be opened.",
+                action=f"Open {generated.html_path} manually.",
+            )
+        shown = shown.model_copy(update={"html_path": generated.html_path})
+    if context.obj["output"] == "human":
+        run = shown.run
+        source = run.source.case_id or run.source.goal_summary or "—"
+        click.echo(f"Run ID: {run.run_id}")
+        click.echo(f"Platform: {run.platform}")
+        click.echo(f"Mode: {run.mode}")
+        click.echo(f"Status: {run.status}")
+        click.echo(f"Started: {run.started_at.astimezone() if run.started_at else '—'}")
+        click.echo(f"Completed: {run.completed_at.astimezone() if run.completed_at else '—'}")
+        click.echo(f"Duration: {run.duration_ms if run.duration_ms is not None else '—'} ms")
+        click.echo(f"Source: {source}")
+        if run.result.summary:
+            click.echo(f"Summary: {run.result.summary}")
+        if run.runtime.provider or run.runtime.model:
+            click.echo(f"Runtime: {run.runtime.provider or '—'} / {run.runtime.model or '—'}")
+        for label, path in (
+            ("Report", run.artifacts.report),
+            ("Report Markdown", run.artifacts.report_markdown),
+            ("Logs", run.artifacts.events),
+            ("Evidence", run.artifacts.evidence_manifest),
+            ("Suggestions", run.artifacts.suggestions),
+            ("Candidate Case", run.artifacts.candidate_case),
+            ("HTML", shown.html_path),
+        ):
+            if path:
+                click.echo(f"{label}: .fsq/runs/{run.platform}/{run.run_id}/{Path(path).name}")
+        for warning in shown.warnings:
+            click.echo(f"Warning: {warning}")
+    else:
+        _emit_terminal(context, shown.model_dump(mode="json"))
 
 
 @runs.command(name="logs")
 @click.argument("run_id")
+@click.option("--platform", type=PLATFORMS)
+@click.option("--level", "levels", multiple=True)
+@click.option("--phase", "phases", multiple=True)
+@click.option("--limit", type=click.IntRange(1, 5000), default=200)
 @click.pass_context
-def runs_logs(context: click.Context, run_id: str) -> None:
-    events = read_run_logs(_runs_dir(), run_id)
-    _emit_terminal(context, {"run_id": run_id, "event_count": len(events)}, events=events)
+def runs_logs(context: click.Context, run_id: str, platform: str | None, levels: tuple[str, ...], phases: tuple[str, ...], limit: int) -> None:
+    result = read_run_logs(ReadRunLogsRequest(current_directory=Path.cwd(), run_id=run_id, platform=platform, levels=levels, phases=phases, limit=limit))
+    if context.obj["output"] == "human":
+        for event in result.events:
+            click.echo(f"{event.time or '—'}  {event.level or 'info'}  {event.phase or '—'}  {event.tool or event.label or '—'}  {event.status or '—'}  {(event.message or '')[:160]}")
+    elif context.obj["output"] == "jsonl":
+        terminal = {key: value for key, value in result.model_dump(mode="json").items() if key != "events"}
+        _emit_terminal(context, terminal, events=[event.model_dump(mode="json") for event in result.events])
+    else:
+        _emit_terminal(context, result.model_dump(mode="json"))
 
 
 def _workspace(context: click.Context) -> Path:

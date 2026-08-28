@@ -119,6 +119,12 @@ def test_deprecated_suffix_warning_is_machine_visible() -> None:
     assert result.model_dump(mode="json")["warnings"][0].startswith("case.suffix_deprecated")
 
 
+def test_registered_workspace_name_is_not_directory_basename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = SimpleNamespace(name="registered-shop", root_path=tmp_path)
+    monkeypatch.setattr(case_test_module, "list_workspace_registry", lambda: [entry])
+    assert case_test_module._registered_workspace_name(tmp_path) == "registered-shop"
+
+
 def test_bounded_execution_facts_limit_items_strings_and_total_size() -> None:
     report = {
         "run_id": "run-1",
@@ -155,6 +161,7 @@ def test_suggest_runs_case_once_then_analyzes_and_returns_no_candidate(tmp_path:
     )
     order: list[str] = []
     monkeypatch.setattr(case_test_module, "require_initialized_workspace", lambda _request: SimpleNamespace(workspace=tmp_path))
+    monkeypatch.setattr(case_test_module, "list_workspace_registry", lambda: [SimpleNamespace(name="test-workspace", root_path=tmp_path)])
     monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
 
     class Registry:
@@ -174,7 +181,16 @@ def test_suggest_runs_case_once_then_analyzes_and_returns_no_candidate(tmp_path:
         return SimpleNamespace(path=report_path, evidence_manifest_path=run_dir / "manifest.json")
 
     monkeypatch.setattr(case_test_module, "run_strict_lifecycle_case", run_once)
-    monkeypatch.setattr(case_test_module.time, "strftime", lambda _format: "2026-01-01_00-00-00")
+    monkeypatch.setattr(
+        case_test_module,
+        "allocate_run",
+        lambda **_kwargs: SimpleNamespace(run_id=run_dir.name, status="preparing"),
+    )
+    monkeypatch.setattr(
+        case_test_module,
+        "transition_run",
+        lambda _run_dir, metadata, status, **_kwargs: SimpleNamespace(run_id=metadata.run_id, status=status),
+    )
 
     class Analyzer:
         def analyze(self, *, parsed_case, execution_report):

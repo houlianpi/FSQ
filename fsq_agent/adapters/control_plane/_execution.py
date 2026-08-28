@@ -9,7 +9,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Never
 
 from fsq_agent._capability_bootstrap import steps_require_provider
 from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
@@ -22,9 +22,15 @@ from fsq_agent.execution import (
     DynamicExecutionService,
     LifecycleExecutionRequest,
     LifecycleExecutionService,
+    RunArtifactIndex,
+    RunResultSummary,
+    RunSource,
+    RunStepCounts,
+    allocate_run,
     collect_strict_lifecycle_cases,
     record_dynamic_run_as_strict_case,
     run_strict_lifecycle_case,
+    transition_run,
 )
 from fsq_agent.models import ExecutableStep, FsqCase, RunnerEvent, RunnerStepResult, Task
 from fsq_agent.providers import build_ai_assertion_evaluator
@@ -253,14 +259,38 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
 def _run_strict(prepared: PreparedRun, state: ControlPlaneState) -> None:
     settings = prepared.settings
     request_id = prepared.request_id
-    run_id = f"{prepared.case.id if prepared.case else 'strict'}-{request_id[:8]}"
-    projection = _projection(settings, state, request_id)
-    projection.bind_run(run_id)
+    metadata = None
+    run_dir = None
     evaluator = None
     try:
+        workspace_root = settings.workspace.root_dir
+        if workspace_root is None:
+            _raise_workspace_root_unavailable()
+        case_id = prepared.case.id if prepared.case else "strict"
+        metadata = allocate_run(
+            workspace=workspace_root,
+            workspace_name=prepared.workspace_name,
+            platform=settings.harness.platform,
+            source_id=case_id,
+            mode="strict",
+            source=RunSource(
+                kind="case",
+                case_id=case_id,
+                case_path=str(prepared.case_path.relative_to(workspace_root))
+                if prepared.case_path and prepared.case_path.is_relative_to(workspace_root)
+                else prepared.case_path.name
+                if prepared.case_path
+                else None,
+            ),
+            platform_runs_dir=Path(settings.output.runs_dir),
+        )
+        run_id = metadata.run_id
+        run_dir = Path(settings.output.runs_dir) / run_id
+        projection = _projection(settings, state, request_id)
+        projection.bind_run(run_id)
         state.raise_if_cancelled(request_id)
         state.transition(request_id, "running", summary="Strict replay is executing.")
-        run_dir = Path(settings.output.runs_dir) / run_id
+        metadata = transition_run(run_dir, metadata, "running")
         evaluator = build_ai_assertion_evaluator(settings) if prepared.requires_ai_assertion else None
         harness = HarnessFactory().create_harness(
             platform=settings.harness.platform,
@@ -297,18 +327,36 @@ def _run_strict(prepared: PreparedRun, state: ControlPlaneState) -> None:
         )
         state.raise_if_cancelled(request_id)
         state.transition(request_id, "finalizing", summary="Finalizing strict evidence and report.")
+        metadata = transition_run(run_dir, metadata, "finalizing")
         projection.load_persisted_manifest()
         status, summary = _strict_report_status(artifact.path)
+        result_status = "success" if status == "passed" else "failed"
+        transition_run(
+            run_dir,
+            metadata,
+            result_status,
+            result=RunResultSummary(summary=summary, steps=_strict_report_step_counts(artifact.path)),
+            artifacts=RunArtifactIndex(
+                report=artifact.path.with_suffix(".json").name,
+                report_markdown=artifact.path.name,
+                events="events.jsonl" if (run_dir / "events.jsonl").is_file() else None,
+                evidence_manifest=artifact.evidence_manifest_path.name if artifact.evidence_manifest_path else None,
+            ),
+        )
         state.finish(
             request_id,
-            status="success" if status == "passed" else "failed",
+            status=result_status,
             summary=projection.safe_text(summary),
             result={"status": status},
             report_available=artifact.path.exists(),
         )
     except TaskCancelledError:
+        if run_dir is not None and metadata is not None:
+            _best_effort_terminal_run(run_dir, metadata, "cancelled")
         state.finish(request_id, status="cancelled", summary="Run cancelled.")
     except Exception as exc:  # noqa: BLE001
+        if run_dir is not None and metadata is not None:
+            _best_effort_terminal_run(run_dir, metadata, "error")
         state.finish(request_id, status="error", summary=safe_exception_message(exc, settings=settings, unexpected=True))
     finally:
         if evaluator is not None:
@@ -430,6 +478,25 @@ def _strict_report_status(path: Path) -> tuple[str, str]:
     status = str(summary.get("status") if isinstance(summary, dict) else "failed")
     failed = summary.get("failed_steps", 0) if isinstance(summary, dict) else 0
     return status, "Strict replay passed." if status == "passed" else f"Strict replay failed with {failed} failed step(s)."
+
+
+def _strict_report_step_counts(path: Path) -> RunStepCounts:
+    payload = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    summary = payload.get("summary") if isinstance(payload, dict) else None
+    total = int(summary.get("total_steps", 0) or 0) if isinstance(summary, dict) else 0
+    failed = int(summary.get("failed_steps", 0) or 0) if isinstance(summary, dict) else 0
+    return RunStepCounts(total=total, passed=max(0, total - failed), failed=failed)
+
+
+def _best_effort_terminal_run(run_dir: Path, metadata, status: str) -> None:
+    try:
+        transition_run(run_dir, metadata, status)
+    except Exception:  # noqa: BLE001, S110 - preserve the original execution failure.
+        pass
+
+
+def _raise_workspace_root_unavailable() -> Never:
+    raise RuntimeError("Workspace root is unavailable.")
 
 
 __all__ = ["ExecutionHandle", "PreparedRun", "prepare_run", "start_execution"]

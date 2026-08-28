@@ -58,6 +58,14 @@ The local workspace setup entry is `fsq init --platform android|web|windows|maco
 
 Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
 
+## Workspace Run History
+
+`fsq runs` is the read-only history surface for the exact current registered Workspace. It aggregates Runs across every configured platform unless an optional platform is supplied, lists bounded filtered summaries, shows one safe Run detail, and reads sanitized structured logs. New Run IDs are unique across the Workspace in the practical collision-resistant form `<source-slug>-<UTC timestamp>-<six lowercase hexadecimal characters>` and are allocated through one shared Execution boundary rather than by adapters.
+
+Every new Run has a versioned `run.json` inside its direct platform Run directory. The document is authoritative for Run identity, lifecycle status, bounded source/result/runtime summary, and contained relative artifact index; full reports, events, evidence, screenshots, and UI snapshots remain in their owning artifacts. Execution writes initial metadata before actions and atomically advances it through `preparing`, `running`, `finalizing`, and one immutable terminal status. Historical Runs without metadata remain queryable through bounded read-only inference and are never migrated implicitly.
+
+`fsq runs show RUN_ID --open` may rebuild a derived local `report.html` from persisted Run facts and open it in the user's default browser. Generation does not change `run.json` or the authoritative Run result and never executes a Case, invokes a Provider or Driver, or inspects live UI state. The static report is offline, escapes persisted content, restricts active content and links to contained allowlisted artifacts, and does not replace Markdown, JSON, event, or evidence truth.
+
 ## Platform Blocks
 
 Shared platform rules:

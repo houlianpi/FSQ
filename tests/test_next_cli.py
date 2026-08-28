@@ -20,6 +20,10 @@ from fsq_agent.application import (
     DoctorResult,
     DoctorStatusDetail,
     DoctorWorkspaceSummary,
+    ListRunsResult,
+    ReadRunLogsResult,
+    RunLogEvent,
+    RunSummary,
     WorkspaceInitializeResult,
 )
 from fsq_agent.cli import main
@@ -412,17 +416,31 @@ def test_runs_logs_jsonl_emits_one_record_per_event(tmp_path: Path, monkeypatch)
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         _workspace(Path.cwd(), monkeypatch)
-        run = Path.cwd() / ".fsq" / "runs" / "run-1"
-        run.mkdir(parents=True)
-        monkeypatch.setattr("fsq_agent.adapters.cli._main._runs_dir", lambda: Path.cwd() / ".fsq" / "runs")
-        lines = [json.dumps({"type": "started"}), json.dumps({"type": "completed"})]
-        (run / "events.jsonl").write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+        monkeypatch.setattr(
+            "fsq_agent.adapters.cli._main.read_run_logs",
+            lambda _request: ReadRunLogsResult(
+                run_id="run-1",
+                platform="web",
+                filters={},
+                matched_count=2,
+                returned_count=2,
+                truncated=False,
+                events=(RunLogEvent(sequence=1, label="started"), RunLogEvent(sequence=2, label="completed")),
+            ),
+        )
         result = runner.invoke(main, ["--output", "jsonl", "runs", "logs", "run-1"])
     assert result.exit_code == 0
     records = [json.loads(line) for line in result.output.splitlines()]
     assert [record["type"] for record in records] == ["event", "event", "result"]
-    assert [record["event"]["type"] for record in records[:-1]] == ["started", "completed"]
-    assert records[-1]["result"]["event_count"] == 2
+    assert [record["event"]["label"] for record in records[:-1]] == ["started", "completed"]
+    assert records[-1]["result"]["returned_count"] == 2
+
+
+def test_runs_list_rejects_invalid_status_as_usage_error() -> None:
+    result = CliRunner().invoke(main, ["--output", "json", "runs", "list", "--status", "not-a-status"])
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["error"]["category"] == "request_validation"
 
 
 def test_runs_use_canonical_platform_directory(tmp_path: Path, monkeypatch) -> None:
@@ -430,16 +448,23 @@ def test_runs_use_canonical_platform_directory(tmp_path: Path, monkeypatch) -> N
     with runner.isolated_filesystem(temp_dir=tmp_path):
         workspace = Path.cwd()
         _workspace(workspace, monkeypatch)
-        config_dir = workspace / ".fsq" / "config"
-        config_dir.mkdir(parents=True)
-        (config_dir / "config.web.yaml").write_text("version: 2\n", encoding="utf-8")
-        run = workspace / ".fsq" / "runs" / "web" / "run-1"
-        run.mkdir(parents=True)
+        monkeypatch.setattr(
+            "fsq_agent.adapters.cli._main.list_runs",
+            lambda _request: ListRunsResult(
+                workspace="test",
+                platforms=("web",),
+                filters={},
+                matched_count=1,
+                returned_count=1,
+                truncated=False,
+                runs=(RunSummary(run_id="run-1", platform="web", mode="strict", status="success"),),
+            ),
+        )
 
         result = runner.invoke(main, ["--output", "json", "runs", "list"])
 
     assert result.exit_code == 0
-    assert json.loads(result.output)["result"][0]["run_id"] == "run-1"
+    assert json.loads(result.output)["result"]["runs"][0]["run_id"] == "run-1"
 
 
 def test_init_maps_web_options_to_application(monkeypatch, tmp_path: Path) -> None:

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Never
 from pydantic import ValidationError
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent._run_ids import new_run_id
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
 from fsq_agent.adapters.control_plane.playground import _recording as playground_recording
@@ -34,8 +33,14 @@ from fsq_agent.execution import (
     LifecycleExecutionRequest,
     LifecycleExecutionService,
     RecordingService,
+    RunArtifactIndex,
+    RunResultSummary,
+    RunSource,
+    RunStepCounts,
+    allocate_run,
     collect_strict_lifecycle_cases,
     run_strict_lifecycle_case,
+    transition_run,
 )
 from fsq_agent.models import CapabilityRegistrySnapshot, ConfigurationError, ExecutableStep, ReportArtifact, RunEvent, RunnerEvent, Task, TaskResult, VerificationResult
 from fsq_agent.providers import build_ai_assertion_evaluator
@@ -397,9 +402,24 @@ def _run_strict_case_yaml(
         for lifecycle_path, lifecycle_case in lifecycle_cases
     }
     validate_strict_core_settings(settings, requires_ai_assertion=requires_ai_assertion)
-    run_id = new_run_id(case.id)
+    workspace_root = settings.workspace.root_dir or Path(settings.output.runs_dir).parent.parent.parent
+    workspace_name = _registered_workspace_name(Path(workspace_root))
+    metadata = allocate_run(
+        workspace=Path(workspace_root),
+        workspace_name=workspace_name,
+        platform=settings.harness.platform,
+        source_id=case.id,
+        mode="strict",
+        source=RunSource(
+            kind="case",
+            case_id=case.id,
+            case_path=str(case_path.relative_to(workspace_root)) if case_path.is_relative_to(workspace_root) else case_path.name,
+        ),
+        platform_runs_dir=Path(settings.output.runs_dir),
+    )
+    run_id = metadata.run_id
     run_dir = Path(settings.output.runs_dir) / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
+    metadata = transition_run(run_dir, metadata, "running")
     state.add_event(
         request_id,
         RunEvent(run_id=run_id, task_id=case.id, type="run_started", title="Strict YAML started", message=str(case_path)),
@@ -409,30 +429,48 @@ def _run_strict_case_yaml(
         handle.bind_harness(harness)
     cancellable_harness = _CancellableHarness(harness, state, request_id)
     recorder = _PlaygroundEvidenceRecorder(run_id=run_id, output_dir=run_dir, state=state, request_id=request_id)
-    artifact = (
-        LifecycleExecutionService(runner=run_strict_lifecycle_case)
-        .execute(
-            LifecycleExecutionRequest(
-                case_path=case_path,
-                case=case,
-                settings=settings,
-                harness=cancellable_harness,
-                output_dir=run_dir,
-                run_id=run_id,
-                registry=registry,
-                registry_snapshot=registry_snapshot,
-                post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-                runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
-                recorder=recorder,
-                resolve_steps=lambda steps, _case: _resolve_strict_replay_steps(steps, settings, registry_snapshot),
-                resolved_steps_by_path=resolved_steps_by_path,
-                cases_by_path={lifecycle_path.resolve(): lifecycle_case for lifecycle_path, lifecycle_case in lifecycle_cases},
-                cancellation_check=lambda: _raise_if_cancelled(state, request_id),
+    try:
+        artifact = (
+            LifecycleExecutionService(runner=run_strict_lifecycle_case)
+            .execute(
+                LifecycleExecutionRequest(
+                    case_path=case_path,
+                    case=case,
+                    settings=settings,
+                    harness=cancellable_harness,
+                    output_dir=run_dir,
+                    run_id=run_id,
+                    registry=registry,
+                    registry_snapshot=registry_snapshot,
+                    post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+                    runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
+                    recorder=recorder,
+                    resolve_steps=lambda steps, _case: _resolve_strict_replay_steps(steps, settings, registry_snapshot),
+                    resolved_steps_by_path=resolved_steps_by_path,
+                    cases_by_path={lifecycle_path.resolve(): lifecycle_case for lifecycle_path, lifecycle_case in lifecycle_cases},
+                    cancellation_check=lambda: _raise_if_cancelled(state, request_id),
+                )
             )
+            .report
         )
-        .report
-    )
+    except BaseException:
+        _best_effort_terminal_run(run_dir, metadata, "cancelled" if state.is_cancel_requested(request_id) else "error")
+        raise
     status, summary = _strict_report_status(artifact)
+    metadata = transition_run(run_dir, metadata, "finalizing")
+    result_status = "success" if status == "passed" else "failed"
+    transition_run(
+        run_dir,
+        metadata,
+        result_status,
+        result=RunResultSummary(summary=summary, steps=_strict_report_step_counts(artifact)),
+        artifacts=RunArtifactIndex(
+            report=artifact.path.with_suffix(".json").name,
+            report_markdown=artifact.path.name,
+            events="events.jsonl" if (run_dir / "events.jsonl").is_file() else None,
+            evidence_manifest=artifact.evidence_manifest_path.name if artifact.evidence_manifest_path else None,
+        ),
+    )
     state.add_event(
         request_id,
         RunEvent(
@@ -446,9 +484,9 @@ def _run_strict_case_yaml(
     )
     return TaskResult(
         task_id=case.id,
-        status="success" if status == "passed" else "failed",
+        status=result_status,
         steps=[],
-        verification=VerificationResult(status="success" if status == "passed" else "failed", summary=summary),
+        verification=VerificationResult(status=result_status, summary=summary),
         report=ReportArtifact(run_id=run_id, path=artifact.path, evidence_manifest_path=artifact.evidence_manifest_path),
     )
 
@@ -554,6 +592,32 @@ def _strict_report_status(artifact: ReportArtifact) -> tuple[str, str]:
         return "failed", "Strict YAML run completed but report status could not be read."
     else:
         return status, f"Strict YAML {status}; failed_steps={failed_steps}"
+
+
+def _strict_report_step_counts(artifact: ReportArtifact) -> RunStepCounts:
+    try:
+        payload = json.loads(artifact.path.with_suffix(".json").read_text(encoding="utf-8"))
+        summary = payload.get("summary", {})
+        total = int(summary.get("total_steps", 0) or 0)
+        failed = int(summary.get("failed_steps", 0) or 0)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError, TypeError, ValueError):
+        return RunStepCounts()
+    return RunStepCounts(total=total, passed=max(0, total - failed), failed=failed)
+
+
+def _best_effort_terminal_run(run_dir: Path, metadata, status: str) -> None:
+    try:
+        transition_run(run_dir, metadata, status)
+    except Exception:  # noqa: BLE001, S110 - preserve the original execution failure.
+        pass
+
+
+def _registered_workspace_name(workspace_root: Path) -> str:
+    from fsq_agent.config import list_workspace_registry
+
+    resolved = workspace_root.resolve()
+    entry = next((item for item in list_workspace_registry() if item.root_path.resolve() == resolved), None)
+    return entry.name if entry is not None else workspace_root.name
 
 
 def _case_requires_ai_assertion(case, registry_snapshot: CapabilityRegistrySnapshot | None = None) -> bool:

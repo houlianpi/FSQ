@@ -4,7 +4,6 @@
 import json
 import os
 import tempfile
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -20,9 +19,9 @@ from fsq_agent.application.contracts import (
 )
 from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.config import Settings, load_platform_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, list_workspace_registry, load_platform_settings, validate_strict_core_settings
 from fsq_agent.core import ArtifactStore, HarnessFactory, RuntimeSecretStore
-from fsq_agent.execution import collect_strict_lifecycle_cases, run_strict_lifecycle_case
+from fsq_agent.execution import RunArtifactIndex, RunResultSummary, RunSource, RunStepCounts, allocate_run, collect_strict_lifecycle_cases, run_strict_lifecycle_case, transition_run
 from fsq_agent.models import ConfigurationError
 from fsq_agent.providers import CaseSuggestionAnalysis, build_ai_assertion_evaluator
 
@@ -73,47 +72,57 @@ def execute_case_test(
         raise _invalid_case_error(exc) from exc
     requires_ai = any(steps_require_provider(steps, snapshot, provider_required_capability_names(request.platform)) for steps in resolved_steps.values())
     validate_strict_core_settings(settings, requires_ai_assertion=requires_ai)
-    run_id = f"{case.id}-{time.strftime('%Y-%m-%d_%H-%M-%S')}"
-    run_dir = Path(settings.output.runs_dir) / run_id
-    evaluator = build_ai_assertion_evaluator(settings) if requires_ai else None
-    harness = HarnessFactory().create_harness(
+    workspace_name = _registered_workspace_name(workspace.workspace)
+    metadata = allocate_run(
+        workspace=workspace.workspace,
+        workspace_name=workspace_name,
         platform=request.platform,
-        harness_settings=settings.harness,
-        artifact_store=ArtifactStore(run_dir=run_dir),
-        ai_assertion_evaluator=evaluator,
-        runtime_secret_settings=settings.runtime_secrets,
-        app_id=(settings.harness.android.app_id or case.config.app_id) if request.platform == "android" else None,
+        source_id=case.id,
+        mode="strict",
+        source=RunSource(kind="case", case_id=case.id, case_path=str(case_path.relative_to(workspace.workspace)) if case_path.is_relative_to(workspace.workspace) else case_path.name),
+        platform_runs_dir=Path(settings.output.runs_dir),
     )
-    artifact = run_strict_lifecycle_case(
-        case_path=case_path,
-        case=case,
-        settings=settings,
-        harness=harness,
-        output_dir=run_dir,
-        run_id=run_id,
-        registry=registry,
-        registry_snapshot=snapshot,
-        resolve_steps=lambda steps, _case: steps,
-        post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-        runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
-        resolved_steps_by_path=resolved_steps,
-        cases_by_path={path.resolve(): item for path, item in lifecycle_cases},
-    )
-    if case_path.read_bytes() != source_before:
-        raise RuntimeError("Case source was modified during testing.")
-    status, summary = _report_status(artifact.path)
-    suggestion_path = None
-    candidate_case_path = None
-    if request.suggest:
-        if suggestion_analyzer_factory is None:
-            raise ApplicationError(
-                code=ApplicationErrorCode.CASE_SUGGESTION_FAILED,
-                category=ApplicationErrorCategory.INTERNAL,
-                message="Case suggestion analysis is not configured.",
-                action="Start this operation through a supported FSQ adapter.",
-                details={"run_id": run_id, "report_path": str(artifact.path)},
-            )
-        try:
+    run_id = metadata.run_id
+    run_dir = Path(settings.output.runs_dir) / run_id
+    metadata = transition_run(run_dir, metadata, "running")
+    try:
+        evaluator = build_ai_assertion_evaluator(settings) if requires_ai else None
+        harness = HarnessFactory().create_harness(
+            platform=request.platform,
+            harness_settings=settings.harness,
+            artifact_store=ArtifactStore(run_dir=run_dir),
+            ai_assertion_evaluator=evaluator,
+            runtime_secret_settings=settings.runtime_secrets,
+            app_id=(settings.harness.android.app_id or case.config.app_id) if request.platform == "android" else None,
+        )
+        artifact = run_strict_lifecycle_case(
+            case_path=case_path,
+            case=case,
+            settings=settings,
+            harness=harness,
+            output_dir=run_dir,
+            run_id=run_id,
+            registry=registry,
+            registry_snapshot=snapshot,
+            resolve_steps=lambda steps, _case: steps,
+            post_action_delay_seconds=settings.execution.post_action_delay_seconds,
+            runtime_secret_store=RuntimeSecretStore.from_settings(settings.runtime_secrets),
+            resolved_steps_by_path=resolved_steps,
+            cases_by_path={path.resolve(): item for path, item in lifecycle_cases},
+        )
+    except BaseException:
+        _best_effort_terminal(run_dir, metadata, "error")
+        raise
+    try:
+        if case_path.read_bytes() != source_before:
+            _raise_source_modified()
+        status, summary = _report_status(artifact.path)
+        metadata = transition_run(run_dir, metadata, "finalizing")
+        suggestion_path = None
+        candidate_case_path = None
+        if request.suggest:
+            if suggestion_analyzer_factory is None:
+                _raise_suggestion_not_configured(run_id, artifact.path)
             report = json.loads(artifact.path.with_suffix(".json").read_text(encoding="utf-8"))
             analysis = suggestion_analyzer_factory(settings).analyze(
                 parsed_case={
@@ -130,9 +139,28 @@ def execute_case_test(
                 execution_summary=summary,
                 analysis=analysis,
             )
-        except ApplicationError:
-            raise
-        except Exception as exc:
+        result_status = "success" if status == "passed" else "failed"
+        counts = _report_step_counts(artifact.path)
+        transition_run(
+            run_dir,
+            metadata,
+            result_status,
+            result=RunResultSummary(summary=summary, steps=counts),
+            artifacts=RunArtifactIndex(
+                report=artifact.path.with_suffix(".json").name,
+                report_markdown=artifact.path.name,
+                events="events.jsonl" if (run_dir / "events.jsonl").is_file() else None,
+                evidence_manifest=artifact.evidence_manifest_path.name if artifact.evidence_manifest_path else None,
+                suggestions=suggestion_path.name if suggestion_path else None,
+                candidate_case=candidate_case_path.name if candidate_case_path else None,
+            ),
+        )
+    except ApplicationError:
+        _best_effort_terminal(run_dir, metadata, "success" if locals().get("status") == "passed" else "failed")
+        raise
+    except Exception as exc:
+        _best_effort_terminal(run_dir, metadata, "error")
+        if request.suggest and "artifact" in locals():
             raise ApplicationError(
                 code=ApplicationErrorCode.CASE_SUGGESTION_FAILED,
                 category=ApplicationErrorCategory.UNAVAILABLE,
@@ -140,9 +168,10 @@ def execute_case_test(
                 action="The completed Run is preserved. Check Provider readiness and retry suggestion analysis.",
                 details={"run_id": run_id, "report_path": str(artifact.path)},
             ) from exc
+        raise
     return CaseTestResult(
         run_id=run_id,
-        status="success" if status == "passed" else "failed",
+        status=result_status,
         summary=summary,
         report_path=artifact.path,
         evidence_manifest_path=artifact.evidence_manifest_path,
@@ -158,6 +187,19 @@ def _resolve_case_path(value: Path, cases_dir: Path, current_directory: Path) ->
         if candidate.is_file():
             return candidate.resolve()
     raise FileNotFoundError(f"Case not found: {value}")
+
+
+def _registered_workspace_name(workspace_root: Path) -> str:
+    resolved = workspace_root.resolve()
+    entry = next((item for item in list_workspace_registry() if item.root_path.resolve() == resolved), None)
+    if entry is None:
+        raise ApplicationError(
+            code=ApplicationErrorCode.WORKSPACE_NOT_INITIALIZED,
+            category=ApplicationErrorCategory.WORKSPACE_CONFIGURATION,
+            message="Current directory is not a registered Workspace.",
+            action="Run fsq init from this exact directory.",
+        )
+    return entry.name
 
 
 def _invalid_case_error(error: ConfigurationError) -> ApplicationError:
@@ -176,6 +218,37 @@ def _report_status(path: Path) -> tuple[str, str]:
     status = str(summary.get("status", "failed"))
     failed = summary.get("failed_steps", 0)
     return status, "Case passed." if status == "passed" else f"Case failed with {failed} failed step(s)."
+
+
+def _best_effort_terminal(run_dir: Path, metadata, status: str) -> None:
+    try:
+        transition_run(run_dir, metadata, status)
+    except Exception:  # noqa: BLE001, S110 - preserve the original execution failure.
+        pass
+
+
+def _raise_source_modified() -> None:
+    raise RuntimeError("Case source was modified during testing.")
+
+
+def _raise_suggestion_not_configured(run_id: str, report_path: Path) -> None:
+    raise ApplicationError(
+        code=ApplicationErrorCode.CASE_SUGGESTION_FAILED,
+        category=ApplicationErrorCategory.INTERNAL,
+        message="Case suggestion analysis is not configured.",
+        action="Start this operation through a supported FSQ adapter.",
+        details={"run_id": run_id, "report_path": str(report_path)},
+    )
+
+
+def _report_step_counts(path: Path) -> RunStepCounts:
+    payload = json.loads(path.with_suffix(".json").read_text(encoding="utf-8"))
+    summary = payload.get("summary", {})
+    if not isinstance(summary, dict):
+        return RunStepCounts()
+    total = int(summary.get("total_steps", 0) or 0)
+    failed = int(summary.get("failed_steps", 0) or 0)
+    return RunStepCounts(total=total, passed=max(0, total - failed), failed=failed)
 
 
 def _bounded_execution_facts(report: dict[str, object]) -> dict[str, object]:

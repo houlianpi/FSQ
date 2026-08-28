@@ -15,6 +15,15 @@ class ApplicationErrorCode(StrEnum):
     CONFIGURATION_INVALID = "configuration.invalid"
     PROVIDER_UNAVAILABLE = "provider.unavailable"
     ENVIRONMENT_UNAVAILABLE = "environment.unavailable"
+    RUN_NOT_FOUND = "run.not_found"
+    RUN_ID_CONFLICT = "run.id_conflict"
+    RUN_METADATA_INVALID = "run.metadata_invalid"
+    RUN_LOGS_UNAVAILABLE = "run.logs_unavailable"
+    RUN_LOGS_INVALID = "run.logs_invalid"
+    RUN_REPORT_UNAVAILABLE = "run.report_unavailable"
+    RUN_REPORT_GENERATION_FAILED = "run.report_generation_failed"
+    RUN_REPORT_OPEN_FAILED = "run.report_open_failed"
+    RUN_ID_ALLOCATION_FAILED = "run.id_allocation_failed"
     INTERNAL_ERROR = "internal.error"
 
 

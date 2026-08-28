@@ -14,7 +14,7 @@ The package exports transport-neutral operations and their Request, Result, Even
 
 - Workspace operations support the shared workspace precondition, platform target resolution, read-only runtime readiness coordination, and workspace initialization needed by adapters.
 - Case operations support creating a Case from a Goal and testing an existing Case, including the optional suggestion policy.
-- Run operations support persisted Run listing, detail lookup, and log streaming or retrieval.
+- Run operations support exact-Workspace multi-platform listing, stable detail lookup, safe structured log retrieval, historical inference, and on-demand static HTML generation.
 - Provider operations support user-level Azure OpenAI configuration, GitHub Copilot device authorization/model activation, and active-Provider readiness status. Provider inventory is not an Application operation in the first release.
 - Environment operations support listing and diagnostics.
 - Doctor supports complete read-only Workspace diagnosis and per-platform command readiness.
@@ -30,7 +30,11 @@ Canonical resource modules are:
 - `application.environments`: Environment operations.
 - `application.doctor`: Workspace-level diagnostic orchestration.
 
-`application.runs` preserves the currently supported Run query behavior and does not expand Run storage, platform selection, or execution semantics.
+`application.runs` owns Workspace-scoped Run query orchestration. It validates the exact registered root through Config, resolves trustworthy configured-platform inventory, aggregates platform Run roots, detects duplicate IDs, applies filters/order/limits, parses current metadata or bounded historical facts, sanitizes logs, and coordinates Report HTML generation. It does not allocate IDs, persist lifecycle metadata, render transport output, or open a browser.
+
+Canonical immutable Pydantic contracts under `application.contracts.runs` include list/show/log/HTML requests and results, `RunSummary`, `RunDetail`, `RunLogEvent`, normalized filters, and Execution-facing Run metadata values. List results contain Workspace identity, queried platforms, filters, matched/returned counts, truncation, entries, and warnings. Show returns safe summary and relative artifact references without report or log bodies. Logs return completely validated safe events and selection metadata. HTML generation returns Run identity, platform, relative path, and generation status.
+
+New `run.json` uses schema `fsq.run/v1` and validates Workspace name, platform, Run ID, lifecycle status, UTC timestamps, bounded Case/Goal source, safe result/step/runtime summary, and contained relative artifact references. Historical Run directories without it are inferred read-only from supported report, fallback, evidence, and event artifacts. List isolates a damaged direct-child Run as an error entry; show permits safe partial history but rejects untrustworthy identity; logs may be read independently when Run containment and the complete log are trustworthy. Query never writes inferred metadata.
 
 ## Ownership Boundaries
 
@@ -102,7 +106,7 @@ Doctor component failures do not expose exception messages, arguments, traceback
 - There is no generic command-string facade.
 - Application contracts have one canonical definition under `application.contracts`; package-root and resource-module exports reference the same objects.
 - Resource modules contain the authoritative implementation for their operation group; compatibility exports do not copy behavior or state.
-- Run resource organization does not add or alter `fsq runs` behavior.
+- Run queries are read-only except for explicitly requested derived `report.html`; they never execute, authenticate, invoke Providers/Drivers, or rewrite authoritative metadata or results.
 - Transport concerns remain in adapters.
 - Domain and runtime rules remain in their owning modules.
 - Case operations coordinate through public Execution services and do not import package-root or adapter-private execution helpers.

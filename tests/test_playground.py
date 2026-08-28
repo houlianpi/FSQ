@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -2633,7 +2634,7 @@ appId: com.microsoft.emmx
     assert progress is not None
     assert progress["result"]["status"] == "success"
     assert captured["driver"] == {"app_id": "com.microsoft.emmx", "serial": "device-1"}
-    assert captured["run_id"].startswith("strict_case-")
+    assert re.fullmatch(r"strict-case-\d{8}T\d{6}Z-[0-9a-f]{6}", captured["run_id"])
     assert (settings.output.runs_dir / captured["run_id"]).parent == settings.output.runs_dir
     assert captured["steps"][0].action_name == "launch_app"
     assert captured["steps"][0].metadata["authored_action_name"] == "launchApp"

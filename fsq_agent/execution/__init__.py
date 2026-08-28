@@ -17,6 +17,7 @@ from .lifecycle import (
     run_strict_lifecycle_case,
 )
 from .recording import RecordingResult, RecordingService, StrictCaseRecording, record_dynamic_run_as_strict_case
+from .runs import RunArtifactIndex, RunMetadata, RunResultSummary, RunRuntime, RunSource, RunStepCounts, allocate_run, load_run_metadata, transition_run, write_run_metadata
 
 __all__ = [
     "DeterministicExecutionRequest",
@@ -30,10 +31,20 @@ __all__ = [
     "LifecycleExecutionService",
     "RecordingResult",
     "RecordingService",
+    "RunArtifactIndex",
+    "RunMetadata",
+    "RunResultSummary",
+    "RunRuntime",
+    "RunSource",
+    "RunStepCounts",
     "StrictCaseRecording",
+    "allocate_run",
     "collect_strict_lifecycle_cases",
+    "load_run_metadata",
     "record_dynamic_run_as_strict_case",
     "run_fsq_core_case",
     "run_strict_fsq_core_case",
     "run_strict_lifecycle_case",
+    "transition_run",
+    "write_run_metadata",
 ]

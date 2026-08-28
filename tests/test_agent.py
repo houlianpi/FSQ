@@ -222,7 +222,7 @@ async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(monkey
     assert result.report.run_id == reporter.run_ids[0]
     assert second_result.report.run_id == reporter.run_ids[1]
     assert result.report.run_id != second_result.report.run_id
-    assert re.fullmatch(r"smoke-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{6}-[0-9a-f]{8}", result.report.run_id)
+    assert re.fullmatch(r"smoke-\d{8}T\d{6}Z-[0-9a-f]{6}", result.report.run_id)
 
 
 def test_recent_tool_output_filter_does_not_artifact_sensitive_outputs() -> None:

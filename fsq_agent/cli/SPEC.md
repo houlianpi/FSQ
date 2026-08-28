@@ -61,7 +61,7 @@ fsq init --platform macos --bundle-id com.example.app
 - `case test` executes an existing FSQ Case as authored. The source Case is immutable.
 - `case test --suggest` executes the authored Case exactly once, then permits read-only AI analysis of the parsed Case and bounded persisted execution facts. It may return Run-local suggestions or a candidate Case while preserving the completed execution result and never overwriting the source Case or configured Case directory.
 - When suggestion analysis produces an artifact, Human output displays each Run-local suggestion or candidate Case path and states that the source Case was not modified. JSON and JSONL terminal results expose the same paths through `suggestion_path` and `candidate_case_path`; absent artifacts remain `null`.
-- `runs` is not a complete supported multi-platform contract in this specification. Its platform-selection, aggregation, and complete query behavior require a separate confirmed specification before being treated as complete.
+- `runs` is the exact-current-Workspace read-only history surface. It aggregates configured platforms by default, supports an optional configured platform, and never deletes, mutates, retries, replays, cancels, or follows a Run.
 - `providers` exposes only user-level active-Provider configuration and readiness. Provider inventory is not a public CLI capability in the first release.
 - `doctor` performs read-only Workspace diagnostics across every identifiable configured platform and reports fixed component checks plus readiness for `case test`, `case test --suggest`, and `case create`; `ui` starts the Control Plane adapter.
 
@@ -102,6 +102,24 @@ Azure OpenAI configuration requires base URL, model/deployment name, and API key
 `doctor` has no platform option and checks configured platforms in Android, Web, Windows, macOS order. Its Human output shows Workspace and platform status, fixed checks, the three command verdicts, reasons/actions for non-ready items, and ordered deduplicated actions. JSON and JSONL each emit exactly one terminal result record; JSONL emits no synthetic event. Doctor exits `0` for `ready` or `partial`, `4` for a completed `unavailable` result, `3` when Workspace registry/root/config inventory is not trustworthy, `5` for unrecoverable internal orchestration failure, and `130` for interruption.
 
 Doctor is read-only: it does not install, mutate configuration, authenticate interactively, send model inference, launch applications/browsers, or create external sessions. Provider readiness may perform only its supported non-interactive cached-token refresh. Human color never carries unique information, and all output obeys the global secret and safe-error contract.
+
+## Run Commands
+
+```bash
+fsq runs list [--platform PLATFORM] [--status STATUS]... [--mode strict|explore] [--since DURATION] [--case CASE_ID] [--limit NUMBER]
+fsq runs show RUN_ID [--platform PLATFORM] [--open]
+fsq runs logs RUN_ID [--platform PLATFORM] [--level LEVEL]... [--phase PHASE]... [--limit NUMBER]
+```
+
+All Run commands require the exact current registered Workspace root. Omitted platform means every configured platform; a supplied platform must be configured. `list` accepts repeatable status OR filters, one mode, exact normalized Case ID, a positive integer duration suffixed by `m`, `h`, or `d`, and limit `1..200` defaulting to `20`. Filtering precedes deterministic newest-first sorting and limiting. Empty results succeed. Human columns are Run ID, platform, mode, status, start, duration, and Case/Goal; machine output contains equivalent filters, counts, truncation, entries, and safe warnings.
+
+`show` returns one bounded summary with source, result, timing, runtime metadata actually used, relative artifact paths, and warnings; it does not inline complete reports, logs, screenshots, or UI snapshots. Without platform, no match is `run.not_found` and multiple platform matches are `run.id_conflict`. Human times use the local timezone and machine times remain UTC ISO 8601.
+
+`show --open` is Human-interactive-only. It requests Application to rebuild the contained static HTML report, then CLI opens the returned path with the system default browser and prints the normal summary plus relative HTML path. JSON, JSONL, and `--non-interactive` reject `--open` before side effects. Browser-opening failure is `run.report_open_failed` and provides only the safe Workspace-relative path for manual opening.
+
+`logs` accepts repeatable level and phase OR filters and limit `1..5000` defaulting to `200`. It filters first, selects the newest matching limit, and presents events in stable ascending sequence order. Missing historical sequence, duplicate sequence, or reverse file order produces safe warnings; invalid non-empty JSONL records invalidate the complete result. Human output is a concise safe table. JSON emits one result containing filters, counts, truncation, warnings, and events. JSONL emits one Application event envelope per event followed by one terminal result. No matches succeed; a missing or invalid event log does not masquerade as an empty log.
+
+Run queries sanitize secrets and unsafe backend details and return no unnecessary absolute host paths. Successfully reading a failed historical Run exits `0`. `run.not_found` exits `2`; Workspace, platform inventory, ID conflict, metadata, log, or unavailable-report errors exit `3`; HTML generation/opening, ID allocation, and internal failures exit `5`; interruption exits `130`.
 
 ## Compatibility
 

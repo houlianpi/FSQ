@@ -527,7 +527,10 @@ def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Pa
     snapshot = state.snapshot(request_id)
     assert snapshot["status"] == "success"
     assert snapshot["reportAvailable"] is True
-    assert (settings.output.runs_dir / f"{prepared.case.id}-{request_id[:8]}" / "core-report.json").is_file()
+    run_id = snapshot["runId"]
+    assert isinstance(run_id, str)
+    assert (settings.output.runs_dir / run_id / "core-report.json").is_file()
+    assert (settings.output.runs_dir / run_id / "run.json").is_file()
 
 
 @pytest.mark.asyncio
