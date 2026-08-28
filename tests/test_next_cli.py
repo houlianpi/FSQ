@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+import ast
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,14 @@ def test_public_command_tree() -> None:
         assert command in result.output
     for removed in ("environments", "run", "report", "playground", "control-plane"):
         assert f"  {removed} " not in result.output
+
+
+def test_main_does_not_directly_import_agent_or_coding_agent_runtime() -> None:
+    source = Path("fsq_agent/adapters/cli/_main.py").read_text(encoding="utf-8")
+    imports = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.ImportFrom)]
+    modules = {node.module for node in imports}
+    assert "fsq_agent.agent" not in modules
+    assert "fsq_agent.adapters.coding_agent" not in modules
 
 
 @pytest.mark.parametrize("output", ["human", "json", "jsonl"])

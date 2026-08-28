@@ -8,9 +8,10 @@ Preserve existing `fsq_agent.cli:main` as a public compatibility export for the 
 
 - `application`: The boundary used for CLI business operations and their Request, Result, Event, and Error contracts. Application Case operations delegate complete run orchestration to Execution.
 - `control_plane`: Public server startup boundary for `fsq ui`; business operations behind that server still use Application.
+- `agent` and `adapters.coding_agent`: Narrow composition-only dependencies used by a private CLI helper to construct the SDK-neutral Agent collaborator injected into Application Case creation.
 - `models`: Shared primitive/domain values only where required by Application contracts.
 
-CLI must not directly compose `agent`, `execution`, `fsq`, `core`, `report`, concrete drivers, or provider implementations. Lower modules must not import CLI.
+CLI command handlers must not directly compose `agent`, `execution`, `fsq`, `core`, `report`, concrete drivers, or provider implementations. A private CLI composition helper may construct `FsqAgent` with the public Coding Agent runtime factory solely to satisfy Application's injected `agent_factory` boundary. It contains no request validation, execution policy, persistence, Provider selection, or result interpretation. Lower modules must not import CLI.
 
 ## Public Interface
 
@@ -129,7 +130,7 @@ The executable and command hierarchy change explicitly to `fsq`. Legacy `fsq-age
 
 - Architecture level: Level 3 transport adapter.
 - Public API: `main`.
-- CLI owns Click declarations, argument decoding, terminal/JSON/JSONL rendering, prompt policy, and exit-code mapping.
+- CLI owns Click declarations, argument decoding, terminal/JSON/JSONL rendering, prompt policy, exit-code mapping, and narrow private collaborator composition for adapter-owned runtime implementations.
 - Application owns shared request validation, orchestration, operation events, results, and stable errors.
 - Dependency direction: CLI to Application; never Application to CLI.
 
@@ -144,6 +145,7 @@ Verification covers command/option parsing; absence and rejection of public `env
 ## Current Invariants
 
 - CLI is a transport adapter over Application.
+- CLI runtime composition is isolated behind a private helper and is limited to constructing collaborators injected into Application; command handlers and composition helpers do not own business behavior.
 - Existing Case source files are never overwritten by `case test` or `--suggest`.
 - Machine output is stable, structured, and safe for Coding Agents.
 - Public command names and hierarchy match this specification exactly.

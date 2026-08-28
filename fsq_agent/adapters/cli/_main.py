@@ -9,9 +9,7 @@ from pathlib import Path
 
 import click
 
-from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
 from fsq_agent.adapters.control_plane import ControlPlaneServerOptions, run_control_plane
-from fsq_agent.agent import FsqAgent
 from fsq_agent.application import (
     ApplicationError,
     ApplicationErrorCategory,
@@ -42,6 +40,8 @@ from fsq_agent.application import (
     show_run,
     test_case,
 )
+
+from ._composition import create_case_agent
 
 PLATFORMS = click.Choice(["android", "web", "windows", "macos"])
 OUTPUTS = click.Choice(["human", "json", "jsonl"])
@@ -259,7 +259,7 @@ def case_create(context: click.Context, platform: str, goal: str) -> None:
             create_case(
                 CaseCreateRequest(current_directory=Path.cwd(), platform=platform, goal=goal),
                 event_sink=collect_event,
-                agent_factory=lambda settings: FsqAgent.from_settings(settings, create_coding_agent_runtime),
+                agent_factory=create_case_agent,
             )
         )
         _emit_terminal(context, result.model_dump(mode="json"), events=events)

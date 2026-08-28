@@ -47,4 +47,5 @@ Adapters map stable inward failures into documented exit codes or safe HTTP/SSE 
 - Static assets remain generated package data with unchanged URL and wheel behavior.
 - CLI, Control Plane, and Playground use the same public Execution services; adapter-private modules do not implement lifecycle or recording policy.
 - CLI, Control Plane, and Playground composition roots inject the same Coding Agent runtime implementation into SDK-neutral Agent orchestration. Application and inward packages never import `adapters.coding_agent`.
+- CLI keeps this composition in a private helper rather than in command handlers. The helper may construct `FsqAgent` with the public Coding Agent runtime factory and return the SDK-neutral collaborator expected by Application, but it does not validate requests or own execution policy.
 - Module relocation does not change CLI, HTTP, SSE, frontend, workspace, Case, evidence, report, Provider, or Runs contracts.
