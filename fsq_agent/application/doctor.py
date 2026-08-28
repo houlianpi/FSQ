@@ -17,7 +17,7 @@ from fsq_agent.application.contracts import (
     DoctorStatusDetail,
     DoctorWorkspaceSummary,
 )
-from fsq_agent.config import inspect_registered_workspace, list_workspace_registry, load_platform_settings, validate_strict_core_settings
+from fsq_agent.config import inspect_registered_workspace, list_workspace_registry, load_workspace_platform_settings, validate_strict_core_settings
 from fsq_agent.core import CapabilityDefinitionFactory, CapabilityRegistry, CommonPlatformTools
 from fsq_agent.environments import PlatformRuntimeService
 from fsq_agent.providers import check_case_suggestion_readiness, check_provider_readiness
@@ -70,7 +70,7 @@ def _diagnose_platform(platform: str, root: Path, workspace_platform) -> DoctorP
         commands = _commands(checks)
         return DoctorPlatformResult(platform=platform, status="unavailable", checks=checks, commands=commands)
     try:
-        settings = load_platform_settings(platform, root)
+        settings = load_workspace_platform_settings(root, platform)
     except Exception:  # noqa: BLE001 - diagnostic isolation returns a safe check result.
         checks = DoctorChecks(configuration=unavailable, **{name: _blocked("configuration") for name in _CHECK_ORDER[1:]})
         commands = _commands(checks)

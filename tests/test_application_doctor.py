@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from fsq_agent.application import ApplicationError, DoctorRequest, diagnose_workspace
+from fsq_agent.config import load_workspace_platform_settings
 from fsq_agent.models import PlatformRuntimeCheck, WorkspacePlatformStatus, WorkspaceRegistryEntry, WorkspaceStatus
 
 
@@ -30,7 +31,7 @@ def _base(monkeypatch: pytest.MonkeyPatch, root: Path, platforms: list[Workspace
         "fsq_agent.application.doctor.inspect_registered_workspace",
         lambda _name: WorkspaceStatus(name="checkout", root_path=root, status="partial", message="checked", platforms=platforms),
     )
-    monkeypatch.setattr("fsq_agent.application.doctor.load_platform_settings", lambda platform, _root: _settings(platform))
+    monkeypatch.setattr("fsq_agent.application.doctor.load_workspace_platform_settings", lambda _root, platform: _settings(platform))
     monkeypatch.setattr("fsq_agent.application.doctor.validate_strict_core_settings", lambda _settings: None)
     monkeypatch.setattr("fsq_agent.application.doctor.CapabilityDefinitionFactory.platform_definitions", lambda *_args, **_kwargs: [])
     monkeypatch.setattr("fsq_agent.application.doctor.CommonPlatformTools.capability_definitions", list)
@@ -70,6 +71,55 @@ def test_provider_failure_keeps_case_test_ready_and_ai_commands_unavailable(tmp_
     assert platform.commands.case_test_suggest.status == "unavailable"
     assert platform.commands.case_create.status == "unavailable"
     assert result.actions == ("Configure Provider.",)
+
+
+def test_doctor_loads_persisted_workspace_target_instead_of_preset_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    browser = tmp_path / "Google Chrome" / "chrome"
+    browser.parent.mkdir()
+    browser.write_text("", encoding="utf-8")
+    browser.chmod(0o755)
+    config_dir = tmp_path / ".fsq" / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.web.yaml").write_text(
+        "\n".join(
+            (
+                "version: 2",
+                "name: checkout",
+                f"root_path: {tmp_path}",
+                "platform: web",
+                "target:",
+                "  browser_channel: chrome",
+                f"  browser_executable_path: {browser}",
+                "env: {}",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("fsq_agent.application.doctor.list_workspace_registry", lambda: [WorkspaceRegistryEntry(name="checkout", root_path=tmp_path)])
+    monkeypatch.setattr(
+        "fsq_agent.application.doctor.inspect_registered_workspace",
+        lambda _name: WorkspaceStatus(name="checkout", root_path=tmp_path, status="available", message="checked", platforms=[_platform("web", tmp_path)]),
+    )
+    monkeypatch.setattr(
+        "fsq_agent.application.doctor.load_workspace_platform_settings",
+        lambda root, platform: load_workspace_platform_settings(root, platform, tmp_path / "user-config"),
+    )
+    monkeypatch.setattr("fsq_agent.application.doctor.PlatformRuntimeService.check", lambda _self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
+    monkeypatch.setattr(
+        "fsq_agent.application.doctor.PlatformRuntimeService.check_target_configuration", lambda _self, settings: (settings.harness.web.browser_executable_path == browser, "checked", "repair")
+    )
+    monkeypatch.setattr("fsq_agent.application.doctor.PlatformRuntimeService.check_target_availability", lambda *_args: (True, "ready", ""))
+    monkeypatch.setattr("fsq_agent.application.doctor.validate_strict_core_settings", lambda _settings: None)
+    monkeypatch.setattr("fsq_agent.application.doctor.CapabilityDefinitionFactory.platform_definitions", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("fsq_agent.application.doctor.CommonPlatformTools.capability_definitions", list)
+    monkeypatch.setattr("fsq_agent.application.doctor.check_provider_readiness", lambda _settings: (False, "unconfigured", "configure"))
+    monkeypatch.setattr("fsq_agent.application.doctor.check_case_suggestion_readiness", lambda _settings: (False, "unconfigured", "configure"))
+    monkeypatch.setattr("fsq_agent.application.doctor.check_dynamic_agent_readiness", lambda _settings: (False, "unconfigured", "configure"))
+
+    result = diagnose_workspace(DoctorRequest(current_directory=tmp_path))
+
+    assert result.platforms[0].checks.target_configuration.status == "ready"
+    assert result.platforms[0].commands.case_test.status == "ready"
 
 
 def test_damaged_platform_does_not_abort_other_platform(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
