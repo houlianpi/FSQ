@@ -35,6 +35,24 @@ def test_distribution_includes_both_frontend_asset_trees() -> None:
         assert all(force_include[path] == path for path in expected)
 
 
+def test_ci_verifies_all_runtime_package_resources() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    for resource in (
+        "fsq_agent/resources/config.android.yaml",
+        "fsq_agent/resources/config.web.yaml",
+        "fsq_agent/resources/config.windows.yaml",
+        "fsq_agent/resources/config.macos.yaml",
+        "fsq_agent/resources/knowledge/skills/android-harness.md",
+        "fsq_agent/resources/knowledge/skills/web-harness.md",
+        "fsq_agent/resources/knowledge/skills/windows-harness.md",
+        "fsq_agent/resources/knowledge/skills/macos-harness.md",
+        "fsq_agent/agent/templates/agent_instructions.j2",
+        "fsq_agent/agent/templates/task_input.j2",
+    ):
+        assert resource in workflow
+
+
 def test_readme_uses_current_installation_and_cli_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -54,3 +72,35 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
         "fsq-agent[macos]",
     ):
         assert obsolete not in readme
+
+
+def test_release_acceptance_checklist_uses_current_public_commands() -> None:
+    checklist = (ROOT / "docs" / "release-acceptance-checklist.md").read_text(encoding="utf-8")
+
+    for command in (
+        "pip install fsq-agent",
+        "fsq init",
+        "fsq doctor",
+        "fsq providers configure",
+        "fsq providers status",
+        "fsq case create",
+        "fsq case test",
+        "fsq runs list",
+        "fsq runs show",
+        "fsq runs logs",
+        "fsq ui",
+    ):
+        assert command in checklist
+    for obsolete in (
+        "fsq-agent run",
+        "run --strict",
+        "fsq-agent control-plane",
+        "fsq-agent report",
+        "fsq-agent playground",
+        "init --name",
+        "fsq-agent[web]",
+        "fsq-agent[android]",
+        "fsq-agent[windows]",
+        "fsq-agent[macos]",
+    ):
+        assert obsolete not in checklist

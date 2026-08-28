@@ -187,6 +187,16 @@ jobs:
               "fsq_agent/adapters/control_plane/static/entry-assets.json",
               "fsq_agent/adapters/control_plane/playground/static/playground/index.html",
               "fsq_agent/adapters/control_plane/playground/static/entry-assets.json",
+              "fsq_agent/resources/config.android.yaml",
+              "fsq_agent/resources/config.web.yaml",
+              "fsq_agent/resources/config.windows.yaml",
+              "fsq_agent/resources/config.macos.yaml",
+              "fsq_agent/resources/knowledge/skills/android-harness.md",
+              "fsq_agent/resources/knowledge/skills/web-harness.md",
+              "fsq_agent/resources/knowledge/skills/windows-harness.md",
+              "fsq_agent/resources/knowledge/skills/macos-harness.md",
+              "fsq_agent/agent/templates/agent_instructions.j2",
+              "fsq_agent/agent/templates/task_input.j2",
           )
           for path in required_files:
               if path not in names:
