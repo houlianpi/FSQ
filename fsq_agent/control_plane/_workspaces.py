@@ -188,12 +188,7 @@ def map_workspace_exception(exc: BaseException) -> WorkspaceAPIError:
             return WorkspaceAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.")
         if "already registered" in lowered or "already exists" in lowered or "path is already registered" in lowered:
             return WorkspaceAPIError(409, "workspace_conflict", message, "Choose a different workspace name or selected folder.")
-        if (
-            "workspace root is unavailable" in lowered
-            or "unable to read" in lowered
-            or "identity does not match" in lowered
-            or "registered workspace path" in lowered
-        ):
+        if "workspace root is unavailable" in lowered or "unable to read" in lowered or "identity does not match" in lowered or "registered workspace path" in lowered:
             return WorkspaceAPIError(409, "workspace_unavailable", "Workspace configuration is unavailable.", "Repair the registered workspace configuration.")
         return WorkspaceAPIError(400, "invalid_workspace", message, "Correct the workspace configuration and retry.")
     if isinstance(exc, OSError):
