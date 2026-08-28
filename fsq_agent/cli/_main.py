@@ -32,11 +32,15 @@ from fsq_agent.config import (
     Settings,
     WebWorkspaceTarget,
     WindowsWorkspaceTarget,
-    WorkspaceConfig,
-    initialize_workspace,
+    add_workspace_platform,
+    create_workspace,
+    inspect_registered_workspace,
+    list_workspace_registry,
     load_registered_workspace,
     load_workspace_platform_settings,
+    update_workspace_platform,
     validate_strict_core_settings,
+    workspace_revision,
 )
 from fsq_agent.control_plane import ControlPlaneServerOptions, run_control_plane
 from fsq_agent.core import (
@@ -46,7 +50,7 @@ from fsq_agent.core import (
     RuntimeSecretStore,
 )
 from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task
+from fsq_agent.models import ConfigurationError, FsqAgentError, FsqCase, Task, WorkspaceInitResult, WorkspacePlatformCreateInput
 from fsq_agent.playground import PlaygroundServerOptions, run_playground
 from fsq_agent.providers import build_ai_assertion_evaluator
 from fsq_agent.report import resolve_report_path
@@ -115,7 +119,7 @@ def init(
 ) -> None:
     output_format = context.obj["output_format"]
     try:
-        parent = Path.cwd().resolve()
+        selected_path = Path.cwd().resolve()
         target = _workspace_init_target(
             platform=platform,
             app_id=app_id,
@@ -125,22 +129,84 @@ def init(
             launch_args=launch_args,
             bundle_id=bundle_id,
         )
-        config = WorkspaceConfig(
-            version=2,
-            name=name,
-            root_path=(parent / name).resolve(),
+        platform_input = WorkspacePlatformCreateInput(
             platform=platform,
             target=target,
             env=_workspace_init_env(env_assignments),
         )
-        canonical_root = (parent / config.name).resolve()
-        if config.root_path != canonical_root:
-            config = WorkspaceConfig.model_validate({**config.model_dump(mode="python"), "root_path": canonical_root})
-        result = initialize_workspace(
-            parent_path=parent,
-            config=config,
-            update_existing=update_existing,
+        normalized_name = name.strip()
+        entry = next(
+            (candidate for candidate in list_workspace_registry() if candidate.name.casefold() == normalized_name.casefold()),
+            None,
         )
+        if entry is None:
+            created = create_workspace(
+                selected_path=selected_path,
+                name=normalized_name,
+                platforms=[platform_input],
+            )
+            result = WorkspaceInitResult(
+                status="initialized",
+                name=created.name,
+                root_path=created.root_path,
+                platform=platform,
+            )
+        else:
+            status = inspect_registered_workspace(entry.name)
+            if status.status == "unavailable":
+                raise ConfigurationError(
+                    "Registered workspace is unavailable.",
+                    context={"name": entry.name, "root_path": str(entry.root_path)},
+                )
+            config_path = entry.root_path / ".fsq" / "config" / f"config.{platform}.yaml"
+            if not config_path.exists() and not config_path.is_symlink():
+                added = add_workspace_platform(
+                    name=entry.name,
+                    platform=platform,
+                    target=platform_input.target,
+                    env=platform_input.env,
+                )
+                result = WorkspaceInitResult(
+                    status="platform_added",
+                    name=added.name,
+                    root_path=added.root_path,
+                    platform=added.platform,
+                )
+            else:
+                current = load_registered_workspace(entry.name, platform)
+                expected_revision = workspace_revision(config_path)
+                confirmed = load_registered_workspace(entry.name, platform)
+                if confirmed != current or workspace_revision(config_path) != expected_revision:
+                    raise ConfigurationError(
+                        "Workspace configuration changed since it was loaded.",
+                        context={"name": entry.name, "platform": platform},
+                    )
+                if current.target == platform_input.target and current.env == platform_input.env:
+                    result = WorkspaceInitResult(
+                        status="unchanged",
+                        name=current.name,
+                        root_path=current.root_path,
+                        platform=current.platform,
+                    )
+                elif not update_existing:
+                    raise ConfigurationError(
+                        "Workspace platform configuration differs; use --update-existing to replace target and env values.",
+                        context={"name": current.name, "platform": current.platform},
+                    )
+                else:
+                    updated = update_workspace_platform(
+                        name=current.name,
+                        platform=current.platform,
+                        target=platform_input.target,
+                        env=platform_input.env,
+                        expected_revision=expected_revision,
+                    )
+                    result = WorkspaceInitResult(
+                        status="updated",
+                        name=updated.name,
+                        root_path=updated.root_path,
+                        platform=updated.platform,
+                    )
     except ValidationError:
         _fail_workspace_init(output_format, "invalid_arguments", "Invalid workspace initialization arguments.")
         return
