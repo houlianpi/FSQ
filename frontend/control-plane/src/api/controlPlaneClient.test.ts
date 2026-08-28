@@ -27,7 +27,7 @@ it.each([
   ['workspace detail', () => controlPlaneClient.workspace('mobile')],
   ['workspace platform detail', () => controlPlaneClient.workspacePlatform('mobile', 'android')],
   ['workspace parent directory picker', () => controlPlaneClient.pickWorkspaceParentDirectory()],
-  ['workspace create', () => controlPlaneClient.createWorkspace({ name: 'mobile', parentPath: 'C:\\projects', platforms: [{ platform: 'android', target: { appId: 'com.example' }, env: {} }] })],
+  ['workspace create', () => controlPlaneClient.createWorkspace({ name: 'mobile', selectedPath: 'C:\\projects', platforms: [{ platform: 'android', target: { appId: 'com.example' }, env: {} }] })],
   ['workspace platform add', () => controlPlaneClient.addWorkspacePlatform('mobile', { platform: 'android', target: { appId: 'com.example' }, env: {} })],
   ['workspace platform update', () => controlPlaneClient.updateWorkspacePlatform('mobile', 'android', { target: { appId: 'com.example' }, env: {}, expectedRevision: 'sha256:old' })],
   ['workspace entries', () => controlPlaneClient.workspaceEntries('mobile', 'cases')],
@@ -129,16 +129,16 @@ it('sends the confirmed Save yaml case name without a suffix', async () => {
   );
 });
 
-it('accepts selected and cancelled workspace parent directory responses', async () => {
+it('accepts selected and cancelled workspace directory responses', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
-    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', parentPath: 'C:\\projects' }), {
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', selectedPath: 'C:\\projects' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'cancelled' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }));
 
-  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', parentPath: 'C:\\projects' });
+  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', selectedPath: 'C:\\projects' });
   await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'cancelled' });
   expect(fetch).toHaveBeenNthCalledWith(1, '/api/control-plane/workspaces/pick-parent-directory', expect.objectContaining({ method: 'POST', body: '{}' }));
 });

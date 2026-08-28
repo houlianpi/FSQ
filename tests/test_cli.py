@@ -24,8 +24,8 @@ from fsq_agent.models import (
     VerificationResult,
     WebWorkspaceTarget,
     WindowsWorkspaceTarget,
-    WorkspaceConfig,
     WorkspaceInitResult,
+    WorkspacePlatformCreateInput,
 )
 
 FSQ_CASE = """
@@ -261,7 +261,7 @@ def test_init_rejects_provider_before_provider_or_workspace_side_effects(
 
 
 def test_init_rejects_removed_parent_before_workspace_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
 
     result = CliRunner().invoke(
         main,
@@ -272,24 +272,18 @@ def test_init_rejects_removed_parent_before_workspace_side_effects(monkeypatch: 
     assert "No such option: --parent" in result.output
 
 
-def test_init_builds_workspace_config_and_delegates_to_config(
+def test_init_unregistered_name_delegates_to_create_with_current_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+    def fake_create_workspace(**kwargs):
         captured.update(kwargs)
-        config = kwargs["config"]
-        assert isinstance(config, WorkspaceConfig)
-        return WorkspaceInitResult(
-            status="initialized",
-            name=config.name,
-            root_path=config.root_path,
-            platform=config.platform,
-        )
+        return type("Status", (), {"name": kwargs["name"], "root_path": kwargs["selected_path"]})()
 
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+    monkeypatch.setattr("fsq_agent.cli._main.list_workspace_registry", list)
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", fake_create_workspace)
 
     result = CliRunner().invoke(
         main,
@@ -308,13 +302,15 @@ def test_init_builds_workspace_config_and_delegates_to_config(
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["parent_path"] == tmp_path
-    assert captured["update_existing"] is True
-    config = captured["config"]
-    assert isinstance(config, WorkspaceConfig)
-    assert config.root_path == (tmp_path / "checkout").resolve()
-    assert config.target == AndroidWorkspaceTarget(app_id="com.example.checkout")
-    assert config.env == {"TEST_ACCOUNT": "private-value"}
+    assert captured["selected_path"] == tmp_path
+    assert captured["name"] == "checkout"
+    platforms = captured["platforms"]
+    assert isinstance(platforms, list)
+    assert len(platforms) == 1
+    platform = platforms[0]
+    assert isinstance(platform, WorkspacePlatformCreateInput)
+    assert platform.target == AndroidWorkspaceTarget(app_id="com.example.checkout")
+    assert platform.env == {"TEST_ACCOUNT": "private-value"}
     assert "private-value" not in result.output
     assert "initialized" in result.output
 
@@ -322,12 +318,13 @@ def test_init_builds_workspace_config_and_delegates_to_config(
 def test_init_uses_normalized_name_for_canonical_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
+    def fake_create_workspace(**kwargs) -> WorkspaceInitResult:
         captured.update(kwargs)
-        config = kwargs["config"]
-        return WorkspaceInitResult(status="initialized", name=config.name, root_path=config.root_path, platform=config.platform)
+        platform = kwargs["platforms"][0]
+        return WorkspaceInitResult(status="initialized", name=kwargs["name"], root_path=kwargs["selected_path"], platform=platform.platform)
 
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+    monkeypatch.setattr("fsq_agent.cli._main.list_workspace_registry", list)
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", fake_create_workspace)
 
     result = CliRunner().invoke(
         main,
@@ -335,18 +332,17 @@ def test_init_uses_normalized_name_for_canonical_root(tmp_path: Path, monkeypatc
     )
 
     assert result.exit_code == 0, result.output
-    config = captured["config"]
-    assert isinstance(config, WorkspaceConfig)
-    assert config.name == "checkout"
-    assert config.root_path == (tmp_path / "checkout").resolve()
+    assert captured["name"] == "checkout"
+    assert captured["selected_path"] == tmp_path
 
 
 def test_init_json_emits_one_safe_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
-        config = kwargs["config"]
-        return WorkspaceInitResult(status="unchanged", name=config.name, root_path=config.root_path, platform=config.platform)
+    def fake_create_workspace(**kwargs) -> WorkspaceInitResult:
+        platform = kwargs["platforms"][0]
+        return WorkspaceInitResult(status="initialized", name=kwargs["name"], root_path=kwargs["selected_path"], platform=platform.platform)
 
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+    monkeypatch.setattr("fsq_agent.cli._main.list_workspace_registry", list)
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", fake_create_workspace)
 
     result = CliRunner().invoke(
         main,
@@ -357,21 +353,22 @@ def test_init_json_emits_one_safe_record(tmp_path: Path, monkeypatch: pytest.Mon
     assert result.output.count("\n") == 1
     assert json.loads(result.output) == {
         "operation": "init",
-        "status": "unchanged",
-        "workspace": {"name": "checkout", "root_path": str((tmp_path / "checkout").resolve())},
+        "status": "initialized",
+        "workspace": {"name": "checkout", "root_path": str(tmp_path.resolve())},
         "platform": "android",
     }
 
 
 def test_init_maps_every_platform_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: list[WorkspaceConfig] = []
+    captured: list[WorkspacePlatformCreateInput] = []
 
-    def fake_initialize_workspace(**kwargs) -> WorkspaceInitResult:
-        config = kwargs["config"]
-        captured.append(config)
-        return WorkspaceInitResult(status="initialized", name=config.name, root_path=config.root_path, platform=config.platform)
+    def fake_create_workspace(**kwargs) -> WorkspaceInitResult:
+        platform = kwargs["platforms"][0]
+        captured.append(platform)
+        return WorkspaceInitResult(status="initialized", name=kwargs["name"], root_path=kwargs["selected_path"], platform=platform.platform)
 
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fake_initialize_workspace)
+    monkeypatch.setattr("fsq_agent.cli._main.list_workspace_registry", list)
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", fake_create_workspace)
     runner = CliRunner()
     web = runner.invoke(
         main,
@@ -434,8 +431,34 @@ def test_init_cli_creates_then_requires_explicit_update(tmp_path: Path) -> None:
     assert persisted.env == {"TOKEN": "replacement-secret"}
 
 
+def test_init_registered_name_uses_registry_root_from_unrelated_current_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_home = tmp_path / "home"
+    selected = tmp_path / "selected"
+    unrelated = tmp_path / "unrelated"
+    selected.mkdir()
+    unrelated.mkdir()
+    monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setenv("USERPROFILE", str(user_home))
+    monkeypatch.chdir(selected)
+    runner = CliRunner()
+    args = ["init", "--name", "checkout", "--platform", "android", "--app-id", "com.example.checkout"]
+
+    created = runner.invoke(main, args)
+    monkeypatch.chdir(unrelated)
+    unchanged = runner.invoke(main, args)
+
+    assert created.exit_code == unchanged.exit_code == 0
+    assert "initialized" in created.output
+    assert "unchanged" in unchanged.output
+    assert load_registered_workspace("checkout", "android").root_path == selected.resolve()
+    assert list(unrelated.iterdir()) == []
+
+
 def test_init_machine_error_is_one_safe_record(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
 
     result = CliRunner().invoke(
         main,
@@ -487,10 +510,11 @@ def test_init_machine_parser_errors_are_one_safe_record(args: list[str]) -> None
 
 
 def test_init_machine_filesystem_error_is_one_safe_record(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fail_initialize(**_kwargs) -> WorkspaceInitResult:
+    def fail_create(**_kwargs) -> WorkspaceInitResult:
         raise OSError("sensitive filesystem internals")
 
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", fail_initialize)
+    monkeypatch.setattr("fsq_agent.cli._main.list_workspace_registry", list)
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", fail_create)
 
     result = CliRunner().invoke(
         main,
@@ -519,7 +543,7 @@ def test_init_rejects_invalid_env_or_cross_platform_target_before_config(
     args: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("fsq_agent.cli._main.initialize_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
+    monkeypatch.setattr("fsq_agent.cli._main.create_workspace", lambda **_kwargs: pytest.fail("Config must not be called"))
 
     result = CliRunner().invoke(
         main,

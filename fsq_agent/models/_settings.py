@@ -414,6 +414,58 @@ class MacOSWorkspaceTarget(BaseModel):
 WorkspaceTarget = AndroidWorkspaceTarget | WebWorkspaceTarget | WindowsWorkspaceTarget | MacOSWorkspaceTarget
 
 
+class WorkspacePlatformCreateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal["android", "web", "windows", "macos"]
+    target: WorkspaceTarget
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_platform_target(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        platform = data.get("platform")
+        target = data.get("target")
+        target_models = {
+            "android": AndroidWorkspaceTarget,
+            "web": WebWorkspaceTarget,
+            "windows": WindowsWorkspaceTarget,
+            "macos": MacOSWorkspaceTarget,
+        }
+        target_model = target_models.get(platform)
+        if target_model is not None and not isinstance(target, BaseModel):
+            updated = dict(data)
+            updated["target"] = target_model.model_validate(target)
+            return updated
+        return data
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for name, secret in value.items():
+            if not _WORKSPACE_ENV_NAME_RE.fullmatch(name):
+                raise ValueError(f"invalid workspace env name: {name}")
+            if not isinstance(secret, str) or not secret.strip():
+                raise ValueError(f"workspace env value cannot be blank: {name}")
+            normalized[name] = secret
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_target_matches_platform(self) -> "WorkspacePlatformCreateInput":
+        expected_types = {
+            "android": AndroidWorkspaceTarget,
+            "web": WebWorkspaceTarget,
+            "windows": WindowsWorkspaceTarget,
+            "macos": MacOSWorkspaceTarget,
+        }
+        if not isinstance(self.target, expected_types[self.platform]):
+            raise ValueError("workspace target does not match platform")  # noqa: TRY004 - Pydantic validators require ValueError.
+        return self
+
+
 class WorkspaceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

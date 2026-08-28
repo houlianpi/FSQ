@@ -46,7 +46,7 @@ def _create(
         "/api/control-plane/workspaces",
         {
             "name": name,
-            "parentPath": str(parent),
+            "selectedPath": str(parent),
             "platforms": [
                 {
                     "platform": platform,
@@ -79,13 +79,13 @@ def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tm
         "workspaces": [
             {
                 "name": "checkout",
-                "rootPath": str((parent / "checkout").resolve()),
+                "rootPath": str(parent.resolve()),
                 "status": "available",
                 "message": "Workspace is available.",
                 "platforms": [
                     {
                         "platform": "android",
-                        "configPath": str((parent / "checkout" / ".fsq" / "config" / "config.android.yaml").resolve()),
+                        "configPath": str((parent / ".fsq" / "config" / "config.android.yaml").resolve()),
                         "status": "available",
                         "message": "Platform configuration is available.",
                     }
@@ -104,7 +104,7 @@ def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tm
 
 def test_workspace_parent_directory_picker_returns_selection_and_cancellation(tmp_path: Path) -> None:
     selected = _server(tmp_path / "selected")
-    selected_picker = _FakeDirectoryPicker({"status": "selected", "parentPath": str(tmp_path.resolve())})
+    selected_picker = _FakeDirectoryPicker({"status": "selected", "selectedPath": str(tmp_path.resolve())})
     selected._directory_picker = selected_picker  # type: ignore[attr-defined]
     cancelled = _server(tmp_path / "cancelled")
     cancelled_picker = _FakeDirectoryPicker({"status": "cancelled"})
@@ -122,7 +122,7 @@ def test_workspace_parent_directory_picker_returns_selection_and_cancellation(tm
     )
 
     assert selected_status == cancelled_status == 200
-    assert selected_payload == {"status": "selected", "parentPath": str(tmp_path.resolve())}
+    assert selected_payload == {"status": "selected", "selectedPath": str(tmp_path.resolve())}
     assert cancelled_payload == {"status": "cancelled"}
     assert selected_picker.calls == cancelled_picker.calls == 1
 
@@ -134,7 +134,7 @@ def test_workspace_parent_directory_picker_rejects_fields_and_untrusted_access(t
 
     field_status, field_error = server.handle_post(
         "/api/control-plane/workspaces/pick-parent-directory",
-        {"parentPath": str(tmp_path)},
+        {"selectedPath": str(tmp_path)},
         peer_host="127.0.0.1",
     )
     peer_status, peer_error = server.handle_post(
@@ -214,8 +214,8 @@ def test_devices_cases_require_and_resolve_registered_workspace_platform(
     assert status == 200
     assert payload == {"platform": "android", "cases": [], "truncated": False}
     assert captured == {
-        "workspace": (parent / "checkout").resolve(),
-        "cases": (parent / "checkout" / "cases" / "android").resolve(),
+        "workspace": parent.resolve(),
+        "cases": (parent / "cases" / "android").resolve(),
     }
     assert (missing_status, missing["code"]) == (400, "invalid_request")
 
@@ -357,6 +357,27 @@ def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path)
     assert delete_status == 404
 
 
+def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_path: Path) -> None:
+    root = tmp_path / "projects"
+    root.mkdir()
+    server = _server(tmp_path)
+    _create(server, root)
+    root.rename(tmp_path / "moved-projects")
+
+    status, error = server.handle_post(
+        "/api/control-plane/workspaces/checkout/platforms",
+        {
+            "platform": "macos",
+            "target": {"bundleId": "com.example.Checkout"},
+            "env": {},
+        },
+        peer_host="127.0.0.1",
+    )
+
+    assert status == 409
+    assert error["code"] == "workspace_unavailable"
+
+
 def test_workspace_list_retains_unavailable_registry_entry_without_env(tmp_path: Path) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
@@ -427,7 +448,7 @@ def test_workspace_routes_require_loopback_and_same_origin(tmp_path: Path) -> No
         "/api/control-plane/workspaces",
         {
             "name": "checkout",
-            "parentPath": str(origin_parent),
+            "selectedPath": str(origin_parent),
             "platforms": [
                 {
                     "platform": "android",

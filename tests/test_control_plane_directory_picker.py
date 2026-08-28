@@ -61,12 +61,12 @@ def test_picker_commands_are_fixed_for_windows_macos_and_linux(monkeypatch: pyte
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker_module.shutil, "which", lambda name: "/usr/bin/zenity" if name == "zenity" else None)
     linux = picker_module._picker_command()
-    assert linux.argv == ("/usr/bin/zenity", "--file-selection", "--directory", "--title=Choose workspace parent folder")
+    assert linux.argv == ("/usr/bin/zenity", "--file-selection", "--directory", "--title=Choose workspace folder")
     assert linux.cancelled_return_codes == frozenset({1})
 
     monkeypatch.setattr(picker_module.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
     kdialog = picker_module._picker_command()
-    assert kdialog.argv == ("/usr/bin/kdialog", "--getexistingdirectory", "--title", "Choose workspace parent folder")
+    assert kdialog.argv == ("/usr/bin/kdialog", "--getexistingdirectory", "--title", "Choose workspace folder")
     assert kdialog.cancelled_return_codes == frozenset({1})
 
 
@@ -80,7 +80,7 @@ def test_picker_decodes_selected_and_cancelled_results(tmp_path: Path) -> None:
     )
     cancelled = picker_module._decode_result(picker_module._PickerCommand(("picker",), frozenset({1})), 1, b"")
 
-    assert selected == windows == {"status": "selected", "parentPath": str(tmp_path.resolve())}
+    assert selected == windows == {"status": "selected", "selectedPath": str(tmp_path.resolve())}
     assert cancelled == {"status": "cancelled"}
 
 
