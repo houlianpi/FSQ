@@ -43,7 +43,7 @@ async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Pat
 
     result = await create_case(
         CaseCreateRequest(current_directory=tmp_path, platform="web", goal="  Verify   product search  "),
-        settings_loader=lambda platform, path: loaded.append((platform, path)) or settings,
+        settings_loader=lambda path, platform: loaded.append((platform, path)) or settings,
         agent_factory=lambda value: agent if value is settings else None,
     )
 

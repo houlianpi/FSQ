@@ -21,7 +21,7 @@ def test_case_test_request_supports_all_public_platforms(platform: str, tmp_path
 def test_case_test_rejects_missing_case_with_stable_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(case_test_module, "require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
     settings = SimpleNamespace(cases=SimpleNamespace(dir=tmp_path / "cases"))
-    monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
+    monkeypatch.setattr(case_test_module, "load_workspace_platform_settings", lambda *_args: settings)
 
     with pytest.raises(ApplicationError) as error:
         case_test_module.execute_case_test(
@@ -39,7 +39,7 @@ def test_case_test_rejects_invalid_case_with_stable_request_error(tmp_path: Path
     invalid_case = cases_dir / "invalid.fsq.yaml"
     invalid_case.write_text("schemaVersion: unsupported/v1\nname: Invalid schema\nplatform: web\n", encoding="utf-8")
     settings = SimpleNamespace(cases=SimpleNamespace(dir=cases_dir))
-    monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
+    monkeypatch.setattr(case_test_module, "load_workspace_platform_settings", lambda *_args: settings)
 
     with pytest.raises(ApplicationError) as error:
         case_test_module.execute_case_test(
@@ -162,7 +162,7 @@ def test_suggest_runs_case_once_then_analyzes_and_returns_no_candidate(tmp_path:
     order: list[str] = []
     monkeypatch.setattr(case_test_module, "require_initialized_workspace", lambda _request: SimpleNamespace(workspace=tmp_path))
     monkeypatch.setattr(case_test_module, "list_workspace_registry", lambda: [SimpleNamespace(name="test-workspace", root_path=tmp_path)])
-    monkeypatch.setattr(case_test_module, "load_platform_settings", lambda *_args: settings)
+    monkeypatch.setattr(case_test_module, "load_workspace_platform_settings", lambda *_args: settings)
 
     class Registry:
         def snapshot(self):

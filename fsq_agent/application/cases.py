@@ -18,7 +18,7 @@ from fsq_agent.application.contracts import (
     WorkspaceRequest,
 )
 from fsq_agent.application.workspace import require_initialized_workspace
-from fsq_agent.config import Settings, load_platform_settings
+from fsq_agent.config import Settings, load_workspace_platform_settings
 from fsq_agent.execution import DynamicExecutionRequest, DynamicExecutionService
 from fsq_agent.models import Task, TaskResult
 from fsq_agent.providers import build_case_suggestion_analyzer
@@ -28,7 +28,7 @@ class _Agent(Protocol):
     async def run(self, task: Task, event_sink: CaseCreateEventSink | None = None) -> TaskResult: ...
 
 
-SettingsLoader = Callable[[str, Path], Settings]
+SettingsLoader = Callable[[Path, str], Settings]
 AgentFactory = Callable[[Settings], _Agent]
 
 
@@ -36,7 +36,7 @@ async def create_case(
     request: CaseCreateRequest,
     *,
     event_sink: CaseCreateEventSink | None = None,
-    settings_loader: SettingsLoader = load_platform_settings,
+    settings_loader: SettingsLoader = load_workspace_platform_settings,
     agent_factory: AgentFactory | None = None,
 ) -> CaseCreateResult:
     normalized_goal = " ".join(request.goal.split())
@@ -49,7 +49,7 @@ async def create_case(
         )
 
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=request.current_directory))
-    settings = settings_loader(request.platform, workspace.workspace)
+    settings = settings_loader(workspace.workspace, request.platform)
     if agent_factory is None:
         raise ApplicationError(
             code=ApplicationErrorCode.CONFIGURATION_INVALID,

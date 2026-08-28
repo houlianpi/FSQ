@@ -19,7 +19,7 @@ from fsq_agent.application.contracts import (
 )
 from fsq_agent.application.workspace import require_initialized_workspace
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
-from fsq_agent.config import Settings, list_workspace_registry, load_platform_settings, validate_strict_core_settings
+from fsq_agent.config import Settings, list_workspace_registry, load_workspace_platform_settings, validate_strict_core_settings
 from fsq_agent.core import ArtifactStore, HarnessFactory, RuntimeSecretStore
 from fsq_agent.execution import RunArtifactIndex, RunResultSummary, RunSource, RunStepCounts, allocate_run, collect_strict_lifecycle_cases, run_strict_lifecycle_case, transition_run
 from fsq_agent.models import ConfigurationError
@@ -40,7 +40,7 @@ def execute_case_test(
     suggestion_analyzer_factory: Callable[[Settings], _SuggestionAnalyzer] | None,
 ) -> CaseTestResult:
     workspace = require_initialized_workspace(WorkspaceRequest(current_directory=request.current_directory))
-    settings = load_platform_settings(request.platform, workspace.workspace)
+    settings = load_workspace_platform_settings(workspace.workspace, request.platform)
     try:
         case_path = _resolve_case_path(request.case_path, settings.cases.dir, request.current_directory)
     except FileNotFoundError as exc:
