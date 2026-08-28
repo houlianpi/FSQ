@@ -2,7 +2,9 @@
 # Licensed under the MIT License.
 
 import json
+import multiprocessing
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -17,6 +19,28 @@ from fsq_agent.config import (
     validate_provider_settings,
 )
 from fsq_agent.models import ConfigurationError
+
+
+def _save_azure_repeatedly(user_root: Path, start: Any) -> None:
+    start.wait()
+    for index in range(20):
+        save_azure_openai_provider(
+            base_url="https://example.openai.azure.com",
+            model=f"azure-{index}",
+            api_key=f"azure-key-{index}",
+            user_config_root=user_root,
+        )
+
+
+def _save_github_repeatedly(user_root: Path, start: Any) -> None:
+    start.wait()
+    for index in range(20):
+        activate_github_copilot_provider(
+            model=f"github-{index}",
+            github_token={"access_token": f"github-token-{index}"},
+            provider_token={"token": f"provider-token-{index}", "plan": "individual"},
+            user_config_root=user_root,
+        )
 
 
 def _runtime_config(tmp_path: Path) -> Path:
@@ -236,6 +260,33 @@ def test_invalid_replacement_preserves_active_provider(tmp_path: Path) -> None:
     assert load_user_provider_config(user_root).provider == active.provider
     assert (user_root / "auth" / "github-copilot-token.json").exists()
     assert (user_root / "auth" / "github-copilot-provider-token.json").exists()
+
+
+def test_provider_replacement_is_serialized_across_processes(tmp_path: Path) -> None:
+    user_root = tmp_path / "user"
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    processes = [
+        context.Process(target=_save_azure_repeatedly, args=(user_root, start)),
+        context.Process(target=_save_github_repeatedly, args=(user_root, start)),
+    ]
+    for process in processes:
+        process.start()
+    start.set()
+    for process in processes:
+        process.join(timeout=30)
+        assert process.exitcode == 0
+
+    saved = load_user_provider_config(user_root)
+    assert saved.provider is not None
+    if saved.provider.type == "azure_openai":
+        assert saved.api_key.startswith("azure-key-")
+        assert not (user_root / "auth" / "github-copilot-token.json").exists()
+        assert not (user_root / "auth" / "github-copilot-provider-token.json").exists()
+    else:
+        assert saved.github_token is not None
+        assert saved.provider_token is not None
+        assert not (user_root / "auth" / "azure-openai.json").exists()
 
 
 def test_runtime_load_ignores_provider_environment_and_refreshes_only_provider(
