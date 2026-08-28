@@ -13,6 +13,13 @@ from fsq_agent.application.contracts import (
     CaseCreateResult,
     CaseTestRequest,
     CaseTestResult,
+    DoctorChecks,
+    DoctorCommands,
+    DoctorPlatformResult,
+    DoctorRequest,
+    DoctorResult,
+    DoctorStatusDetail,
+    DoctorWorkspaceSummary,
     EnvironmentSummary,
     ProviderSummary,
     RunSummary,
@@ -23,6 +30,7 @@ from fsq_agent.application.contracts import (
     event_record,
     result_record,
 )
+from fsq_agent.application.doctor import diagnose_workspace
 from fsq_agent.application.environments import list_environments
 from fsq_agent.application.providers import configure_provider, list_providers, provider_status
 from fsq_agent.application.runs import list_runs, read_run_logs, show_run
@@ -38,6 +46,13 @@ __all__ = [
     "CaseCreateResult",
     "CaseTestRequest",
     "CaseTestResult",
+    "DoctorChecks",
+    "DoctorCommands",
+    "DoctorPlatformResult",
+    "DoctorRequest",
+    "DoctorResult",
+    "DoctorStatusDetail",
+    "DoctorWorkspaceSummary",
     "EnvironmentSummary",
     "ProviderSummary",
     "RunSummary",
@@ -49,6 +64,7 @@ __all__ = [
     "configure_provider",
     "create_case",
     "create_workspace",
+    "diagnose_workspace",
     "event_record",
     "initialize_workspace",
     "list_environments",

@@ -17,10 +17,12 @@ from fsq_agent.application import (
     ApplicationErrorCode,
     CaseCreateRequest,
     CaseTestRequest,
+    DoctorRequest,
     WorkspaceInitializeRequest,
     WorkspaceRequest,
     configure_provider,
     create_case,
+    diagnose_workspace,
     event_record,
     initialize_workspace,
     list_environments,
@@ -221,8 +223,13 @@ def init(
 @main.command()
 @click.pass_context
 def doctor(context: click.Context) -> None:
-    workspace = _workspace(context)
-    _emit(context, {"status": "ready", "workspace": str(workspace)})
+    result = diagnose_workspace(DoctorRequest(current_directory=Path.cwd()))
+    if context.obj["output"] == "human":
+        _render_doctor(result)
+    else:
+        _emit_terminal(context, result.model_dump(mode="json"))
+    if result.status == "unavailable":
+        raise click.exceptions.Exit(ExitCode.UNAVAILABLE)
 
 
 @main.group(name="case")
@@ -396,6 +403,48 @@ def _workspace(context: click.Context) -> Path:
     except ApplicationError as exc:
         _application_error(context, exc)
     raise AssertionError("unreachable")
+
+
+def _render_doctor(result: object) -> None:
+    click.echo(f"Workspace: {result.workspace.name}")
+    click.echo(f"Status: {result.status}")
+    check_labels = {
+        "configuration": "Configuration",
+        "runtime": "Runtime",
+        "target_configuration": "Target configuration",
+        "target_availability": "Target availability",
+        "strict_core": "Strict core",
+        "provider": "Provider",
+        "suggestion_analyzer": "Suggestion analyzer",
+        "dynamic_agent": "Dynamic agent",
+    }
+    command_labels = {
+        "case_test": "fsq case test",
+        "case_test_suggest": "fsq case test --suggest",
+        "case_create": "fsq case create",
+    }
+    for platform in result.platforms:
+        click.echo(f"\n{platform.platform.capitalize()}")
+        click.echo("  Checks")
+        for name in check_labels:
+            detail = getattr(platform.checks, name)
+            click.echo(f"    {check_labels[name]:22} {detail.status}")
+            if detail.status != "ready" and detail.message:
+                click.echo(f"      {detail.message}")
+            if detail.status != "ready" and detail.action:
+                click.echo(f"      Action: {detail.action}")
+        click.echo("  Commands")
+        for name in command_labels:
+            detail = getattr(platform.commands, name)
+            click.echo(f"    {command_labels[name]:26} {detail.status}")
+            if detail.status != "ready" and detail.message:
+                click.echo(f"      {detail.message}")
+            if detail.status != "ready" and detail.action:
+                click.echo(f"      Action: {detail.action}")
+    if result.actions:
+        click.echo("\nActions")
+        for action in result.actions:
+            click.echo(f"  {action}")
 
 
 def _emit(context: click.Context, value: object) -> None:

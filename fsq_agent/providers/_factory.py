@@ -51,3 +51,28 @@ def build_ai_assertion_evaluator(settings: Settings) -> AIAssertionEvaluator:
 
 def build_case_suggestion_analyzer(settings: Settings) -> CaseSuggestionAnalyzer:
     return CaseSuggestionAnalyzer(ModelProviderFactory(settings).build_session())
+
+
+def check_provider_readiness(settings: Settings) -> tuple[bool, str, str]:
+    session = None
+    try:
+        session = prepare_model_provider_session(settings)
+    except Exception:  # noqa: BLE001 - readiness returns a safe unavailable result.
+        return False, "Model Provider is unavailable for non-interactive use.", "Run fsq providers configure for the selected Provider."
+    finally:
+        if session is not None:
+            session.close_sync()
+    return True, "Model Provider is ready for non-interactive use.", ""
+
+
+def check_case_suggestion_readiness(settings: Settings) -> tuple[bool, str, str]:
+    session = None
+    try:
+        session = ModelProviderFactory(settings).build_session()
+        CaseSuggestionAnalyzer(session)
+    except Exception:  # noqa: BLE001 - readiness returns a safe unavailable result.
+        return False, "Case suggestion analysis is unavailable.", "Run fsq providers configure for the selected Provider."
+    finally:
+        if session is not None:
+            session.close_sync()
+    return True, "Case suggestion analysis is ready.", ""

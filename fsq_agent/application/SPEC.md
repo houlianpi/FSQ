@@ -17,6 +17,7 @@ The package exports transport-neutral operations and their Request, Result, Even
 - Run operations support persisted Run listing, detail lookup, and log streaming or retrieval.
 - Provider operations support listing, configuration, and readiness status.
 - Environment operations support listing and diagnostics.
+- Doctor supports complete read-only Workspace diagnosis and per-platform command readiness.
 
 Requests contain application inputs, Results contain operation outcomes and safe artifact references, Events describe transport-neutral progress, and Errors contain stable codes plus safe structured details. These contracts contain no Click, HTTP, SSE, terminal, or frontend types. `application.contracts` is the canonical owner of these types and groups them by shared, Workspace, Case, Run, Provider, and Environment concerns. Resource operation modules import those canonical contract objects rather than defining transport-specific or duplicate equivalents.
 
@@ -27,6 +28,7 @@ Canonical resource modules are:
 - `application.runs`: persisted Run query and log operations.
 - `application.providers`: Provider operations.
 - `application.environments`: Environment operations.
+- `application.doctor`: Workspace-level diagnostic orchestration.
 
 `application.runs` preserves the currently supported Run query behavior and does not expand Run storage, platform selection, or execution semantics.
 
@@ -55,6 +57,10 @@ For an explicit Web executable, exact compatibility uses Core's component-aware 
 
 Application owns the transport-neutral workspace initialization, platform readiness check, and Web executable discovery use cases shared by CLI and Control Plane. It does not implement or invoke package-manager commands, filesystem registry formats, browser path tables, ADB/Appium/backend protocols, or transport wording. Platform runtime services own read-only platform-specific detection; Config owns target validation and persistence. CLI and Control Plane decode inputs and project Application results/errors without reproducing this orchestration.
 
+Application's Doctor operation accepts the exact current directory and returns immutable `DoctorResult`, `DoctorWorkspaceSummary`, `DoctorPlatformResult`, fixed `DoctorChecks`, fixed `DoctorCommands`, and `DoctorStatusDetail` contracts. Detail status is `ready`, `unavailable`, `error`, or `not_applicable`; platform and overall status is `ready`, `partial`, or `unavailable`. Platforms are diagnosed in Android, Web, Windows, macOS order and only identifiable configured platforms are returned. An identifiable damaged platform produces a configuration error detail without aborting other platforms; an untrustworthy registry, root mapping, or platform inventory raises a Workspace/configuration Application Error.
+
+Doctor delegates component facts through public Config, Environments, Providers, Agent, and Core boundaries, isolates unexpected component exceptions into safe error details, derives command verdicts from a fixed dependency matrix, and returns ordered exact-deduplicated actions. Ordinary `case test` requires configuration, Runtime, Target configuration/availability, and Strict Core readiness. `case test --suggest` additionally requires Provider and suggestion-analyzer readiness. `case create` additionally requires Provider and dynamic-Agent readiness. Doctor does not inspect a particular Case and therefore does not promise readiness for Case-specific syntax, runtime-secret, nested-Case, or `assertWithAI` requirements.
+
 ## Python Architecture
 
 - Architecture level: Level 3 Layered Application.
@@ -71,11 +77,14 @@ Application owns the transport-neutral workspace initialization, platform readin
 - `runs.py`: Public persisted Run query/log boundary.
 - `providers.py`: Public Provider operation boundary.
 - `environments.py`: Public Environment operation boundary.
+- `doctor.py`: Public Workspace Doctor operation and aggregation boundary.
 - Private `_*.py` files may support these public modules but are not imported across package boundaries.
 
 ## Error Handling
 
 Application normalizes expected operation failures into stable application Errors and preserves safe structured details. It never exposes secrets, hidden model reasoning, backend objects, transport status codes, or tracebacks. Adapters map Application Errors to exit codes, HTTP statuses, and presentation text.
+
+Doctor component failures do not expose exception messages, arguments, tracebacks, raw subprocess/backend output, env values, or credentials and do not abort independent checks. Only an untrustworthy Workspace identity/inventory or an unrecoverable top-level orchestration failure prevents a complete result.
 
 ## Current Invariants
 
@@ -92,3 +101,4 @@ Application normalizes expected operation failures into stable application Error
 - Domain and runtime rules remain in their owning modules.
 - Case operations coordinate through public Execution services and do not import package-root or adapter-private execution helpers.
 - Suggestion-enabled Case testing separates deterministic execution from read-only post-execution AI analysis; the analysis has no UI-action authority and all generated artifacts remain inside the completed Run directory.
+- Doctor is a read-only Application use case; CLI presents its result but does not reproduce diagnostic or command-readiness rules.

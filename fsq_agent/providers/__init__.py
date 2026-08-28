@@ -9,6 +9,8 @@ from fsq_agent.providers._factory import (
     build_ai_assertion_evaluator,
     build_case_suggestion_analyzer,
     build_model_provider_session,
+    check_case_suggestion_readiness,
+    check_provider_readiness,
     prepare_model_provider_session,
     refresh_model_provider_session,
 )
@@ -37,6 +39,8 @@ __all__ = [
     "build_ai_assertion_evaluator",
     "build_case_suggestion_analyzer",
     "build_model_provider_session",
+    "check_case_suggestion_readiness",
+    "check_provider_readiness",
     "complete_github_copilot_device_flow",
     "list_github_copilot_models",
     "prepare_model_provider_session",

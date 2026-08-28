@@ -14,6 +14,12 @@ from fsq_agent.application import (
     ApplicationErrorCode,
     CaseCreateResult,
     CaseTestResult,
+    DoctorChecks,
+    DoctorCommands,
+    DoctorPlatformResult,
+    DoctorResult,
+    DoctorStatusDetail,
+    DoctorWorkspaceSummary,
     WorkspaceInitializeResult,
 )
 from fsq_agent.cli import main
@@ -42,6 +48,62 @@ def test_workspace_error_is_machine_readable(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["type"] == "error"
     assert payload["error"]["code"] == "workspace.not_initialized"
+
+
+def _doctor_result(tmp_path: Path, *, status: str = "partial") -> DoctorResult:
+    ready = DoctorStatusDetail(status="ready", message="ready")
+    unavailable = DoctorStatusDetail(status="unavailable", code="provider.unavailable", message="Provider unavailable.", action="Configure Provider.")
+    checks = DoctorChecks(
+        configuration=ready,
+        runtime=ready,
+        target_configuration=ready,
+        target_availability=ready,
+        strict_core=ready,
+        provider=unavailable,
+        suggestion_analyzer=unavailable,
+        dynamic_agent=unavailable,
+    )
+    commands = DoctorCommands(case_test=ready, case_test_suggest=unavailable, case_create=unavailable)
+    return DoctorResult(
+        status=status,
+        workspace=DoctorWorkspaceSummary(name="checkout", root=tmp_path),
+        platforms=[DoctorPlatformResult(platform="web", status=status, checks=checks, commands=commands)],
+        actions=["Configure Provider."],
+    )
+
+
+@pytest.mark.parametrize("output", ["json", "jsonl"])
+def test_doctor_machine_output_is_one_terminal_record(tmp_path: Path, monkeypatch, output: str) -> None:
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.diagnose_workspace", lambda _request: _doctor_result(tmp_path))
+    result = CliRunner().invoke(main, ["--output", output, "doctor"])
+
+    assert result.exit_code == 0
+    records = result.output.splitlines()
+    assert len(records) == 1
+    payload = json.loads(records[0])
+    assert payload["type"] == "result"
+    assert payload["status"] == "partial"
+    assert payload["result"]["platforms"][0]["commands"]["case_test"]["status"] == "ready"
+
+
+def test_doctor_human_output_shows_command_matrix_and_actions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.diagnose_workspace", lambda _request: _doctor_result(tmp_path))
+    result = CliRunner().invoke(main, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "Workspace: checkout" in result.output
+    assert "fsq case test --suggest" in result.output
+    assert "Provider unavailable." in result.output
+    assert "Action: Configure Provider." in result.output
+    assert "Actions" in result.output
+
+
+def test_doctor_unavailable_result_exits_four(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("fsq_agent.adapters.cli._main.diagnose_workspace", lambda _request: _doctor_result(tmp_path, status="unavailable"))
+    result = CliRunner().invoke(main, ["--output", "json", "doctor"])
+
+    assert result.exit_code == 4
+    assert json.loads(result.output)["status"] == "unavailable"
 
 
 def test_case_test_exposes_suggest_option() -> None:

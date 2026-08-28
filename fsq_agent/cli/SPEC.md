@@ -68,7 +68,7 @@ fsq init --platform macos --bundle-id com.example.app
 - `runs` is not a complete supported multi-platform contract in this specification. Its platform-selection, aggregation, and complete query behavior require a separate confirmed specification before being treated as complete.
 - `providers` exposes safe provider inventory, configuration, and readiness.
 - `environments` exposes Environment inventory and diagnostics. Mutation is not public in this phase.
-- `doctor` performs workspace-level diagnostics; `ui` starts the Control Plane adapter.
+- `doctor` performs read-only Workspace diagnostics across every identifiable configured platform and reports fixed component checks plus readiness for `case test`, `case test --suggest`, and `case create`; `ui` starts the Control Plane adapter.
 
 The first phase does not expose extension management, public capability/action discovery, Environment mutation, Run mutation, a daemon, async queues, sharding, or workers. `test`, `replay`, and `run` are not public top-level execution commands and are not retained as silent aliases.
 
@@ -85,6 +85,10 @@ The exact current directory is the CLI workspace root. A valid CLI workspace is 
 - Human output may be styled; JSON emits one complete operation envelope; JSONL emits one object per event followed by one terminal result or error object.
 - Machine output is stdout-only. Diagnostics that cannot be represented as protocol records use stderr. Secrets and hidden reasoning are never emitted.
 - Exit categories are `0` success, `1` test/case failure, `2` usage or validation error, `3` workspace/configuration error, `4` provider/environment unavailable, `5` internal/infrastructure error, and `130` interruption.
+
+`doctor` has no platform option and checks configured platforms in Android, Web, Windows, macOS order. Its Human output shows Workspace and platform status, fixed checks, the three command verdicts, reasons/actions for non-ready items, and ordered deduplicated actions. JSON and JSONL each emit exactly one terminal result record; JSONL emits no synthetic event. Doctor exits `0` for `ready` or `partial`, `4` for a completed `unavailable` result, `3` when Workspace registry/root/config inventory is not trustworthy, `5` for unrecoverable internal orchestration failure, and `130` for interruption.
+
+Doctor is read-only: it does not install, mutate configuration, authenticate interactively, send model inference, launch applications/browsers, or create external sessions. Provider readiness may perform only its supported non-interactive cached-token refresh. Human color never carries unique information, and all output obeys the global secret and safe-error contract.
 
 ## Compatibility
 
@@ -104,7 +108,7 @@ CLI maps stable Application Errors to the documented exit categories and present
 
 ## Verification Scope
 
-Verification covers command/option parsing, rejection of `--install-driver`, platform-target exclusivity, required Web channel and optional executable path, unambiguous shared Web discovery and explicit-path validation, read-only runtime readiness, incomplete-distribution and external-prerequisite guidance, no workspace mutation before readiness, current-directory name derivation/override, existing-project adoption, idempotent initialization/update/conflict behavior, registry and directory creation, workspace precondition presentation, Application request mapping, human/JSON/JSONL rendering, non-interactive behavior, exit-code mapping, safe unexpected-exception diagnostics, `ui` startup through the current public Control Plane server options without startup-directory workspace selection, legacy rejection/migration guidance, and absence of direct domain/runtime orchestration.
+Verification covers command/option parsing, rejection of `--install-driver`, platform-target exclusivity, required Web channel and optional executable path, unambiguous shared Web discovery and explicit-path validation, read-only runtime readiness, incomplete-distribution and external-prerequisite guidance, no workspace mutation before readiness, current-directory name derivation/override, existing-project adoption, idempotent initialization/update/conflict behavior, registry and directory creation, workspace precondition presentation, Doctor platform ordering, command dependency/status aggregation, component error isolation, no-side-effect boundary, Human/JSON/JSONL Doctor rendering and exit codes, Application request mapping, non-interactive behavior, safe unexpected-exception diagnostics, `ui` startup through the current public Control Plane server options without startup-directory workspace selection, legacy rejection/migration guidance, and absence of direct domain/runtime orchestration.
 
 ## Current Invariants
 

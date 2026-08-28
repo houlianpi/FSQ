@@ -13,7 +13,7 @@ The module must not import Application, adapters, Config persistence, concrete d
 
 ## Public Interface
 
-`PlatformRuntimeService` is the stable service for read-only `check`, exact-channel Web executable discovery, and explicit executable validation. `PlatformRuntimeCheck` remains owned by Models. Core's legacy export references the canonical service class.
+`PlatformRuntimeService` is the stable service for read-only Runtime `check`, exact-channel Web executable discovery, explicit executable validation, and platform Target configuration/availability diagnosis from resolved settings. Target diagnosis returns safe normalized status facts without env values, unrestricted local target details, raw subprocess output, or backend objects. `PlatformRuntimeCheck` remains owned by Models. Core's legacy export references the canonical service class.
 
 ## Internal Structure
 
@@ -35,6 +35,8 @@ The module must not import Application, adapters, Config persistence, concrete d
 
 Readiness checks never install or modify software. Missing Python platform dependencies identify an incomplete `fsq-agent` installation and provide safe reinstall/repair guidance. Missing external host services or system prerequisites provide safe provisioning guidance without executing it.
 
+Target configuration diagnosis validates required identities and local path/channel shape. Target availability uses read-only discovery for current candidates, including Android online/authorized device and application discovery, without installing applications, changing device state, starting a browser/application, or creating a Driver/Appium session.
+
 ## Current Invariants
 
 - Current host support behavior remains unchanged.
@@ -42,3 +44,4 @@ Readiness checks never install or modify software. Missing Python platform depen
 - Explicit Web validation delegates to the pure Models identity contract and never trusts a shared basename or generic substring.
 - Candidates are normalized, deduplicated, ordered, and never selected when multiple distinct matches exist.
 - The module does not provision targets, start services, authenticate, mutate Workspaces, or expose subprocess output.
+- Environment diagnosis does not inspect Provider readiness; Workspace Doctor composes Environment facts with other public readiness boundaries.

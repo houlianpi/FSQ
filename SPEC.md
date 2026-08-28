@@ -52,6 +52,12 @@ Default local LLM runs use GitHub Copilot provider authentication with Copilot m
 
 The local workspace setup entry is `fsq init --platform android|web|windows|macos` with the selected platform's target options. It initializes or updates exactly one platform at the exact current registered workspace root and does not configure Providers or create legacy workspace markers.
 
+## Workspace Doctor
+
+`fsq doctor` is the read-only health summary for the exact current registered Workspace. It checks every identifiable configured platform in Android, Web, Windows, macOS order, isolates one platform's diagnostic failures from the others, and reports both fixed component checks and command readiness for `fsq case test`, `fsq case test --suggest`, and `fsq case create`. Overall `ready`, `partial`, or `unavailable` status is derived from those command verdicts.
+
+Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
+
 ## Platform Blocks
 
 Shared platform rules:

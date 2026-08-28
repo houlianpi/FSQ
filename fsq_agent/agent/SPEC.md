@@ -27,6 +27,7 @@ Current `__init__.py` exports via `__all__`:
 - `CodingAgentRuntimeFactory`: Composition contract for creating a runtime from validated settings and optional harness construction input.
 - `CodingAgentPolicy`: Public SDK-neutral facade for pre-plan instructions and knowledge lookup schemas, prompt construction, structured-output coercion/serialization, and verification evidence construction used by Coding Agent adapters.
 - `Verifier`: Parses structured verifier-agent or runner final output and converts task status, evidence, and diagnostics into a `VerificationResult` for the task's single `verification_goal`.
+- `check_dynamic_agent_readiness(settings: Settings) -> tuple[bool, str, str]`: Doctor-facing static readiness operation. It validates dynamic Agent settings, prompt templates, configured knowledge roots, required Skills, AgentTool policy, and active platform capability construction without refreshing Provider credentials, sending model inference, creating a Harness/Driver/session, starting an application, or writing run artifacts. Optional unusable Skills follow the existing loader contract; required unusable Skills make readiness unavailable. It returns only a safe normalized verdict, message, and action and does not expose loaded knowledge, Skill content, prompt content, paths, credentials, or exception details.
 
 Current public call shape:
 
@@ -48,6 +49,7 @@ Current public call shape:
 - `_structured_output.py`: Shared coercion helpers for SDK final output values and compatibility parsing of legacy/raw final JSON strings.
 - `_verification_task.py`: Builds an evidence bundle from task context, execution records, event logs, and persisted tool artifacts for a separate evidence-based verification agent task.
 - `_verifier.py`: Evidence-based goal verification and failure diagnostics.
+- `_readiness.py`: Doctor-facing static dynamic-Agent readiness composition with no external session creation or model invocation.
 - `SPEC.md`: Module design.
 
 ## Platform Runtime Blocks
