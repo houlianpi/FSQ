@@ -36,7 +36,7 @@ Current `__init__.py` exports via `__all__`:
 
 Repository-owned platform YAML presets contain stable, shareable runtime shape: active platform, backend selection, OpenAI Agents SDK turn limit, execution post-action delay defaults, lifecycle policy, harness policy, and reusable skill definitions. They do not define workspace, cases/output, project knowledge, target, or runtime-secret values. `config.example.yaml` is a reference sample only.
 
-Process environment and `.env` files do not contribute FSQ platform, application-target, runtime-secret, or Provider configuration and are not compatibility fallbacks. Config does not automatically parse repository or config-directory `.env` files.
+Process environment and `.env` files do not contribute FSQ platform, application-target, runtime-secret, or Provider configuration and are not compatibility fallbacks; the sole exception is the macOS operator-local Appium server URL, read from the `FSQ_MACOS_APPIUM_SERVER_URL` process environment variable when set. Config does not automatically parse repository or config-directory `.env` files.
 
 Optional top-level `caseLifecycle` is a strict execution policy block loaded as configuration only. Config validates hook shape with the same hook model used by FSQ case metadata; CLI strict execution owns hook path resolution, shell execution, recursion detection, lifecycle ordering, and failure semantics.
 
@@ -54,7 +54,7 @@ Shared configuration rules:
 - Both Control Plane child-directory creation and CLI explicit-root initialization produce the same canonical registered workspace identity and `.fsq/config/config.<platform>.yaml` layout. Explicit-root initialization may preserve unrelated pre-existing project content but never adopts pre-existing `.fsq` state or legacy markers.
 - Workspace `env` accepts only valid environment-variable names mapped to non-empty strings. Duplicate YAML keys, blank/invalid names, non-string values, and blank values fail without exposing values.
 - `caseLifecycle` remains preset-owned policy; config validates shape and strict entry layers own execution.
-- The user document owns Provider metadata and ordered workspace registry entries. Environment variables and `.env` files do not own FSQ settings.
+- The user document owns Provider metadata and ordered workspace registry entries. Environment variables and `.env` files do not own FSQ settings, except that a non-empty `FSQ_MACOS_APPIUM_SERVER_URL` overrides the macOS preset Appium server URL default in effective settings.
 
 Provider configuration:
 
@@ -94,7 +94,8 @@ macOS configuration:
 
 - `harness.macos.backend` supports `appium_mac2` in the first macOS backend.
 - `harness.macos.page_source_max_depth`, `harness.macos.action_timeout_seconds`, and `harness.macos.new_command_timeout_seconds` are YAML-owned stable defaults. The action timeout and Appium command-idle timeout are independent settings.
-- `harness.macos.appium_server_url` is a YAML field owned by the macOS preset and is required for macOS runtime validation. The committed macOS preset supplies `http://127.0.0.1:4723`.
+- `harness.macos.appium_server_url` is required for macOS runtime validation. The committed macOS preset supplies the default `http://127.0.0.1:4723`; the process environment variable `FSQ_MACOS_APPIUM_SERVER_URL`, when set to a non-empty value, overrides that default in the effective workspace-platform settings.
+- The operator-local Appium server URL is supplied by the `FSQ_MACOS_APPIUM_SERVER_URL` environment variable when set; otherwise the preset default applies. Config validates the resolved URL without connecting to the server.
 - Workspace target supplies optional `bundle_id` and `app_path`, with at least one required; a supplied app path must identify an existing application bundle or executable.
 - Missing Appium Python packages are reported during macOS runtime construction with actionable setup guidance, not during registry bootstrap. Missing or unusable Appium server URL, bundle id, app path, or path existence issues are reported by configuration validation before external actions begin.
 
@@ -124,7 +125,7 @@ Invalid or missing configuration raises `ConfigurationError` from `models`. YAML
 
 ## Current Invariants
 
-- Runtime configuration has three persisted ownership layers: repository presets own stable policy and platform endpoints/adapter modes, workspace config owns application target/paths/private runtime secrets, and the user document owns Provider metadata plus the workspace registry. Android device identity is transient run state owned by entry layers.
+- Runtime configuration has three persisted ownership layers: repository presets own stable policy and platform endpoint defaults/adapter modes, workspace config owns application target/paths/private runtime secrets, and the user document owns Provider metadata plus the workspace registry. Android device identity is transient run state owned by entry layers. The macOS Appium server URL is the one endpoint whose effective value may come from the operator process environment (`FSQ_MACOS_APPIUM_SERVER_URL`) instead of the preset default.
 - Public settings loads capture the latest complete user-provider snapshot. Long-lived entry surfaces may refresh only that snapshot at a documented complete-task boundary; an already constructed task/provider lifecycle is not mutated.
 - `caseLifecycle` remains an optional platform-YAML strict lifecycle policy. Config validates its shared FSQ hook shape; entry-layer strict execution owns path resolution, shell execution, recursion detection, ordering, and failure semantics.
 - There is no default provider. `openai_agents.provider` is `None` for explicit unconfigured state and otherwise stores the active user-provider type. Both providers use the configured non-empty model; no fixed GitHub model is injected.
