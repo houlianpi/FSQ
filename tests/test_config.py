@@ -137,6 +137,53 @@ env: {{}}
     assert settings.agent_context.knowledge.skills.dir == Path(__file__).parents[1] / "knowledge" / "skills"
 
 
+def _macos_workspace(tmp_path: Path, name: str) -> Path:
+    workspace = tmp_path / name
+    config_dir = workspace / ".fsq" / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.macos.yaml").write_text(
+        f"""
+version: 2
+name: {name}
+root_path: {workspace.as_posix()}
+platform: macos
+target:
+    bundle_id: com.example.app
+env: {{}}
+""",
+        encoding="utf-8",
+    )
+    return workspace
+
+
+def test_load_workspace_platform_settings_macos_appium_url_reads_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = _macos_workspace(tmp_path, "macos-env-url")
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "http://appium.example:4777")
+
+    settings = load_workspace_platform_settings(workspace, "macos")
+
+    assert settings.harness.macos.appium_server_url == "http://appium.example:4777"
+
+
+def test_load_workspace_platform_settings_macos_appium_url_defaults_to_preset(
+    tmp_path: Path,
+) -> None:
+    workspace = _macos_workspace(tmp_path, "macos-preset-url")
+
+    settings = load_workspace_platform_settings(workspace, "macos")
+
+    assert settings.harness.macos.appium_server_url == "http://127.0.0.1:4723"
+
+
+def test_load_workspace_platform_settings_macos_ignores_blank_appium_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = _macos_workspace(tmp_path, "macos-blank-env")
+    monkeypatch.setenv("FSQ_MACOS_APPIUM_SERVER_URL", "   ")
+
+    settings = load_workspace_platform_settings(workspace, "macos")
+
+    assert settings.harness.macos.appium_server_url == "http://127.0.0.1:4723"
+
+
 def test_validate_runtime_settings_rejects_workspace_macos_path_that_is_not_bundle_or_executable(
     tmp_path: Path,
 ) -> None:
