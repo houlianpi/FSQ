@@ -1,0 +1,27 @@
+1
+00:00:00,000 --> 00:00:04,000
+AI UI automation should show its work.
+
+2
+00:00:04,000 --> 00:00:09,000
+Install once. Check real readiness.
+
+3
+00:00:09,000 --> 00:00:16,000
+Describe a user-visible goal.
+
+4
+00:00:16,000 --> 00:00:24,000
+Every action leaves inspectable evidence.
+
+5
+00:00:24,000 --> 00:00:30,000
+Review what actually ran.
+
+6
+00:00:30,000 --> 00:00:37,000
+Replay deterministically.
+
+7
+00:00:37,000 --> 00:00:43,000
+Web. Android. Windows. macOS.

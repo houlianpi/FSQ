@@ -1,0 +1,24 @@
+schemaVersion: fsq.ai-test/v1
+name: Example Domain smoke test
+description: Public deterministic Web example with no account, private data, or application-specific dependency.
+platform: web
+tags: [example, web, smoke]
+---
+- startBrowser
+- navigateTo:
+    url: https://example.com/
+- assertVisible:
+    target: Example Domain heading
+    locator:
+      role: heading
+      name: Example Domain
+    optional: false
+- assertText:
+    target: Example Domain heading
+    locator:
+      role: heading
+      name: Example Domain
+    text:
+      equals: Example Domain
+    optional: false
+- closeBrowser

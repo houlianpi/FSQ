@@ -42,6 +42,31 @@ def test_default_distribution_contract() -> None:
         assert f"Programming Language :: Python :: {version}" in classifiers
 
 
+def test_sdist_includes_public_release_documentation_and_example() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    includes = set(project["tool"]["hatch"]["build"]["targets"]["sdist"]["include"])
+
+    assert {
+        "/CHANGELOG.md",
+        "/README.zh-CN.md",
+        "/docs/README.md",
+        "/docs/architecture.md",
+        "/docs/assets/fsq-workflow.svg",
+        "/docs/assets/social-preview.png",
+        "/docs/assets/social-preview.svg",
+        "/docs/case-format.md",
+        "/docs/cli-reference.md",
+        "/docs/getting-started.md",
+        "/docs/getting-started.zh-CN.md",
+        "/docs/launch",
+        "/docs/media",
+        "/docs/platform-prerequisites.md",
+        "/docs/releases",
+        "/docs/support-and-stability.md",
+        "/examples",
+    } <= includes
+
+
 def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     raw = workflow_path.read_text(encoding="utf-8")
@@ -167,6 +192,16 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "pip install fsq-agent" in readme
+    assert "README.zh-CN.md" in readme
+    assert "docs/getting-started.zh-CN.md" in readme
+    assert "docs/media/fsq-v0.1.0-android-demo-preview.gif" in readme
+    assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
+    assert "https://youtu.be/QqCahxGDdS0" in readme
+    hero = readme.split('<p align="center">\n  <img src="docs/assets/fsq-workflow.svg"', 1)[0]
+    assert "Autoplay demo page" not in hero
+    assert "English captions" not in hero
+    assert "docs/demo.html" not in readme
+    assert "Bilibili" not in readme
     for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
         assert command in readme
     for obsolete in (
@@ -182,6 +217,61 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
         "fsq-agent[macos]",
     ):
         assert obsolete not in readme
+
+
+def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
+    readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+    assert "pip install fsq-agent" in readme
+    assert "Workspace Root Strategy" in readme
+    assert "docs/media/fsq-v0.1.0-android-demo-preview.gif" in readme
+    assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
+    assert "https://youtu.be/QqCahxGDdS0" in readme
+    hero = readme.split('<p align="center">\n  <img src="docs/assets/fsq-workflow.svg"', 1)[0]
+    assert "自动播放演示页" not in readme
+    assert "中文字幕" not in hero
+    assert "Bilibili" not in readme
+    for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
+        assert command in readme
+    for obsolete in (
+        "fsq-agent run",
+        "run --strict",
+        "fsq-agent control-plane",
+        "fsq-agent report",
+        "fsq-agent playground",
+        "init --name",
+        "fsq-agent[web]",
+        "fsq-agent[android]",
+        "fsq-agent[windows]",
+        "fsq-agent[macos]",
+    ):
+        assert obsolete not in readme
+
+
+def test_release_demo_gif_is_lightweight_and_committed() -> None:
+    demo_gif = ROOT / "docs" / "media" / "fsq-v0.1.0-android-demo-preview.gif"
+
+    assert demo_gif.is_file()
+    assert demo_gif.stat().st_size < 1_000_000
+
+
+def test_v010_release_materials_cover_public_launch_contract() -> None:
+    notes = (ROOT / "docs" / "releases" / "v0.1.0.md").read_text(encoding="utf-8")
+    release_copy = (ROOT / "docs" / "releases" / "v0.1.0-github-release.md").read_text(encoding="utf-8")
+
+    for text in (notes, release_copy):
+        assert "python -m pip install fsq-agent" in text
+        assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in text
+        assert "https://youtu.be/QqCahxGDdS0" in text
+        assert "alpha" in text.lower()
+        assert "Playwright" in text
+        assert "uiautomator2" in text
+        assert "pywinauto" in text
+        assert "Appium" in text
+        assert "token" in text.lower()
+        assert "API key" in text
+        assert "/Users/" not in text
+        assert "production ready" not in text.lower()
 
 
 def test_release_acceptance_checklist_uses_current_public_commands() -> None:

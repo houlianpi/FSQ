@@ -26,6 +26,10 @@
 
 <!-- Add screenshots, reports, or other user-visible evidence when relevant. Otherwise write "N/A" and explain why. -->
 
+## Release or documentation impact
+
+<!-- If this changes README, examples, packaging, release workflow, public media, or user-facing docs, describe the exact user-visible effect. Otherwise write "N/A". -->
+
 ## Checklist
 
 ### Spec-driven development
@@ -40,3 +44,5 @@
 - [ ] I ran focused tests and required formatting or lint checks, or explained why a check was not applicable.
 - [ ] I updated user-facing documentation when behavior or setup changed, or it is not applicable.
 - [ ] I did not commit credentials, tokens, account data, personal data, local `.env` files, generated logs, reports, screenshots, or workspace output.
+- [ ] I reviewed any included screenshots, videos, logs, reports, and Run artifacts for secrets, private paths, device identifiers, and account data.
+- [ ] I did not add large binary media to Git history unless the repository already owns that exact artifact and the size is justified.
