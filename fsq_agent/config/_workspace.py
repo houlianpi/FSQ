@@ -22,6 +22,7 @@ from fsq_agent.models import (
     WorkspacePlatformStatus,
     WorkspaceRegistryEntry,
     WorkspaceStatus,
+    web_executable_matches_channel,
 )
 
 SUPPORTED_PLATFORMS = ("android", "web", "windows", "macos")
@@ -36,17 +37,6 @@ WEB_CHANNEL_EXECUTABLE_NAMES = {
     "msedge-beta": {"msedge", "msedge.exe", "microsoft edge beta"},
     "msedge-dev": {"msedge", "msedge.exe", "microsoft edge dev"},
     "msedge-canary": {"msedge", "msedge.exe", "microsoft edge canary"},
-}
-WEB_CHANNEL_PATH_MARKERS = {
-    "chromium": ("chromium",),
-    "chrome": ("google/chrome", "google chrome"),
-    "chrome-beta": ("chrome beta",),
-    "chrome-dev": ("chrome dev",),
-    "chrome-canary": ("chrome canary", "chrome sxs"),
-    "msedge": ("microsoft/edge/application", "microsoft edge.app"),
-    "msedge-beta": ("edge beta",),
-    "msedge-dev": ("edge dev",),
-    "msedge-canary": ("edge canary", "edge sxs"),
 }
 CHROME_EXECUTABLE_NAMES = WEB_CHANNEL_EXECUTABLE_NAMES["chrome"]
 
@@ -476,19 +466,11 @@ def _validate_target_paths(config: WorkspaceConfig) -> None:
             "macOS application path must identify an existing app bundle or executable.",
             context={"path": str(normalized)},
         )
-    expected_names = WEB_CHANNEL_EXECUTABLE_NAMES.get(target.browser_channel, set()) if isinstance(target, WebWorkspaceTarget) else set()
-    if isinstance(target, WebWorkspaceTarget) and normalized.name.casefold() not in expected_names:
+    if isinstance(target, WebWorkspaceTarget) and not web_executable_matches_channel(target.browser_channel, normalized):
         raise ConfigurationError(
             "Web browser executable path does not match the configured Web preset channel.",
-            context={"path": str(normalized), "channel": target.browser_channel, "expected_file_names": sorted(expected_names)},
+            context={"path": str(normalized), "channel": target.browser_channel},
         )
-    if os.name == "nt" and isinstance(target, WebWorkspaceTarget) and normalized.name.casefold() in {"chrome.exe", "msedge.exe"} and "program files" in str(normalized).casefold():
-        normalized_path = str(normalized).replace("\\", "/").casefold()
-        if not any(marker in normalized_path for marker in WEB_CHANNEL_PATH_MARKERS[target.browser_channel]):
-            raise ConfigurationError(
-                "Web browser executable path does not match the configured Web preset channel.",
-                context={"path": str(normalized), "channel": target.browser_channel},
-            )
     if isinstance(target, WebWorkspaceTarget) and os.name != "nt" and not os.access(normalized, os.X_OK):
         raise ConfigurationError(f"{description} must be executable.", context={"path": str(normalized)})
 

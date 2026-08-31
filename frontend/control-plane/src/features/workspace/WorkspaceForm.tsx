@@ -7,7 +7,7 @@ import type {
   AddWorkspacePlatformPayload,
   WorkspaceDetail,
   WorkspacePlatformDetail,
-  WorkspaceTarget,
+  WorkspaceTargetInput,
   WebBrowserChannel,
 } from '../../api/types';
 
@@ -58,9 +58,12 @@ function targetFromDetail(detail?: WorkspacePlatformDetail): TargetDraft {
   return draft;
 }
 
-function targetPayload(platform: PlatformId, target: TargetDraft): WorkspaceTarget {
+function targetPayload(platform: PlatformId, target: TargetDraft): WorkspaceTargetInput {
   if (platform === 'android') return { appId: target.appId.trim() };
-  if (platform === 'web') return { browserChannel: target.browserChannel, browserExecutablePath: target.browserExecutablePath.trim() };
+  if (platform === 'web') return {
+    browserChannel: target.browserChannel,
+    ...(target.browserExecutablePath.trim() ? { browserExecutablePath: target.browserExecutablePath.trim() } : {}),
+  };
   if (platform === 'windows') return {
     appPath: target.appPath.trim(),
     ...(target.windowTitleRe.trim() ? { windowTitleRe: target.windowTitleRe.trim() } : {}),
@@ -81,6 +84,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
   const initialRows = Object.entries(detail?.env ?? {}).map(([name, value], index) => ({ id: index + 1, name, value }));
   const [name, setName] = useState(detail?.name ?? workspace?.name ?? '');
   const [selectedPath, setSelectedPath] = useState('');
+  const [selectedPathIsEmpty, setSelectedPathIsEmpty] = useState<boolean | null>(null);
   const [drafts, setDrafts] = useState<PlatformDraft[]>(mode === 'create' ? [] : [{ id: 1, platform: initialPlatform, target: targetFromDetail(detail), envRows: initialRows }]);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [error, setError] = useState<ApiErrorBody | null>(null);
@@ -101,6 +105,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
   const dirty = mode === 'create'
     ? Boolean(name || selectedPath || drafts.length)
     : mode === 'add' ? Boolean(singleDraft && (Object.values(singleDraft.target).some(Boolean) || singleDraft.envRows.length > 0)) : currentValue !== initialValue;
+  const finalPath = selectedPathIsEmpty === null ? '' : selectedPathIsEmpty ? selectedPath : `${selectedPath.replace(/[\\/]+$/, '')}/${name.trim()}`;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => {
@@ -117,6 +122,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       if (request !== pickerRequest.current) return;
       if (result.status === 'selected') {
         setSelectedPath(result.selectedPath);
+        setSelectedPathIsEmpty(result.isEmpty);
         setFieldError('');
       } else {
         pickerButton.current?.focus();
@@ -170,7 +176,6 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
     };
     if (!platform) return invalid('Select a platform for every platform section.', 'platform');
     if (platform === 'android' && !target.appId.trim()) return invalid('Android App ID is required.', 'target');
-    if (platform === 'web' && !target.browserExecutablePath.trim()) return invalid('Web browser executable path is required.', 'target');
     if (platform === 'windows' && !target.appPath.trim()) return invalid('Windows application path is required.', 'target');
     if (platform === 'macos' && !target.bundleId.trim() && !target.appPath.trim()) return invalid('macOS Bundle ID or application path is required.', 'target');
     const env: Record<string, string> = {};
@@ -219,7 +224,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
 
   const renderTarget = (draft: PlatformDraft) => draft.platform ? <section className="cp-form-section"><div><h3>Target</h3><p>Identify the local application FSQ should operate.</p></div><div className="cp-form-grid">
     {draft.platform === 'android' && <label><span>App ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appId} onChange={(event) => updateTarget(draft.id, 'appId', event.target.value)} placeholder="com.example.app" /></label>}
-    {draft.platform === 'web' && <><label><span>Browser channel</span><select value={draft.target.browserChannel} onChange={(event) => updateTarget(draft.id, 'browserChannel', event.target.value as WebBrowserChannel)}>{webChannels.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}</select></label><label className="cp-field-wide"><span>Web path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /></label></>}
+    {draft.platform === 'web' && <><label><span>Browser channel</span><select value={draft.target.browserChannel} onChange={(event) => updateTarget(draft.id, 'browserChannel', event.target.value as WebBrowserChannel)}>{webChannels.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}</select></label><label className="cp-field-wide"><span>Web path <small>Optional</small></span><input aria-label="Web path" ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.browserExecutablePath} onChange={(event) => updateTarget(draft.id, 'browserExecutablePath', event.target.value)} placeholder="Browser executable path" /><small>Leave blank to discover the selected installed browser channel.</small></label></>}
     {draft.platform === 'windows' && <><label className="cp-field-wide"><span>App path</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label><label><span>Window title regex <small>Optional</small></span><input value={draft.target.windowTitleRe} onChange={(event) => updateTarget(draft.id, 'windowTitleRe', event.target.value)} /></label><label><span>Launch args <small>Optional</small></span><input value={draft.target.launchArgs} onChange={(event) => updateTarget(draft.id, 'launchArgs', event.target.value)} /></label></>}
     {draft.platform === 'macos' && <><label><span>Bundle ID</span><input ref={(element) => { if (element) draftFields.current.set(`${draft.id}:target`, element); if (mode !== 'create') firstField.current = element; }} value={draft.target.bundleId} onChange={(event) => updateTarget(draft.id, 'bundleId', event.target.value)} placeholder="com.example.App" /></label><label><span>App path</span><input value={draft.target.appPath} onChange={(event) => updateTarget(draft.id, 'appPath', event.target.value)} /></label></>}
   </div></section> : null;
@@ -232,6 +237,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       {mode === 'create' ? <div className="cp-form-grid cp-form-grid--identity">
         <label><span>Workspace name</span><input ref={firstField} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label>
         <div className="cp-selected-folder"><label><span>Selected folder</span><input value={selectedPath} placeholder="No folder selected" readOnly /></label><button ref={pickerButton} className="button" type="button" onClick={chooseParentFolder} disabled={pickerPending} aria-busy={pickerPending}>{pickerPending ? 'Choosing...' : <><FolderOpen aria-hidden="true" />Choose folder</>}</button></div>
+        <label><span>Final path</span><input value={finalPath} placeholder="Select a folder to preview the workspace path" readOnly /></label>
       </div> : <dl className="cp-workspace-immutable"><div><dt>Name</dt><dd>{detail?.name ?? workspace!.name}</dd></div><div><dt>Root</dt><dd className="mono">{detail?.rootPath ?? workspace!.rootPath}</dd></div><div><dt>Platform</dt><dd>{detail?.platform ? platformLabels[detail.platform] : singleDraft?.platform ? platformLabels[singleDraft.platform] : ''}</dd></div></dl>}
 
       {mode === 'create' && <div className="cp-platform-builder">

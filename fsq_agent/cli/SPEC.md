@@ -1,223 +1,153 @@
-# Module: cli
+# Module: cli compatibility entry
 
 ## Purpose
 
-Provide the public command line surface for fsq-agent: create an unregistered named workspace from the process current directory or mutate a registered name at its stored root, resolve direct runs from an exact current-directory workspace root plus explicit configured platform, resolve report and Playground operations from a registered workspace name plus explicit platform, bootstrap a lightweight active-platform capability registry, run either dynamic LLM goal/reference execution or strict-core YAML execution with optional case lifecycle hook orchestration and explicit provider-backed `assertWithAI`, optionally record dynamic LLM runs into strict-replay FSQ YAML artifacts from capability replay metadata, print platform-scoped workspace reports, start the workspace-platform browser Playground, and start the directory-independent local Control Plane.
+Preserve existing `fsq_agent.cli:main` as a public compatibility export for the canonical `adapters.cli` command while installed `fsq` and `fsq-agent` scripts target `fsq_agent.adapters.cli:main` directly. Canonical CLI modules parse arguments, select presentation, invoke Application operations, render results/events, and map exit codes. Old `fsq_agent.cli._*` private module paths are unsupported and absent.
 
 ## Dependencies
 
-- `models`: Uses `Task`, `TaskResult`, FSQ case and lifecycle hook models, capability registry snapshots, replay policy metadata, strict replay refs, wait parameter models, report artifacts, and shared exceptions.
-- `config`: Loads an exact workspace root or resolves registered workspace identity, composes the explicitly selected platform overlay and matching preset, then validates provider-only, LLM runtime, or strict-core readiness without creating workspace identity or config files.
-- `providers`: Builds shared provider sessions and AI assertion evaluators for dynamic runs and strict runs that contain explicit `assertWithAI` steps.
-- `core`: Composes capability registry bootstrap, deterministic `ExecutableStep` execution through `StepRunner`/`StepSequenceRunner`, runner events, and evidence manifest writing at the entry boundary.
-- `fsq`: Owns the exact `.fsq.yaml` suffix contract, loads FSQ cases, and converts parsed cases into canonical strict-core executable steps using a registry snapshot.
-- `agent`: Runs dynamic LLM goal/reference task workflows and persists recordable safe event metadata.
-- `playground`: Starts the local browser playground server from loaded settings and CLI host/port/browser options.
-- `control_plane`: Starts the local Control Plane server from CLI host/port/browser options. Workspace management and Devices selection come from browser state and the user registry, not CLI-selected workspace or platform options.
-- `report`: Generates strict-core reports and resolves stored LLM or strict-core reports by run id.
-- `tools`: Provides dynamic-only AgentTool hosts for default LLM execution.
+- `application`: The boundary used for CLI business operations and their Request, Result, Event, and Error contracts. Application Case operations delegate complete run orchestration to Execution.
+- `control_plane`: Public server startup boundary for `fsq ui`; business operations behind that server still use Application.
+- `agent` and `adapters.coding_agent`: Narrow composition-only dependencies used by a private CLI helper to construct the SDK-neutral Agent collaborator injected into Application Case creation.
+- `models`: Shared primitive/domain values only where required by Application contracts.
 
-The CLI module composes strict registry bootstrap from public `core` platform tool APIs and dynamic execution from `agent`/`tools` APIs. It must not import `capabilities` or decorator internals directly; declaration discovery happens inside the owning capability host modules.
+CLI command handlers must not directly compose `agent`, `execution`, `fsq`, `core`, `report`, concrete drivers, or provider implementations. A private CLI composition helper may construct `FsqAgent` with the public Coding Agent runtime factory solely to satisfy Application's injected `agent_factory` boundary. It contains no request validation, execution policy, persistence, Provider selection, or result interpretation. Lower modules must not import CLI.
 
 ## Public Interface
 
-Current `__init__.py` exports via `__all__`:
+`__init__.py` exports the canonical `adapters.cli.main` object. The primary executable remains `fsq`. The public command tree is:
 
-- `main`: CLI entry point for package scripts.
-
-Current commands:
-
-- `fsq-agent [--output human|json|jsonl] init --name NAME --platform android|web|windows|macos [platform target options] [--env NAME=VALUE ...] [--update-existing]`: Normalize the name and resolve it case-insensitively through the registry. An unregistered name creates one platform using the process current directory as the selected directory: an empty current directory becomes the workspace root, while a non-empty current directory receives an absent `<current-directory>/<name>` child. A registered name ignores the current directory and uses its stored root; a missing platform is added, an equal platform returns unchanged, and a differing platform requires `--update-existing` for the same revision-protected target/env replacement used by Control Plane. Android requires `--app-id`; Web requires `--browser-executable-path`; Windows requires `--app-path` and accepts optional `--window-title-re` and `--launch-args`; macOS accepts `--bundle-id` and `--app-path` with at least one required. Repeated env options form the complete private env mapping.
-- `fsq-agent run --platform PLATFORM --goal TEXT [--android-serial SERIAL] --tracing/--no-tracing --stream/--no-stream --stream-format concise|jsonl --record --record-on-failure`: Validate the process current directory as the exact workspace root for the explicit configured platform, then run one dynamic LLM task from a natural-language goal. CLI task construction sets planning reference kind `goal` and normalized goal text; pre-planning derives ordered key actions and `verification_goal` before external UI actions. Streaming defaults to concise. A tracing override applies after settings load and before runtime validation. `--record` writes a run-local strict-replay artifact after a successful run and publishes a validated copy as `cases/<platform>/<run-id>.fsq.yaml`; `--record-on-failure` additionally permits draft recording and publication for failed or inconclusive runs and requires `--record`.
-- `fsq-agent run --platform PLATFORM --case-yaml PATH [--android-serial SERIAL] --tracing/--no-tracing --stream/--no-stream --stream-format concise|jsonl --record --record-on-failure`: Validate the process current directory as the exact workspace root, resolve the exact lowercase `.fsq.yaml` file inside the selected platform's `cases/<platform>/` root, read complete UTF-8 text, and run one dynamic LLM task using a `raw_case` planning-reference envelope containing the contained source path and content. The CLI does not parse this YAML for execution or derive verifier requirements. Pre-plan derives ordered key actions and `verification_goal`; optional recording uses only persisted run events.
-- `fsq-agent run --platform PLATFORM --case-dir PATH [--android-serial SERIAL] --tracing/--no-tracing --stream/--no-stream --stream-format concise|jsonl --record --record-on-failure`: Validate the process current directory as the exact workspace root, resolve a contained directory inside the selected platform's cases root, recursively discover exact `*.fsq.yaml` files, sort them, and run one independent dynamic `raw_case` task per file serially. Execution and per-run recording attempts continue after failures and produce an operational summary.
-- `fsq-agent run --platform PLATFORM --strict --case-yaml PATH [--android-serial SERIAL] --tracing/--no-tracing`: Validate the process current directory as the exact workspace root, resolve one contained `.fsq.yaml` case, require its authored platform to match the explicit configured platform, construct the active harness/driver/tool provider without external connection during bootstrap, validate the active registry, load case/config lifecycle hooks, and preflight platform-private runtime-secret references without serializing private values. Strict phases remain config `onCaseStart`, case `onCaseStart`, main commands when before hooks pass, case `onCaseComplete`, and config `onCaseComplete`. Hook `runCase` dependencies resolve under the same selected platform cases containment boundary, including traversal and symlink checks; `runShell` remains an operator-authored local command. Canonical commands execute through `StepSequenceRunner`/`StepRunner` with centralized delay and evidence policy. Each run writes evidence and strict reports inside its unique direct `.fsq/runs/<platform>/<run-id>/` directory and snapshots the source case there for provenance without mutating authored content. Recovery, testcase mutation, and strict recording are disabled. An explicitly authored `assertWithAI` may inject a provider-backed evaluator after provider validation.
-- `fsq-agent run --platform PLATFORM --strict [--case-dir PATH] [--android-serial SERIAL] --tracing/--no-tracing`: Resolve the explicit contained directory or default to the selected workspace's `cases/<platform>/` root, recursively discover exact `*.fsq.yaml` files, skip valid cases whose authored platform differs from `PLATFORM`, and execute matching top-level cases serially through the same strict lifecycle. Hook `runCase` files are contained dependencies, not separate top-level results. Execution continues after failed top-level cases and exits nonzero when any executed case or dependency fails. A scan containing case files but no platform matches reports zero cases and succeeds without creating a driver, case run, or batch artifact; unreadable or invalid strict cases remain errors.
-- `fsq-agent report --workspace NAME --platform PLATFORM --run-id ID --format markdown|json`: Resolve one LLM `report.md/json` or strict `core-report.md/json` from a unique direct child of the selected platform run root; fail when the registered workspace or selected platform is unavailable or invalid, no report matches, or the run id is ambiguous.
-- `fsq-agent playground --workspace NAME --platform PLATFORM --host HOST --port PORT --open-browser/--no-open-browser`: Resolve the registered workspace and explicit platform, then start the local Playground with that selection frozen for the server lifetime. The command blocks, serves packaged Vite assets, optionally opens a browser, and delegates behavior to `playground`. Configuration, asset, and bind failures exit nonzero; installed wheels require no Node.js runtime.
-- `fsq-agent control-plane --host HOST --port PORT --open-browser/--no-open-browser`: Start the local single-user Control Plane from any current directory without selecting a workspace or platform. Workspace management and Devices read the user registry and explicit workspace roots. The command blocks, serves the Vite-generated Control Plane entry, and optionally opens the browser. The default host is `127.0.0.1` and port is `8879`; `--platform`, `--config`, and `--workspace` are unsupported.
-
-Public CLI commands do not expose `--config`; `init` does not expose `--provider` or `--parent`, and `run` does not expose `--workspace`. The root `--output` option defaults to `human`. Init emits Human output or exactly one compact terminal JSON record for `json` and `jsonl`; those records contain stable operation/status/workspace/platform fields or a safe structured error and never contain target or env values. Non-init commands reject root `json` or `jsonl` output before settings loading, execution, or server startup because they do not define that machine-output protocol. `run` requires `--platform PLATFORM`; `report` and `playground` require both `--workspace NAME` and `--platform PLATFORM`. Missing selections and removed options fail argument parsing before settings load or writes. `control-plane` accepts neither selection option because browser state manages the registry and execution context.
-
-Init accepts exactly one platform per invocation. It passes the resolved process current directory to Config only when creating an unregistered name; registered names resolve their immutable root from the registry before add, comparison, or update. Target options for another platform, malformed or duplicate env assignments, blank env values, invalid targets, invalid names, unavailable registered workspaces, and differing existing platform data without `--update-existing` fail before an unauthorized workspace write. Env option values may be visible to the invoking shell or process inspection, so help text warns about command-line secret exposure; CLI output, errors, and logs never echo them. `--update-existing` permits only the complete target/env fields editable by Control Plane and does not permit workspace name, root, or platform identity changes or bypass Config revision checks.
-
-Every `run` form accepts optional `--android-serial SERIAL`. With `--platform android`, CLI verifies an explicit serial is online or, when omitted, discovers exactly one online device and applies it only to the run-specific settings copy. Zero devices, multiple devices without an explicit serial, an offline/unknown explicit serial, or use with a non-Android selected platform fail before agent, case, hook, harness, or driver execution. Directory runs freeze one selected Android serial for the complete command.
-
-`--goal`, `--case-yaml`, and `--case-dir` are mutually exclusive. Dynamic execution requires exactly one of them. Strict execution rejects `--goal`, accepts at most one of `--case-yaml` and `--case-dir`, and defaults an omitted case input to the selected platform's complete cases directory. `--strict --record` and `--strict --record-on-failure` are invalid because recording is a dynamic-run post-processing workflow. `--record-on-failure` without `--record` is invalid. Every case-oriented `--case-yaml` input requires the exact lowercase `.fsq.yaml` suffix. Absolute and relative case inputs resolve against the selected platform's `cases.dir` and are accepted only when the resolved target remains contained; there is no current-working-directory fallback outside that root. Strict hook `runCase` paths from config-level or case-level hooks use the same suffix, containment, traversal, and symlink policy.
-
-Dynamic recording writes the following run-local files when attempted:
+The sole standard installation command is `pip install fsq-agent`. The distribution installs both `fsq` and compatibility `fsq-agent` console scripts, each targeting the same canonical `fsq_agent.adapters.cli:main` object. Platform extras are not an installation surface.
 
 ```text
-<runs_dir>/<run-id>/
-    recorded.fsq.yaml
-    recording.json
+fsq
+├── init
+├── doctor
+├── case
+│   ├── create
+│   └── test
+├── ui
+├── providers
+│   ├── configure NAME
+│   └── status
+├── runs
+│   ├── list
+│   ├── show RUN_ID
+│   └── logs RUN_ID
 ```
 
-`recorded.fsq.yaml` contains two YAML documents: generated FSQ metadata followed by recorded commands. Generated metadata must include `tags` identifying the case as recorded and `properties.recording` with source run id, source task id, source status, `draft`, required runtime secret names, and warnings. `recording.json` contains recording status, command count, run-local recorded case path when present, `published_case_path` when publication succeeds, required runtime secret names, warnings, skipped tool calls, validation status, and errors when recording fails. Neither file may contain secret values.
+Core Case forms are:
 
-After a Goal recording reaches `status=recorded` and `validation_status=passed`, the shared recorder copies its exact bytes to `settings.cases.dir / f"{result.report.run_id}{FSQ_CASE_SUFFIX}"`. It creates a missing cases directory at this run-write boundary and uses a same-directory temporary file plus atomic replacement, so an existing destination is overwritten only by a complete generated case. Valid drafts follow the same rule when failure recording is enabled. Dynamic raw-case recordings do not publish. Publication failure leaves the dynamic result, recording status, validation status, and run-local YAML unchanged, leaves `published_case_path` unset, and adds a concise secret-safe warning to `recording.json`.
-
-The recording helper reconstructs logical replay entries from the dynamic run's `events.jsonl` by consuming structured capability metadata emitted by `StepRunner` for CommonTool and PlatformTool calls. A completed event with `replay.kind == "fsq_command"` and `step_kind != "observation"` appends `{replay.alias: safe_replay_params}` to generated strict YAML when the status indicates success and params validate, falling back to the started event's JSON arguments only when no safe replay params are present. Observation PlatformTools such as `uiTree`, `uiSnapshot`, and `takeScreenshot` are diagnostic/current-state observations and are skipped by dynamic recording even when they remain valid authored strict YAML commands. Capabilities with no `fsq_command` replay policy are diagnostics and are not replayed. The recorder requires replay metadata rather than using `fsq_action_name` or tool names as replayability fallback. AgentTool events are dynamic-only diagnostics and are ignored by recording. Runtime-secret text inputs record as text-entry commands with `text: ENV_NAME` and `textType: runtimeSecret`; `get_runtime_secret` is not a replay dependency. `wait_ms` records as `waitMs` through its replay alias. The recorder must not decide replay behavior by checking tool names, `fsq_action_name`, or schema strictness metadata.
-
-Strict runtime-secret text validation is an entry/core responsibility. Before passing steps to `StepSequenceRunner`, CLI may preflight each referenced name against the active workspace runtime-secret names and verify that its private workspace value is present. The shared runtime secret resolver reads that already-loaded private value only in memory before driver invocation; it does not rediscover from or mutate global environment state, and values are redacted from persisted events, manifests, reports, and logging.
-
-Internal deterministic-core composition helper:
-
-```python
-bundle = run_fsq_core_case(
-    case_path=Path("case.fsq.yaml"),
-    registry=registry,
-    harness=harness,
-    output_dir=Path("runs/run-1"),
-    run_id="run-1",
-    post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-)
+```bash
+fsq case create --platform web --goal "Verify product search"
+fsq case test --platform web tests/search.fsq.yaml
+fsq case test --platform web tests/search.fsq.yaml --suggest
 ```
 
-This helper is not a public CLI command. It exists to give `run --strict` and tests a single entry-layer path for running one FSQ case through the deterministic core. It should receive or build a lightweight active-platform capability registry, load the FSQ case, convert commands to canonical `ExecutableStep` records with a registry snapshot, resolve strict replay refs in memory, run them through `StepSequenceRunner` and `StepRunner` with caller-supplied harness/backend bindings and post-action delay settings, rely on `StepRunner` for centralized driver step-kind evidence and delay policy, write `evidence-manifest.json`, and return an `EvidenceBundle` whose `manifest_path` points to the written manifest.
+Workspace initialization uses the current directory as the selected directory and derives its default workspace name from that directory's final path component:
 
-Lifecycle orchestration wraps this deterministic command execution path for strict public runs. The lifecycle layer loads config-level and case-level hook metadata, resolves hook `runCase` paths, detects recursive hook chains across both hook origins, executes `runShell` commands, annotates hook case steps with lifecycle phase and hook origin metadata, and then delegates canonical FSQ command steps to the same `StepRunner`/`StepSequenceRunner` path. On Windows, `runShell` executes through non-interactive Windows PowerShell; on other platforms it uses the local system shell. The deterministic command execution helper must not parse or execute lifecycle hooks by itself.
-
-The helper must not construct real platform drivers, choose backend settings, or add retry/report policy.
-
-Internal strict deterministic-core entry:
-
-```python
-artifact = run_strict_fsq_core_case(
-    case_path=Path("case.fsq.yaml"),
-    registry=registry,
-    harness=harness,
-    output_dir=Path("runs/run-1"),
-    run_id="run-1",
-    post_action_delay_seconds=settings.execution.post_action_delay_seconds,
-)
+```bash
+fsq init --platform web --browser-channel chrome
+fsq init --platform web --browser-channel msedge-canary --browser-executable-path /path/to/edge-canary
+fsq init --platform android --app-id com.example.app
+fsq init --platform windows --app-path /path/to/application
+fsq init --platform macos --bundle-id com.example.app
 ```
 
-This strict entry executes the case lifecycle exactly as authored with the supplied registry and harness/backend bindings, writes `evidence-manifest.json`, generates `core-report.md` and `core-report.json`, and returns the generated Markdown `ReportArtifact`. It must not enable locator fallback, AI recovery, testcase mutation, platform-driver construction, OpenAI provider validation, or AI assertion evaluator construction. If AI assertion is needed, the caller must provide a harness/backend binding that already has an evaluator injected. Strict results remain auditable because recovery execution is not part of this entry.
+`init` accepts the same complete platform target shapes as Control Plane: Android requires `--app-id`; Web requires `--browser-channel` while `--browser-executable-path` is optional; Windows requires `--app-path` and accepts `--window-title-re` and `--launch-args`; macOS requires at least one of `--bundle-id` and `--app-path`. Target options for another platform are rejected. When the Web path is omitted, Application discovers an executable compatible with the exact selected channel on the current host. One unambiguous compatible candidate is selected; no candidate or multiple distinct candidates fail before workspace mutation with safe guidance to install the channel or pass an explicit path. An explicit path is normalized and validated against the channel through the same shared operation.
 
-Strict replay post-action stabilization is owned by `StepRunner` and configured through `execution.post_action_delay_seconds` plus capability metadata overrides. CLI strict execution passes those settings into the deterministic-core helper, which passes them to `StepRunner`. The delay is execution timing only; it should not modify parsed FSQ commands, add `waitMs` records to reports, or create synthetic evidence steps. Strict replay evidence capture is also owned by `StepRunner`: `action` steps capture before and after, `assertion` steps capture before only, `setup` steps capture after only, and `teardown` steps capture before only, always writing `screenshot` plus normalized `ui_snapshot` artifacts. CommonTool actions such as `wait_ms` receive automatic evidence capture; observation/diagnostic steps do not.
+`init` always checks selected-platform runtime readiness before workspace mutation. Readiness checks are read-only. A missing Python platform dependency reports that the installed `fsq-agent` distribution is incomplete and must be reinstalled or repaired; a missing host service, browser/application target, device prerequisite, or other system dependency reports a safe external provisioning action. `init` does not expose `--install-driver` or any runtime-install option and never invokes Python or system package managers, installs or modifies the application under test, creates emulators/VMs, connects to a device, starts Appium, or authenticates.
 
-## Platform CLI Blocks
+`--name` may override the derived name. An unregistered name uses Config's selected-directory rule: an empty current directory becomes the root, while a non-empty directory receives a new `<current-directory>/<name>` child. A registered name is resolved case-insensitively and always uses its stored root independently of the current directory; an unavailable registered Workspace is not recreated. `--env NAME=VALUE` may be repeated and supplies the complete private environment mapping. `--update-existing` permits replacement of a differing existing platform target/environment; without it, equal configuration is unchanged and differing configuration is a conflict. `--provider` is not part of workspace initialization; Provider configuration remains under `providers configure` or Control Plane Config. Public option spelling uses hyphens; underscore aliases are not accepted.
 
-Shared CLI rules:
+- `case create` accepts a natural-language Goal, performs AI-participating testing, and may produce a Run-local candidate `*.fsq.yaml` Case.
+- `case test` executes an existing FSQ Case as authored. The source Case is immutable.
+- `case test --suggest` executes the authored Case exactly once, then permits read-only AI analysis of the parsed Case and bounded persisted execution facts. It may return Run-local suggestions or a candidate Case while preserving the completed execution result and never overwriting the source Case or configured Case directory.
+- When suggestion analysis produces an artifact, Human output displays each Run-local suggestion or candidate Case path and states that the source Case was not modified. JSON and JSONL terminal results expose the same paths through `suggestion_path` and `candidate_case_path`; absent artifacts remain `null`.
+- `runs` is the exact-current-Workspace read-only history surface. It aggregates configured platforms by default, supports an optional configured platform, and never deletes, mutates, retries, replays, cancels, or follows a Run.
+- `providers` exposes only user-level active-Provider configuration and readiness. Provider inventory is not a public CLI capability in the first release.
+- `doctor` performs read-only Workspace diagnostics across every identifiable configured platform and reports fixed component checks plus readiness for `case test`, `case test --suggest`, and `case create`; `ui` starts the Control Plane adapter.
 
-- `run` and Playground startup validate that `settings.harness.platform` matches the explicit configured platform and use it for readiness validation, registry bootstrap, strict harness/platform tool construction, and platform-specific error messages. `init` constructs the selected platform input and dispatches explicitly to Config create, add, or update operations without loading runtime settings or Provider readiness.
-- `run` requires an explicit platform, validates `Path.cwd()` as the exact workspace root, and loads the matching platform config directly without registry lookup or ancestor discovery. `report` and `playground` require a workspace registry name plus explicit platform, resolve the name case-insensitively, validate the registered root and exact platform config identity, and load settings from that pair independently of `Path.cwd()`. Provider configuration and interactive authentication belong to Control Plane Config.
-- Strict replay parses cases and hook case dependencies against the active platform registry snapshot containing inherited CommonTools plus active PlatformTools.
-- Dynamic recording remains capability metadata-driven and must not infer platform semantics or replayability from command names, `fsq_action_name`, or schema strictness metadata.
-- Dynamic recording records by-design observation skips such as Android `uiTree`/`ui_snapshot`, Web/desktop `uiSnapshot`/`ui_snapshot`, and screenshot/snapshot tools in `recording.json` audit data without adding generated case warnings.
+The CLI does not expose Environment inventory, Environment diagnostics, extension management, public capability/action discovery, Environment mutation, Run mutation, a daemon, async queues, sharding, or workers. Environment readiness remains an internal/public Python module capability consumed by Workspace initialization and `fsq doctor`. `environments`, `test`, `replay`, and `run` are not public top-level commands and are not retained as silent aliases.
 
-Android CLI behavior:
+## Workspace Rule
 
-- Android dynamic and strict runs require Android app id from the active workspace target. CLI consumes the public `core` Android discovery service and owns direct-run selection policy plus transient serial assignment; configuration, workspace targets, and case metadata never supply a serial.
-- Android strict runs build the active harness through `HarnessFactory`; `DriverFactory` selects the configured Android backend driver, and strict execution captures automatic `screenshot`/`ui_snapshot` evidence through the centralized driver step-kind policy. Explicit `uiTree` commands remain valid authored observations.
+For every command except creation of an unregistered Workspace, the exact current directory is the CLI workspace root. A valid CLI workspace is registered in the user workspace registry at that exact normalized root and contains at least one valid `.fsq/config/config.<platform>.yaml`; `.fsq-agent-workspace` markers are neither created nor accepted. Commands do not search parent directories, auto-initialize, or accept an alternate workspace flag. Commands requiring only workspace context validate the exact registered root; platform-specific commands additionally require the selected platform config. Failure uses Application error code `workspace.not_initialized` and tells a human to run `fsq init` from the intended selected directory or change to an initialized Workspace. Control Plane continues to list all registered workspaces and does not derive selection or execution paths from the CLI process startup directory.
 
-Web CLI behavior:
+`fsq init` is the only CLI command that may establish this precondition. It validates all input, resolves the complete target, and completes Driver readiness before workspace mutation; it then creates an unregistered Workspace from the current selected directory or initializes and updates exactly one platform at an existing registered root through the shared Application and Config operations. An empty selected directory is adopted as the new root; a non-empty selected directory is preserved and receives an absent `<current-directory>/<name>` child. Success is reported only after workspace files and registry truth are committed. It creates `.fsq/config/config.<platform>.yaml`, `.fsq/runs/<platform>/`, `cases/<platform>/`, `knowledge/<platform>/project.md`, and the user registry entry inside the selected final root. Repetition for an existing registered name is idempotent and uses its stored root independently of the current directory. A partially initialized, unavailable, mismatched, invalid, or Driver-unready Workspace fails with safe repair guidance rather than being treated as ready.
 
-- Web strict runs do not require Android app id or serial.
-- Web strict runs build the active harness through `HarnessFactory` and the config-selected Web backend driver without launching a browser. Authored `startBrowser` starts or reuses the browser/page; authored `closeBrowser` closes it. CLI must not inject either command, and `navigateTo` must not be treated as startup.
-- Web strict runs capture automatic `screenshot`/`ui_snapshot` evidence through the centralized driver step-kind policy when the active Web driver has a started page. Explicit `uiSnapshot` commands remain valid authored observations.
-- Web strict navigation must use fully qualified URLs or the configured Web base URL policy.
+`providers configure` and `providers status` are user-level commands and are exempt from the Workspace precondition. They operate on the same active Provider under `~/.fsq` as Control Plane Config and never read or write a Workspace `.env` or platform configuration.
 
-Windows CLI behavior:
+## Provider Commands
 
-- Windows strict runs do not require Android app id or serial, Web browser executable settings, or macOS Appium settings.
-- Windows strict runs validate `harness.windows.backend == "pywinauto"`, the preset-owned pywinauto adapter setting, and the workspace-owned app path/window-title/launch arguments before external UI actions begin.
-- Windows strict runs build the active harness through `HarnessFactory` and the config-selected Windows backend driver without launching the app during registry bootstrap or YAML parsing. Authored `launchApp` starts the configured application and authored `killApp` terminates it; CLI must not inject either command.
-- Windows strict runs pass normalized settings values for app path, pywinauto backend kind, optional window title regex, and configured launch arguments into the config-selected Windows backend driver.
-- Windows strict runs capture automatic `screenshot`/`ui_snapshot` evidence through the centralized driver step-kind policy and use `uiSnapshot` for explicit observation commands.
+The supported configuration forms are:
 
-macOS CLI behavior:
-
-- macOS strict runs do not require Android app id or serial and do not require Web browser executable settings.
-- macOS strict runs validate `harness.macos.backend == "appium_mac2"`, the preset-owned Appium server setting, and the workspace-owned bundle-id/app-path target before external UI actions begin.
-- macOS strict runs build the active harness through `HarnessFactory` and the config-selected macOS backend driver without connecting to Appium or launching the app during registry bootstrap or YAML parsing. Authored `launchApp` creates or reuses the Mac2 session and target app, and authored `killApp` terminates or closes it according to the driver contract. CLI must not inject either command.
-- macOS strict runs capture automatic `screenshot`/`ui_snapshot` evidence through the centralized driver step-kind policy and use `uiSnapshot` for explicit observation commands.
-- macOS strict runs support deterministic desktop assertions including `assertVisible` and `assertElementsOrder`; wrong element order is an assertion failure, while missing required elements are target-resolution failures.
-
-Internal dynamic recording helper:
-
-```python
-recording = record_dynamic_run_as_strict_case(
-    run_dir=Path("runs/run-1"),
-    task=task,
-    result=result,
-    settings=settings,
-    allow_failure=False,
-)
+```bash
+fsq providers configure github_copilot [--model MODEL]
+fsq providers configure azure_openai [--base-url URL] [--model MODEL] [--api-key KEY]
+fsq providers status
 ```
 
-This helper is not a public CLI command. It reads a completed dynamic run directory, writes `recorded.fsq.yaml` and `recording.json` when eligible and replayable, validates generated YAML through `fsq`, publishes validated Goal recordings to the selected platform cases directory, and returns an internal recording summary used by entry layers. It must not call provider APIs, execute platform actions, mutate source case files other than atomically replacing the exact generated `<run-id>.fsq.yaml` publication target, or reveal secret values.
+In Human interactive mode, GitHub Copilot configuration requests a device code, displays only its verification URL and user code, waits with the Provider-owned polling policy, discovers eligible models, and asks the user to select one when `--model` did not select an offered model. It atomically activates the completed authorization and selected model only after all steps succeed. Because the device flow requires an observable user action before a terminal result exists, it is rejected under `--non-interactive`, JSON, and JSONL in the first release with guidance to use Human interactive mode. An explicitly requested model must be present in the discovered eligible model set.
 
-## Internal Structure
+Azure OpenAI configuration requires base URL, model/deployment name, and API key. Human interactive mode securely prompts for omitted values and hides the API key. JSON, JSONL, and `--non-interactive` never prompt and require all three options. Configuration validates and atomically saves the complete candidate through the shared user Config API. No output or error includes the API key. A failed GitHub or Azure replacement leaves the previously active Provider and its credentials usable.
 
-- `__init__.py`: Public exports only.
-- `__main__.py`: Package entry point for `python -m fsq_agent.cli` and VS Code launch configurations.
-- `_main.py`: Click command group and command handlers.
-- `_android_devices.py`: Deterministic direct-run Android selection and CLI error mapping over the public `core` Android discovery service.
-- `_task_loader.py`: Raw goal-source loading for LLM runs and path discovery/resolution for both run modes.
-- `_capability_bootstrap.py`: Internal CLI wrapper around the package-private capability bootstrap helper used to construct lightweight platform capability definitions, build the capability registry, and identify provider-required capabilities and executable steps from registry metadata for dynamic and strict entry paths.
-- `_core_execution.py`: Internal composition helper for deterministic FSQ case execution through `core` with a caller-supplied registry and harness/backend binding.
-- `_case_lifecycle.py`: Internal strict lifecycle orchestration for config-level and case-level `onCaseStart`/`onCaseComplete`, hook `runCase` path resolution, recursion detection, shell hook execution, hook phase/origin metadata annotation, and aggregation of lifecycle status before report generation.
-- Package-private `fsq_agent._strict_case_recording`: Shared post-run recorder used by CLI, Playground, and Control Plane to convert dynamic run capability events into run-local `recorded.fsq.yaml` and `recording.json` artifacts and atomically publish validated Goal recordings to the selected platform cases directory.
-- `_strict_replay.py`: Internal strict-entry helper that preflights workspace runtime-secret names when needed before deterministic core execution. Final private-value resolution is owned by the shared execution resolver before driver invocation.
-- `_formatting.py`: Logging-backed CLI rendering helpers for task results, concise phase-tagged live events, strict run summaries, and report paths. Concise live-event rendering is a human display concern only; it must not mutate `RunEvent` values or persisted run artifacts.
-- `_logging.py`: CLI logging configuration.
-- `playground` command handler in `_main.py`: Thin adapter that loads settings, maps host/port/browser flags into `PlaygroundServerOptions`, and calls `run_playground` without reimplementing playground routing or execution.
-- `control-plane` command handler in `_main.py`: Thin adapter that maps host/port/browser flags into `ControlPlaneServerOptions` and calls `run_control_plane` without loading a workspace/platform or reimplementing browser-owned Control Plane selection.
-- `SPEC.md`: Module design.
+`providers status` loads the real active user Provider and model, checks local authentication and non-interactive readiness through Application, and never starts device login or sends model inference. It returns one result with `status` (`ready` or `unavailable`), `configured`, `provider`, `model`, `authenticated`, a safe `message`, and a safe repair `action` when needed. Human, JSON, and JSONL expose equivalent facts; JSONL emits one terminal record and no synthetic event. Ready exits `0`; a completed unconfigured, unauthenticated, or otherwise unavailable result exits `4`. Invalid user configuration is a configuration error, and unrecoverable orchestration failure is an internal error. Output never includes tokens, API keys, authorization data, raw backend responses, exception messages, or tracebacks.
+
+## Global Machine Contract
+
+- `--output human|json|jsonl` selects presentation and defaults to `human`.
+- `--non-interactive` forbids prompts and implicit interactive authentication.
+- Human output may be styled; JSON emits one complete operation envelope; JSONL emits one object per event followed by one terminal result or error object.
+- Machine output is stdout-only. Diagnostics that cannot be represented as protocol records use stderr. Secrets and hidden reasoning are never emitted.
+- Exit categories are `0` success, `1` test/case failure, `2` usage or validation error, `3` workspace/configuration error, `4` provider/environment unavailable, `5` internal/infrastructure error, and `130` interruption.
+
+`doctor` has no platform option and checks configured platforms in Android, Web, Windows, macOS order. Its Human output shows Workspace and platform status, fixed checks, the three command verdicts, reasons/actions for non-ready items, and ordered deduplicated actions. JSON and JSONL each emit exactly one terminal result record; JSONL emits no synthetic event. Doctor exits `0` for `ready` or `partial`, `4` for a completed `unavailable` result, `3` when Workspace registry/root/config inventory is not trustworthy, `5` for unrecoverable internal orchestration failure, and `130` for interruption.
+
+Doctor is read-only: it does not install, mutate configuration, authenticate interactively, send model inference, launch applications/browsers, or create external sessions. Provider readiness may perform only its supported non-interactive cached-token refresh. Human color never carries unique information, and all output obeys the global secret and safe-error contract.
+
+## Run Commands
+
+```bash
+fsq runs list [--platform PLATFORM] [--status STATUS]... [--mode strict|explore] [--since DURATION] [--case CASE_ID] [--limit NUMBER]
+fsq runs show RUN_ID [--platform PLATFORM] [--open]
+fsq runs logs RUN_ID [--platform PLATFORM] [--level LEVEL]... [--phase PHASE]... [--limit NUMBER]
+```
+
+All Run commands require the exact current registered Workspace root. Omitted platform means every configured platform; a supplied platform must be configured. `list` accepts repeatable status OR filters, one mode, exact normalized Case ID, a positive integer duration suffixed by `m`, `h`, or `d`, and limit `1..200` defaulting to `20`. Filtering precedes deterministic newest-first sorting and limiting. Empty results succeed. Human columns are Run ID, platform, mode, status, start, duration, and Case/Goal; machine output contains equivalent filters, counts, truncation, entries, and safe warnings.
+
+`show` returns one bounded summary with source, result, timing, runtime metadata actually used, relative artifact paths, and warnings; it does not inline complete reports, logs, screenshots, or UI snapshots. Without platform, no match is `run.not_found` and multiple platform matches are `run.id_conflict`. Human times use the local timezone and machine times remain UTC ISO 8601.
+
+`show --open` is Human-interactive-only. It requests Application to rebuild the contained static HTML report, then CLI opens the returned path with the system default browser and prints the normal summary plus relative HTML path. JSON, JSONL, and `--non-interactive` reject `--open` before side effects. Browser-opening failure is `run.report_open_failed` and provides only the safe Workspace-relative path for manual opening.
+
+`logs` accepts repeatable level and phase OR filters and limit `1..5000` defaulting to `200`. It filters first, selects the newest matching limit, and presents events in stable ascending sequence order. Missing historical sequence, duplicate sequence, or reverse file order produces safe warnings; invalid non-empty JSONL records invalidate the complete result. Human output is a concise safe table. JSON emits one result containing filters, counts, truncation, warnings, and events. JSONL emits one Application event envelope per event followed by one terminal result. No matches succeed; a missing or invalid event log does not masquerade as an empty log.
+
+Run queries sanitize secrets and unsafe backend details and return no unnecessary absolute host paths. Successfully reading a failed historical Run exits `0`. `run.not_found` exits `2`; Workspace, platform inventory, ID conflict, metadata, log, or unavailable-report errors exit `3`; HTML generation/opening, ID allocation, and internal failures exit `5`; interruption exits `130`.
+
+## Compatibility
+
+The executable and command hierarchy change explicitly to `fsq`. Legacy `fsq-agent run`, `run --strict`, `report`, and raw dynamic `--case-yaml` forms are not silently forwarded. Compatibility messaging may identify the corresponding new command. Case discovery treats `*.fsq.yaml` as canonical and may accept `*.codex.yaml` for one deprecation cycle with a machine-visible warning. `*.intent.yaml` and `fsq.test-intent/v1` are unsupported.
 
 ## Python Architecture
 
-- Architecture level: 3 Layered Application.
-- Public API: `main` exported from `__init__.py`.
-- Internal modules: all CLI `_*.py` files are private command/helper implementation modules. Shared dynamic-run recording composition lives in package-private `fsq_agent._strict_case_recording` and is consumed only by CLI, Playground, and Control Plane entry layers.
-- Domain boundaries: CLI owns argument validation, name-based `init` operation dispatch, current-directory selection for new-workspace creation and `run`, registered-root selection for existing-workspace init plus `report`/`playground`, settings loading, entry-mode orchestration, registry bootstrap, strict config/case lifecycle hook orchestration, strict replay secret resolution, dynamic recording, output rendering, and exit behavior. It does not own new-root selection rules, workspace filesystem transactions or registration policy, Provider configuration/authentication, capability implementation, StepRunner internals, FSQ parsing rules, provider runtime behavior, config parsing, or report rendering.
-- Boundary models: workspace config/init results, tasks, results, settings, registry snapshots, executable steps, FSQ lifecycle hooks, replay refs, evidence bundles, and report artifacts come from `models`.
-- Dependency direction: CLI may depend on entry/runtime modules (`config`, `providers`, `core`, `fsq`, `agent`, `playground`, `control_plane`, `report`, `tools`) but those modules must not import CLI. CLI imports only the public Control Plane API; Control Plane must not import CLI or Playground.
-- Rationale: CLI coordinates multiple workflows and side-effect boundaries, so Level 3 is appropriate without adding repository or service-layer ceremony beyond focused helpers.
+- Architecture level: Level 3 transport adapter.
+- Public API: `main`.
+- CLI owns Click declarations, argument decoding, terminal/JSON/JSONL rendering, prompt policy, exit-code mapping, and narrow private collaborator composition for adapter-owned runtime implementations.
+- Application owns shared request validation, orchestration, operation events, results, and stable errors.
+- Dependency direction: CLI to Application; never Application to CLI.
 
 ## Error Handling
 
-CLI commands catch `FsqAgentError` subclasses from `models`, render concise user-facing messages, and exit nonzero. Unexpected exceptions are logged with trace details and summarized in the console.
-
-Input validation failures, including unsupported commands/options, invalid Control Plane ports, a missing platform selection, an invalid current-directory run workspace, missing registered selections for report or Playground, unregistered or unavailable selected workspaces, unsupported/unconfigured/unavailable platforms, invalid workspace or platform-config identity, invalid dynamic run input counts, conflicting strict inputs, escaped/traversing/symlinked case inputs or hook dependencies, `--strict --goal`, invalid record flags, unreadable dynamic case files, invalid strict YAML, malformed lifecycle metadata, empty case directories, missing hook cases, recursive hook chains, invalid active platform targets, invalid Web navigation/base URL policy, invalid preset-owned platform settings, invalid Android serial selection, missing platform-private secret names/values, missing provider readiness for authored strict `assertWithAI`, unresolved reports, or missing generated frontend assets fail before external UI actions or writes begin for the affected command, case, hook, or server. Dynamic `--case-yaml` input does not fail merely because content is invalid YAML, because that path treats it as raw planning reference text. A strict directory scan containing valid case files but no selected-platform matches is a successful empty batch rather than an input failure.
-
-Control Plane startup converts shared `FsqAgentError` failures and OS-level startup failures into concise CLI errors and nonzero exits. CLI must not expose secret values, hidden reasoning, or raw server internals.
-
-Strict lifecycle failures during execution, including failed start hooks, failed hook cases, nonzero shell hook exit codes, shell launch failures, failed main commands, and failed complete hooks, must be reflected in the owning strict case result and report without enabling recovery. `onCaseComplete` hooks must still run after a start hook or main command failure when they are configured.
-
-`init` maps its explicit create/add/compare/update outcomes to `initialized`, `platform_added`, `unchanged`, or `updated` output. An unavailable registered name remains an existing-workspace error and is never recreated from cwd. Input/configuration conflicts and filesystem failures exit nonzero and produce one safe terminal machine record when machine output is selected. It does not load Provider readiness, modify Provider state, parse `.env`, or start authentication. An unsupported `--provider` option fails argument parsing before side effects.
-
-Recording failures happen after a dynamic run and must not change that dynamic run's status. The CLI should log and summarize recording errors, including no replayable commands, runtime-secret text references with missing names, unsupported replay commands, generated YAML validation failures, and existing `recorded.fsq.yaml` conflicts. Goal publication failures are warnings rather than recording failures and must preserve the valid run-local recording. Directory runs continue after per-case recording failures.
+CLI maps stable Application Errors to the documented exit categories and presentation protocol. Malformed command syntax and unsupported legacy options fail before invoking Application. Interrupted operations exit `130`. Unexpected exceptions are normalized as internal errors with only the exception type retained as safe diagnostic detail. Human internal-error output includes that safe exception type; machine-mode errors include it in the structured error details. Neither form includes the exception message, traceback, arguments, secrets, hidden reasoning, or unrestricted backend values. Machine-mode errors remain valid JSON or JSONL.
 
 ## Verification Scope
 
-- Verification covers init argument/target/env validation, rejected `--provider`, Config delegation, controlled update behavior, Human and single-record machine output, non-init machine-output rejection, dynamic goal/raw-case task construction, strict-case execution entry behavior, strict lifecycle ordering/failure semantics, dynamic recording and Goal publication handoff, report lookup, live event formatting, and thin Playground/Control Plane server startup delegation.
-- Boundary verification ensures `run` requires an exact valid current-directory workspace root plus explicit configured platform, while `report`/`playground` require and resolve a valid registered workspace name plus explicit configured platform independently of the current directory; Android direct runs reject invalid, missing, or ambiguous device selection before execution; all case and lifecycle paths remain under that platform's cases root; strict directory scans filter valid mismatched-platform cases and allow an artifact-free successful empty batch; all run artifacts remain under that platform's run root; init sends cwd only to new-workspace creation, uses the registered root for existing names, writes only through separate Config operations, and never exposes private env values; Control Plane can start elsewhere; unsupported commands/options fail before side effects; and strict/dynamic execution delegates behavior to owning modules.
+Verification covers command/option parsing; installed `fsq` and `fsq-agent` console-script equivalence; absence of platform installation extras; absence and rejection of public `environments` and `providers list`; rejection of `--install-driver`; platform-target exclusivity; required Web channel and optional executable path; unambiguous shared Web discovery and explicit-path validation; read-only runtime readiness; incomplete-distribution and external-prerequisite guidance; no workspace mutation before readiness; current-directory name derivation/override; existing-project adoption; idempotent initialization/update/conflict behavior; registry and directory creation; workspace precondition presentation; Provider commands outside a Workspace; shared CLI/Control Plane user configuration in both directions; complete Azure interactive and non-interactive configuration; GitHub device flow, model discovery/selection, cancellation, and machine/non-interactive rejection; atomic Provider replacement failure preservation; real safe Provider status; Human/JSON/JSONL rendering and exit codes; Doctor platform ordering, command dependency/status aggregation, component error isolation, and no-side-effect boundary; Application request mapping; safe unexpected-exception diagnostics; installed-distribution `ui` startup through package-contained Control Plane static resources and the current public server options without startup-directory workspace selection; legacy rejection/migration guidance; and absence of direct domain/runtime orchestration.
 
 ## Current Invariants
 
-- CLI commands are thin adapters over module APIs, not a second orchestration layer.
-- Capability decorators are not a CLI concern. CLI entry paths consume validated `CapabilityRegistry` instances, registry snapshots, harness/backend bindings, and normalized runner/event metadata.
-- Strict provider requirement detection uses the shared package-private capability bootstrap contract: provider-required canonical capability names are derived by comparing the active platform registry with and without provider-backed capabilities, and case steps are checked through registry resolution. CLI must not hard-code provider gating by authored or canonical action name.
-- The public command surface is limited to `init`, `run`, `report`, `playground`, and `control-plane`. Unsupported command names are not retained as compatibility aliases.
-- `init` is a thin non-interactive dispatcher over separate Config create/add/update operations. It creates an unregistered name from `Path.cwd()` according to Config's selected-directory rule, uses the registry root for every existing name, initializes one platform per invocation, and does not expose a selected-directory override.
-- Root `--output` is a presentation selector, not runtime configuration. Init supports Human and one-record JSON/JSONL terminal results; all other commands accept only Human until they define their own machine-output contracts.
-- `run` requires `--platform PLATFORM`, intentionally does not accept `--workspace`, `--config`, or `--env-file`, and resolves exact `.fsq/config/config.<platform>.yaml` identity from `Path.cwd()` without registry lookup or ancestor discovery. `report` and `playground` retain `--workspace NAME --platform PLATFORM` and registered workspace resolution. No command infers a sole configured platform.
-- A missing required selection, invalid current-directory run workspace, unknown registry name for a registry-backed command, unavailable workspace, or unsupported/unconfigured/unavailable platform fails with create-or-repair guidance and no workspace or run writes.
-- `run` applies `--tracing` or `--no-tracing` as a one-run override after `load_settings` returns and before LLM or provider-backed AI assertion validation. Sensitive tracing is never enabled by CLI.
-- Android app id is workspace target truth. Android serial is transient run state; CLI exposes it only as `run --android-serial`, automatically selects only a sole online device when omitted, and never persists the selection.
-- Streaming CLI output logs live `RunEvent` values from the agent. Concise format is the default human-readable stream and includes `HH:MM:SS LEVEL` log prefixes so operators can distinguish informational, warning, and error events. Human-readable event rendering must derive concise display phase labels from existing event type/title data, including pre-plan, startup, execution, verification, report, and run-level fallbacks; derive tool identity from existing event tool fields, matching started events, safe payload metadata, or safe output preview metadata; derive tool outcome from existing payload status, runner-result status, safe preview status, or event type; keep arguments compact, redacted, and faithful to the event value, including explicit `null` values; preserve meaningful safe reasoning-summary messages as concise model reason summaries; suppress generic reasoning-summary notices that contain no model-readable content; summarize structured SDK agent messages; and suppress verbose `tool_output_preview` JSON unless it is short and no better summary exists. When verbose output is suppressed, the concise log should point to existing result, artifact, report, or run-output hints when available and must not invent new artifacts or files.
-- Concise log cleanup is a presentation-only behavior. It must not change dynamic execution flow, `RunEvent` model fields, persisted `events.jsonl`, reports, recording manifests, generated strict YAML, tool artifacts, or intermediate run outputs. JSONL format emits one raw serialized event per log message for CI and log processors; the CLI formatter bypasses prefixes and human-readable compaction for those raw JSONL records so the stream remains machine-readable.
-- Normal `run` is always dynamic LLM goal/reference execution. `--goal` supplies the user goal text. `--case-yaml` and `--case-dir` supply raw file content as reference material and must not use `FsqCaseLoader` or `FsqTaskAdapter`.
-- Dynamic task construction separates planning references from final verification. `--goal` tasks use `planning_reference_kind="goal"` with the normalized goal text. Raw case tasks use `planning_reference_kind="raw_case"` with source path plus complete raw file content. The CLI does not derive final verifier requirements itself; pre-plan must summarize one `verification_goal` before external UI actions.
-- Dynamic run recording is post-run evidence transformation, not task execution. It reads persisted normalized capability events after `FsqAgent.run` returns, keeps canonical recording artifacts under that run directory, and only for validated Goal recordings atomically publishes an identical run-id-named copy to the selected platform cases directory.
-- Recorded cases reflect actual successfully completed non-observation capabilities with `ReplayPolicy(kind="fsq_command")`. Runtime-secret inputs are recorded as text-entry command parameters, not as dependency replay capabilities. The recorder must skip observation step kinds, and must not invent setup, teardown, Web `startBrowser`/`closeBrowser`, assertions, locator fallback, recovery actions, or source YAML mutations. Missing assertions, observations, or lifecycle actions produce warnings when relevant.
-- Runtime secrets in recorded cases are represented by workspace `env` names on text-entry commands using `textType: runtimeSecret`. Missing `textType` remains literal for YAML compatibility. Private workspace values are resolved only in memory during execution and are never written to generated YAML, event previews, manifests, reports, recording manifests, or logs.
-- `run --strict` is strict-core execution. It parses FSQ YAML including lifecycle hook metadata, uses config-owned active platform settings including optional `caseLifecycle` hooks, and does not construct or invoke LLM components for planning, recovery, locator fallback, action repair, or final verification. Strict runs resolve platform aliases through the active registry and build the active harness through `HarnessFactory`, with `CommonPlatformTools` inherited by every platform and the concrete backend driver selected by config. CLI owns lifecycle hook orchestration around canonical command execution: config `onCaseStart`, case `onCaseStart`, main commands when before hooks pass, case `onCaseComplete`, and config `onCaseComplete` after before hooks have been attempted. Strict lifecycle execution should emit concise INFO logs for phase start and per-step/per-hook action completion, including phase (`before case`, `main case`, or `after case`), action label, status, and failure message when present. No extra CLI flag is required for these strict progress logs; existing logging configuration controls whether INFO logs are displayed. The sole provider-backed exception is an explicitly authored `assertWithAI` step, for which CLI may build and inject an AI assertion evaluator into the active harness/backend support before execution.
-- Directory execution is intentionally serial because UI automation cases share external device and application state. Each case still creates independent run state so SDK sessions, harness context, AgentTool state, and platform CommonTool state do not leak across cases.
-- `report` is a lookup/print command only; report generation happens during execution. It resolves either LLM reports or strict-core reports without exposing separate report commands.
-- `playground` is a local developer convenience entry point. CLI owns only argument parsing, settings loading, and server startup; the `playground` module owns HTTP routes, production serving of generated browser assets, session state, execution adapters, screenshot preview, replay video handling, and report lookup. Frontend dependency resolution and compilation belong to the repository root npm/Vite project.
-- `control-plane` is a directory-independent local product entry point for workspace management and execution. CLI owns only argument parsing and server startup; `control_plane` owns registry-backed workspace APIs plus workspace-aware Devices runtime. The command has no `--platform` or selected-workspace option.
-- CLI logging never emits API key values; it may log the configured API key environment variable name and whether it is present.
+- CLI is a transport adapter over Application.
+- CLI runtime composition is isolated behind a private helper and is limited to constructing collaborators injected into Application; command handlers and composition helpers do not own business behavior.
+- Existing Case source files are never overwritten by `case test` or `--suggest`.
+- Machine output is stable, structured, and safe for Coding Agents.
+- Public command names and hierarchy match this specification exactly.

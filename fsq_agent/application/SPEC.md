@@ -1,0 +1,116 @@
+# Module: application
+
+## Purpose
+
+Provide the shared, transport-neutral Application layer used by the FSQ CLI, Control Plane, and future Coding Agent APIs. The package exposes application operations grouped by Workspace, Case, Run, Provider, and Environment and coordinates existing module authorities without reimplementing their rules.
+
+## Dependencies
+
+Application may consume public APIs from `models`, `config`, `providers`, `agent`, `execution`, `case_dsl`, `environments`, `core`, and `report`. It must not import adapters, frontend code, Click, HTTP/SSE frameworks, terminal rendering, or concrete UI types. Lower-level modules must not import `application`.
+
+## Public Interface
+
+The package exports transport-neutral operations and their Request, Result, Event, and Error contracts through `__init__.py`. The same symbols are available from their canonical resource modules so callers may depend on the narrow boundary they use. Operations are organized by resource domain rather than exposed through one generic `execute(command)` facade:
+
+- Workspace operations support the shared workspace precondition, platform target resolution, read-only runtime readiness coordination, and workspace initialization needed by adapters.
+- Case operations support creating a Case from a Goal and testing an existing Case, including the optional suggestion policy.
+- Run operations support exact-Workspace multi-platform listing, stable detail lookup, safe structured log retrieval, historical inference, and on-demand static HTML generation.
+- Provider operations support user-level Azure OpenAI configuration, GitHub Copilot device authorization/model activation, and active-Provider readiness status. Provider inventory is not an Application operation in the first release.
+- Environment operations support listing and diagnostics.
+- Doctor supports complete read-only Workspace diagnosis and per-platform command readiness.
+
+Requests contain application inputs, Results contain operation outcomes and safe artifact references, Events describe transport-neutral progress, and Errors contain stable codes plus safe structured details. These contracts contain no Click, HTTP, SSE, terminal, or frontend types. `application.contracts` is the canonical owner of these types and groups them by shared, Workspace, Case, Run, Provider, and Environment concerns. Resource operation modules import those canonical contract objects rather than defining transport-specific or duplicate equivalents.
+
+Canonical resource modules are:
+
+- `application.workspace`: Workspace operations.
+- `application.cases`: Case creation and testing operations.
+- `application.runs`: persisted Run query and log operations.
+- `application.providers`: Provider operations.
+- `application.environments`: Environment operations.
+- `application.doctor`: Workspace-level diagnostic orchestration.
+
+`application.runs` owns Workspace-scoped Run query orchestration. It validates the exact registered root through Config, resolves trustworthy configured-platform inventory, aggregates platform Run roots, detects duplicate IDs, applies filters/order/limits, parses current metadata or bounded historical facts, sanitizes logs, and coordinates Report HTML generation. It does not allocate IDs, persist lifecycle metadata, render transport output, or open a browser.
+
+Canonical immutable Pydantic contracts under `application.contracts.runs` include list/show/log/HTML requests and results, `RunSummary`, `RunDetail`, `RunLogEvent`, normalized filters, and Execution-facing Run metadata values. List results contain Workspace identity, queried platforms, filters, matched/returned counts, truncation, entries, and warnings. Show returns safe summary and relative artifact references without report or log bodies. Logs return completely validated safe events and selection metadata. HTML generation returns Run identity, platform, relative path, and generation status.
+
+New `run.json` uses schema `fsq.run/v1` and validates Workspace name, platform, Run ID, lifecycle status, UTC timestamps, bounded Case/Goal source, safe result/step/runtime summary, and contained relative artifact references. Historical Run directories without it are inferred read-only from supported report, fallback, evidence, and event artifacts. List isolates a damaged direct-child Run as an error entry; show permits safe partial history but rejects untrustworthy identity; logs may be read independently when Run containment and the complete log are trustworthy. Query never writes inferred metadata.
+
+## Ownership Boundaries
+
+Application owns cross-module orchestration, shared request validation, workspace enforcement, operation-level event production, and consistent results/errors for all adapters. It delegates authoritative behavior to existing modules:
+
+- `agent` owns AI planning, model/tool orchestration, and dynamic verification.
+- `execution` owns complete dynamic/deterministic run coordination, Case lifecycle semantics, cancellation/teardown ordering, and candidate Case recording.
+- `case_dsl` owns Case DSL parsing, validation, and canonical deterministic-step adaptation.
+- `environments` owns host support, read-only runtime readiness, and Web executable discovery.
+- `core` owns capability execution, runtime-secret handling, evidence policy, and Harness/Driver routing.
+- `report` owns transformation of persisted execution facts into reports and failure analysis.
+- concrete drivers own platform automation and backend-error normalization.
+
+Application must not copy, reinterpret, or fork those rules. This specification does not require `case create`, `case test`, and suggestion handling to be three independent internal Use Cases.
+
+Case testing always performs one deterministic Execution run. When suggestion is requested, Application invokes a separate post-execution analysis through an injected read-only suggestion collaborator using the parsed source Case and bounded persisted execution facts. The collaborator receives no Harness, Driver, capability registry, or action executor, cannot rerun the Case, and cannot change the completed Run result. Application returns only Run-local suggestion and optional candidate paths produced beneath the completed Run directory; the source Case and configured Case directory remain unchanged. Suggestion-analysis failure uses stable error code `case.suggestion_failed`, preserves the completed report path in safe error details, and does not rewrite or conceal the completed deterministic execution facts.
+
+Workspace initialization accepts a selected current directory, optional workspace name, one platform's target inputs/environment, and controlled-update intent. Application resolves the name case-insensitively through Config's registry. For an unregistered name it delegates final-root selection to Config: an empty selected directory is adopted as the root, while a non-empty selected directory receives an absent `<selected-directory>/<workspace-name>` child. For a registered name it ignores the selected directory for persistence and uses the immutable stored root; an unavailable registered name is not recreated. Before any workspace mutation Application validates the request, resolves the complete target, and asks the platform runtime service to check readiness without installing software. Web target resolution requires an explicit channel and either validates the explicit executable path or discovers exactly one compatible host executable. Application delegates filesystem validation, root selection, platform persistence, registry mutation, idempotency, revision handling, and rollback to Config only after these prerequisites succeed, then returns committed workspace name/root/platform/status plus safe readiness/discovery facts needed by CLI or Control Plane presentation. The shared workspace precondition for non-init commands resolves the exact current directory through Config registry and Workspace truth; a marker directory alone never satisfies it.
+
+Application also exposes transport-neutral workspace create, add-platform, and update-platform operations used by Control Plane. Create accepts a selected directory, name, and complete platform inputs; add and update accept the identity and revision fields required by that mutation. Each operation resolves every target, completes readiness, and only then calls Config persistence. CLI and Control Plane do not call Config workspace mutation operations directly.
+
+Provider operations do not accept or resolve a Workspace. They coordinate the existing public Config and Providers APIs against the user Config root also used by Control Plane and never use process environment, Workspace `.env`, or platform configuration as Provider authority. Azure configuration accepts a complete endpoint, model/deployment name, and API key candidate and delegates validation plus atomic replacement to Config. GitHub configuration exposes transport-neutral device-code request, cancellable completion, eligible-model discovery, and authorization activation operations so an adapter can present and select without receiving persistence authority. Application validates that the selected model came from that authorization's discovered eligible set before activation.
+
+Provider replacement commits a complete candidate before obsolete credentials are removed. Any validation, authentication, discovery, selection, persistence, cancellation, or unexpected failure preserves the previously active Provider and credentials. Results contain only safe Provider type, model, configuration/readiness state, device verification facts where required before activation, and stable safe errors; credentials and raw backend values never enter Application contracts.
+
+The Provider status operation loads the latest user-level Provider snapshot, reports the explicit unconfigured state without manufacturing a default, and delegates non-interactive session readiness to Providers. It may use the documented cached GitHub token refresh but never starts device flow, prompts, sends model inference, or requires a Workspace. Its immutable result contains `status` (`ready` or `unavailable`), `configured`, optional `provider` and `model`, `authenticated`, a safe message, and an optional safe repair action. Expected unavailable states are results rather than exceptions; malformed persisted configuration and unrecoverable orchestration failures remain stable safe Application Errors. Exception messages, tracebacks, API keys, tokens, authorization objects, and raw provider responses are never returned.
+
+Target resolution finishes before readiness check or Config mutation. It rejects cross-platform fields and missing required values; normalizes and validates explicit local paths for existence, regular-file shape, executable eligibility where applicable, and exact Web channel compatibility; and resolves an omitted Web executable only when discovery returns exactly one normalized candidate. Zero or ambiguous candidates are configuration errors and cause no runtime or persistence side effects.
+For an explicit Web executable, exact compatibility uses Core's component-aware path identity contract rather than discovery membership or generic substring matching. A non-standard installation root is accepted when the normalized basename and directory or application-bundle components prove the selected product and channel. An ambiguous shared basename without the required channel identity is rejected with safe guidance to omit the path for discovery or provide a channel-identified path.
+
+Application owns the transport-neutral workspace initialization, platform readiness check, and Web executable discovery use cases shared by CLI and Control Plane. It does not implement or invoke package-manager commands, filesystem registry formats, browser path tables, ADB/Appium/backend protocols, or transport wording. Platform runtime services own read-only platform-specific detection; Config owns target validation and persistence. CLI and Control Plane decode inputs and project Application results/errors without reproducing this orchestration.
+
+Application's Doctor operation accepts the exact current directory and returns immutable `DoctorResult`, `DoctorWorkspaceSummary`, `DoctorPlatformResult`, fixed `DoctorChecks`, fixed `DoctorCommands`, and `DoctorStatusDetail` contracts. Detail status is `ready`, `unavailable`, `error`, or `not_applicable`; platform and overall status is `ready`, `partial`, or `unavailable`. Platforms are diagnosed in Android, Web, Windows, macOS order and only identifiable configured platforms are returned. An identifiable damaged platform produces a configuration error detail without aborting other platforms; an untrustworthy registry, root mapping, or platform inventory raises a Workspace/configuration Application Error.
+
+Doctor delegates component facts through public Config, Environments, Providers, Agent, and Core boundaries, isolates unexpected component exceptions into safe error details, derives command verdicts from a fixed dependency matrix, and returns ordered exact-deduplicated actions. Ordinary `case test` requires configuration, Runtime, Target configuration/availability, and Strict Core readiness. `case test --suggest` additionally requires Provider and suggestion-analyzer readiness. `case create` additionally requires Provider and dynamic-Agent readiness. Doctor does not inspect a particular Case and therefore does not promise readiness for Case-specific syntax, runtime-secret, nested-Case, or `assertWithAI` requirements.
+
+## Python Architecture
+
+- Architecture level: Level 3 Layered Application.
+- Public API: resource-grouped operations and transport-neutral Request, Result, Event, and Error contracts exported from `__init__.py`.
+- Dependency direction: CLI and Control Plane adapters depend on Application; Application depends on owning module public APIs; owning modules do not depend on Application.
+- Rationale: the package coordinates several existing authorities and presents one consistent application boundary to multiple transports without introducing repositories, a database, a daemon, a queue, or Clean Architecture ceremony.
+
+## Internal Structure
+
+- `__init__.py`: Complete convenience exports for the public Application API.
+- `contracts/`: Canonical transport-neutral Request, Result, Event, Error, summary, and machine-record contracts grouped by resource concern.
+- `workspace.py`: Public Workspace operation boundary and private Workspace orchestration helpers.
+- `cases.py`: Public Case creation/testing operation boundary and private Case orchestration helpers.
+- `runs.py`: Public persisted Run query/log boundary.
+- `providers.py`: Public Provider operation boundary.
+- `environments.py`: Public Environment operation boundary.
+- `doctor.py`: Public Workspace Doctor operation and aggregation boundary.
+- Private `_*.py` files may support these public modules but are not imported across package boundaries.
+
+## Error Handling
+
+Application normalizes expected operation failures into stable application Errors and preserves safe structured details. It never exposes secrets, hidden model reasoning, backend objects, transport status codes, or tracebacks. Adapters map Application Errors to exit codes, HTTP statuses, and presentation text.
+
+Doctor component failures do not expose exception messages, arguments, tracebacks, raw subprocess/backend output, env values, or credentials and do not abort independent checks. Only an untrustworthy Workspace identity/inventory or an unrecoverable top-level orchestration failure prevents a complete result.
+
+## Current Invariants
+
+- CLI and Control Plane business operations pass through Application.
+- CLI and Control Plane use the same Config-owned registered workspace identity and `.fsq` layout; Application contains no legacy marker-based workspace authority.
+- Shared runtime readiness and Web executable discovery flow through Application; adapters and Application do not execute installers or maintain browser discovery tables.
+- All CLI and Control Plane workspace mutations flow through Application; Config remains the persistence and transaction owner.
+- Application is a real Python package and an architectural layer, not a documentation-only label.
+- There is no generic command-string facade.
+- Application contracts have one canonical definition under `application.contracts`; package-root and resource-module exports reference the same objects.
+- Resource modules contain the authoritative implementation for their operation group; compatibility exports do not copy behavior or state.
+- Run queries are read-only except for explicitly requested derived `report.html`; they never execute, authenticate, invoke Providers/Drivers, or rewrite authoritative metadata or results.
+- Transport concerns remain in adapters.
+- Domain and runtime rules remain in their owning modules.
+- Case operations coordinate through public Execution services and do not import package-root or adapter-private execution helpers.
+- Suggestion-enabled Case testing separates deterministic execution from read-only post-execution AI analysis; the analysis has no UI-action authority and all generated artifacts remain inside the completed Run directory.
+- Doctor is a read-only Application use case; CLI presents its result but does not reproduce diagnostic or command-readiness rules.
+- Provider configuration and status are user-level Application use cases shared in persistence authority with Control Plane, require no Workspace, and never recover Provider state from `.env` or process environment.
+- The first-release Provider boundary has one active Provider and no listing, profiles, fallback chain, or transport-specific UI models.

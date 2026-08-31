@@ -151,7 +151,7 @@ it('keeps selected Action screenshots visible while the next Action evidence loa
     message: null,
     artifacts: [{ kind: 'screenshot', phase: 'before', timestamp: null, mimeType: 'image/png', contentBase64: 'c3RlcC0y' }],
   });
-  expect(await screen.findByRole('img', { name: 'before screenshot for selected Action' })).toHaveAttribute('src', 'data:image/png;base64,c3RlcC0y');
+  await waitFor(() => expect(screen.getByRole('img', { name: 'before screenshot for selected Action' })).toHaveAttribute('src', 'data:image/png;base64,c3RlcC0y'));
 });
 
 it('diffs selected XML UI Tree evidence after structured formatting', async () => {

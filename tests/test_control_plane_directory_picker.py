@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from fsq_agent.control_plane import _directory_picker as picker_module
-from fsq_agent.control_plane._directory_picker import DirectoryPicker, DirectoryPickerAPIError
+from fsq_agent.adapters.control_plane import _directory_picker as picker_module
+from fsq_agent.adapters.control_plane._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 
 
 class _Process:
@@ -80,8 +80,46 @@ def test_picker_decodes_selected_and_cancelled_results(tmp_path: Path) -> None:
     )
     cancelled = picker_module._decode_result(picker_module._PickerCommand(("picker",), frozenset({1})), 1, b"")
 
-    assert selected == windows == {"status": "selected", "selectedPath": str(tmp_path.resolve())}
+    assert selected == windows == {"status": "selected", "selectedPath": str(tmp_path.resolve()), "isEmpty": True}
     assert cancelled == {"status": "cancelled"}
+
+
+def test_picker_reports_nonempty_directory_including_hidden_entries(tmp_path: Path) -> None:
+    (tmp_path / ".hidden").write_text("present", encoding="utf-8")
+
+    selected = picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{tmp_path}\n".encode())
+
+    assert selected["isEmpty"] is False
+
+
+def test_picker_reports_nonempty_directory_for_symbolic_link_entry(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    selected_path = tmp_path / "selected"
+    selected_path.mkdir()
+    (selected_path / "linked").symlink_to(target, target_is_directory=True)
+
+    selected = picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{selected_path}\n".encode())
+
+    assert selected["isEmpty"] is False
+
+
+def test_picker_maps_selected_directory_inspection_failure_to_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original_iterdir = Path.iterdir
+
+    def fail_selected(path: Path):
+        if path == tmp_path.resolve():
+            raise OSError("inspection denied")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail_selected)
+
+    with pytest.raises(DirectoryPickerAPIError) as error:
+        picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{tmp_path}\n".encode())
+
+    assert error.value.status == 503
+    assert error.value.code == "directory_picker_unavailable"
+    assert error.value.message == "The selected folder could not be inspected."
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOptions
+from fsq_agent.environments import PlatformRuntimeService
+from fsq_agent.models import PlatformRuntimeCheck
 
 
 def _server(tmp_path: Path, *, host: str = "127.0.0.1") -> ControlPlaneServer:
@@ -104,7 +106,7 @@ def test_workspace_create_list_and_detail_keep_env_out_of_registry_projection(tm
 
 def test_workspace_parent_directory_picker_returns_selection_and_cancellation(tmp_path: Path) -> None:
     selected = _server(tmp_path / "selected")
-    selected_picker = _FakeDirectoryPicker({"status": "selected", "selectedPath": str(tmp_path.resolve())})
+    selected_picker = _FakeDirectoryPicker({"status": "selected", "selectedPath": str(tmp_path.resolve()), "isEmpty": True})
     selected._directory_picker = selected_picker  # type: ignore[attr-defined]
     cancelled = _server(tmp_path / "cancelled")
     cancelled_picker = _FakeDirectoryPicker({"status": "cancelled"})
@@ -122,7 +124,7 @@ def test_workspace_parent_directory_picker_returns_selection_and_cancellation(tm
     )
 
     assert selected_status == cancelled_status == 200
-    assert selected_payload == {"status": "selected", "selectedPath": str(tmp_path.resolve())}
+    assert selected_payload == {"status": "selected", "selectedPath": str(tmp_path.resolve()), "isEmpty": True}
     assert cancelled_payload == {"status": "cancelled"}
     assert selected_picker.calls == cancelled_picker.calls == 1
 
@@ -200,7 +202,7 @@ def test_devices_cases_require_and_resolve_registered_workspace_platform(
         captured["cases"] = settings.cases.dir
         return {"platform": settings.harness.platform, "cases": [], "truncated": False}
 
-    monkeypatch.setattr("fsq_agent.control_plane._server.discover_cases", capture_cases)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._server.discover_cases", capture_cases)
 
     status, payload, _ = server.handle_get(
         "/api/control-plane/cases",
@@ -229,11 +231,11 @@ def test_devices_readiness_keeps_workspace_ready_when_selected_platform_is_absen
     server = _server(tmp_path)
     _create(server, parent)
     monkeypatch.setattr(
-        "fsq_agent.control_plane._readiness.provider_readiness",
+        "fsq_agent.adapters.control_plane._readiness.provider_readiness",
         lambda _settings: pytest.fail("provider readiness must not run for an absent platform"),
     )
     monkeypatch.setattr(
-        "fsq_agent.control_plane._readiness.target_readiness",
+        "fsq_agent.adapters.control_plane._readiness.target_readiness",
         lambda _settings: pytest.fail("target readiness must not run for an absent platform"),
     )
 
@@ -250,11 +252,12 @@ def test_devices_readiness_keeps_workspace_ready_when_selected_platform_is_absen
 
 
 @pytest.mark.parametrize("platform", ["web", "windows", "macos"])
-def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str) -> None:
+def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path, platform: str, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
-    executable = tmp_path / ("chrome.exe" if platform == "web" else "target.exe")
+    executable = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe" if platform == "web" else tmp_path / "target.exe"
+    executable.parent.mkdir(parents=True, exist_ok=True)
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
     targets: dict[str, dict[str, object]] = {
@@ -262,6 +265,13 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
         "windows": {"appPath": str(executable), "windowTitleRe": ".*Checkout", "launchArgs": '--mode "test run"'},
         "macos": {"bundleId": "com.example.Checkout"},
     }
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
+    if platform == "web":
+        monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [executable.resolve()])
 
     status, detail = _create(server, parent, platform=platform, target=targets[platform])
 
@@ -270,23 +280,52 @@ def test_workspace_create_projects_platform_discriminated_targets(tmp_path: Path
     assert detail["platforms"][0]["target"] == targets[platform]
 
 
+def test_workspace_create_discovers_omitted_web_executable_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    parent = tmp_path / "projects"
+    parent.mkdir()
+    executable = tmp_path / "Google Chrome" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [executable.resolve()])
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
+
+    status, detail = _create(
+        _server(tmp_path),
+        parent,
+        platform="web",
+        target={"browserChannel": "chrome"},
+    )
+
+    assert status == 201
+    assert detail["platforms"][0]["target"] == {
+        "browserChannel": "chrome",
+        "browserExecutablePath": str(executable),
+    }
+
+
 def test_workspace_create_rejects_web_executable_incompatible_with_preset_channel(tmp_path: Path) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     firefox = tmp_path / "firefox.exe"
     firefox.write_text("", encoding="utf-8")
+    firefox.chmod(0o755)
     server = _server(tmp_path)
 
     status, error = _create(
         server,
         parent,
         platform="web",
-        target={"browserExecutablePath": str(firefox)},
+        target={"browserChannel": "chrome", "browserExecutablePath": str(firefox)},
     )
 
     assert status == 400
     assert error["code"] == "invalid_workspace"
-    assert "preset channel" in error["message"]
+    assert "selected channel" in error["message"]
 
 
 def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path) -> None:
@@ -330,11 +369,16 @@ def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path
     assert loaded == updated["platform"]
 
 
-def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path) -> None:
+def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
     _create(server, parent)
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
 
     status, payload = server.handle_post(
         "/api/control-plane/workspaces/checkout/platforms",
@@ -346,7 +390,7 @@ def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path)
         peer_host="127.0.0.1",
     )
 
-    assert status == 201
+    assert status == 201, payload
     assert [item["platform"] for item in payload["workspace"]["platforms"]] == ["android", "macos"]
     assert "private-mac-token" not in str(payload["workspace"])
     assert payload["platform"]["env"] == {"MAC_TOKEN": "private-mac-token"}
@@ -357,12 +401,17 @@ def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path)
     assert delete_status == 404
 
 
-def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_path: Path) -> None:
+def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "projects"
     root.mkdir()
     server = _server(tmp_path)
     _create(server, root)
     root.rename(tmp_path / "moved-projects")
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
 
     status, error = server.handle_post(
         "/api/control-plane/workspaces/checkout/platforms",
@@ -374,7 +423,7 @@ def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_
         peer_host="127.0.0.1",
     )
 
-    assert status == 409
+    assert status == 409, error
     assert error["code"] == "workspace_unavailable"
 
 

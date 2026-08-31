@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent.cli._strict_replay import collect_runtime_secret_refs, resolve_strict_replay_steps
+from fsq_agent.adapters.cli._strict_replay import collect_runtime_secret_refs, resolve_strict_replay_steps
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config._settings import Settings
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError, RuntimeSecretSettings
 
 

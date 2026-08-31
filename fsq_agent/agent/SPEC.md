@@ -2,36 +2,39 @@
 
 ## Purpose
 
-Coordinate dynamic goal/reference testing workflows using OpenAI Agents SDK: load runtime settings, construct or receive dynamic-only AgentTool hosts plus active platform harness/backend bindings, obtain the shared provider session from `providers`, build the validated platform-selected capability registry, build the OpenAI-compatible agent from AgentTools plus registry-backed CommonTool/PlatformTool capabilities, load relevant project knowledge and complete configured skills, derive execution key actions and a final verification goal from a natural-language goal or raw reference content, execute every concrete recordable capability invocation through `StepRunner`, persist safe normalized capability event metadata for post-run recording, derive verification status by checking the final verification goal against execution evidence, and trigger report generation.
+Provide SDK-neutral dynamic Goal/reference orchestration used by `execution`: load runtime settings, knowledge, and skills; derive execution key actions and a final verification goal through an injected Coding Agent runtime; persist safe normalized events; coordinate main runtime and evidence-based verification calls; and derive final verification status. OpenAI Agents SDK construction, SDK tools, sessions, and stream/result adaptation belong to `adapters.coding_agent`. Complete operation coordination, transport cancellation, report publication, and candidate Case recording belong to `execution`.
 
 ## Dependencies
 
 - `models`: Uses all task, plan, structured agent IO, result, tool, report, event, and exception models.
-- `config`: `FsqAgent.from_config` loads the latest user-provider snapshot as part of runtime settings.
+- `config`: Uses runtime settings.
 - `providers`: Builds shared Azure OpenAI or GitHub Copilot provider sessions, refreshes provider-local runtime credentials at dynamic task startup, and provides provider-backed evaluator dependencies.
 - `core`: Uses `CapabilityRegistry`, `StepRunner`, `HarnessInterface` implementations, platform CommonTool providers, backend drivers, and shared harness behavior through public core exports supplied by entry/runtime construction.
 - `tools`: Builds dynamic-only AgentTool providers/executors and adapts AgentTools into OpenAI Agents SDK tools.
 - `observation`: Captures evidence after steps.
 - `knowledge`: Loads private knowledge.
 - `skills`: Loads configured automation skill instruction bundles.
-- `report`: Generates reports and evidence bundles.
+- `report`: Supplies evidence/report contracts used by dynamic verification; complete run report coordination belongs to `execution`.
 
-The agent module consumes validated capability registry definitions and runner results. It must not import `capabilities` or decorator internals; declaration mechanics are completed before dynamic SDK tool exposure.
+The agent module consumes SDK-neutral models and public runtime protocols. It does not import adapters, OpenAI Agents SDK/OpenAI types, concrete SDK runtime classes, `capabilities`, or decorator internals. All construction paths require an injected `CodingAgentRuntimeFactory`.
 
 ## Public Interface
 
 Current `__init__.py` exports via `__all__`:
 
 - `FsqAgent`: Main orchestration class.
-- `OpenAIAgentsRuntime`: Builds and runs an OpenAI Agents SDK `Agent` with a provider session supplied by `providers`, registry-generated capability tools, skills, turn limits, tracing policy, and a `StepRunner` execution binding.
+- `CodingAgentRuntime`: Protocol for pre-plan, main execution, and evidence-based verification using SDK-neutral inputs and results.
+- `CodingAgentRuntimeFactory`: Composition contract for creating a runtime from validated settings and optional harness construction input.
+- `CodingAgentPolicy`: Public SDK-neutral facade for pre-plan instructions and knowledge lookup schemas, prompt construction, structured-output coercion/serialization, and verification evidence construction used by Coding Agent adapters.
 - `Verifier`: Parses structured verifier-agent or runner final output and converts task status, evidence, and diagnostics into a `VerificationResult` for the task's single `verification_goal`.
+- `check_dynamic_agent_readiness(settings: Settings) -> tuple[bool, str, str]`: Doctor-facing static readiness operation. It validates dynamic Agent settings, prompt templates, configured knowledge roots, required Skills, AgentTool policy, and active platform capability construction without refreshing Provider credentials, sending model inference, creating a Harness/Driver/session, starting an application, or writing run artifacts. Optional unusable Skills follow the existing loader contract; required unusable Skills make readiness unavailable. It returns only a safe normalized verdict, message, and action and does not expose loaded knowledge, Skill content, prompt content, paths, credentials, or exception details.
 
 Current public call shape:
 
-- `FsqAgent.from_config(path: str | Path | None = None, workspace: str | Path | None = None) -> FsqAgent`
-- `FsqAgent.from_settings(settings: Settings) -> FsqAgent`
+- `FsqAgent.from_settings(settings: Settings, runtime_factory: CodingAgentRuntimeFactory, ...) -> FsqAgent`
 - `FsqAgent.run(task: Task, event_sink: RunEventSink | None = None) -> TaskResult`
 - `OpenAIAgentsRuntime.run_task(task: Task, knowledge: KnowledgeBundle, skills: list[SkillBundle], run_id: str, event_sink: RunEventSink | None = None) -> list[StepResult]`
+- `CodingAgentRuntime.run_verification(task: Task, results: list[StepResult], run_id: str, events_path: Path | None, event_sink: RunEventSink | None = None) -> list[StepResult]`
 - `Verifier.verify(task: Task, results: list[StepResult], events_path: Path | None = None) -> VerificationResult`
 
 ## Internal Structure
@@ -39,13 +42,14 @@ Current public call shape:
 - `__init__.py`: Public exports only.
 - `_core.py`: `FsqAgent` orchestration and lifecycle.
 - `_events.py`: Run event emission, sequencing, persistence fan-out, and user-sink dispatch.
-- `_openai_runtime.py`: OpenAI Agents SDK runtime assembly using provider sessions from `providers`, AgentTool provider construction or injection, platform-dispatching harness, platform CommonTool provider, and backend driver construction, platform-selected capability registry bootstrap, StepRunner construction with configured post-action delay settings, agent construction, `Runner.run_streamed` invocation, and SDK stream event mapping.
-- `_harness_tools.py`: Registry-backed platform capability `FunctionTool` adapter. It converts active platform CommonTool/PlatformTool schemas into SDK tools while preserving each capability `params_json_schema`, maps SDK JSON arguments into canonical `ExecutableStep` records, delegates execution to `core.StepRunner` configured with runner-owned post-action delay policy, and serializes normalized capability results to bounded model-visible JSON with safe structured status/provenance fields suitable for reports and post-run recording. AgentTool SDK adaptation lives in `tools` and does not receive replay metadata.
+- `_runtime.py`: SDK-neutral Coding Agent runtime and factory protocols.
+- `_policy.py`: Implementation of the public `CodingAgentPolicy` facade over Agent-owned planning, prompt, structured-output, and verification-evidence policy.
 - `_pre_plan.py`: Internal prompt instructions and helpers for dynamic goal planning from loaded skills, optional project knowledge, optional page index knowledge, and on-demand page knowledge when directly invoked by `FsqAgent.run`.
 - `_prompt.py`: Prompt model construction and template rendering for agent instructions and task input.
 - `_structured_output.py`: Shared coercion helpers for SDK final output values and compatibility parsing of legacy/raw final JSON strings.
 - `_verification_task.py`: Builds an evidence bundle from task context, execution records, event logs, and persisted tool artifacts for a separate evidence-based verification agent task.
 - `_verifier.py`: Evidence-based goal verification and failure diagnostics.
+- `_readiness.py`: Doctor-facing static dynamic-Agent readiness composition with no external session creation or model invocation.
 - `SPEC.md`: Module design.
 
 ## Platform Runtime Blocks
@@ -80,11 +84,11 @@ macOS runtime:
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
-- Public API: `FsqAgent`, `OpenAIAgentsRuntime`, and `Verifier` exported from `__init__.py`.
+- Public API: `FsqAgent`, `CodingAgentRuntime`, `CodingAgentRuntimeFactory`, `CodingAgentPolicy`, and `Verifier` exported from `__init__.py`. Concrete Coding Agent runtimes are selected only by adapter composition roots.
 - Internal modules: all `_*.py` files are private implementation modules.
-- Domain boundaries: this module owns dynamic run orchestration, SDK runtime assembly, pre-planning, event persistence, and verification task construction. Recordable capability execution routing lives in `core`; provider/session creation lives in `providers`; dynamic-only AgentTool behavior lives in `tools`; report writing lives in `report`.
+- Domain boundaries: this module owns SDK-neutral dynamic orchestration, pre-planning policy, event persistence, and verification policy. SDK runtime assembly and SDK event conversion belong to `adapters.coding_agent`; complete operation coordination and recording live in `execution`.
 - Boundary models: all tasks, final outputs, events, capability metadata, runner results, and report artifacts come from `models`.
-- Dependency direction: may depend on `models`, `config`, `providers`, `core`, `tools`, `observation`, `knowledge`, `skills`, and `report`; leaf modules must not import `agent`.
+- Dependency direction: may depend on `models`, `config`, `providers`, `tools`, `observation`, `knowledge`, `skills`, and `report`; it must not import `execution`, `application`, adapters, or SDK packages. Execution invokes Agent through its public API and composition roots inject the adapter runtime factory.
 - Rationale: dynamic execution coordinates external SDKs, providers, harnesses, tools, persisted events, and reports, so Level 3 is appropriate without adding repository/unit-of-work patterns.
 
 ## Error Handling
@@ -93,14 +97,13 @@ Configuration errors are raised before task execution when OpenAI Agents SDK is 
 
 Internal goal planning raises configuration errors when OpenAI Agents SDK configuration is unavailable and planning errors when the SDK does not return a valid `GoalPrePlan`. Planning used inside `FsqAgent.run` does not construct platform harnesses, call UI/external action tools, or generate separate reports. Missing optional project knowledge, page index knowledge, or page files are not model-facing prompt instructions. Read-only knowledge lookup tool failures are surfaced to the planner as structured tool results so it can continue when possible.
 
-The `Settings` supplied to one agent task are its Provider snapshot. `FsqAgent.from_config` captures the latest user Provider through normal config loading; `FsqAgent.from_settings` uses the complete caller-supplied snapshot. During `FsqAgent.run`, provider-local runtime credentials are refreshed once before internal pre-plan, but provider type/model/endpoint selection is not reloaded mid-task. GitHub refresh uses only the user-level cached OAuth token and never starts device authentication. The resulting session is reused by pre-plan, main execution, verification, and provider-backed assertions. A dynamic task is internally planned before external UI actions begin. The orchestrator uses the task's explicit planning reference text and kind when present, falling back to legacy goal/description selection only for compatibility, converts returned `GoalKeyAction` values into `Task.key_actions` as execution guidance, copies the returned `GoalPrePlan.verification_goal` into `Task.verification_goal`, and emits planning events on the same run timeline. Generated key actions must not become additional blocking final-verifier requirements. If planning returns no usable key actions or no usable verification goal, the run fails before external UI actions are attempted.
+During `FsqAgent.run`, provider-local runtime credentials are refreshed once before the internal pre-plan begins. For GitHub Copilot, this refresh uses only the cached GitHub OAuth token created by `init --provider github_copilot`; it must not start device-code authentication. The refreshed short-lived provider token is then reused by pre-plan, main dynamic execution, verification, and provider-backed AI assertions through normal provider-session construction. A dynamic task is internally planned before external UI actions begin. The orchestrator uses the task's explicit planning reference text and kind when present, falling back to legacy goal/description selection only for compatibility, converts returned `GoalKeyAction` values into `Task.key_actions` as execution guidance, copies the returned `GoalPrePlan.verification_goal` into `Task.verification_goal`, and emits planning events on the same run timeline. Generated key actions must not become additional blocking final-verifier requirements. If planning returns no usable key actions or no usable verification goal, the run fails before external UI actions are attempted.
 
 ## Current Invariants
 
 - The orchestration module depends on all leaf modules, but leaf modules never depend on `agent`.
 - OpenAI Agents SDK is the selected agent runtime and tool-use integration layer for this project.
-- Azure OpenAI and GitHub Copilot provider construction is delegated to `providers`. `agent` captures provider selection from its task settings, asks `providers` to refresh provider-local runtime credentials once at dynamic task startup, then uses the resulting sessions for OpenAI Agents SDK `RunConfig`. Provider authentication, endpoint selection, token caching, Copilot plan detection, and direct Responses-style model invocation are not implemented in `agent`.
-- Provider configuration changes never mutate an active dynamic task. Entry surfaces must supply a newly loaded/refreshed settings snapshot when constructing the next complete task.
+- Azure OpenAI and GitHub Copilot provider construction is delegated to `providers`. `agent` asks `providers` to refresh provider-local runtime credentials once at dynamic task startup, then asks for configured provider sessions and uses those sessions to create OpenAI Agents SDK provider objects for `RunConfig`. Provider authentication, endpoint selection, token caching, Copilot plan detection, and direct Responses-style model invocation are not implemented in `agent`.
 - Task execution requires the OpenAI Agents SDK package and provider authentication to be available through `providers`. There is no offline fallback execution path.
 - The SDK runner owns tool dispatch and turn continuation. The project should not reimplement the Responses function-call loop.
 - SDK tools are generated from validated AgentTool definitions plus active platform CommonTool/PlatformTool `action_space()` schemas. `OpenAIAgentsRuntime` converts dynamic helper tools and recordable platform capabilities into SDK `FunctionTool` objects using canonical names, model-generated parameter schemas, and descriptions, and it preserves the active capability `params_json_schema` exactly instead of synthesizing platform-specific argument schemas in `agent`. Active capability SDK tools use strict JSON schema by default; per-capability schema strictness is not part of capability metadata. Unimplemented backend methods must not appear in `action_space()` because they must not be decorated as capabilities. It creates SDK agents with no external platform tool servers. `assert_with_ai` is a driver-backed PlatformTool exposed by the active backend when an evaluator is configured, not an AgentTool and not a concrete harness method.
@@ -124,7 +127,7 @@ The `Settings` supplied to one agent task are its Provider snapshot. `FsqAgent.f
 - If optional project or page knowledge is incomplete or absent, the planner should still produce the best available contiguous key-action chain and a fact-supported verification goal from the reference text, loaded skills, active platform tool summary, and any available knowledge. It may skip at most one consecutive missing action by recording a warning. If it cannot produce useful key actions or a reliable verification goal, it must return empty planning fields and warnings so the orchestrator can fail before external UI actions.
 - When a caller supplies ordered key actions, the runtime must use the complete list as the execution spine: preserve their relative order, allow recovery/setup/dialog-handling steps between them, and collect live evidence for the resulting state before reporting success. The public CLI no longer supplies parsed FSQ command-derived key actions for normal LLM `--case-yaml` or `--case-dir` runs.
 - Ordered key actions must preserve semantic fidelity. Recovery or fallback actions may restore UI state, but they do not satisfy the original ordered key action unless they perform the same accepted semantic action. Tool usage errors should be corrected for the same semantic action before switching to non-equivalent fallback routes.
-- Run identifiers are generated by the orchestration layer as `<task-id>-YYYY-MM-DD_HH-MM-SS` using local time so unique direct directories under the selected workspace platform's `.fsq/runs/<platform>/` root (`output.runs_dir`) are easy to read while remaining path-safe on Windows.
+- Dynamic execution obtains Run identifiers and the initial Run directory from the shared Execution allocation boundary. IDs use the Workspace-wide `<source-slug>-<UTC timestamp>-<six lowercase hexadecimal characters>` contract, and Agent does not construct IDs independently. Run artifacts remain direct children of the selected Workspace platform's `.fsq/runs/<platform>/` root (`output.runs_dir`).
 - Task runs emit live `RunEvent` values for planning summaries, AgentTool calls, CommonTool/PlatformTool capability calls, runtime-internal progress, tool outputs, failures, and completion. Events are for user-visible progress, reports, and post-run recording metadata, and must not expose hidden model chain-of-thought. Runtime interruptions such as debugger cancellation or keyboard interrupt emit a final `run_failed` event before being re-raised.
 - The runtime consumes OpenAI Agents SDK streaming semantic events through `Runner.run_streamed(...).stream_events()` and maps them into `RunEvent` values while preserving the final output path used by verification and reporting.
 - The runtime must not let the OpenAI Agents SDK trace exporter repeatedly warn when no OpenAI trace export key is configured. `openai_agents.tracing_enabled` expresses the user/config tracing request, but the SDK run config and SDK global tracing switch must disable SDK tracing when `OPENAI_API_KEY` is absent or blank because the SDK exporter uses that variable even when the model provider is GitHub Copilot or Azure OpenAI.
@@ -151,5 +154,7 @@ The `Settings` supplied to one agent task are its Provider snapshot. `FsqAgent.f
 - Final verification is goal-only. Success requires evidence supporting `Task.verification_goal`; failure requires evidence proving the goal unmet or impossible; inconclusive is used when evidence is insufficient or ambiguous. Key actions are execution guidance and diagnostics, not independent final verifier requirements.
 - Visual assertions in the LLM execution loop are judged during the main execution loop when the agent explicitly calls a backend PlatformTool assertion such as `assert_with_ai` and receives the provider-backed verdict as tool output evidence. The verification task does not re-inspect screenshot pixels; it verifies that execution evidence contains the AI assertion result, that the main agent's structured output reports the corresponding result, and that no supplied evidence contradicts that result.
 - Deterministic strict-core execution is not an agent capability. Strict entry-layer code may inject a provider-backed evaluator for explicitly authored `assertWithAI`, but `agent` does not own strict execution or construct strict harnesses.
-- Dynamic run recording is not an agent capability. `agent` must persist safe event metadata needed by `cli` recording, but must not write `recorded.fsq.yaml`, mutate source cases, resolve strict replay refs, or decide whether a run should be recorded.
+- Candidate Case recording is not an agent capability. Agent persists safe event metadata needed by Application, but must not write candidate `*.fsq.yaml`, mutate source Cases, resolve replay refs, or decide whether a candidate should be produced.
+- Evidence-based runtime verification is a required `CodingAgentRuntime` capability exposed as `run_verification`; Agent orchestration invokes it directly and never probes private or optional runtime methods.
+- Coding Agent adapters consume Agent-owned planning, prompt, structured-output, and verification-evidence policy only through the public `CodingAgentPolicy` facade and must not import Agent `_private` modules.
 - The local `Verifier` does not hard-code FSQ key-action formats or Appium command semantics as the final arbiter. It treats a parseable verification-agent status as authoritative, preserving the agent's success, failed, or inconclusive conclusion without local status downgrades. If the verification task is unavailable, it uses parseable runner output as the fallback conclusion; if no agent conclusion is parseable, it falls back to failed-step or inconclusive diagnostics.

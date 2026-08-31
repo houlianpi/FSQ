@@ -2,15 +2,22 @@
 
 ## Purpose
 
-Define the shared execution-core orchestration layer for FSQ-Agent. The core module owns `StepRunner` as the single execution manager for canonical CommonTool and PlatformTool invocations, runner-owned post-action delay resolution/application, `StepSequenceRunner` ordering, bounded Android device discovery, harness and driver protocols, factory boundaries for default capability definitions, driver selection, harness construction, platform CommonTool providers, backend driver capability exposure, and evidence-recording coordination points used by strict replay and dynamic execution.
+Provide the Core package navigation and compatibility surface for platform-neutral Runner, Evidence, and Interfaces ownership plus current capability registry, runtime-secret, and CommonTool services. `core.runner`, `core.evidence`, and `core.interfaces` are the canonical owners of their respective public contracts. Concrete runtime gateways belong to `harnesses`; concrete automation backends belong to `drivers`; host runtime services belong to `environments`.
 
 The module does not parse CLI arguments, parse FSQ YAML, construct provider sessions, construct OpenAI Agents SDK tools, own dynamic-only AgentTools, or generate reports. Entry modules build settings, providers, artifact stores, and registries, then request `HarnessInterface` and driver protocol implementations through public core factory classes instead of importing concrete platform harness or backend driver classes.
 
 ## Dependencies
 
-- Internal project dependencies: `models` and `capabilities` only.
+- `core.runner`: canonical step and sequence execution services.
+- `core.evidence`: canonical artifact and evidence services.
+- `core.interfaces`: canonical public protocols and stable construction boundaries.
+- `harnesses`: private concrete runtime gateways reached through the public Harness factory.
+- `drivers`: private concrete automation backends reached through public Driver interfaces and factories.
+- `environments`: canonical `PlatformRuntimeService` reached only by the legacy Core compatibility export.
+
+- Internal project dependencies: `models`, `capabilities`, and the narrow `environments` compatibility export dependency.
 - External dependencies: standard library typing/time/path modules and optional platform backend imports only inside concrete backend modules with lazy import behavior.
-- Forbidden dependencies: `agent`, `providers`, `tools`, `cli`, `fsq`, `report`, `observation`, `knowledge`, `skills`, and OpenAI Agents SDK runtime types.
+- Forbidden dependencies: `agent`, `providers`, `tools`, adapters, `case_dsl`, `report`, `observation`, `knowledge`, `skills`, and OpenAI Agents SDK runtime types. Core must not consume Environment provider internals or make Environments depend back on Core.
 
 Core may consume `CapabilityDefinition`, `CapabilityInvocation`, `CapabilityExecutionResult`, `ReplayPolicy`, `ExecutableStep`, legacy `EvidencePolicy` contracts when still present for compatibility, runner result/event models, harness result/context models, CommonTool parameter/result models, active platform parameter models and settings, AI assertion models, runtime secret settings, and project exceptions from `models`.
 Core may consume shared declaration decorators, platform action catalog helpers, and side-effect-free capability discovery helpers from `capabilities`. Core must not place execution behavior in `capabilities` or import AgentTool implementations from `tools`.
@@ -93,6 +100,11 @@ It must not import `fsq`, parse YAML, construct platform drivers, resolve strict
 
 `HarnessInterface` provides runner-facing behavior for context, artifact capture, and CommonTool/PlatformTool invocation. `invoke_action` is the long-term stable gateway from `StepRunner` to active platform behavior. Platform harnesses are FSQ-controlled runtime gateways; platform tool providers own inherited CommonTool bodies; concrete drivers own backend PlatformTool bodies, including `assert_with_ai`; harnesses provide invocation context and artifact/evaluator services when a backend tool needs them. Harnesses and drivers do not decide runner ordering, retry policy, event emission, evidence manifest structure, artifact directory policy, case aggregation, or report generation.
 
+The canonical platform-runtime prerequisite service used by Application belongs to `environments`; Core retains only a compatibility export. Platform environment providers own host support, read-only readiness checks, and exact-channel browser discovery. Runtime commands do not invoke Python or system package managers.
+`PlatformRuntimeCheck` remains owned by `models`; `environments` owns and exports `PlatformRuntimeService`, while Core's compatibility export references the same class object. Unsupported host/platform combinations never install, and safe results never expose raw subprocess output.
+
+Environments exposes explicit Web executable validation through `PlatformRuntimeService.web_executable_matches_channel`, delegating identity evaluation to the pure public Models contract. The executable basename must identify the selected browser product. Stable Chrome and Edge paths require exact stable product directory or application-bundle identity and reject beta, dev, canary, or SxS identities. Beta, dev, and canary paths require exact channel-specific directory or application-bundle components. Chromium uses its distinct executable or directory identity. This contract accepts non-standard installation roots when their contained directory structure explicitly identifies the selected product and channel, but it never infers channel identity from an arbitrary substring or a shared `chrome.exe`/`msedge.exe` basename alone. A path whose channel cannot be proven is incompatible and callers direct the operator to automatic discovery or an explicitly channel-identified path. Models owns the shared pure identity predicate.
+
 ### Android Platform Block
 
 Android LLM-exposed capabilities include inherited CommonTool `wait_ms` plus driver-backed PlatformTools `launch_app`, `kill_app`, `tap_on`, `tap_at`, `long_press_on`, `input_text`, `press_key`, `swipe`, `assert_visible`, `assert_not_visible`, `assert_state`, `ui_snapshot`, and `assert_with_ai`. Authored FSQ aliases include `waitMs`, `launchApp`, `killApp`, `tapOn`, `tapAt`, `longPressOn`, `inputText`, `pressKey`, `swipe`, `assertVisible`, `assertNotVisible`, `assert`, Android `uiTree`, and `assertWithAI`. Android `input_text` accepts `textType="runtimeSecret"` to reference an allowlisted workspace secret resolved by `StepRunner`. The Android action catalog may describe `perform_actions` / `performActions`, but an unimplemented uiautomator2 backend method must not be decorated as a capability and must not appear in platform `action_space()` or SDK exposure.
@@ -144,29 +156,22 @@ Capability metadata, not a static Android action table, is the runtime source of
 - `__init__.py`: Public exports only.
 - `_capabilities.py`: Capability registry, alias resolution, duplicate validation, and snapshot creation.
 - `_default_capabilities.py`: `CapabilityDefinitionFactory` plus internal platform/backend PlatformTool capability definition helpers used by entry-layer registry bootstrap without constructing a real backend connection.
-- `harness/_factory.py`: `DriverFactory`, `HarnessFactory`, private factory typing protocols, and private platform/backend dispatch tables for current built-in harnesses and drivers.
+- `interfaces/_factories.py`: public `DriverFactory` and `HarnessFactory` forwarding boundaries; concrete driver selection belongs to `drivers`, and concrete harness composition belongs to `harnesses`.
 - `runner/__init__.py`: Runner subpackage exports only.
 - `runner/_runner.py`: `StepRunner` implementation for single-step capability execution.
 - `runner/_sequence.py`: `StepSequenceRunner` implementation for ordered execution and evidence recording.
 - `_platform_tools.py`: CommonPlatformTools and platform-default `wait_ms` implementation.
+- `_platform_runtime.py`: Compatibility forwarder to the canonical `environments.PlatformRuntimeService`.
 - `_runtime_secrets.py`: RuntimeSecretStore implementation for workspace-owned runtime text-secret names/private values and in-memory resolution used by `StepRunner`.
-- `harness/_ai_assertion_tool.py`: Shared backend support for decorated platform `assert_with_ai` driver tools, including evaluator invocation, screenshot artifact capture, and backend-shaped result conversion.
-- `harness/__init__.py`: Harness subpackage exports only. It exports harness and driver protocols plus public factory classes, not concrete platform harnesses or backend drivers.
-- `harness/_interface.py`: `HarnessInterface` and `AIAssertionEvaluatorProtocol` protocols.
-- `harness/_android.py`: Built-in `AndroidHarness` implementation and Android runtime-service delegation.
+- `harness/_ai_assertion_tool.py`: Compatibility forwarder to driver-owned shared AI assertion support.
+- `harness/__init__.py`: Compatibility surface only. It exports canonical Core Interfaces and public factory classes, not concrete platform harnesses or backend drivers.
+- `harness/_interface.py`: Compatibility forwarder to `core.interfaces` protocols.
+- `harness/_android.py`: Compatibility forwarder to the canonical Android harness implementation.
 - `harness/_android_devices.py`: `AndroidDeviceDiscovery` service implementation plus private fixed-command parsing helpers.
-- `harness/_android_driver.py`: `AndroidDriverInterface` protocol and driver-owned contracts.
-- `harness/_web.py`: Built-in `WebHarness` implementation and Web runtime-service delegation.
-- `harness/_web_driver.py`: `WebDriverInterface` protocol and driver-owned contracts.
-- `harness/_windows.py`: Built-in `WindowsHarness` implementation and Windows runtime-service delegation.
-- `harness/_windows_driver.py`: `WindowsDriverInterface` protocol and driver-owned contracts.
-- `harness/_macos.py`: Built-in `MacOSHarness` implementation and macOS runtime-service delegation.
-- `harness/_macos_driver.py`: `MacOSDriverInterface` protocol and driver-owned contracts.
-- `harness/_driver_tools.py`: Internal platform declaration helpers, Android/Web/Windows/macOS action catalog wiring, shared driver capability matching/schema/metadata helpers, and function schema/capability discovery wrappers backed by `capabilities`.
-- `harness/_uiautomator2_driver.py`: Optional uiautomator2 backend implementation with lazy dependency import and fake-device injection for tests.
-- `harness/_playwright_driver.py`: Optional Playwright backend implementation with lazy dependency import, browser/page lifecycle management, and fake-page injection for tests.
-- `harness/_pywinauto_driver.py`: Optional pywinauto backend implementation with lazy dependency import, application/window lifecycle management, and fake-window injection for tests.
-- `harness/_appium_mac2_driver.py`: Optional Appium Mac2 backend implementation with lazy dependency import, Mac2 session lifecycle management, page-source simplification, macOS command execution, and fake-client injection for tests.
+- `harness/_android_driver.py`, `_web_driver.py`, `_windows_driver.py`, `_macos_driver.py`: Compatibility forwarders to `core.interfaces` driver protocols.
+- `harness/_web.py`, `_windows.py`, `_macos.py`: Compatibility forwarders to canonical platform harness implementations.
+- `harness/_driver_tools.py`: Compatibility forwarder to driver-owned capability declaration and discovery support.
+- `harness/_uiautomator2_driver.py`, `_playwright_driver.py`, `_pywinauto_driver.py`, `_appium_mac2_driver.py`: Compatibility forwarders to canonical platform driver implementations.
 - `evidence/__init__.py`: Evidence subpackage exports only.
 - `evidence/_recorder.py`: `EvidenceRecorder` implementation.
 - `evidence/_artifact_store.py`: `ArtifactStore` implementation for run-local artifact paths and file writing.
@@ -177,11 +182,11 @@ Core must not define Pydantic models shared across modules. Shared models belong
 ## Python Architecture
 
 - Architecture level: 3 Layered Application.
-- Public API: capability registry, capability definition factory class, driver factory class, harness factory class, Android device discovery service class, CommonTool provider class, runner, sequence runner, harness protocol, Android/Web/Windows/macOS driver protocols, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files. Public exports are limited to interfaces/protocols, abstract classes, stable execution-core service classes, approved provider classes, and approved factory classes; there are no helper-function, decorator, concrete platform harness, or concrete backend driver exceptions.
+- Public API: capability registry, capability definition factory class, driver factory class, harness factory class, Android device discovery service class, compatibility `PlatformRuntimeService`, CommonTool provider class, runner, sequence runner, harness protocol, Android/Web/Windows/macOS driver protocols, evidence recorder/store, and provider-neutral AI assertion evaluator protocol exported from package/subpackage `__init__.py` files. Public exports are limited to interfaces/protocols, abstract classes, stable execution-core service classes, approved provider classes, and approved factory classes; there are no helper-function, shared-model, decorator, concrete platform harness, or concrete backend driver exceptions.
 - Internal modules: all `_*.py` files and implementation subpackages remain private outside documented exports.
 - Domain boundaries: core owns execution orchestration and provider-neutral platform coordination. Provider construction, SDK tool creation, CLI parsing, FSQ parsing, and report generation live outside core.
 - Boundary models: all serializable contracts come from `models`; core protocols and concrete runners operate on those contracts.
-- Dependency direction: core imports `models` and `capabilities` only among project modules. Entry modules inject providers, artifact stores, runtime settings, and optional fake `HarnessInterface` instances; default runtime construction goes through public core factories instead of direct concrete harness or backend imports.
+- Dependency direction: core imports `models` and `capabilities` only among project modules and must not import `application` or transport adapters. Application injects providers, artifact stores, runtime settings, and optional Harness bindings through public core contracts; default runtime construction goes through public core factories.
 - Rationale: execution routing coordinates multiple side-effecting components and evidence flow, so Level 3 is warranted; no persistence/domain complexity justifies Clean Architecture or DDD.
 
 ## Error Handling
@@ -210,7 +215,7 @@ Sensitive capabilities must return values in the standard normalized shape `outp
 - `CommonPlatformTools` remains a public CommonTool provider because entry-layer registry bootstrap and tests need direct access to inherited CommonTool capability definitions and invocation behavior. This is not a concrete platform implementation-selection class.
 - `CapabilityDefinitionFactory` is the public class-based boundary for PlatformTool capability definition discovery. Function-style capability definition helpers, concrete backend classes, and driver declaration helpers may remain internal implementation details, but they are not exported public API.
 - `DriverFactory` is the public class-based boundary for selecting private concrete backend drivers behind public platform driver protocols. It dispatches on current config-owned platform backend settings and creates only the selected backend implementation; it is not named `Default` because config, not the factory name, identifies the selected implementation.
-- `HarnessFactory` is the public class-based boundary for constructing runtime harnesses. It returns `HarnessInterface`, delegates driver selection to `DriverFactory`, and keeps concrete platform harness classes private to `core`; it is not named `Default` because each platform currently has exactly one harness implementation and the factory is only a composition convenience.
+- `HarnessFactory` is the public class-based boundary for constructing runtime harnesses. It returns `HarnessInterface`, delegates driver selection to `DriverFactory`, and keeps concrete platform harness classes private to `harnesses`; it is not named `Default` because each platform currently has exactly one harness implementation and the factory is only a composition convenience.
 - `StepRunner` owns execution control, metadata-driven routing, evidence policy application, result normalization, sensitivity handling, and structured event emission.
 - `StepRunner` owns post-action stabilization delay. It applies `time.sleep` only through a runner-local private helper after invoke and before finalize when the effective delay is positive. Entry layers pass loaded delay settings into `StepRunner`; `core` must not import `config`.
 - Post-action delay is metadata/config-driven timing only. Capability metadata can override the configured executor-kind default, including explicit zero to disable delay. The delay must not become a `waitMs` command, replay entry, evidence step, or action result.

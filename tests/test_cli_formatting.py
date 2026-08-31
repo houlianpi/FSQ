@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from fsq_agent.cli._formatting import log_run_event
+from fsq_agent.adapters.cli._formatting import log_run_event
 from fsq_agent.models import RunEvent
 
 
@@ -19,7 +19,7 @@ def captured_format_logs() -> Iterator[list[logging.LogRecord]]:
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    target = logging.getLogger("fsq_agent.cli._formatting")
+    target = logging.getLogger("fsq_agent.adapters.cli._formatting")
     handler = CaptureHandler()
     previous_level = target.level
     previous_propagate = target.propagate

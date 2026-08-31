@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from fsq_agent.cli._capability_bootstrap import build_capability_registry
-from fsq_agent.cli._case_lifecycle import _run_shell_command, run_strict_fsq_lifecycle_case
-from fsq_agent.cli._core_execution import run_fsq_core_case, run_strict_fsq_core_case
+from fsq_agent.adapters.cli._capability_bootstrap import build_capability_registry
+from fsq_agent.adapters.cli._case_lifecycle import _run_shell_command, run_strict_fsq_lifecycle_case
+from fsq_agent.adapters.cli._core_execution import run_fsq_core_case, run_strict_fsq_core_case
+from fsq_agent.case_dsl import FsqCaseLoader
 from fsq_agent.config import Settings
-from fsq_agent.fsq import FsqCaseLoader
 from fsq_agent.models import (
     ConfigurationError,
     EvidenceBundle,
@@ -82,8 +82,8 @@ def test_run_shell_command_uses_powershell_on_windows(monkeypatch) -> None:
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("fsq_agent.cli._case_lifecycle.sys.platform", "win32")
-    monkeypatch.setattr("fsq_agent.cli._case_lifecycle.subprocess.run", fake_run)
+    monkeypatch.setattr("fsq_agent.adapters.cli._case_lifecycle.sys.platform", "win32")
+    monkeypatch.setattr("fsq_agent.adapters.cli._case_lifecycle.subprocess.run", fake_run)
     command = "Remove-Item -LiteralPath 'C:\\temp\\test1' -Recurse -Force -Confirm:$false"
 
     result = _run_shell_command(command)
@@ -201,7 +201,7 @@ def test_run_fsq_core_case_passes_post_action_delay_to_step_runner(tmp_path: Pat
         def run_steps(self, *, run_id: str, steps, teardown_steps):
             return EvidenceBundle(bundle_id=f"{run_id}-bundle", run_id=run_id)
 
-    monkeypatch.setattr("fsq_agent.cli._core_execution.StepSequenceRunner", FakeSequenceRunner)
+    monkeypatch.setattr("fsq_agent.adapters.cli._core_execution.StepSequenceRunner", FakeSequenceRunner)
 
     bundle = run_fsq_core_case(
         case_path=tmp_path / "unused.fsq.yaml",
@@ -332,7 +332,7 @@ onCaseStart:
     run_dir = tmp_path / "runs" / "root"
     harness = CliCoreHarness()
     logging.getLogger("fsq_agent").propagate = True
-    caplog.set_level("INFO", logger="fsq_agent.cli._case_lifecycle")
+    caplog.set_level("INFO", logger="fsq_agent.adapters.cli._case_lifecycle")
 
     artifact = run_strict_fsq_lifecycle_case(
         case_path=case_path,
@@ -379,7 +379,7 @@ onCaseComplete:
     )
     case = FsqCaseLoader().load_case(case_path)
     logging.getLogger("fsq_agent").propagate = True
-    caplog.set_level("INFO", logger="fsq_agent.cli._case_lifecycle")
+    caplog.set_level("INFO", logger="fsq_agent.adapters.cli._case_lifecycle")
 
     run_strict_fsq_lifecycle_case(
         case_path=case_path,

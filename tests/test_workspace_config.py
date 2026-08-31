@@ -398,7 +398,8 @@ def test_add_workspace_platform_rejects_symlinked_managed_directory(tmp_path: Pa
     _create_from_config(parent, android, user_root)
     outside = tmp_path / "outside"
     outside.mkdir()
-    chrome = tmp_path / "chrome.exe"
+    chrome = tmp_path / "Google" / "Chrome" / "Application" / "chrome.exe"
+    chrome.parent.mkdir(parents=True)
     chrome.write_bytes(b"")
     chrome.chmod(0o755)
     linked_cases = android.root_path / "cases" / "web"

@@ -38,14 +38,28 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Verify clean checkout has no generated package resources
+        shell: python
+        run: |
+          from pathlib import Path
+
+          generated = (
+              Path("fsq_agent/adapters/control_plane/static"),
+              Path("fsq_agent/adapters/control_plane/playground/static"),
+              Path("fsq_agent/resources"),
+          )
+          present = [str(path) for path in generated if path.exists()]
+          if present:
+              raise SystemExit(f"Generated package resources are unexpectedly tracked: {present}")
+
       - name: Install quality dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --reinstall-package fsq-agent
 
       - name: Run Ruff lint
-        run: uv run --frozen --extra dev ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: Run Ruff format check
-        run: uv run --frozen --extra dev ruff format --check .
+        run: uv run --no-sync ruff format --check .
 
   tests:
     name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -80,11 +94,25 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Verify clean checkout has no generated package resources
+        shell: python
+        run: |
+          from pathlib import Path
+
+          generated = (
+              Path("fsq_agent/adapters/control_plane/static"),
+              Path("fsq_agent/adapters/control_plane/playground/static"),
+              Path("fsq_agent/resources"),
+          )
+          present = [str(path) for path in generated if path.exists()]
+          if present:
+              raise SystemExit(f"Generated package resources are unexpectedly tracked: {present}")
+
       - name: Install test dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --all-extras --reinstall-package fsq-agent
 
       - name: Run test suite
-        run: uv run --frozen --all-extras python -m pytest
+        run: uv run --no-sync python -m pytest
 
   frontend:
     name: Frontend (Node ${{ matrix.node-version }})
@@ -155,28 +183,121 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Build wheel
-        run: uv build --wheel
+      - name: Build distributions
+        run: uv build
 
-      - name: Verify packaged Playground assets
+      - name: Rebuild wheel from source distribution
+        shell: bash
+        run: uv build --wheel dist/*.tar.gz --out-dir rebuilt-dist
+
+      - name: Verify distribution contracts
         shell: python
         run: |
+          import email
+          import re
+          import tarfile
           from pathlib import Path
           from zipfile import ZipFile
 
+          def canonicalize_name(name):
+              return re.sub(r"[-_.]+", "-", name).lower()
+
           wheels = list(Path("dist").glob("*.whl"))
-          if len(wheels) != 1:
-              raise SystemExit(f"Expected exactly one wheel, found {len(wheels)}")
+          rebuilt_wheels = list(Path("rebuilt-dist").glob("*.whl"))
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          if len(wheels) != 1 or len(rebuilt_wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(
+                  f"Expected one wheel, one rebuilt wheel, and one sdist, found "
+                  f"{wheels=} {rebuilt_wheels=} {sdists=}"
+              )
 
           with ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              entry_points_name = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
+              metadata = email.message_from_bytes(archive.read(metadata_name))
+              entry_points = archive.read(entry_points_name).decode()
 
-          entry = "fsq_agent/playground/static/playground/index.html"
-          asset_prefix = "fsq_agent/playground/static/assets/"
-          if entry not in names:
-              raise SystemExit(f"Wheel is missing {entry}")
-          if not any(name.startswith(asset_prefix) and not name.endswith("/") for name in names):
-              raise SystemExit(f"Wheel has no generated files under {asset_prefix}")
+          required_prefixes = (
+              "fsq_agent/adapters/control_plane/static/",
+              "fsq_agent/adapters/control_plane/playground/static/",
+          )
+          required_files = (
+              "fsq_agent/adapters/control_plane/static/control-plane/index.html",
+              "fsq_agent/adapters/control_plane/static/entry-assets.json",
+              "fsq_agent/adapters/control_plane/playground/static/playground/index.html",
+              "fsq_agent/adapters/control_plane/playground/static/entry-assets.json",
+              "fsq_agent/resources/config.android.yaml",
+              "fsq_agent/resources/config.web.yaml",
+              "fsq_agent/resources/config.windows.yaml",
+              "fsq_agent/resources/config.macos.yaml",
+              "fsq_agent/resources/knowledge/skills/android-harness.md",
+              "fsq_agent/resources/knowledge/skills/web-harness.md",
+              "fsq_agent/resources/knowledge/skills/windows-harness.md",
+              "fsq_agent/resources/knowledge/skills/macos-harness.md",
+              "fsq_agent/resources/knowledge/skills/automation-basics.md",
+              "fsq_agent/agent/templates/agent_instructions.j2",
+              "fsq_agent/agent/templates/task_input.j2",
+          )
+          for path in required_files:
+              if path not in names:
+                  raise SystemExit(f"Wheel is missing {path}")
+          for prefix in required_prefixes:
+              for suffix in (".js", ".css"):
+                  if not any(name.startswith(prefix) and name.endswith(suffix) for name in names):
+                      raise SystemExit(f"Wheel has no {suffix} file under {prefix}")
+
+          with ZipFile(rebuilt_wheels[0]) as archive:
+              rebuilt_names = set(archive.namelist())
+          required_runtime_names = {
+              name for name in names if name.startswith(("fsq_agent/resources/", *required_prefixes))
+          }
+          rebuilt_runtime_names = {
+              name for name in rebuilt_names if name.startswith(("fsq_agent/resources/", *required_prefixes))
+          }
+          if rebuilt_runtime_names != required_runtime_names:
+              raise SystemExit("Wheel rebuilt from sdist has different runtime package resources")
+
+          with tarfile.open(sdists[0], "r:gz") as archive:
+              sdist_names = {name.split("/", 1)[-1] for name in archive.getnames()}
+          for path in (
+              "config.android.yaml",
+              "config.web.yaml",
+              "config.windows.yaml",
+              "config.macos.yaml",
+              "knowledge/skills/automation-basics.md",
+          ):
+              if path not in sdist_names:
+                  raise SystemExit(f"Sdist is missing build input {path}")
+          for path in required_files:
+              if path not in sdist_names:
+                  raise SystemExit(f"Sdist is missing {path}")
+          for prefix in required_prefixes:
+              for suffix in (".js", ".css"):
+                  if not any(name.startswith(prefix) and name.endswith(suffix) for name in sdist_names):
+                      raise SystemExit(f"Sdist has no {suffix} file under {prefix}")
+
+          expected_dependencies = (
+              "uiautomator2==",
+              "playwright==",
+              "pywinauto==",
+              "Appium-Python-Client==",
+              "pillow==",
+          )
+          dependencies = metadata.get_all("Requires-Dist", [])
+          for expected in expected_dependencies:
+              expected_name = canonicalize_name(expected.removesuffix("=="))
+              if not any(
+                  canonicalize_name(item.split(" ", 1)[0].split("==", 1)[0]) == expected_name
+                  and "extra ==" not in item
+                  for item in dependencies
+              ):
+                  raise SystemExit(f"Missing default dependency {expected}")
+          if metadata.get_all("Provides-Extra", []) != ["dev"]:
+              raise SystemExit(f"Unexpected extras: {metadata.get_all('Provides-Extra', [])}")
+          for script in ("fsq = fsq_agent.adapters.cli:main", "fsq-agent = fsq_agent.adapters.cli:main"):
+              if script not in entry_points:
+                  raise SystemExit(f"Missing console script: {script}")
 
       - name: Install wheel in isolation
         shell: bash
@@ -188,7 +309,17 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/fsq-wheel-smoke/bin/python" -c "import fsq_agent"
+          "$RUNNER_TEMP/fsq-wheel-smoke/bin/fsq" --help
           "$RUNNER_TEMP/fsq-wheel-smoke/bin/fsq-agent" --help
+          "$RUNNER_TEMP/fsq-wheel-smoke/bin/python" - <<'PY'
+          from fsq_agent.adapters.control_plane import ControlPlaneServer, ControlPlaneServerOptions
+
+          server = ControlPlaneServer(ControlPlaneServerOptions(open_browser=False))
+          status, body, content_type = server.static_response("/")
+          assert status == 200
+          assert body
+          assert content_type.startswith("text/html")
+          PY
 
   required:
     name: Required

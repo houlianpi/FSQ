@@ -298,8 +298,8 @@ function validateWorkspaceParentDirectoryPicker(value: unknown): WorkspaceParent
   if (value.status === 'cancelled' && hasOnlyKeys(value, ['status'])) {
     return value as { status: 'cancelled' };
   }
-  if (value.status === 'selected' && hasOnlyKeys(value, ['status', 'selectedPath']) && string(value.selectedPath) && value.selectedPath) {
-    return value as { status: 'selected'; selectedPath: string };
+  if (value.status === 'selected' && hasOnlyKeys(value, ['status', 'selectedPath', 'isEmpty']) && string(value.selectedPath) && value.selectedPath && typeof value.isEmpty === 'boolean') {
+    return value as { status: 'selected'; selectedPath: string; isEmpty: boolean };
   }
   invalidResponse('workspace parent directory picker', 'Invalid folder selection response.');
 }

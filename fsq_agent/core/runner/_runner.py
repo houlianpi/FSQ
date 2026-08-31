@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from fsq_agent.core._capabilities import CapabilityRegistry
 from fsq_agent.core._runtime_secrets import RuntimeSecretStore
-from fsq_agent.core.harness import HarnessInterface
+from fsq_agent.core.interfaces import CapabilityRegistryInterface, HarnessInterface, RuntimeSecretResolver
 from fsq_agent.models import (
     CapabilityDefinition,
     CapabilityExecutionResult,
@@ -45,9 +45,9 @@ class StepRunner:
         self,
         harness: HarnessInterface,
         *,
-        capability_registry: CapabilityRegistry | None = None,
+        capability_registry: CapabilityRegistryInterface | None = None,
         post_action_delay_seconds: PostActionDelaySettings | None = None,
-        runtime_secret_store: RuntimeSecretStore | None = None,
+        runtime_secret_store: RuntimeSecretResolver | None = None,
     ) -> None:
         self.harness = harness
         self.capability_registry = capability_registry or CapabilityRegistry()

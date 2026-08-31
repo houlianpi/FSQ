@@ -131,14 +131,14 @@ it('sends the confirmed Save yaml case name without a suffix', async () => {
 
 it('accepts selected and cancelled workspace directory responses', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
-    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', selectedPath: 'C:\\projects' }), {
+    .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'selected', selectedPath: 'C:\\projects', isEmpty: false }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'cancelled' }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }));
 
-  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', selectedPath: 'C:\\projects' });
+  await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'selected', selectedPath: 'C:\\projects', isEmpty: false });
   await expect(controlPlaneClient.pickWorkspaceParentDirectory()).resolves.toEqual({ status: 'cancelled' });
   expect(fetch).toHaveBeenNthCalledWith(1, '/api/control-plane/workspaces/pick-parent-directory', expect.objectContaining({ method: 'POST', body: '{}' }));
 });

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from fsq_agent.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
-from fsq_agent.fsq import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
+from fsq_agent.adapters.cli._task_loader import discover_case_yaml_paths, read_raw_text_file, resolve_case_yaml_path
+from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, is_fsq_case_file
 from fsq_agent.models import ConfigurationError
 
 FSQ_CASE = """

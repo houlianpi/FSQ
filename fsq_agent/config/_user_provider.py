@@ -6,9 +6,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, BinaryIO, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -17,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 from fsq_agent.models import ConfigurationError, WorkspaceRegistryEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
     from fsq_agent.config._settings import Settings
 
@@ -29,6 +30,7 @@ GITHUB_AUTH_FILENAME = "github-copilot-token.json"
 GITHUB_PROVIDER_AUTH_FILENAME = "github-copilot-provider-token.json"
 
 _WRITE_LOCK = RLock()
+_LOCK_FILENAME = ".config.lock"
 
 
 def _required_text(value: str, field_name: str) -> str:
@@ -158,35 +160,20 @@ class _UserProviderConfigV2(BaseModel):
 
 def load_user_provider_config(user_config_root: str | Path | None = None) -> UserProviderConfig:
     root = _user_config_root(user_config_root)
-    with _WRITE_LOCK:
-        config, _, auth_dir = _load_user_document(root)
-        if config.provider is None:
-            return config
-        if config.provider.type == "azure_openai":
-            credentials = _read_json_object(auth_dir / AZURE_AUTH_FILENAME, "Azure OpenAI credentials")
-            config._api_key = _credential_text(credentials, "api_key", "Azure OpenAI API key")
-            return config
-        config._github_token = _read_json_object(auth_dir / GITHUB_AUTH_FILENAME, "GitHub OAuth credentials")
-        config._provider_token = _read_json_object(
-            auth_dir / GITHUB_PROVIDER_AUTH_FILENAME,
-            "GitHub Copilot provider credentials",
-        )
-        _credential_text(config._github_token, "access_token", "GitHub OAuth access token")
-        _credential_text(config._provider_token, "token", "GitHub Copilot provider token")
-        _credential_text(config._provider_token, "plan", "GitHub Copilot plan")
-        return config
+    with _user_config_lock(root):
+        return _load_complete_user_config(root)
 
 
 def list_workspace_registry(user_config_root: str | Path | None = None) -> list[WorkspaceRegistryEntry]:
     root = _user_config_root(user_config_root)
-    with _WRITE_LOCK:
+    with _user_config_lock(root):
         config, _, _ = _load_user_document(root)
         return [entry.model_copy(deep=True) for entry in config.workspaces]
 
 
 def _register_workspace(entry: WorkspaceRegistryEntry, user_config_root: str | Path | None = None) -> None:
     root = _user_config_root(user_config_root)
-    with _WRITE_LOCK:
+    with _user_config_lock(root):
         config, config_path, _ = _load_user_document(root)
         normalized_name = entry.name.casefold()
         normalized_root = os.path.normcase(str(entry.root_path.resolve()))
@@ -225,7 +212,7 @@ def save_azure_openai_provider(
     if normalized_api_key.lower().startswith("replace-with"):
         raise ConfigurationError("Azure OpenAI API key still contains a placeholder value.")
     root = _user_config_root(user_config_root)
-    with _WRITE_LOCK:
+    with _user_config_lock(root):
         current, config_path, auth_dir = _load_user_document(root)
         config = current.model_copy(update={"provider": provider})
         _commit_replacement(
@@ -235,7 +222,7 @@ def save_azure_openai_provider(
             },
             [auth_dir / GITHUB_AUTH_FILENAME, auth_dir / GITHUB_PROVIDER_AUTH_FILENAME],
         )
-    return load_user_provider_config(root)
+        return _load_complete_user_config(root)
 
 
 def activate_github_copilot_provider(
@@ -255,7 +242,7 @@ def activate_github_copilot_provider(
     except (ValidationError, ValueError) as exc:
         raise ConfigurationError("Invalid GitHub Copilot Provider configuration.", context={"error": str(exc)}) from exc
     root = _user_config_root(user_config_root)
-    with _WRITE_LOCK:
+    with _user_config_lock(root):
         current, config_path, auth_dir = _load_user_document(root)
         config = current.model_copy(update={"provider": provider})
         _commit_replacement(
@@ -266,7 +253,7 @@ def activate_github_copilot_provider(
             },
             [auth_dir / AZURE_AUTH_FILENAME],
         )
-    return load_user_provider_config(root)
+        return _load_complete_user_config(root)
 
 
 def refresh_provider_settings(
@@ -289,6 +276,58 @@ def refresh_provider_settings(
 
 def _user_config_root(value: str | Path | None) -> Path:
     return Path(value).expanduser() if value is not None else Path.home() / ".fsq"
+
+
+@contextmanager
+def _user_config_lock(root: Path) -> Iterator[None]:
+    with _WRITE_LOCK:
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            lock_file = (root / _LOCK_FILENAME).open("a+b")
+        except OSError as exc:
+            raise ConfigurationError(
+                "Unable to lock user Provider configuration.",
+                context={"path": str(root)},
+            ) from exc
+        with lock_file:
+            try:
+                _acquire_process_lock(lock_file)
+            except OSError as exc:
+                raise ConfigurationError(
+                    "Unable to lock user Provider configuration.",
+                    context={"path": str(root)},
+                ) from exc
+            try:
+                yield
+            finally:
+                _release_process_lock(lock_file)
+
+
+def _acquire_process_lock(lock_file: BinaryIO) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        lock_file.seek(0)
+        lock_file.write(b"\0")
+        lock_file.flush()
+        lock_file.seek(0)
+        msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+
+def _release_process_lock(lock_file: BinaryIO) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        lock_file.seek(0)
+        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _ensure_layout(root: Path) -> tuple[Path, Path]:
@@ -344,6 +383,25 @@ def _load_user_document(root: Path) -> tuple[UserProviderConfig, Path, Path]:
             context={"path": str(config_path), "errors": exc.errors()},
         ) from exc
     return config, config_path, auth_dir
+
+
+def _load_complete_user_config(root: Path) -> UserProviderConfig:
+    config, _, auth_dir = _load_user_document(root)
+    if config.provider is None:
+        return config
+    if config.provider.type == "azure_openai":
+        credentials = _read_json_object(auth_dir / AZURE_AUTH_FILENAME, "Azure OpenAI credentials")
+        config._api_key = _credential_text(credentials, "api_key", "Azure OpenAI API key")
+        return config
+    config._github_token = _read_json_object(auth_dir / GITHUB_AUTH_FILENAME, "GitHub OAuth credentials")
+    config._provider_token = _read_json_object(
+        auth_dir / GITHUB_PROVIDER_AUTH_FILENAME,
+        "GitHub Copilot provider credentials",
+    )
+    _credential_text(config._github_token, "access_token", "GitHub OAuth access token")
+    _credential_text(config._provider_token, "token", "GitHub Copilot provider token")
+    _credential_text(config._provider_token, "plan", "GitHub Copilot plan")
+    return config
 
 
 def _read_json_object(path: Path, description: str) -> dict[str, object]:

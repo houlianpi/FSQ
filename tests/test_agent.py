@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 
 from fsq_agent import FsqAgent, Task
+from fsq_agent.adapters.coding_agent._openai_runtime import OpenAIAgentsRuntime, _RecentToolOutputInputFilter
 from fsq_agent.agent import Verifier
-from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime, _RecentToolOutputInputFilter
 from fsq_agent.config import Settings
 from fsq_agent.models import ConfigurationError, GoalPrePlan, KnowledgeBundle, ReportArtifact, RunEvent, SkillBundle, StepResult
 from fsq_agent.observation import ExecutionLogger
@@ -22,21 +22,6 @@ async def test_agent_run_requires_configured_model_provider_auth(tmp_path: Path,
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        """
-output:
-  root_dir: output
-workspace:
-  root_dir: workspace
-cases:
-  dir: cases
-agent_context:
-    knowledge:
-        root_dir: knowledge
-""",
-        encoding="utf-8",
-    )
     task = Task(
         id="smoke",
         name="Smoke",
@@ -44,8 +29,9 @@ agent_context:
         acceptance_criteria=["A report exists."],
     )
 
+    settings = Settings.model_validate({"openai_agents": {"provider": "azure_openai"}, "output": {"root_dir": tmp_path / "output"}})
     with pytest.raises(ConfigurationError, match="not configured"):
-        await FsqAgent.from_config(config_path).run(task)
+        await FsqAgent.from_settings(settings, lambda configured, *, harness_factory=None: OpenAIAgentsRuntime(configured, object())).run(task)
 
 
 class _KnowledgeLoader:
@@ -94,6 +80,16 @@ class _Runtime:
                 tool_name="openai_agents.runner",
             )
         ]
+
+    async def run_verification(
+        self,
+        task: Task,
+        results: list[StepResult],
+        run_id: str,
+        events_path: Path | None,
+        event_sink: object | None = None,
+    ) -> list[StepResult]:
+        return []
 
 
 class _GoalRunRuntime(_Runtime):
@@ -161,6 +157,16 @@ class _CancelledRuntime:
     ) -> list[StepResult]:
         raise asyncio.CancelledError()
 
+    async def run_verification(
+        self,
+        task: Task,
+        results: list[StepResult],
+        run_id: str,
+        events_path: Path | None,
+        event_sink: object | None = None,
+    ) -> list[StepResult]:
+        return []
+
 
 class _FakeArtifactStore:
     def __init__(self) -> None:
@@ -216,7 +222,7 @@ async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(monkey
     assert result.report.run_id == reporter.run_ids[0]
     assert second_result.report.run_id == reporter.run_ids[1]
     assert result.report.run_id != second_result.report.run_id
-    assert re.fullmatch(r"smoke-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{6}-[0-9a-f]{8}", result.report.run_id)
+    assert re.fullmatch(r"smoke-\d{8}T\d{6}Z-[0-9a-f]{6}", result.report.run_id)
 
 
 def test_recent_tool_output_filter_does_not_artifact_sensitive_outputs() -> None:

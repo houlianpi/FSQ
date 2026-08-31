@@ -7,18 +7,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fsq_agent._run_ids import new_run_id
 from fsq_agent.agent._events import RunEventEmitter
-from fsq_agent.agent._openai_runtime import OpenAIAgentsRuntime
+from fsq_agent.agent._runtime import CodingAgentRuntime, CodingAgentRuntimeFactory
 from fsq_agent.agent._verifier import Verifier
-from fsq_agent.config import Settings, load_settings
+from fsq_agent.config import Settings
 from fsq_agent.knowledge import PrivateKnowledgeLoader
 from fsq_agent.models import KnowledgeBundle, PlanningError, RunEvent, RunEventSink, Task, TaskResult
 from fsq_agent.observation import ExecutionLogger
 from fsq_agent.providers import refresh_model_provider_session
 from fsq_agent.report import ReportGenerator
 from fsq_agent.skills import SkillLoader
-from fsq_agent.tools import AgentToolAdapter, AgentToolRegistry, DefaultAgentToolProvider, FileOps
 
 
 class FsqAgent:
@@ -29,7 +27,7 @@ class FsqAgent:
         reporter: ReportGenerator,
         knowledge_loader: PrivateKnowledgeLoader,
         skill_loader: SkillLoader,
-        runtime: OpenAIAgentsRuntime,
+        runtime: CodingAgentRuntime,
         event_logger: ExecutionLogger | None = None,
     ) -> None:
         self.settings = settings
@@ -41,30 +39,15 @@ class FsqAgent:
         self.event_logger = event_logger
 
     @classmethod
-    def from_config(cls, path: str | Path | None = None, workspace: str | Path | None = None) -> "FsqAgent":
-        return cls.from_settings(load_settings(path, workspace))
-
-    @classmethod
-    def from_settings(cls, settings: Settings, harness_factory: Callable[[str], Any] | None = None) -> "FsqAgent":
-        output_root = settings.output.root_dir
+    def from_settings(
+        cls,
+        settings: Settings,
+        runtime_factory: CodingAgentRuntimeFactory,
+        harness_factory: Callable[[str], Any] | None = None,
+    ) -> "FsqAgent":
         knowledge = settings.agent_context.knowledge
         knowledge_root = knowledge.root_dir
         skills_dir = knowledge.skills.dir
-        pre_plan_knowledge_dir = knowledge.pre_plan.dir or knowledge_root
-        file_ops = FileOps(
-            read_roots=[settings.cases.dir, knowledge_root, skills_dir, pre_plan_knowledge_dir, output_root],
-            write_root=output_root / "artifacts",
-        )
-        agent_tool_provider = DefaultAgentToolProvider(
-            file_ops,
-            runtime_secret_settings=settings.runtime_secrets,
-            local_tool_output_settings=settings.openai_agents.local_tool_output,
-            runs_dir=settings.output.runs_dir,
-        )
-        agent_tool_adapter = AgentToolAdapter(
-            AgentToolRegistry.from_providers([agent_tool_provider]),
-            local_tool_output_settings=settings.openai_agents.local_tool_output,
-        )
         knowledge_loader = PrivateKnowledgeLoader(knowledge_root)
         skill_loader = SkillLoader(skills_dir)
         reporter = ReportGenerator(settings.output.runs_dir, secret_values=cls._runtime_secret_values(settings))
@@ -75,7 +58,7 @@ class FsqAgent:
             reporter,
             knowledge_loader,
             skill_loader,
-            OpenAIAgentsRuntime(settings, agent_tool_adapter, harness_factory=harness_factory),
+            runtime_factory(settings, harness_factory=harness_factory),
             event_logger,
         )
 
@@ -84,8 +67,23 @@ class FsqAgent:
         return tuple(sorted(set(settings.runtime_secrets.private_values().values()), key=len, reverse=True))
 
     async def run(self, task: Task, event_sink: RunEventSink | None = None) -> TaskResult:
+        from fsq_agent.execution import RunArtifactIndex, RunResultSummary, RunRuntime, RunSource, allocate_run, transition_run
+
         started = time.perf_counter()
-        run_id = new_run_id(task.id)
+        workspace_root = self.settings.workspace.root_dir or Path(self.settings.output.runs_dir).parent.parent.parent
+        workspace_name = _workspace_name(Path(workspace_root))
+        metadata = allocate_run(
+            workspace=Path(workspace_root),
+            workspace_name=workspace_name,
+            platform=self.settings.harness.platform,
+            source_id=task.id,
+            mode="explore",
+            source=RunSource(kind="goal", goal_summary=task.name[:200]),
+            platform_runs_dir=Path(self.settings.output.runs_dir),
+        )
+        run_id = metadata.run_id
+        run_dir = Path(self.settings.output.runs_dir) / run_id
+        metadata = transition_run(run_dir, metadata, "running")
         emitter = RunEventEmitter(self.event_logger, event_sink)
         await emitter.emit(RunEvent(run_id=run_id, task_id=task.id, type="run_started", title="Run started", message=task.name))
         try:
@@ -106,11 +104,10 @@ class FsqAgent:
             task = await self._augment_goal_only_task_with_pre_plan(task, skills, run_id, emitter)
             results = await self.runtime.run_task(task, knowledge, skills, run_id, emitter.emit)
             events_path = self.event_logger.log_root / run_id / "events.jsonl" if self.event_logger else None
-            run_verification_task = getattr(self.runtime, "_run_verification_task", None)
-            if callable(run_verification_task):
-                results.extend(await run_verification_task(task, results, run_id, events_path, emitter.emit))
+            results.extend(await self.runtime.run_verification(task, results, run_id, events_path, emitter.emit))
             verification = await self.verifier.verify(task, results, events_path=events_path)
             report = self.reporter.generate(run_id, task, results, verification)
+            metadata = transition_run(run_dir, metadata, "finalizing")
             duration_ms = int((time.perf_counter() - started) * 1000)
             result = TaskResult(
                 task_id=task.id,
@@ -131,6 +128,19 @@ class FsqAgent:
                     payload={"status": verification.status, "report_path": str(report.path)},
                 )
             )
+            transition_run(
+                run_dir,
+                metadata,
+                result.status if result.status in {"success", "failed", "inconclusive"} else "error",
+                result=RunResultSummary(summary=verification.summary),
+                runtime=RunRuntime(provider=self.settings.openai_agents.provider, model=self.settings.openai_agents.model),
+                artifacts=RunArtifactIndex(
+                    report=report.path.with_suffix(".json").name,
+                    report_markdown=report.path.name,
+                    events="events.jsonl",
+                    evidence_manifest=report.evidence_manifest_path.name if report.evidence_manifest_path else None,
+                ),
+            )
         except BaseException as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
             message = str(exc) or exc.__class__.__name__
@@ -145,6 +155,7 @@ class FsqAgent:
                     payload={"exception_type": exc.__class__.__name__},
                 )
             )
+            _best_effort_fail_run(run_dir, metadata, transition_run)
             raise
         else:
             return result
@@ -256,3 +267,18 @@ class FsqAgent:
 
     def _usable_text(self, value: str | None) -> bool:
         return bool(value and value.strip())
+
+
+def _best_effort_fail_run(run_dir, metadata, transition) -> None:
+    try:
+        transition(run_dir, metadata, "error")
+    except Exception:  # noqa: BLE001, S110 - preserve the original execution failure.
+        pass
+
+
+def _workspace_name(workspace_root: Path) -> str:
+    from fsq_agent.config import list_workspace_registry
+
+    resolved = workspace_root.resolve()
+    entry = next((item for item in list_workspace_registry() if item.root_path.resolve() == resolved), None)
+    return entry.name if entry is not None else workspace_root.name

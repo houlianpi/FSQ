@@ -20,10 +20,13 @@ Current `__init__.py` exports via `__all__`:
 - `ModelProviderFactory`: Builds provider sessions from resolved `Settings` for OpenAI Agents SDK runs and direct evaluator calls.
 - `ModelProviderSession`: Owns the lifecycle of one configured provider client/session and exposes provider metadata, model name, an Agents SDK provider object factory, and direct Responses-style model invocation for evaluator-style calls.
 - `AIAssertionEvaluator`: Provider-backed evaluator that satisfies `core`'s synchronous evaluator protocol: it accepts an `AIAssertionRequest`, calls the configured model through a `ModelProviderSession`, and returns an `AIAssertionResult`.
+- `CaseSuggestionAnalyzer` and `CaseSuggestionAnalysis`: Read-only post-execution Case analysis boundary. The analyzer accepts source Case text plus bounded completed execution facts, makes one tool-free model request, validates the structured suggestions and optional candidate Case text, closes its Provider session, and exposes no Harness, Driver, capability, filesystem, or UI-action access.
 - `prepare_model_provider_session(settings: Settings) -> ModelProviderSession`: Builds a configured session for readiness without sending a model request. For GitHub Copilot it may silently exchange a valid cached GitHub OAuth token when the provider token is absent or expired, but never starts device flow. For Azure it validates and constructs client configuration from the resolved user snapshot.
 - `refresh_model_provider_session(settings: Settings) -> ModelProviderSession`: Refreshes provider-local runtime credentials at the beginning of a dynamic task without sending a live model request. For GitHub Copilot, it uses only a valid cached GitHub OAuth token to exchange and cache a fresh short-lived Copilot provider token and never starts device authentication. For Azure OpenAI, it validates and constructs client configuration from the resolved user snapshot.
 - `build_model_provider_session(settings: Settings) -> ModelProviderSession`: Convenience factory for runtime construction. For GitHub Copilot it reads the user-level cached provider token and may silently refresh it from a valid cached OAuth token, but never starts device flow.
 - `build_ai_assertion_evaluator(settings: Settings) -> AIAssertionEvaluator`: Convenience factory used by entry-layer code when a platform harness needs provider-backed AI assertion. For GitHub Copilot, it follows the same non-interactive provider-token read/refresh rule as `build_model_provider_session`.
+- `build_case_suggestion_analyzer(settings: Settings) -> CaseSuggestionAnalyzer`: Convenience factory used by Application after a deterministic Case Run completes. It follows the same non-interactive Provider construction rules and does not send a request until `analyze` is called.
+- Public Provider and Case-suggestion readiness operations validate that the selected Provider session and read-only analyzer can be constructed, return safe normalized readiness facts, and close any constructed session without sending model inference.
 - `request_github_copilot_device_code() -> GitHubDeviceCode`: Requests one GitHub device code with the existing explicit Copilot scopes and returns verification URI, user code, polling interval, and expiration without printing to a terminal or starting polling.
 - `GitHubCopilotAuthorization`: Immutable provider-boundary value containing one completed GitHub OAuth/Copilot token exchange for short-lived in-memory use. Credential fields are excluded from representations and are never presentation models.
 - `GitHubCopilotModel`: Immutable safe model-list value containing the exact model id and display name.
@@ -57,12 +60,13 @@ Concrete type annotations may use `Any` for OpenAI Agents SDK classes at the bou
 - `_github_copilot.py`: Observable device-code request and cancellable polling, non-interactive cached token inspection/refresh under the user auth root, Copilot token exchange, plan detection, endpoint selection, authenticated model discovery/filtering, selected-model activation, and request/header/timeout compatibility.
 - `_connection_test.py`: Fresh-session minimal Responses request, acknowledgement validation, elapsed-time measurement, safe result shaping, and guaranteed cleanup.
 - `_ai_assertion.py`: `AIAssertionEvaluator` implementation and model-response parsing into `AIAssertionResult`.
+- `_case_suggestion.py`: Tool-free completed-Run suggestion request, structured response validation, and Provider session cleanup.
 - `SPEC.md`: Module design.
 
 ## Python Architecture
 
 - Architecture level: 2 Simple Package.
-- Public API: provider session/factory/evaluator types, non-interactive preparation/refresh/build helpers, GitHub device-code authorization, safe model discovery, selected-model activation operations and values, and saved-provider connection testing exported from `__init__.py`.
+- Public API: provider session/factory/evaluator types, the read-only Case suggestion analyzer and result, non-interactive preparation/refresh/build helpers, GitHub device-code authorization, safe model discovery, selected-model activation operations and values, and saved-provider connection testing exported from `__init__.py`.
 - Internal modules: `_factory.py`, `_session.py`, `_azure_openai.py`, `_github_copilot.py`, `_connection_test.py`, and `_ai_assertion.py` are private implementation files.
 - Domain boundaries: providers owns external model/auth protocols, client/session lifecycle, Copilot token exchange, device polling, and model invocation. Config owns files and active-provider persistence; Control Plane owns HTTP and task presentation.
 - Boundary models: settings and assertion contracts come from public `config`/`models`; provider-specific device/result records are public immutable values only where callers need protocol facts.
@@ -76,6 +80,8 @@ Provider preparation, authentication, refresh, and test failures raise `Configur
 GitHub device authorization distinguishes request failure, polling/network failure, slow-down, expiration, denial, cancellation, token exchange failure, and unknown plan. GitHub model discovery distinguishes authorization, timeout, HTTP, malformed-envelope, and unusable-model failures without exposing raw response bodies or credentials. Azure validation distinguishes incomplete saved values, invalid base URL shape, authorization, unavailable model/deployment, rate limiting, malformed response, timeout, and client construction failure.
 
 Non-interactive readiness and runtime construction never start device polling. They may call token exchange only when a valid cached OAuth token exists and the short-lived provider token is missing or expired. Readiness helpers do not send model requests; only the explicit connection-test operation sends a live model inference request. Authenticated model discovery requests provider metadata only.
+
+Provider readiness is independent from Workspace platform Target/Runtime diagnosis. It reports selected Provider configuration, model, and local authentication availability without exposing saved values. Suggestion-analyzer readiness proves only safe construction and cleanup; it does not invoke analysis or build a dynamic Agent.
 
 Direct evaluator invocation failures should return or raise structured diagnostics that entry-layer code can convert into failed `HarnessActionResult` values. Missing provider credentials for an explicitly authored `assertWithAI` step should produce a configuration failure, not a silent assertion pass or fallback path.
 

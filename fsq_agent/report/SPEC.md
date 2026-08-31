@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Generate human-readable and machine-readable reports inside the selected workspace platform's unique direct run directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, strict lifecycle phase summaries, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide one lookup path so CLI can print a stored LLM or strict-core report by run id from that platform's run root.
+Generate human-readable and machine-readable reports inside the selected workspace platform's unique direct run directory from dynamic LLM task results and strict-core evidence manifests, including the checked dynamic `verification_goal`, strict lifecycle phase summaries, structured capability provenance, AgentTool/CommonTool/PlatformTool execution metadata, replay metadata, sensitivity-safe previews, and provider-backed AI assertion verdict metadata. Provide stored report lookup and deterministic on-demand static HTML derivation from persisted Run facts.
 
 ## Dependencies
 
@@ -19,6 +19,7 @@ Current `__init__.py` exports via `__all__`:
 - `FailureAnalyzer`: Classifies failures as success, tool usage error, semantic action unmet, execution issue, planning issue, verification issue, or a combined label when multiple rule-assisted signals are present.
 - `CoreEvidenceReportGenerator`: Generates Markdown and JSON reports from one deterministic core `evidence-manifest.json` path.
 - `resolve_report_path(runs_dir: Path, run_id: str, report_format: Literal["markdown", "json"] = "markdown") -> Path`: Resolves a stored LLM report (`report.md/json`) or strict-core report (`core-report.md/json`) for the requested run id. It returns exactly one matching path or raises `ReportGenerationError` when the report is missing or ambiguous.
+- `generate_static_run_report(run_dir: Path, facts: Mapping[str, object]) -> Path`: Rebuilds `report.html` atomically from one already resolved direct Run directory and validated safe persisted facts. It performs no Workspace discovery, execution, inference, Provider/Driver call, live UI inspection, or browser opening.
 
 The core evidence report API is:
 
@@ -43,6 +44,7 @@ The strict-core JSON summary should include lifecycle counts by phase: total, pa
 - `_evidence.py`: Evidence manifest and bundle creation.
 - `_core_evidence_report.py`: Markdown and JSON report generation from `EvidenceBundle` or a core `evidence-manifest.json` path, including strict lifecycle phase summarization when lifecycle metadata is present.
 - `_resolver.py`: Stored report lookup for LLM `report.*` and strict-core `core-report.*` files.
+- `_static_html.py`: Offline escaped HTML rendering, contained artifact projection, and atomic `report.html` persistence.
 - `_failure_analysis.py`: Failure classification helpers.
 - `templates/`: Optional report templates.
 - `SPEC.md`: Module design.
@@ -50,18 +52,20 @@ The strict-core JSON summary should include lifecycle counts by phase: total, pa
 ## Python Architecture
 
 - Architecture level: 2 Simple Package.
-- Public API: `ReportGenerator`, `EvidenceBundler`, `FailureAnalyzer`, `CoreEvidenceReportGenerator`, and `resolve_report_path` exported from `__init__.py`.
+- Public API: `ReportGenerator`, `EvidenceBundler`, `FailureAnalyzer`, `CoreEvidenceReportGenerator`, `resolve_report_path`, and `generate_static_run_report` exported from `__init__.py`.
 - Internal modules: all `_*.py` files are private report implementation modules.
 - Domain boundaries: report owns rendering, stored report lookup, evidence manifest report generation, and failure classification from persisted facts. It does not execute capabilities, read live device state, call providers, parse FSQ YAML for execution, or decide recording eligibility.
 - Boundary models: task/result/final-output/evidence/report models and normalized tool call records come from `models`.
-- Dependency direction: imports `models` only. It consumes persisted JSON/JSONL files and paths supplied by callers.
-- Rationale: report generation is focused transformation from persisted data into Markdown/JSON output, so Level 2 is sufficient.
+- Dependency direction: imports `models` only and must not import `application` or transport adapters. It consumes persisted JSON/JSONL files and paths supplied by Application or other authorized callers.
+- Rationale: report generation is focused transformation from persisted data into Markdown, JSON, or static HTML output, so Level 2 is sufficient.
 
 ## Error Handling
 
 If rich Markdown/JSON report generation fails after a task run, `ReportGenerator` attempts to write `report-fallback.json` with `run_id`, `task_id`, `status`, `summary`, and the rich report error. `ReportGenerationError` is raised only when both rich report generation and minimal fallback generation fail.
 
 Stored report lookup raises `ReportGenerationError` when no report exists for the requested run id/format or when both LLM and strict-core report files exist for the same run id/format.
+
+Static HTML generation requires enough trustworthy persisted metadata, report, evidence, or logs to avoid a misleading page. Optional missing artifacts render unavailable sections. Rendering or atomic persistence failure raises a safe report error and never changes authoritative Run metadata, result, or existing source artifacts.
 
 ## Current Invariants
 
@@ -72,7 +76,7 @@ Stored report lookup raises `ReportGenerationError` when no report exists for th
 - Sensitive runtime-secret text input values must be redacted in reports. Reports may show safe metadata such as requested workspace secret name, text source type, allowlist/presence status, capability name, and replay alias, but never private values. Historical `get_runtime_secret` dependency events are not part of the target runtime-secret input path and need not be treated as active recording dependencies.
 - Report artifacts are stored below `<workspace>/.fsq/runs/<platform>/<run-id>`, equivalent to `output.runs_dir/<run-id>` after workspace-platform settings composition. Report does not discover workspace layout or write in an arbitrary caller directory.
 - LLM and strict-core reports intentionally keep separate internal shapes. CLI unifies only lookup and printing through `resolve_report_path`.
-- HTML report generation is intentionally out of scope.
+- Static HTML is a derived offline view rebuilt only on explicit request. It contains a Run overview, source/result/runtime summary, step timeline, sanitized logs, escaped UI snapshots, contained screenshot/evidence links, Run-local suggestions, candidate Case, and allowlisted artifact inventory where available. It uses inline presentation resources, no network resources or requests, a restrictive Content Security Policy, escaped persisted text, and only links that resolve inside the Run directory. Artifact HTML, SVG, or JavaScript is never embedded as active content. `report.html` is not authoritative evidence and is not written back into `run.json`.
 - Failure analysis is rule-assisted. Provider-side incomplete response failures such as OpenAI Agents SDK `response.incomplete` with `content_filter` must be classified as provider failures, not tool usage errors.
 - Deterministic core execution reports should be generated from persisted evidence manifests rather than live runner objects. This keeps report generation replayable and allows reports to be regenerated after real-device runs.
 - Regression comparison reports should be generated after execution from persisted strict and recovery manifests. This keeps self-healing auditable and prevents recovery from masking the original regression signal. AI assertion verdicts in strict evidence remain part of the strict result, while AI-assisted repair attempts belong only to separate recovery evidence.

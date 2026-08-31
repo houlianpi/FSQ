@@ -7,7 +7,22 @@ name = "fsq-agent"
 version = "0.1.0"
 description = "Goal-driven FSQ automated testing agent built around OpenAI Agents SDK, Azure OpenAI, harness actions, local utilities, observation, and reporting."
 readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Microsoft Corporation" },
+]
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "openai==2.34.0",
     "openai-agents==0.15.2",
@@ -19,7 +34,17 @@ dependencies = [
     "pyyaml==6.0.3",
     "ruamel.yaml==0.18.16",
     "jinja2==3.1.6",
+    "uiautomator2==3.5.2",
+    "playwright==1.60.0",
+    "pywinauto==0.6.9",
+    "pillow==12.3.0",
+    "Appium-Python-Client==5.3.1",
 ]
+
+[project.urls]
+Documentation = "https://github.com/microsoft/FSQ#readme"
+Issues = "https://github.com/microsoft/FSQ/issues"
+Repository = "https://github.com/microsoft/FSQ"
  
 [project.optional-dependencies]
 dev = [
@@ -28,33 +53,41 @@ dev = [
     "pytest-asyncio==1.3.0",
     "ruff==0.16.1",
 ]
-android = [
-    "uiautomator2==3.5.2",
-]
-web = [
-    "playwright==1.60.0",
-]
-windows = [
-    "pywinauto==0.6.9",
-    "pillow==12.3.0",
-]
-macos = [
-    "Appium-Python-Client==5.3.1",
-]
  
 [project.scripts]
-fsq-agent = "fsq_agent.cli:main"
+fsq = "fsq_agent.adapters.cli:main"
+fsq-agent = "fsq_agent.adapters.cli:main"
  
 [tool.hatch.build.targets.wheel]
 packages = ["fsq_agent"]
-artifacts = ["fsq_agent/playground/static", "fsq_agent/control_plane/static"]
+artifacts = [
+    "fsq_agent/adapters/control_plane/static/**",
+    "fsq_agent/adapters/control_plane/playground/static/**",
+    "fsq_agent/resources/**",
+]
 
-[tool.hatch.build.targets.wheel.force-include]
-"config.android.yaml" = "fsq_agent/resources/config.android.yaml"
-"config.web.yaml" = "fsq_agent/resources/config.web.yaml"
-"config.windows.yaml" = "fsq_agent/resources/config.windows.yaml"
-"config.macos.yaml" = "fsq_agent/resources/config.macos.yaml"
-"knowledge/skills" = "fsq_agent/resources/knowledge/skills"
+[tool.hatch.build.targets.sdist]
+include = [
+    "/fsq_agent",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/config.android.yaml",
+    "/config.web.yaml",
+    "/config.windows.yaml",
+    "/config.macos.yaml",
+    "/knowledge/skills",
+]
+artifacts = [
+    "config.android.yaml",
+    "config.web.yaml",
+    "config.windows.yaml",
+    "config.macos.yaml",
+    "knowledge/skills/**",
+    "fsq_agent/resources/**",
+    "fsq_agent/adapters/control_plane/static/**",
+    "fsq_agent/adapters/control_plane/playground/static/**",
+]
 
 [[tool.uv.index]]
 name = "microsoft-cfs"

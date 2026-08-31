@@ -3,7 +3,7 @@
 
 from collections.abc import Sequence
 
-from fsq_agent.core.evidence import EvidenceRecorder
+from fsq_agent.core.interfaces import EvidenceSink
 from fsq_agent.core.runner._runner import StepRunner
 from fsq_agent.models import EvidenceBundle, ExecutableStep
 
@@ -14,7 +14,7 @@ class StepSequenceRunner:
     def __init__(
         self,
         step_runner: StepRunner,
-        evidence_recorder: EvidenceRecorder,
+        evidence_recorder: EvidenceSink,
     ) -> None:
         self.step_runner = step_runner
         self.evidence_recorder = evidence_recorder

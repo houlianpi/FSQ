@@ -658,4 +658,4 @@ def test_uiautomator2_driver_raises_configuration_error_when_dependency_missing(
     with pytest.raises(ConfigurationError) as exc_info:
         UiAutomator2AndroidDriver(app_id="com.example.app")
 
-    assert exc_info.value.context == {"install": "pip install fsq-agent[android]"}
+    assert exc_info.value.context == {"action": "Reinstall or repair fsq-agent."}

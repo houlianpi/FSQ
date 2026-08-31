@@ -3,6 +3,7 @@
 
 from fsq_agent.config._loader import (
     PLATFORM_CONFIG_PATHS,
+    load_platform_settings,
     load_settings,
     load_workspace_platform_settings,
     resolve_platform_config_path,
@@ -60,6 +61,7 @@ __all__ = [
     "create_workspace",
     "inspect_registered_workspace",
     "list_workspace_registry",
+    "load_platform_settings",
     "load_registered_workspace",
     "load_settings",
     "load_user_provider_config",

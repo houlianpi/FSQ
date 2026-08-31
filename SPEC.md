@@ -22,62 +22,66 @@ Decorator unification is a declaration-layer concern, not an AgentTool merge. Ag
 
 Capability registry bootstrap is platform-selected. Entry layers register the active platform's inherited CommonTool capabilities plus only the configured platform's PlatformTool capability set. Android and Web PlatformTools must not be registered together in the default runtime registry, so each platform can expose native canonical names and `fsq_command` replay aliases without cross-platform ambiguity. AgentTools are exposed only to dynamic SDK agents and are excluded from strict replay registries.
 
-## Recorded Strict Case Artifacts
+## Case Creation And Testing
 
-Dynamic LLM runs may optionally record the actual successful replayable execution trace as a generated strict FSQ `.fsq.yaml` artifact under the run output directory. Recording is a shared entry-layer post-run behavior: the agent runtime persists normalized capability events, while the package-private recorder used by CLI, Playground, and Control Plane converts replayable non-observation capability results into a strict candidate case according to `ReplayPolicy` metadata. Observation capabilities such as Android `uiTree`/canonical `ui_snapshot`, Web/desktop `uiSnapshot`/`ui_snapshot`, and screenshot/snapshot tools may remain callable in dynamic execution and authored strict cases, but dynamic recording must not emit them as generated strict YAML commands. By-design observation skips remain available in the recording manifest audit data and must not be emitted as generated case warning metadata. After a Goal recording validates successfully, the recorder atomically creates or replaces an identical `<run-id>.fsq.yaml` direct child in the selected platform's `cases.dir`; raw-case and strict runs do not publish through this path. Publication failure adds recording warning metadata without changing the task result, recording status, validation status, or run-local source artifact. Generated recordings must never mutate any other source case, and runtime secret values must never be written to YAML, manifests, events, reports, or publication warnings. Runtime-secret text inputs are recorded by workspace secret name using `textType: runtimeSecret`.
+The public Case workflows are `fsq case create` and `fsq case test`. Case creation accepts a natural-language Goal, uses AI during real testing, and may write a Run-local candidate `*.fsq.yaml`. Case testing accepts an existing `*.fsq.yaml`, executes it exactly once through the deterministic path, and preserves the source file. With `--suggest`, a separate post-execution AI analysis may produce Run-local suggestions and a candidate Case from the parsed source and persisted execution facts; that analysis has no UI-action capabilities and cannot change the completed execution result. Without `--suggest`, testing performs no AI-driven Case analysis or modification. Adapters invoke both workflows through the shared Application package.
+
+`*.fsq.yaml` is canonical. `*.codex.yaml` may be accepted for one deprecation cycle with a structured warning. `*.intent.yaml` and `fsq.test-intent/v1` are unsupported. Top-level public execution commands named `test`, `replay`, or `run` are not part of the target CLI.
+
+## Recorded Case Artifacts
+
+AI-participating Case operations may record a successful replayable trace as a Run-local candidate `*.fsq.yaml`. The agent persists normalized capability events and Application coordinates conversion of replayable non-observation results according to `ReplayPolicy` metadata. Generated Cases never mutate source Cases or `cases.dir`, and secrets are never persisted.
 
 Recorded strict cases may contain runtime-secret text input references using `textType: runtimeSecret` and `waitMs` replay aliases. Strict execution bootstraps the active platform capability registry before YAML parsing, treats missing `textType` on text-entry commands as literal text for case compatibility, resolves runtime-secret text values in memory before external text-entry actions begin, and resolves `waitMs` through the registry to the inherited `wait_ms` CommonTool capability.
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
-Strict FSQ case metadata may declare optional case lifecycle hooks in the first YAML document through `onCaseStart` and `onCaseComplete`. Platform config YAML may also declare reusable strict lifecycle hooks through top-level `caseLifecycle.onCaseStart` and `caseLifecycle.onCaseComplete`. Each lifecycle field is independently optional and may contain either one hook entry mapping or an ordered list of hook entry mappings. Within one hook entry, `runCase` and `runShell` are independently optional supported actions; an entry must contain at least one supported action, may contain both, and when both are present strict execution must preserve the authored YAML key order. `runCase` executes another `.fsq.yaml` case using the same strict relative path resolution policy as `--case-yaml` inputs, and recursive hook chains fail before infinite execution. `runShell` executes an operator-authored local shell command string without platform-specific command validation. Strict execution runs config `onCaseStart` hooks, case `onCaseStart` hooks, the main case commands only when before hooks pass, case `onCaseComplete` hooks, then config `onCaseComplete` hooks. Any config hook, case hook, main command, or shell hook failure fails the overall strict case. Config or case before-hook failure skips later before hooks and the main command body as appropriate, but does not skip after hooks. Dynamic LLM raw-case execution continues to treat YAML as planning input text and does not execute lifecycle hooks.
+FSQ Case metadata may declare optional deterministic lifecycle hooks through `onCaseStart` and `onCaseComplete`; platform config may declare reusable hooks through `caseLifecycle`. `runCase` executes another `*.fsq.yaml` using the same contained Case path policy, and recursive chains fail before infinite execution. Application coordinates lifecycle execution through FSQ and Core authorities; adapters do not own lifecycle semantics.
 
 ## Dynamic LLM Pre-Plan and Goal Verification
 
-Dynamic LLM `--goal`, `--case-yaml`, and `--case-dir` runs use pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional `project.md` knowledge when present, optional pre-plan page index knowledge when present, and a concise active CommonTool/PlatformTool capability summary generated from the active platform registry so planning can align with the actual executable action surface without duplicating tool tables in skills. Concrete page knowledge files referenced by the page index are read only when pre-plan asks for them through read-only knowledge tools. The pre-planner must produce structured ordered `key_actions` for the main execution loop and one `verification_goal` string for final evidence-based verification. Dynamic final verification is goal-only and has no user-configurable `verification.mode`.
+Goal-based Case creation uses pre-plan as the input-understanding boundary before external UI actions begin. The pre-planner receives complete configured skills that load successfully, optional project/page knowledge, and the active capability summary. It produces ordered `key_actions` and one `verification_goal` before external UI actions.
 
-Dynamic LLM `--case-yaml` and `--case-dir` runs accept only exact lowercase `.fsq.yaml` case files and read them as raw UTF-8 reference text, not as strict executable steps. Directory discovery selects only `*.fsq.yaml`. The CLI-owned dynamic task construction must preserve that full raw reference in explicit planning-reference fields. Raw YAML steps are advisory only for dynamic LLM execution: they may help infer an execution flow, but they are not assumed accurate and must not be transformed into local executable steps or final verifier requirements. For raw cases, pre-plan should prefer case-level intent signals such as name, metadata, tags, properties, and human-authored goal text when summarizing `verification_goal`; step content may provide supporting context when the case-level intent is incomplete or ambiguous. Dynamic recording continues to reconstruct replayable commands only from actual run events.
+Existing-Case testing parses the Case through FSQ rather than treating YAML as untyped planning text. Suggestion-enabled testing first completes the same single deterministic execution as ordinary Case testing, then gives the parsed Case and bounded persisted execution facts to a read-only AI analysis that cannot invoke Harness, Driver, Core capabilities, or other UI actions. The analysis preserves the authoritative execution status and facts, keeps source steps immutable, and writes suggestions and any candidate Case only inside that Run directory.
 
 ## Runtime Configuration Defaults
 
-Tracing remains enabled by default. Local LLM execution has no default provider: exactly zero or one active provider is stored under the current user's `~/.fsq` directory. `~/.fsq/config.yaml` contains versioned non-secret metadata for either `azure_openai` or `github_copilot`; Azure credentials are stored in `~/.fsq/auth/azure-openai.json`, and GitHub OAuth and short-lived Copilot provider tokens are stored in `~/.fsq/auth/github-copilot-token.json` and `~/.fsq/auth/github-copilot-provider-token.json`. Both provider types require a non-empty user-configured model name. Azure also requires an OpenAI-compatible base URL normalized to the `/openai/v1/` form and an API key. Provider selection, metadata, models, and credentials are not read from process environment, `.env`, platform YAML, or the managed workspace.
+Except while creating an unregistered Workspace, the exact CLI current directory is a registered workspace root using the canonical `.fsq/config/config.<platform>.yaml`, `.fsq/runs/<platform>/`, `cases/<platform>/`, and `knowledge/<platform>/` layout. CLI does not create or accept `.fsq-agent-workspace` markers, search parents, or auto-initialize. For a new name, `fsq init` treats the current directory as the selected directory: an empty directory becomes the Workspace root, while a non-empty directory receives a new `<selected-directory>/<workspace-name>` child. For an existing registered name, initialization uses its stored root independently of the process current directory. All other CLI commands require the exact registered root, and platform operations require the selected platform. Control Plane uses the same Application and Config-owned root-selection and registry rules while retaining explicit browser workspace selection independent of its startup directory.
 
-The user configuration schema is version 3 and stores the active Provider metadata together with an ordered registry of workspace name and normalized absolute workspace-root entries. A valid version-2 user configuration is atomically upgraded by the first operation that needs the combined model, without changing Provider metadata or credential files; legacy registry config paths are reduced to their containing workspace roots without migrating workspace content. Provider and workspace-registry writes share one in-process lock and serialize the complete current user model so neither operation drops the other's state. Registry names are case-insensitively unique, root paths are unique under host path-case semantics, workspace names are independent from root basenames, and invalid, missing, or legacy single-platform registered workspaces remain visible as unavailable entries.
+Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Provider selection and credentials are managed by the Provider configuration surface rather than workspace initialization. Repository-owned platform YAML presets are committed as `config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, and `config.macos.yaml`; `config.example.yaml` is reference-only. Workspace platform configuration owns local target identity and private runtime-secret values. A Web target always names a browser channel and may omit its executable path so Application can discover exactly one compatible host executable before Driver readiness or workspace mutation.
 
-The local Control Plane Config page is the provider configuration entry point. It may add Azure OpenAI, authenticate GitHub Copilot through device flow, discover the authenticated account's available general-purpose GPT 5-or-later models, test the saved provider with a real model request, or change the active provider. GitHub authorization and model discovery remain an in-memory pending transaction until the user explicitly selects and saves one offered model; they do not change Provider metadata or credential files. At most one provider is retained. A change persists and validates the replacement before deleting metadata and credentials that belong only to the previous provider; failure leaves the previous provider usable. Provider changes affect only the next complete task constructed after the successful write. In-progress tasks keep the provider snapshot they started with, and concurrent configuration writes are unsupported.
+The local workspace setup entry is `fsq init --platform android|web|windows|macos` with the selected platform's target options and optional `--name`. It creates an unregistered Workspace from the current selected directory or initializes and updates exactly one platform at the stored root of an existing registered name. It does not configure Providers or create legacy workspace markers.
 
-Repository-owned platform YAML presets are committed as `config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, and `config.macos.yaml`; `config.example.yaml` is a reference-only sample and not a runtime preset. Each preset owns stable shareable platform policy such as tracing, model turn limits, harness platform/backend, browser/base-URL policy, execution delays, strict lifecycle hooks, timeouts, and reusable skill definitions. Presets do not own workspace roots, case/output roots, project knowledge roots, platform application target fields, runtime-secret names, or runtime-secret values.
+## Workspace Doctor
 
-A workspace is valid when its root contains at least one readable, strictly validated version-2 platform document at `.fsq/config/config.<platform>.yaml`. Every platform document owns the same immutable workspace name/root identity plus its filename-matching platform, application target, and private `env` mapping. Each platform's env keys are its effective runtime-secret allowlist and its non-empty string values are the private in-memory secret source for that platform only. Exact supported platform files are discovered independently, so a workspace is available, partial, or unavailable according to the validity of its configured platforms; a valid platform remains usable when a sibling platform file is invalid. Workspace settings compose the explicitly selected platform preset, repository-resolved skill resources, platform target/paths/secrets, and latest Provider snapshot. Effective paths are `<root>/cases/<platform>` for cases, `<root>/.fsq/runs/<platform>` for direct run output, and `<root>/knowledge/<platform>` for project knowledge. Loading never creates workspace identity or platform config files; a deleted selected-platform cases directory may be recreated only at a run-write boundary, and missing knowledge remains absent.
+`fsq doctor` is the read-only health summary for the exact current registered Workspace. It checks every identifiable configured platform in Android, Web, Windows, macOS order, isolates one platform's diagnostic failures from the others, and reports both fixed component checks and command readiness for `fsq case test`, `fsq case test --suggest`, and `fsq case create`. Overall `ready`, `partial`, or `unavailable` status is derived from those command verdicts.
 
-New workspace creation receives an existing selected directory and a name. If the selected directory has no entries, including hidden entries or links, that directory is the workspace root; otherwise creation requires and creates an absent `<selected-directory>/<name>` child as the root. An existing derived child in any form is a conflict. Config computes this root and keeps creation distinct from platform addition and revision-protected update. Existing registered workspaces continue to use their stored absolute roots without migration or basename inference.
+Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
 
-FSQ has no environment-backed platform settings and does not automatically parse repository or config-directory `.env` files. Android app id, Web browser executable path, Windows app path/window matcher/launch args, and macOS bundle id/app path come only from the workspace target and are not overridden or recovered from environment variables or legacy preset fields. Workspace runtime-secret values remain private settings data, are not injected into `os.environ`, and are the common source for execution-time lookup and redaction. Third-party libraries may consume variables already supplied by the parent process, but FSQ does not load `.env` files on their behalf.
+## Workspace Run History
 
-`fsq-agent run` requires `--platform PLATFORM` and treats the process current directory as the exact workspace root. It validates the matching platform document directly without consulting the user registry and does not search ancestor directories. `report` and `playground` continue to require both `--workspace NAME` and `--platform PLATFORM`, resolve the workspace name case-insensitively through the user registry, and validate the exact configured platform independently of the process current directory. `run` accepts an optional Android-only `--android-serial SERIAL` value for one execution. Without that option, a direct Android run selects the sole online device and fails before execution when zero or multiple devices are online. Dynamic runs require exactly one goal, case file, or case directory input. Strict runs accept one case file, one case directory, or no case input; the no-input form scans the selected workspace's `cases/<platform>` directory. A strict single file must match the selected platform, while strict directory scans skip valid cases for other platforms and execute matching top-level cases serially. A scan with case files but no platform matches reports zero cases and succeeds without creating run artifacts; malformed strict cases remain errors. `fsq-agent init` resolves the required name through the registry before mutation. An unregistered name creates one platform from the process current directory using the selected-directory root rule; a registered name ignores the current directory and uses its stored root to add a missing platform, return unchanged for an equal platform config, or revision-safely replace the existing platform target and private env mapping only when `--update-existing` is supplied. The root CLI `--output` option defaults to `human`; `init` also supports one-record `json` and `jsonl` terminal output, while other commands reject non-Human root output before side effects. Legacy `.fsq/config.yaml` and `.fsq-agent-workspace` formats are incompatible with these commands and are not migrated. Runtime GitHub Copilot construction may silently exchange a valid cached GitHub OAuth token for a fresh short-lived provider token, but it must not start device-code authentication. If no provider is configured or the saved provider is not runtime-ready, provider-dependent execution fails with a setup-required configuration error that directs the user to Control Plane Config.
+`fsq runs` is the read-only history surface for the exact current registered Workspace. It aggregates Runs across every configured platform unless an optional platform is supplied, lists bounded filtered summaries, shows one safe Run detail, and reads sanitized structured logs. New Run IDs are unique across the Workspace in the practical collision-resistant form `<source-slug>-<UTC timestamp>-<six lowercase hexadecimal characters>` and are allocated through one shared Execution boundary rather than by adapters.
 
-## Workspace Runtime Boundary
+Every new Run has a versioned `run.json` inside its direct platform Run directory. The document is authoritative for Run identity, lifecycle status, bounded source/result/runtime summary, and contained relative artifact index; full reports, events, evidence, screenshots, and UI snapshots remain in their owning artifacts. Execution writes initial metadata before actions and atomically advances it through `preparing`, `running`, `finalizing`, and one immutable terminal status. Historical Runs without metadata remain queryable through bounded read-only inference and are never migrated implicitly.
 
-Each workspace represents one tested application on one or more independently configured platforms. Authored and published cases occur below `cases/<platform>/`; every dynamic or strict run creates one unique direct child directory below `.fsq/runs/<platform>/`, and its canonical events, evidence, reports, recordings, AgentTool artifacts, and generated files remain inside it. A validated Goal recording may additionally publish an identical `<run-id>.fsq.yaml` direct child to the selected platform's cases tree through the shared recorder. Case inputs and strict lifecycle `runCase` dependencies must resolve inside that cases tree. AgentTool reads are limited to the selected platform's cases and knowledge, repository preset skill resources, and the current run as needed; AgentTool writes remain limited to the current run artifact boundary.
-
-Control Plane workspace management reads the user registry and explicit registered roots and may start from any directory. Its trusted-local workspace APIs create and summarize workspaces, add and update independent platform configurations, and browse workspace files while preventing identity changes, platform deletion, and browser file mutation. Control Plane opens on static Overview with the Workspace navigation group expanded and no selected workspace. Browser workspace selection is in-memory only. Devices uses explicit workspace and configured-platform selection, freezes that context for each run, and writes through the same platform-specific workspace run root as CLI and Playground.
+`fsq runs show RUN_ID --open` may rebuild a derived local `report.html` from persisted Run facts and open it in the user's default browser. Generation does not change `run.json` or the authoritative Run result and never executes a Case, invokes a Provider or Driver, or inspects live UI state. The static report is offline, escapes persisted content, restricts active content and links to contained allowlisted artifacts, and does not replace Markdown, JSON, event, or evidence truth.
 
 ## Platform Blocks
 
 Shared platform rules:
 
 - `harness.platform` selects exactly one active platform for normal dynamic, strict, and playground execution.
-- Public `run` requires an explicit configured platform and loads the workspace-local `.fsq/config/config.<platform>.yaml` from the exact process current directory. Public `report` and `playground` resolve a required workspace name through the user registry and require an explicit configured platform. Both paths map the platform id to the matching workspace overlay and repository-owned `config.<platform>.yaml` preset before validation. Provider setup belongs only to the local Control Plane Config page.
+- Public CLI entry points select the active platform with `--platform android|web|windows|macos` where platform context is needed; config loading maps that platform id to the corresponding repository-owned `config.<platform>.yaml` preset before validation. Public CLI commands do not expose workspace selection and use the exact registered current directory with canonical `.fsq` platform configuration. Provider configuration is separate from `fsq init`.
 - Entry layers build a platform-selected capability registry: inherited CommonTool capabilities plus only the active platform's PlatformTool capabilities.
 - `StepRunner`, `StepSequenceRunner`, evidence, recording, report generation, and FSQ parsing stay platform-neutral and consume capability metadata rather than platform action-name branches.
-- Repository-owned platform YAML presets own stable platform defaults and policy. Each workspace platform config owns its application target fields and runtime-secret values. The user-level store owns Provider selection/credentials and the root-based workspace registry. Android device identity is selected only for the active run.
+- Repository-owned platform YAML presets own stable platform defaults and policy; environment variables own provider selection, required operator-provided values, local paths, local server URLs, target identifiers, credentials, and other machine-specific values. Current compatibility inputs for older YAML-owned local paths must be explicit in module SPECs, and examples use the env-owned shape.
 - Platform-specific behavior belongs in platform parameter models, action catalogs, harnesses, drivers, config blocks, and configured skill Markdown.
 
 Android platform block:
 
 - Platform id: `android`.
 - Backend: `uiautomator2`.
-- Application id comes from the workspace target. Device serial is never persisted in environment, YAML, workspace, or case metadata; CLI, Control Plane, and Playground entry layers select it for the active run.
+- Local app/device values come from `FSQ_ANDROID_APP_ID` and `FSQ_ANDROID_SERIAL` or strict FSQ case metadata where allowed.
 - Explicit observation capability: canonical `ui_snapshot` with Android alias `uiTree`. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using compact Android UI hierarchy XML content. Android compact UI snapshots keep the existing `{"xml": ...}` payload shape, may use source-level hierarchy compression when available, remove layout-only/default data, clip long text-like attributes to the first 50 characters, and fall back to raw hierarchy XML if compaction is unavailable or unsafe.
 - Harness skill: `android-harness.md`.
 
@@ -85,7 +89,7 @@ Web platform block:
 
 - Platform id: `web`.
 - Backend: `playwright`.
-- Runtime settings combine preset-owned browser channel/headless/base URL/viewport policy with the workspace target's browser executable path.
+- Runtime settings include browser channel, environment-backed browser executable path, headless mode, optional base URL, and optional viewport fields when specified by module specs.
 - Browser lifecycle is explicit through `start_browser`/`startBrowser` and `close_browser`/`closeBrowser`. Runtime, CLI, FSQ parsing, StepRunner, StepSequenceRunner, and playground entry paths must not auto-inject lifecycle commands or launch a browser as a driver-construction side effect.
 - `startBrowser` is idempotent and reuses the active browser/page when one is already started. `closeBrowser` is idempotent, closes the active browser/page when present, resets driver-owned state, and permits a later `startBrowser` in the same task.
 - Web page-dependent actions, including `navigateTo`, require an active browser/page and must fail clearly when invoked before `startBrowser`; `navigateTo` must not implicitly start the browser.
@@ -97,7 +101,7 @@ Windows platform block:
 
 - Platform id: `windows`.
 - Backend: `pywinauto`.
-- App path, optional launched-window title matcher, and launch arguments come from the workspace target. The Windows platform preset selects pywinauto's UI automation mode (`uia` or `win32`) through `harness.windows.backend_kind`; this is not a second FSQ Windows backend.
+- Operator-local values come from environment variables: `FSQ_WINDOWS_APP_PATH`, `FSQ_WINDOWS_BACKEND_KIND`, `FSQ_WINDOWS_WINDOW_TITLE_RE`, and `FSQ_WINDOWS_LAUNCH_ARGS`. YAML owns only stable Windows platform/backend selection. `FSQ_WINDOWS_BACKEND_KIND` selects pywinauto's UI automation mode (`uia` by default, or `win32`) and is not a second FSQ Windows backend.
 - Windows action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `scrollOn`, `dragTo`, `assertVisible`, `uiSnapshot`, and `assertWithAI`.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; Windows must not expose Android `ui_tree`/`uiTree` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot`.
 - Harness skill: `windows-harness.md`.
@@ -107,7 +111,7 @@ macOS platform block:
 - Platform id: `macos`.
 - Backend: `appium_mac2`.
 - Runtime maps FSQ names internally to Appium native `platformName: Mac` and `automationName: Mac2`.
-- The macOS platform preset supplies the shared local Appium endpoint through `harness.macos.appium_server_url`. Bundle id and app path come from the workspace target. YAML also owns stable macOS defaults such as backend selection, page-source simplification depth, and action timeout seconds.
+- Operator-local values come from environment variables: `FSQ_MACOS_APPIUM_SERVER_URL`, `FSQ_MACOS_BUNDLE_ID`, and `FSQ_MACOS_APP_PATH`. YAML owns stable macOS defaults such as backend selection, page-source simplification depth, and action timeout seconds.
 - Current action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; macOS must not expose Android `ui_tree`/`uiTree` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using a bounded compact semantic Appium Mac2 control tree that preserves useful locator, text, state, and geometry signals.
 - Harness skill: `macos-harness.md`.
@@ -123,21 +127,32 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 
 | Module | SPEC | Purpose |
 |---|---|---|
-| models | fsq_agent/models/SPEC.md | Owns shared domain models, Android device discovery result contracts, workspace config/registry/settings boundary models, FSQ case and lifecycle hook metadata/settings models, capability metadata/registry contracts, invocation/result contracts, replay reference models, and exceptions. |
+| models | fsq_agent/models/SPEC.md | Owns shared domain models, platform-runtime status facts, FSQ case and lifecycle hook metadata/settings models, capability metadata/registry contracts, invocation/result contracts, replay reference models, and exceptions. |
 | capabilities | fsq_agent/capabilities/SPEC.md | Owns neutral capability declaration decorators, catalog-backed platform action validation, and metadata discovery helpers used by `core` recordable capabilities. |
-| config | fsq_agent/config/SPEC.md | Loads and validates the user-level Provider/workspace registry, versioned workspace config, platform-preset/workspace composition, runtime-secret private values, paths, harness policy, and runtime settings. |
-| providers | fsq_agent/providers/SPEC.md | Builds shared Azure OpenAI and GitHub Copilot provider sessions, owns GitHub device-flow/token exchange behavior, and performs real provider connection tests. |
+| config | fsq_agent/config/SPEC.md | Loads and validates env/YAML runtime, provider, harness/driver/platform-tool, tracing, execution post-action delay, strict case lifecycle hook settings, strict replay secret, agent context, AgentTool output, CommonTool secret, and workspace configuration. |
+| providers | fsq_agent/providers/SPEC.md | Builds shared Azure OpenAI and GitHub Copilot provider sessions for agent runs, verifier/pre-planner calls, and provider-backed AI assertion evaluators. |
 | tools | fsq_agent/tools/SPEC.md | Provides dynamic-only AgentTool providers, scoped file helpers, bounded artifact lookup helpers, and the OpenAI Agents SDK AgentTool adapter. |
 | observation | fsq_agent/observation/SPEC.md | Persists run event timelines; screenshots, UI trees, and other observations are represented by platform evidence artifacts or AgentTool artifact refs. |
 | knowledge | fsq_agent/knowledge/SPEC.md | Loads project-specific application knowledge and task-referenced knowledge assets. |
-| fsq | fsq_agent/fsq/SPEC.md | Loads FSQ AI Test DSL YAML cases, validates case lifecycle hook metadata, resolves authored action aliases through the capability registry, validates replay references, and converts parsed command documents into canonical deterministic executable steps. |
+| case_dsl | fsq_agent/case_dsl/SPEC.md | Canonically loads and validates FSQ AI Test DSL Cases and converts deterministic commands into executable steps. |
+| fsq | fsq_agent/fsq/SPEC.md | Preserves the documented legacy Case DSL public import surface by forwarding to canonical `case_dsl` objects. |
+| environments | fsq_agent/environments/SPEC.md | Owns host/runtime support, read-only readiness checks, and Web executable discovery through platform providers. |
 | skills | fsq_agent/skills/SPEC.md | Loads complete configured automation skill instruction bundles and skips or fails broken bundles according to requiredness. |
 | report | fsq_agent/report/SPEC.md | Generates LLM task reports, strict-core evidence reports, reconstructs tool calls from structured capability metadata, and resolves stored reports by run id. |
-| core | fsq_agent/core/SPEC.md | Defines the shared `StepRunner` execution manager, Android device discovery service, CommonTool/PlatformTool providers, active platform harness and driver interfaces, factory boundaries for capability definitions, drivers, and harnesses, private concrete platform backends, and evidence coordination. |
+| core | fsq_agent/core/SPEC.md | Navigates platform-neutral Core ownership across Runner, Evidence, Interfaces, current capability/runtime services, and compatibility composition. |
+| core.runner | fsq_agent/core/runner/SPEC.md | Owns metadata-driven single-step and ordered deterministic capability execution. |
+| core.evidence | fsq_agent/core/evidence/SPEC.md | Owns Run-contained artifacts and normalized execution evidence persistence. |
+| core.interfaces | fsq_agent/core/interfaces/SPEC.md | Owns public platform-neutral protocols and stable driver/harness factory boundaries. |
+| drivers | fsq_agent/drivers/SPEC.md | Owns concrete Android, Web, Windows, and macOS automation backends behind Core interfaces. |
+| harnesses | fsq_agent/harnesses/SPEC.md | Owns concrete runtime gateways that combine CommonTools, injected drivers, runtime context, and evidence services. |
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
+| execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
+| application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
+| adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, Playground, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
+| adapters.coding_agent | fsq_agent/adapters/coding_agent/SPEC.md | Implements Agent runtime protocols through OpenAI Agents SDK tool, session, stream, and result adaptation. |
 | playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
-| control_plane | fsq_agent/control_plane/SPEC.md | Serves the local platform-selectable Control Plane, including HTTP/static delivery, workspace management/browsing, Provider configuration and device-flow task state, discovery/readiness, run orchestration, progress streaming, cancellation, current and per-action evidence projection, and persisted replay-video transport. |
-| cli | fsq_agent/cli/SPEC.md | Exposes workspace-resolved `run`, `report`, and `playground`, Config-backed `init`, `control-plane`, capability registry bootstrap, strict replay including case lifecycle hook orchestration, dynamic recording, and thin local server startup workflows. |
+| control_plane | fsq_agent/control_plane/SPEC.md | Adapts Application operations to local HTTP/SSE/static delivery, cancellation transport, and browser evidence projection. |
+| cli | fsq_agent/cli/SPEC.md | Adapts the public `fsq` command tree to Application operations with human, JSON, and JSONL output and stable exit categories. |
 | frontend | frontend/SPEC.md | Owns the repository npm/Vite workspace, browser dependency and build policy, generated-asset boundary, and navigation to independently owned frontend application modules. |
 
 ## Frontend Build Boundary
@@ -146,22 +161,33 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 - `frontend/SPEC.md` owns the frontend workspace contract and links to child application specs without repeating their behavior. `frontend/playground/SPEC.md` and `frontend/control-plane/SPEC.md` own their authored browser applications; the corresponding Python modules own HTTP contracts and production static serving.
 - New frontend application modules use Vite, React, and TypeScript/TSX unless their confirmed module SPEC records a concrete exception. The current `frontend/playground` module is a documented Vite-built vanilla JavaScript application and remains governed by its current module SPEC.
 - `ts-ebml` is an exact npm dependency consumed through an ES module import. Third-party browser bundles and Vite-generated assets are not tracked in Git.
-- Vite-generated Playground and Control Plane assets live under `fsq_agent/playground/static` and `fsq_agent/control_plane/static` and are included in the Python wheel. Release builds run the npm build before Python wheel construction. A prebuilt wheel is self-contained and does not require Node.js or network access at runtime.
+- Vite-generated Playground and Control Plane assets live with their canonical owners under `fsq_agent/adapters/control_plane/playground/static` and `fsq_agent/adapters/control_plane/static`. Their HTML entry points, JavaScript, CSS, entry-asset manifests, and referenced generated assets are included in both wheel and source distribution. Release builds run the npm build before Python distribution construction. An installed distribution is self-contained and does not require Node.js or network access to serve these frontends at runtime.
 - Frontend development may use the Vite development server with API and streaming requests proxied to the corresponding Python server. Production and installed-wheel usage serve each generated entry and its APIs from its owning Python process.
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart TD
-    CLI[cli] --> Agent[agent]
-    CLI --> Core[core]
-    CLI --> FSQ[fsq]
-    CLI --> Config[config]
-    CLI --> Providers[providers]
-    CLI --> Models[models]
-    CLI --> Report[report]
-    CLI --> Playground[playground]
-    CLI --> ControlPlane[control_plane]
+    Adapters[adapters] --> CLI[adapters/cli]
+    Adapters --> ControlPlane[adapters/control_plane]
+    CLI --> Application[application]
+    CLI --> ControlPlane
+    ControlPlane --> Application
+    ControlPlane --> Playground[adapters/control_plane/playground]
+    ControlPlane --> Execution[execution]
+    CLI --> CodingAgent[adapters/coding_agent]
+    ControlPlane --> CodingAgent
+    Playground --> Execution
+    Playground --> CodingAgent
+    Application --> Agent[agent]
+    Application --> Execution
+    Application --> Core[core]
+    Application --> CaseDSL[case_dsl]
+    Application --> Environments[environments]
+    Application --> Config[config]
+    Application --> Providers[providers]
+    Application --> Models[models]
+    Application --> Report[report]
     Agent --> Core[core]
     Agent --> Config[config]
     Agent --> Providers[providers]
@@ -171,25 +197,38 @@ flowchart TD
     Agent --> Knowledge[knowledge]
     Agent --> Skills[skills]
     Agent --> Report[report]
+    CodingAgent --> Agent
+    CodingAgent --> Providers
+    CodingAgent --> Core
+    CodingAgent --> Tools
+    Execution --> Agent
+    Execution --> CoreRunner[core/runner]
+    Execution --> CoreEvidence[core/evidence]
+    Execution --> CaseDSL
+    Execution --> Config
+    Execution --> Models
+    Execution --> Report
     Config --> Models
     Providers --> Config
     Providers --> Models
     Tools --> Models
     Observation --> Models
     Knowledge --> Models
-    FSQ --> Models
+    CaseDSL --> Models
+    Environments --> Models
     Skills --> Models
     Report --> Models
-    Core --> Models
+    CoreRunner --> CoreInterfaces[core/interfaces]
+    CoreEvidence --> CoreInterfaces
+    CoreRunner --> Models
+    CoreEvidence --> Models
+    CoreInterfaces --> Models
+    Harnesses[harnesses] --> CoreInterfaces
+    Harnesses --> Drivers[drivers/*]
+    Drivers --> CoreInterfaces
     Capabilities[capabilities] --> Models
     Core --> Capabilities
-    ControlPlane --> Agent
-    ControlPlane --> Core
-    ControlPlane --> FSQ
-    ControlPlane --> Config
-    ControlPlane --> Providers
-    ControlPlane --> Models
-    ControlPlane --> Report
+    Core -->|PlatformRuntimeService compatibility export| Environments
     Frontend[frontend] --> FrontendPlayground[frontend/playground]
     Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendPlayground --> Playground
@@ -202,16 +241,21 @@ flowchart TD
 
 ## Development Rules
 
+- `pip install fsq-agent` is the single standard installation method. The base `fsq-agent` Python distribution includes the supported Android, Web, Windows, and macOS Python platform dependencies without platform extras, and installs both `fsq` and compatibility `fsq-agent` console scripts against the canonical CLI entry point. Runtime commands do not invoke Python or system package managers. Host-specific services, browser/application targets, devices, and system prerequisites remain externally provisioned and are checked read-only before Workspace mutation or execution.
+- Public Python package metadata identifies the MIT license, Microsoft as author, the supported Python versions, operating-system independence, intended developer audience, and canonical repository, issue, and documentation URLs.
 - Each Python module exposes public symbols only from `__init__.py` using explicit `__all__`.
+- A package may organize one module's public implementation into resource-owned public modules and subpackages while retaining `__init__.py` as its complete convenience export boundary. Public resource modules must not duplicate contracts or behavior.
 - `pyproject.toml` is the source of truth for the repository's pinned Ruff version, lint policy, formatter policy, thresholds, and scoped exclusions. Repository-owned Python must conform to that configuration without separate lint baselines or blanket suppression mechanisms.
 - Repository Python changes must pass the locked Ruff lint and format validation plus the complete pytest suite. Formatting or remediation must preserve current public interfaces, runtime behavior, module ownership, and dependency direction.
 - Frontend dependency changes update the root npm manifest and lock file. Generated frontend assets and `node_modules` remain untracked; source-checkout production startup requires a successful frontend build, while installed wheels contain the generated assets.
 - Repository CI is defined by `.github/workflows/ci.yml`; that workflow is the source of truth for current automated validation.
+- PyPI publication is defined by `.github/workflows/release.yml`. It is manually dispatched, defaults to build-and-verify without publication, and requires an explicit publish input plus the `pypi` GitHub environment before upload. The workflow runs the repository's complete Python quality/tests, frontend typecheck/tests/build, distribution checks, and clean installed-package smoke checks for the dispatched commit before publishing the exact verified distribution artifact. The publish job uses PyPI Trusted Publishing through GitHub OIDC with only `id-token: write` and `contents: read`; the repository stores no PyPI API token. GitHub environment protection and the PyPI Trusted Publisher binding are external release prerequisites that must be independently verified before a real publication.
 - Python public API boundary optimization is incremental. When a Python module SPEC adopts the stricter boundary, public exports should be limited to interfaces/protocols, abstract classes, stable service classes that are themselves the public contract, and approved factory classes. Concrete implementation-selection classes such as platform harnesses, platform backends, and provider adapters should sit behind public protocols/factories unless the module SPEC records a named exception with allowed importers, rationale, and revisit condition. Function-style helpers, decorators, and discovery utilities require the same SPEC-visible exception policy.
 - Internal Python implementation files are prefixed with `_`.
 - Shared data structures and exceptions live only in the `models` module. Capability declaration decorators, catalog-backed platform validation, and decorated-method discovery live only in the `capabilities` module.
-- Bounded ADB executable resolution, `adb devices -l` execution, and output parsing have one implementation in the public `core` Android device discovery service. CLI, Playground, and Control Plane consume that service and retain only their entry-specific selection, error, and response-projection policies.
 - Module imports must follow the DAG in the architecture diagram.
+- Transport implementation and package data live under `adapters`. The installed scripts target `fsq_agent.adapters.cli:main`. Legacy `fsq_agent.cli`, `fsq_agent.control_plane`, and `fsq_agent.playground` packages preserve only their documented public entry symbols as compatibility exports; old private transport submodule paths are unsupported and absent.
+- Package-root execution helpers and old Agent SDK implementation paths are absent. Repository code imports canonical `execution`, `adapters.coding_agent`, `case_dsl`, Drivers, Harnesses, Environments, and public Core subpackages directly.
 - Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer capability bootstrap, registry-metadata-based provider requirement detection, strict lifecycle orchestration, and dynamic-run recording used by CLI, Playground, and Control Plane. Provider requirement detection compares the active platform registry with and without provider-backed capabilities and resolves executable steps through the registry snapshot rather than branching on action names. These helpers must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
 - `capabilities` may import `models` only among project modules. It must not import `tools`, `core`, `agent`, `cli`, `fsq`, `providers`, `report`, `playground`, SDK objects, concrete drivers, or backend runtime types.
 - Provider construction lives in `providers`; `core` must use provider-neutral protocols and must not import provider/runtime modules.
@@ -222,7 +266,7 @@ flowchart TD
 ## Python Architecture Rules
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
-- `models`, `capabilities`, `tools`, `fsq`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
-- `core`, `agent`, `cli`, `playground`, and `control_plane` use Level 3 Layered Application because they coordinate execution flows, external SDKs, harnesses, providers, persistence, HTTP entry points, and user entry points.
+- `models`, `capabilities`, `tools`, `case_dsl`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
+- `core`, `agent`, `execution`, `application`, `adapters`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

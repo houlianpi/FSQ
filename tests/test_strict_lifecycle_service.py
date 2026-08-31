@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from fsq_agent._capability_bootstrap import build_capability_registry
-from fsq_agent._strict_lifecycle import _run_shell_command, collect_strict_lifecycle_cases, run_strict_lifecycle_case
+from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config import Settings
 from fsq_agent.core import EvidenceRecorder
-from fsq_agent.fsq import FsqCaseLoader, FsqExecutableStepAdapter
+from fsq_agent.execution.lifecycle import _run_shell_command, collect_strict_lifecycle_cases, run_strict_lifecycle_case
 from fsq_agent.models import (
     ConfigurationError,
     ExecutableStep,
@@ -137,8 +137,8 @@ def test_shared_lifecycle_uses_powershell_on_windows(monkeypatch) -> None:
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("fsq_agent._strict_lifecycle.sys.platform", "win32")
-    monkeypatch.setattr("fsq_agent._strict_lifecycle.subprocess.run", fake_run)
+    monkeypatch.setattr("fsq_agent.execution.lifecycle.sys.platform", "win32")
+    monkeypatch.setattr("fsq_agent.execution.lifecycle.subprocess.run", fake_run)
 
     command = "Remove-Item -LiteralPath 'C:\\temp\\test1' -Recurse -Force -Confirm:$false"
     result = _run_shell_command(command)
@@ -154,7 +154,7 @@ def test_shared_lifecycle_before_failure_skips_main_but_runs_after(tmp_path: Pat
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "fsq_agent._strict_lifecycle._run_shell_command",
+        "fsq_agent.execution.lifecycle._run_shell_command",
         lambda command: subprocess.CompletedProcess(command, 3 if command == "fail-before" else 0, stdout="", stderr=""),
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -190,7 +190,7 @@ def test_shared_lifecycle_propagates_cancellation_before_actions(tmp_path: Path,
     )
     shell_calls: list[str] = []
     monkeypatch.setattr(
-        "fsq_agent._strict_lifecycle._run_shell_command",
+        "fsq_agent.execution.lifecycle._run_shell_command",
         shell_calls.append,
     )
     settings = Settings(cases={"dir": tmp_path})
@@ -239,7 +239,7 @@ def test_shared_lifecycle_preserves_repeated_shell_order_and_continues_after_fai
         calls.append(command)
         return subprocess.CompletedProcess(command, 2, stdout="", stderr="")
 
-    monkeypatch.setattr("fsq_agent._strict_lifecycle._run_shell_command", run_shell)
+    monkeypatch.setattr("fsq_agent.execution.lifecycle._run_shell_command", run_shell)
     settings = Settings(cases={"dir": tmp_path})
     case = FsqCaseLoader().load_case(case_path)
     registry = build_capability_registry(platform="android")
@@ -269,8 +269,8 @@ def test_shared_lifecycle_uses_system_shell_off_windows(monkeypatch) -> None:
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("fsq_agent._strict_lifecycle.sys.platform", "linux")
-    monkeypatch.setattr("fsq_agent._strict_lifecycle.subprocess.run", fake_run)
+    monkeypatch.setattr("fsq_agent.execution.lifecycle.sys.platform", "linux")
+    monkeypatch.setattr("fsq_agent.execution.lifecycle.subprocess.run", fake_run)
 
     _run_shell_command("echo ready")
 
@@ -284,7 +284,7 @@ def test_shared_lifecycle_records_shell_startup_failure(tmp_path: Path, monkeypa
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "fsq_agent._strict_lifecycle._run_shell_command",
+        "fsq_agent.execution.lifecycle._run_shell_command",
         lambda command: (_ for _ in ()).throw(OSError("cannot start shell")),
     )
     settings = Settings(cases={"dir": tmp_path})
