@@ -178,6 +178,7 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     assert "pip install fsq-agent" in readme
     assert "README.zh-CN.md" in readme
     assert "docs/getting-started.zh-CN.md" in readme
+    assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     assert "docs/demo.html" in readme
     assert "Bilibili" not in readme
@@ -203,6 +204,7 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
 
     assert "pip install fsq-agent" in readme
     assert "Workspace Root Strategy" in readme
+    assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     assert "docs/demo.html" in readme
     assert "Bilibili" not in readme

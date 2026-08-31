@@ -21,11 +21,7 @@
 
 FSQ 会把一个自然语言 UI 目标变成可观察的自动化 Run，保存截图、UI Snapshot、事件和报告作为证据，并可把成功执行的真实动作转换为可审查的 Case，用于确定性重放。FSQ 使用 Playwright、uiautomator2、pywinauto 和 Appium 作为平台后端；它不会替代或自动安装这些后端所需的主机前置条件。
 
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">
-    <img src="docs/media/fsq-v0.1.0-demo-thumbnail.png" alt="FSQ v0.1.0 演示：描述 UI 目标、检查证据、审查候选 Case、确定性重放并打开静态报告" width="880">
-  </a>
-</p>
+https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">在 YouTube 观看演示</a> ·
