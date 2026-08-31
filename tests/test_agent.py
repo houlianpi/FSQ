@@ -29,7 +29,13 @@ async def test_agent_run_requires_configured_model_provider_auth(tmp_path: Path,
         acceptance_criteria=["A report exists."],
     )
 
-    settings = Settings.model_validate({"openai_agents": {"provider": "azure_openai"}, "output": {"root_dir": tmp_path / "output"}})
+    settings = Settings.model_validate(
+        {
+            "openai_agents": {"provider": "azure_openai"},
+            "output": {"root_dir": tmp_path / "output"},
+        }
+    )
+    settings.output.runs_dir = tmp_path / "runs"
     with pytest.raises(ConfigurationError, match="not configured"):
         await FsqAgent.from_settings(settings, lambda configured, *, harness_factory=None: OpenAIAgentsRuntime(configured, object())).run(task)
 
@@ -52,11 +58,18 @@ class _ConfiguredSkillLoader:
         return list(self.bundles)
 
 
-def _settings_with_knowledge(knowledge_dir: Path, pre_plan_dir: Path | None = None) -> Settings:
+def _settings_with_knowledge(
+    knowledge_dir: Path,
+    pre_plan_dir: Path | None = None,
+    runs_dir: Path | None = None,
+) -> Settings:
     knowledge: dict[str, object] = {"root_dir": knowledge_dir}
     if pre_plan_dir is not None:
         knowledge["pre_plan"] = {"dir": pre_plan_dir}
-    return Settings(agent_context={"knowledge": knowledge})
+    settings = Settings(agent_context={"knowledge": knowledge})
+    if runs_dir is not None:
+        settings.output.runs_dir = runs_dir
+    return settings
 
 
 class _Runtime:
@@ -196,11 +209,13 @@ def _stub_provider_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_provider_refresh(monkeypatch)
     reporter = _Reporter()
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
     agent = FsqAgent(
-        Settings(),
+        settings,
         verifier=Verifier(),
         reporter=reporter,  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -223,6 +238,8 @@ async def test_agent_run_ids_are_unique_and_use_friendly_timestamp_suffix(monkey
     assert second_result.report.run_id == reporter.run_ids[1]
     assert result.report.run_id != second_result.report.run_id
     assert re.fullmatch(r"smoke-\d{8}T\d{6}Z-[0-9a-f]{6}", result.report.run_id)
+    assert (settings.output.runs_dir / result.report.run_id / "run.json").is_file()
+    assert (settings.output.runs_dir / second_result.report.run_id / "run.json").is_file()
 
 
 def test_recent_tool_output_filter_does_not_artifact_sensitive_outputs() -> None:
@@ -329,8 +346,10 @@ async def test_agent_run_emits_and_persists_live_events(tmp_path: Path, monkeypa
     _stub_provider_refresh(monkeypatch)
     reporter = _Reporter()
     events: list[RunEvent] = []
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
     agent = FsqAgent(
-        Settings(),
+        settings,
         verifier=Verifier(),
         reporter=reporter,  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -360,8 +379,10 @@ async def test_agent_run_emits_and_persists_live_events(tmp_path: Path, monkeypa
 async def test_agent_run_persists_run_failed_for_cancellation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_provider_refresh(monkeypatch)
     events: list[RunEvent] = []
+    settings = Settings()
+    settings.output.runs_dir = tmp_path / "runs"
     agent = FsqAgent(
-        Settings(),
+        settings,
         verifier=Verifier(),
         reporter=_Reporter(),  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -399,7 +420,7 @@ async def test_agent_run_preplans_goal_only_task_before_execution(tmp_path: Path
     runtime = _GoalRunRuntime()
     events: list[RunEvent] = []
     agent = FsqAgent(
-        _settings_with_knowledge(knowledge_dir),
+        _settings_with_knowledge(knowledge_dir, runs_dir=tmp_path / "runs"),
         verifier=Verifier(),
         reporter=_Reporter(),  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -455,7 +476,7 @@ async def test_agent_run_refreshes_provider_before_pre_plan(tmp_path: Path, monk
     runtime.run_pre_plan = recording_run_pre_plan  # type: ignore[method-assign]
     monkeypatch.setattr("fsq_agent.agent._core.refresh_model_provider_session", fake_refresh_model_provider_session)
     agent = FsqAgent(
-        _settings_with_knowledge(knowledge_dir),
+        _settings_with_knowledge(knowledge_dir, runs_dir=tmp_path / "runs"),
         verifier=Verifier(),
         reporter=_Reporter(),  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -490,7 +511,7 @@ async def test_agent_pre_plan_receives_loaded_configured_skills(tmp_path: Path, 
         instructions="Prefer semantic actions.",
     )
     agent = FsqAgent(
-        _settings_with_knowledge(knowledge_dir),
+        _settings_with_knowledge(knowledge_dir, runs_dir=tmp_path / "runs"),
         verifier=Verifier(),
         reporter=_Reporter(),  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
@@ -518,7 +539,7 @@ async def test_agent_pre_plan_uses_explicit_raw_case_planning_reference(tmp_path
     (knowledge_dir / "project.md").write_text("# Project Knowledge", encoding="utf-8")
     runtime = _GoalRunRuntime()
     agent = FsqAgent(
-        _settings_with_knowledge(knowledge_dir),
+        _settings_with_knowledge(knowledge_dir, runs_dir=tmp_path / "runs"),
         verifier=Verifier(),
         reporter=_Reporter(),  # type: ignore[arg-type]
         knowledge_loader=_KnowledgeLoader(),  # type: ignore[arg-type]
