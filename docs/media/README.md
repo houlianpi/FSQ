@@ -4,11 +4,10 @@ This directory owns the v0.1.0 public demo video, product screenshots, subtitles
 
 The README uses the GitHub-hosted attachment at <https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939> for GitHub's native media preview. It also links to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. The GitHub Pages-ready [`docs/demo.html`](../demo.html) page embeds the same YouTube video with muted autoplay for contexts that allow it.
 
-The committed MP4 is the approved edited export for repository archival and release reuse. The original local screen recording is intentionally not committed.
+The edited MP4 is hosted outside the Git repository through GitHub media attachment and YouTube. The original local screen recording is intentionally not committed.
 
 ## Naming
 
-- `fsq-v0.1.0-demo-1280.mp4` — public Web video;
 - `fsq-v0.1.0-demo-thumbnail.png` — linked video thumbnail;
 - `https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939` — GitHub README media preview;
 - `../demo.html` — hosted-video demo page with muted YouTube autoplay;

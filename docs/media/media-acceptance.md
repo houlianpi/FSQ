@@ -31,7 +31,7 @@
 - [x] Screenshots have descriptive alt text in consuming documents.
 - [x] The README uses a GitHub-hosted attachment for native media preview plus YouTube and subtitle links; it does not depend on autoplaying repository MP4 files.
 - [x] The optional GitHub Pages-ready demo page embeds the hosted YouTube video with muted autoplay; README itself remains static because GitHub sanitizes embeds.
-- [ ] Files meet the size targets in [the storyboard](demo-storyboard.md), except the committed MP4 may exceed the optional 12 MB target until a smaller export is produced.
+- [x] Large video files are hosted outside Git history; committed media is limited to screenshots, thumbnail, subtitles, and documentation.
 
 ## New-user test
 
