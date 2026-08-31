@@ -8,29 +8,34 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_default_distribution_contract() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    metadata = project["project"]
 
-    dependencies = project["project"]["dependencies"]
+    assert metadata["name"] == "fsq-agent"
+    version = Version(metadata["version"])
+    assert version.local is None
+    dependencies = metadata["dependencies"]
     for name in ("uiautomator2", "playwright", "pywinauto", "pillow", "Appium-Python-Client"):
         assert any(dependency.startswith(f"{name}==") for dependency in dependencies)
-    assert set(project["project"]["optional-dependencies"]) == {"dev"}
-    assert project["project"]["scripts"] == {
+    assert set(metadata["optional-dependencies"]) == {"dev"}
+    assert metadata["scripts"] == {
         "fsq": "fsq_agent.adapters.cli:main",
         "fsq-agent": "fsq_agent.adapters.cli:main",
     }
-    assert project["project"]["license"] == "MIT"
-    assert project["project"]["authors"] == [{"name": "Microsoft Corporation"}]
-    assert project["project"]["urls"] == {
+    assert metadata["license"] == "MIT"
+    assert metadata["authors"] == [{"name": "Microsoft Corporation"}]
+    assert metadata["urls"] == {
         "Documentation": "https://github.com/microsoft/FSQ#readme",
         "Issues": "https://github.com/microsoft/FSQ/issues",
         "Repository": "https://github.com/microsoft/FSQ",
     }
-    classifiers = set(project["project"]["classifiers"])
+    classifiers = set(metadata["classifiers"])
     assert "Operating System :: OS Independent" in classifiers
     assert "Intended Audience :: Developers" in classifiers
     for version in ("3.11", "3.12", "3.13"):
@@ -51,14 +56,26 @@ def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> N
         "default": False,
     }
     assert workflow["permissions"] == {"contents": "read"}
-    assert set(workflow["jobs"]) == {"verify", "publish"}
+    assert set(workflow["jobs"]) == {"verify", "install-smoke", "publish"}
     publish = workflow["jobs"]["publish"]
     assert publish["if"] == "${{ inputs.publish }}"
-    assert publish["needs"] == "verify"
+    assert publish["needs"] == ["verify", "install-smoke"]
     assert publish["environment"] == "pypi"
     assert publish["permissions"] == {"contents": "read", "id-token": "write"}
     assert any(step.get("uses", "").startswith("actions/download-artifact@") for step in publish["steps"])
     assert publish["steps"][-1]["run"] == "uv publish --trusted-publishing always dist/*"
+    install_smoke = workflow["jobs"]["install-smoke"]
+    assert install_smoke["needs"] == "verify"
+    assert set(install_smoke["strategy"]["matrix"]["os"]) == {"ubuntu-latest", "macos-latest", "windows-latest"}
+    assert any(step.get("uses", "").startswith("actions/download-artifact@") for step in install_smoke["steps"])
+    install_smoke_commands = "\n".join(str(step.get("run", "")) for step in install_smoke["steps"])
+    for command in (
+        "python -m venv",
+        'python -c "import fsq_agent"',
+        "fsq",
+        "fsq-agent",
+    ):
+        assert command in install_smoke_commands
     verify = workflow["jobs"]["verify"]
     assert any(step.get("uses", "").startswith("actions/upload-artifact@") for step in verify["steps"])
     commands = "\n".join(str(step.get("run", "")) for step in verify["steps"])
