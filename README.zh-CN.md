@@ -27,8 +27,9 @@ FSQ 会把一个自然语言 UI 目标变成可观察的自动化 Run，保存�
   </a>
 </p>
 
+https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
+
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939">GitHub 完整视频</a> ·
   <a href="https://youtu.be/QqCahxGDdS0">在 YouTube 观看演示</a> ·
   <a href="docs/demo.html">自动播放演示页</a> ·
   <a href="docs/media/demo.zh-CN.srt">中文字幕</a> ·
