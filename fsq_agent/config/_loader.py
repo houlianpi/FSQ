@@ -39,7 +39,13 @@ def _runtime_resource_root() -> Path:
     source_root = Path(__file__).resolve().parents[2]
     if (source_root / "pyproject.toml").is_file():
         return source_root
-    return Path(__file__).resolve().parents[1] / "resources"
+    package_root = Path(__file__).resolve().parents[1] / "resources"
+    if package_root.is_dir():
+        return package_root
+    checkout_root = Path.cwd().resolve()
+    if (checkout_root / "pyproject.toml").is_file():
+        return checkout_root
+    return package_root
 
 
 PLATFORM_CONFIG_PATHS = {platform: _runtime_resource_root() / filename for platform, filename in _PLATFORM_CONFIG_FILENAMES.items()}

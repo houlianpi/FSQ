@@ -32,7 +32,10 @@ def test_runtime_check_requires_consistent_explicit_status() -> None:
 def test_web_discovery_returns_exact_channel_candidates(tmp_path: Path, monkeypatch) -> None:
     chrome = tmp_path / "Google Chrome"
     edge = tmp_path / "Microsoft Edge Canary"
-    monkeypatch.setattr("fsq_agent.environments._service._web_candidate_paths", lambda _channel: [chrome, edge])
+    monkeypatch.setattr(
+        "fsq_agent.environments._service._web_candidate_paths",
+        lambda channel: [edge] if channel == "msedge-canary" else [chrome],
+    )
     monkeypatch.setattr(Path, "is_file", lambda self: self in {chrome, edge})
 
     assert PlatformRuntimeService().discover_web_executables("msedge-canary") == [edge.resolve()]
