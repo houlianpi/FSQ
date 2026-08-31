@@ -9,6 +9,8 @@ from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.models import ConfigurationError
 
+ROOT = Path(__file__).resolve().parents[1]
+
 FSQ_CASE = """
 schemaVersion: fsq.ai-test/v1
 name: Fundamental Test bing.com website
@@ -68,6 +70,21 @@ def _macos_adapter() -> FsqExecutableStepAdapter:
 
 def _windows_adapter() -> FsqExecutableStepAdapter:
     return FsqExecutableStepAdapter(registry_snapshot=build_capability_registry(platform="windows").snapshot())
+
+
+def test_public_web_example_matches_current_executable_contract() -> None:
+    case = FsqCaseLoader().load_case(ROOT / "examples" / "web" / "example-domain.fsq.yaml")
+
+    steps = _web_adapter().to_executable_steps(case)
+
+    assert [step.action_name for step in steps] == [
+        "start_browser",
+        "navigate_to",
+        "assert_visible",
+        "assert_text",
+        "close_browser",
+    ]
+    assert steps[3].params["text"] == {"equals": "Example Domain"}
 
 
 def test_windows_strict_replay_allows_null_targets(tmp_path: Path) -> None:

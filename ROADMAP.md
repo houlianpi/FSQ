@@ -1,6 +1,6 @@
 # FSQ Roadmap
 
-FSQ is building an evidence-first agent harness for replayable, verifiable AI UI automation. The roadmap is grounded in the current direction documented in [FSQ Open Source Strategy](docs/fsq-opensource-strategy.md).
+FSQ is building an evidence-first agent harness for replayable, verifiable AI UI automation. Its current product principles and supported behavior are documented in this repository; proposed work remains directional until it is tracked and implemented.
 
 This roadmap communicates direction rather than a release commitment. Scope and timing may change as implementation evidence, maintainer capacity, and community feedback evolve. GitHub Issues and milestones track committed work.
 
@@ -80,4 +80,4 @@ To propose a roadmap change, open a Feature or New Platform/Driver Issue. Signif
 
 ## Maintenance
 
-Maintainers review this document at least monthly and after material strategy changes. Roadmap edits should link relevant Issues or design documents when available. If this document and the open-source strategy diverge, maintainers must reconcile them explicitly rather than allowing two independent plans to persist.
+Maintainers review this document at least monthly and after material strategy changes. Roadmap edits should link relevant Issues or design documents when available. If this document and current public project documentation diverge, maintainers must reconcile them before presenting roadmap work as committed.

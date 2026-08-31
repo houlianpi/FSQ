@@ -6,364 +6,191 @@
   </picture>
 </p>
 
-<h3 align="center">
-  An evidence-first agent harness for replayable, verifiable AI UI automation.
-</h3>
+<h3 align="center">Evidence-first AI UI automation you can inspect, replay, and verify.</h3>
 
 <p align="center">
-  <a href="https://github.com/microsoft/FSQ/actions/workflows/ci.yml"><img src="https://github.com/microsoft/FSQ/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <!-- <a href="https://pypi.org/project/fsq-agent/"><img src="https://img.shields.io/pypi/v/fsq-agent?color=blue" alt="PyPI"></a> -->
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/microsoft/FSQ/actions/workflows/ci.yml"><img src="https://github.com/microsoft/FSQ/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 or newer"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/status-alpha-orange" alt="Alpha status">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#why-fsq">Why FSQ</a> •
-  <a href="#supported-platforms">Platforms</a> •
-  <a href="docs/">Documentation</a> •
+  <a href="#five-minute-quickstart">Quickstart</a> ·
+  <a href="#how-fsq-works">How it works</a> ·
+  <a href="#supported-platforms">Platforms</a> ·
+  <a href="docs/getting-started.md">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
----
+> [!IMPORTANT]
+> FSQ v0.1.0 is an alpha release. It is ready for evaluation and contribution, but public APIs and Case authoring details may evolve before 1.0. See [support and stability](docs/support-and-stability.md).
 
-<!-- TODO: Replace with actual demo GIF showing a full FSQ run -->
-<!-- GIF should show: goal input → agent executing → evidence captured → verification → YAML generated -->
+FSQ turns a natural-language UI goal into an observable automation run, saves screenshots, UI snapshots, events, and reports as evidence, and can turn successful actions into a reviewable Case for deterministic replay. It uses Playwright, uiautomator2, pywinauto, and Appium as platform backends; it does not replace or install their host prerequisites.
+
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="FSQ Demo: goal → execution → evidence → verification → replay YAML" width="720">
+  <a href="docs/media/fsq-v0.1.0-demo-1280.mp4">
+    <img src="docs/media/fsq-v0.1.0-demo-thumbnail.png" alt="FSQ v0.1.0 demo: describe a UI goal, inspect evidence, review a candidate Case, replay, and open the static report" width="880">
+  </a>
 </p>
 
----
+<p align="center">
+  <a href="docs/media/fsq-v0.1.0-demo-1280.mp4">Watch the 45-second FSQ demo</a> ·
+  <a href="docs/media/demo.en.srt">English captions</a> ·
+  <a href="docs/media/demo.zh-CN.srt">中文字幕</a>
+</p>
 
-## Why FSQ?
+<p align="center">
+  <img src="docs/assets/fsq-workflow.svg" alt="FSQ workflow: describe a goal, execute once, capture evidence, verify, review a Case, and replay deterministically" width="880">
+</p>
 
-<table>
-<tr>
-<td width="33%" align="center">
+## Why FSQ
 
-**Evidence-First**
+- **Inspect the facts.** Every run keeps screenshots, normalized UI snapshots, ordered events, metadata, and reports together.
+- **Separate exploration from regression.** AI can explore a goal; reviewed YAML Cases replay authored actions deterministically.
+- **Use one workflow across UI surfaces.** Web, Android, Windows, and macOS share the same Case, evidence, Run, and readiness concepts.
+- **Keep control local.** Workspaces, evidence, Provider configuration, and the Control Plane are local by default.
 
-Every step captures screenshots, UI snapshots, and action traces. You verify through evidence, not agent self-reports.
+FSQ complements platform automation libraries. Playwright, uiautomator2, pywinauto, and Appium perform platform interaction; FSQ adds goal-driven execution, a shared Case format, evidence capture, verification, Run history, and a local Control Plane.
 
-</td>
-<td width="33%" align="center">
+## Product tour
 
-**Replayable**
+| Describe a goal | Inspect evidence | Review a candidate Case |
+|---|---|---|
+| <img src="docs/media/01-describe-goal.png" alt="FSQ Control Plane goal entry for a public TodoMVC workflow" width="280"> | <img src="docs/media/03-capture-evidence.png" alt="FSQ evidence view showing persisted UI state from the run" width="280"> | <img src="docs/media/04-generate-candidate.png" alt="FSQ Run-local candidate Case generated from execution facts" width="280"> |
 
-Successful AI runs auto-generate strict YAML. Replay deterministically without LLM — same harness, same evidence, zero flakiness.
+See the remaining approved screenshots in [release media](docs/media/README.md).
 
-</td>
-<td width="33%" align="center">
+## Five-minute quickstart
 
-**Verifiable**
-
-Results are judged by an evidence-based verifier, not the agent claiming success. Auditable, trustworthy, CI-ready.
-
-</td>
-</tr>
-</table>
-
-> **Other AI agents say "I'm done." FSQ shows you the proof.**
-
----
-
-## See It in Action
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ $ cd /path/to/workspaces/web-demo                                   │
-│ $ fsq case create --platform web                                    │
-│     --goal "Search for FSQ on Bing"                                │
-├──────────────────────────────────────────────────────────────────────┤
-│  ► Planning: 3 key actions identified                                │
-│  ► Step 1: startBrowser          📸 screenshot + UI snapshot         │
-│  ► Step 2: navigateTo bing.com   📸 screenshot + UI snapshot         │
-│  ► Step 3: typeText "FSQ"        📸 screenshot + UI snapshot         │
-│  ► Step 4: pressKey Enter        📸 screenshot + UI snapshot         │
-│  ► Verification: PASSED ✅ (evidence-based)                          │
-│  ► Recording manifest → .fsq/runs/web/<run-id>/recording.json       │
-│  ► Replayable YAML → .fsq/runs/web/<run-id>/recorded.fsq.yaml       │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## What Can FSQ Do?
-
-<table>
-<tr>
-<th></th>
-<th>Dynamic Mode 🤖<br><sub>AI-driven exploration</sub></th>
-<th>Strict Mode 🔁<br><sub>Deterministic replay</sub></th>
-</tr>
-<tr><td><b>AI explores and operates your app</b></td><td align="center">✅</td><td align="center">—</td></tr>
-<tr><td><b>Evidence captured on every step</b></td><td align="center">✅</td><td align="center">✅</td></tr>
-<tr><td><b>Auto-generates replayable YAML</b></td><td align="center">✅</td><td align="center">—</td></tr>
-<tr><td><b>Deterministic regression execution</b></td><td align="center">—</td><td align="center">✅</td></tr>
-<tr><td><b>AI-powered visual assertions</b></td><td align="center">✅</td><td align="center">✅</td></tr>
-<tr><td><b>Runs without LLM</b></td><td align="center">—</td><td align="center">✅</td></tr>
-</table>
-
-**The Dual Loop:** AI explores → evidence proves it worked → strict YAML locks it down → replay catches regressions.
-
----
-
-## Quick Start
+This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally. AI-driven commands additionally require a configured Provider.
 
 ### 1. Install
 
 ```bash
-pip install fsq-agent
+python -m pip install fsq-agent
 ```
 
-<details>
-<summary><b>Using uv (recommended for development)</b></summary>
+The base package includes Python dependencies for all four supported platforms. Browsers, applications, devices, ADB, and Appium services remain system prerequisites. FSQ never installs them during `init`.
+
+### 2. Create an empty Workspace
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync --extra dev
-```
-
-</details>
-
-The default installation includes the Python dependencies for Android, Web, Windows, and macOS. FSQ does not use platform extras. Applications, browsers, devices, and host services such as Appium remain system prerequisites.
-
-### 2. Initialize a Workspace
-
-```bash
-mkdir web-demo && cd web-demo
+mkdir fsq-web-demo
+cd fsq-web-demo
 fsq init --platform web --browser-channel chrome
+fsq doctor
 ```
 
-`init` uses the exact current directory as the Workspace root and derives the Workspace name from that directory. It initializes one platform per invocation. To configure another platform in the same Workspace, run `init` again from the same directory:
+Workspace root selection is exact:
+
+- In an **empty current directory**, `fsq init` adopts that directory as the Workspace root.
+- In a **non-empty current directory**, it creates an absent `<current-directory>/<workspace-name>` child. Use `--name NAME` to choose that name, then change into the child directory for Workspace commands.
+- Other CLI commands never search parent directories; run them from the exact registered Workspace root.
+
+### 3. Replay the public example without a planning LLM
+
+Download the versioned [`examples/web/example-domain.fsq.yaml`](examples/web/example-domain.fsq.yaml) into the Workspace and run it:
 
 ```bash
-cd /path/to/workspaces/web-demo
-
-# Initialize Web. The executable path is optional when one matching browser is discoverable.
-fsq init \
-  --platform web \
-  --browser-channel chrome
-
-# Add Android to the same registered workspace.
-fsq init \
-  --platform android \
-  --app-id com.example.app
+mkdir -p cases/web
+curl --fail --location --output cases/web/example-domain.fsq.yaml \
+  https://raw.githubusercontent.com/microsoft/FSQ/v0.1.0/examples/web/example-domain.fsq.yaml
+fsq case test --platform web cases/web/example-domain.fsq.yaml
+fsq runs list --platform web
 ```
 
-Platform target options are:
+### 4. Explore with AI
 
-| Platform | `init` target options |
-|---|---|
-| Android | `--app-id APP_ID` (required) |
-| Web | `--browser-channel CHANNEL` (required), optional `--browser-executable-path FILE` |
-| Windows | `--app-path PATH` (required), plus optional `--window-title-re` and `--launch-args` |
-| macOS | `--bundle-id` or `--app-path` (at least one required) |
-
-Repeating an equal platform configuration returns `unchanged`. If its target or private environment mapping differs, pass `--update-existing` to replace only that platform's target and `--env NAME=VALUE` entries. Use `fsq --output json init ...` or `--output jsonl` for machine output. `init` checks readiness but never installs Driver/Runtime packages or system prerequisites.
-
-Run `fsq doctor` from the exact Workspace root to inspect configured-platform readiness. Commands do not search parent directories or migrate legacy `.fsq/config.yaml` and `.fsq-agent-workspace` layouts.
-
-### 3. Configure a Provider
-
-Configure and inspect the user-level Provider from any directory:
+Configure one supported user-level Provider from any directory:
 
 ```bash
 fsq providers configure github_copilot
 fsq providers status
 ```
 
-| Provider | Setup |
-|---|---|
-| GitHub Copilot GPT | Model name and GitHub device-code authentication |
-| Azure GPT | Azure OpenAI-compatible base URL, model/deployment name, and API key |
-
-Provider configuration is stored under `~/.fsq` and shared with the Control Plane UI. Azure OpenAI can be configured with `fsq providers configure azure_openai`.
-
-### 4. Create and Test Cases
+Then return to the Workspace:
 
 ```bash
-cd /path/to/workspaces/web-demo
-
-# AI-driven exploration with evidence and a Run-local candidate Case
 fsq case create --platform web \
-  --goal "Open https://www.bing.com, search for 'FSQ automation', verify results appear."
+  --goal "Open https://example.com and verify the Example Domain heading is visible."
+
+fsq case test --platform web --suggest cases/web/example-domain.fsq.yaml
+fsq runs show RUN_ID --open
 ```
 
-```bash
-# Deterministic execution of an existing Case
-fsq case test --platform web path/to/case.fsq.yaml
+`--suggest` executes the source Case exactly once, then asks AI to analyze only the persisted Case, report, and evidence. Suggestions and an optional candidate Case remain inside that Run; the source Case is not modified.
 
-# Execute once, then ask AI to analyze the persisted execution facts
-fsq case test --platform web --suggest path/to/case.fsq.yaml
-```
-
-Every execution writes evidence and reports under `.fsq/runs/<platform>/<run-id>/`. Suggestions and candidate Cases are Run-local and never overwrite the source Case or `cases/<platform>`. Inspect history with `fsq runs list`, `fsq runs show RUN_ID`, and `fsq runs logs RUN_ID`. `fsq runs show RUN_ID --open` builds and opens an offline static HTML report.
-
-### Control Plane
-
-Launch the local browser Control Plane for multi-platform workspace management, platform readiness, target and case discovery, Explore runs, Strict Replay, and live evidence:
+### 5. Open the local Control Plane
 
 ```bash
 fsq ui
 ```
 
-It listens on `127.0.0.1:8879` and opens a browser by default. Use `--host`, `--port`, and `--no-open-browser` to override those defaults. A wheel installation includes the compiled frontend and needs no Node.js runtime. From a source checkout, run `npm ci && npm run build` before starting the Control Plane.
+The installed wheel includes the compiled frontend. It listens on `127.0.0.1:8879` by default and does not require Node.js at runtime.
 
----
+## How FSQ works
 
-## Supported Platforms
+```text
+Goal ──► AI exploration ──► evidence ──► verification ──► reviewable Case
+                                                          │
+Reviewed Case ──► deterministic replay ──► fresh evidence ─┘
+```
 
-<table>
-<tr>
-<th>Platform</th>
-<th>Backend</th>
-<th>Install</th>
-</tr>
-<tr>
-<td>🌐 <b>Web</b></td>
-<td>Playwright</td>
-<td>Included with <code>fsq-agent</code></td>
-</tr>
-<tr>
-<td>📱 <b>Android</b></td>
-<td>uiautomator2</td>
-<td>Included with <code>fsq-agent</code></td>
-</tr>
-<tr>
-<td>🖥️ <b>Windows</b></td>
-<td>pywinauto</td>
-<td>Included with <code>fsq-agent</code></td>
-</tr>
-<tr>
-<td>🍎 <b>macOS</b></td>
-<td>Appium Mac2</td>
-<td>Included with <code>fsq-agent</code></td>
-</tr>
-</table>
+Dynamic execution and deterministic replay share platform Harnesses and evidence contracts. The original execution result is immutable; later suggestion analysis cannot rewrite it or perform another UI execution. See the [architecture overview](docs/architecture.md).
 
-All platforms share the same `HarnessInterface`, evidence model, and FSQ YAML format. A registered workspace may configure one or more platforms independently:
+## Supported platforms
+
+| Platform | Interaction backend | Host prerequisites |
+|---|---|---|
+| Web | Playwright | A supported installed Chromium-family channel |
+| Android | uiautomator2 | ADB and an online authorized device |
+| Windows | pywinauto | Windows and an existing application |
+| macOS | Appium Mac2 | macOS, an existing application, and a reachable Appium service |
+
+All Python backend packages are installed with `fsq-agent`; platform applications and host services are not. Run `fsq doctor` from the exact Workspace root for actionable readiness results.
+
+Platform target options for `fsq init`:
+
+| Platform | Required target input |
+|---|---|
+| Android | `--app-id APP_ID` |
+| Web | `--browser-channel CHANNEL`; optional `--browser-executable-path FILE` |
+| Windows | `--app-path PATH`; optional `--window-title-re`, `--launch-args` |
+| macOS | At least one of `--bundle-id` or `--app-path` |
+
+## Runs and local data
 
 ```text
 <workspace-root>/
   .fsq/config/config.<platform>.yaml
+  .fsq/runs/<platform>/<run-id>/
   cases/<platform>/
   knowledge/<platform>/
-  .fsq/runs/<platform>/
 ```
 
-Workspace commands use the exact current directory as the registered Workspace root. `fsq doctor` checks all configured platforms; `fsq case create/test` select a platform; `fsq runs` queries Workspace history across all platforms unless filtered. `fsq ui` starts the browser Control Plane and uses its own Workspace selection.
+Use `fsq runs list`, `fsq runs show RUN_ID`, and `fsq runs logs RUN_ID`. `fsq runs show RUN_ID --open` creates an offline static HTML report without calling a Provider or operating the UI. Evidence can contain visible application data; review it before sharing. Do not commit `.fsq`, credentials, reports, screenshots, or private target data.
 
-<details>
-<summary><b>Platform setup details</b></summary>
-
-**Web** — Set the browser executable in `.fsq/config/config.web.yaml`:
-```yaml
-target:
-  browser_executable_path: /usr/bin/google-chrome
-```
-
-**Android** — Set the app ID in `.fsq/config/config.android.yaml`, then select a connected ADB device per run:
-```yaml
-target:
-  app_id: com.example.app
-```
-```bash
-cd /path/to/workspaces/my-workspace
-fsq case create --platform android --goal "Open the app"
-```
-Device selection and readiness are resolved from the initialized Workspace and connected-device state.
-
-**Windows** — Keep `backend_kind` in the repository preset `config.windows.yaml`; set app-specific values in `.fsq/config/config.windows.yaml`:
-```yaml
-target:
-  app_path: C:\Program Files\MyApp\app.exe
-  window_title_re: .*MyApp.*
-```
-
-**macOS** — Keep `appium_server_url` in the repository preset `config.macos.yaml`; set the app identity in `.fsq/config/config.macos.yaml`:
-```yaml
-target:
-  bundle_id: com.example.app
-```
-
-</details>
-
----
-
-## How It Works
-
-<p align="center">
-  <img src="docs/assets/fsq-agent-architecture-v2.png" alt="FSQ Architecture: Dual Loop, Shared Harness, Knowledge System, and Debug System" width="720">
-</p>
-
-**The Dual Loop in a nutshell:**
-- **Dynamic (AI)** → LLM agent explores → evidence captured at every step → replayable YAML generated
-- **Strict (Replay)** → replays YAML deterministically (no LLM) → evidence captured → pass/fail
-
----
-
-## Compared To...
-
-| | **FSQ** | Browser Use | Midscene.js | Playwright | Appium |
-|---|---|---|---|---|---|
-| **Evidence per step** | ✅ screenshots + UI snapshots + traces | ❌ | ❌ | ❌ | ❌ |
-| **AI → Replay YAML** | ✅ auto-generated strict cases | ❌ | ❌ | Codegen (manual) | ❌ |
-| **Verification** | Evidence-based verifier | Agent self-report | Vision assert | Manual assertion | Manual assertion |
-| **Cross-platform** | Web + Android + Windows + macOS | Web only | Web + Mobile | Web only | Multi (different APIs) |
-| **Runs without LLM** | ✅ Strict mode | ❌ | ❌ | ✅ | ✅ |
-| **Extensible harness** | Protocol-based plugin system | ❌ | ❌ | ❌ | Driver plugins |
-
----
+Provider configuration is stored under `~/.fsq` and shared by the CLI and local Control Plane. Supported first-release Providers are GitHub Copilot and Azure OpenAI.
 
 ## Documentation
 
-| Resource | Description |
+| Resource | Purpose |
 |---|---|
-| [Architecture Overview](docs/fsq-agent-architecture-v2.md) | Dual Loop design and module structure |
-| [Platform Setup](docs/) | Detailed per-platform configuration |
-| [FSQ YAML Reference](docs/) | DSL syntax, lifecycle hooks, replay semantics |
-| [Harness Development Guide](docs/) | Build a new platform harness |
-| [Roadmap](ROADMAP.md) | Product direction and planned phases |
-| [Governance](GOVERNANCE.md) | Roles, decisions, and maintainer responsibilities |
-
-<!-- TODO: Set up docs site (mkdocs-material + GitHub Pages) -->
-
----
+| [Getting started](docs/getting-started.md) | Installation, Workspace rules, first Web run, and next commands |
+| [CLI reference](docs/cli-reference.md) | Current public command families and output modes |
+| [FSQ Case format](docs/case-format.md) | Case structure and a validated public example |
+| [Platform prerequisites](docs/platform-prerequisites.md) | Web, Android, Windows, and macOS host setup boundaries |
+| [Support and stability](docs/support-and-stability.md) | Alpha scope, compatibility, privacy, and support expectations |
+| [Architecture](docs/architecture.md) | Current runtime layers and ownership boundaries |
+| [Release acceptance](docs/release-acceptance-checklist.md) | Maintainer release-candidate verification |
+| [Directory migration guide](docs/package-directory-migration-guide.md) | Package ownership and future migration criteria |
+| [Roadmap](ROADMAP.md) | Direction rather than release commitment |
 
 ## Contributing
 
-We welcome contributions! FSQ is designed to be extended.
-
-```bash
-git clone https://github.com/microsoft/FSQ.git && cd FSQ
-uv sync --extra dev
-npm ci && npm run build
-uv run python -m pytest
-```
-
-**Ways to contribute:**
-
-| Path | For whom |
-|---|---|
-| 🐛 Report bugs / suggest features | Everyone |
-| 📝 Improve docs and examples | Beginners welcome |
-| 🧪 Add FSQ YAML test cases | QA engineers |
-| 🔌 Build a new platform harness | Platform experts |
-| ⚡ Improve agent / verification | AI engineers |
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide and contributor growth path. Project decisions and role progression follow [GOVERNANCE.md](GOVERNANCE.md).
-
-<!-- TODO: Add "good first issue" link once issues are created -->
-
----
+Contributions are welcome across documentation, Cases, platform Harnesses, evidence, verification, and developer experience. Start with [CONTRIBUTING.md](CONTRIBUTING.md), follow the [Code of Conduct](CODE_OF_CONDUCT.md), and report vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
 [MIT](LICENSE) — Copyright (c) Microsoft Corporation.
-
----
-
-<p align="center">
-  <sub>Built with ❤️ by the FSQ team at Microsoft</sub>
-</p>

@@ -37,6 +37,29 @@ def test_default_distribution_contract() -> None:
         assert f"Programming Language :: Python :: {version}" in classifiers
 
 
+def test_sdist_includes_public_release_documentation_and_example() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    includes = set(project["tool"]["hatch"]["build"]["targets"]["sdist"]["include"])
+
+    assert {
+        "/CHANGELOG.md",
+        "/docs/README.md",
+        "/docs/architecture.md",
+        "/docs/assets/fsq-workflow.svg",
+        "/docs/assets/social-preview.png",
+        "/docs/assets/social-preview.svg",
+        "/docs/case-format.md",
+        "/docs/cli-reference.md",
+        "/docs/getting-started.md",
+        "/docs/launch",
+        "/docs/media",
+        "/docs/platform-prerequisites.md",
+        "/docs/releases",
+        "/docs/support-and-stability.md",
+        "/examples",
+    } <= includes
+
+
 def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "release.yml"
     raw = workflow_path.read_text(encoding="utf-8")
