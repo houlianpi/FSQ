@@ -178,6 +178,7 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     assert "pip install fsq-agent" in readme
     assert "README.zh-CN.md" in readme
     assert "docs/getting-started.zh-CN.md" in readme
+    assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     assert "docs/demo.html" in readme
@@ -204,6 +205,7 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
 
     assert "pip install fsq-agent" in readme
     assert "Workspace Root Strategy" in readme
+    assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     assert "docs/demo.html" in readme
@@ -232,6 +234,13 @@ def test_demo_page_embeds_youtube_autoplay_without_private_paths() -> None:
     assert "https://youtu.be/QqCahxGDdS0" in page
     assert "/Users/" not in page
     assert "Bilibili" not in page
+
+
+def test_release_demo_gif_is_lightweight_and_committed() -> None:
+    demo_gif = ROOT / "docs" / "media" / "fsq-v0.1.0-demo-preview.gif"
+
+    assert demo_gif.is_file()
+    assert demo_gif.stat().st_size < 1_000_000
 
 
 def test_v010_release_materials_cover_public_launch_contract() -> None:
