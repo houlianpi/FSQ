@@ -179,7 +179,6 @@ Provider configuration is stored under `~/.fsq` and shared by the CLI and local 
 | Resource | Purpose |
 |---|---|
 | [中文 README](README.zh-CN.md) | Chinese overview, quickstart, and release links |
-| [Autoplay demo page](docs/demo.html) | GitHub Pages-ready YouTube demo page |
 | [Getting started](docs/getting-started.md) | Installation, Workspace rules, first Web run, and next commands |
 | [中文快速开始](docs/getting-started.zh-CN.md) | Chinese installation and first-run guide |
 | [CLI reference](docs/cli-reference.md) | Current public command families and output modes |

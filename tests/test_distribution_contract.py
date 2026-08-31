@@ -51,7 +51,6 @@ def test_sdist_includes_public_release_documentation_and_example() -> None:
         "/docs/assets/social-preview.svg",
         "/docs/case-format.md",
         "/docs/cli-reference.md",
-        "/docs/demo.html",
         "/docs/getting-started.md",
         "/docs/getting-started.zh-CN.md",
         "/docs/launch",
@@ -181,10 +180,10 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
-    assert "docs/demo.html" in readme
     hero = readme.split("<p align=\"center\">\n  <img src=\"docs/assets/fsq-workflow.svg\"", 1)[0]
     assert "Autoplay demo page" not in hero
     assert "English captions" not in hero
+    assert "docs/demo.html" not in readme
     assert "Bilibili" not in readme
     for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
         assert command in readme
@@ -230,15 +229,6 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
         "fsq-agent[macos]",
     ):
         assert obsolete not in readme
-
-
-def test_demo_page_embeds_youtube_autoplay_without_private_paths() -> None:
-    page = (ROOT / "docs" / "demo.html").read_text(encoding="utf-8")
-
-    assert "https://www.youtube-nocookie.com/embed/QqCahxGDdS0?autoplay=1&mute=1" in page
-    assert "https://youtu.be/QqCahxGDdS0" in page
-    assert "/Users/" not in page
-    assert "Bilibili" not in page
 
 
 def test_release_demo_gif_is_lightweight_and_committed() -> None:

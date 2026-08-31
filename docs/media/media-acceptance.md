@@ -30,7 +30,7 @@
 - [x] Captions remain readable at 1280x720 and do not cover evidence.
 - [x] Screenshots have descriptive alt text in consuming documents.
 - [x] The README uses a lightweight animated GIF preview plus GitHub-hosted full video and one YouTube link.
-- [x] The optional GitHub Pages-ready demo page embeds the hosted YouTube video with muted autoplay; README itself remains static because GitHub sanitizes embeds.
+- [x] The README does not depend on a separate autoplay demo page because GitHub sanitizes embedded video players.
 - [x] Large video files are hosted outside Git history; committed media is limited to screenshots, thumbnail, subtitles, and documentation.
 
 ## New-user test

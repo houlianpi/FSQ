@@ -2,7 +2,7 @@
 
 This directory owns the v0.1.0 public demo video, product screenshots, subtitles, naming rules, privacy review, and new-user acceptance.
 
-The README uses `fsq-v0.1.0-demo-preview.gif` for an inline animated preview that works on GitHub, followed by the GitHub-hosted full video at <https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939>. It keeps one secondary link to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. The GitHub Pages-ready [`docs/demo.html`](../demo.html) page embeds the same YouTube video with muted autoplay for contexts that allow it, but it is not linked from the README hero.
+The README uses `fsq-v0.1.0-demo-preview.gif` for an inline animated preview that works on GitHub, followed by the GitHub-hosted full video at <https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939>. It keeps one secondary link to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. The README does not depend on a separate autoplay demo page because GitHub sanitizes embedded video players.
 
 The edited MP4 is hosted outside the Git repository through GitHub media attachment and YouTube. The original local screen recording is intentionally not committed.
 
@@ -11,7 +11,6 @@ The edited MP4 is hosted outside the Git repository through GitHub media attachm
 - `fsq-v0.1.0-demo-thumbnail.png` — linked video thumbnail;
 - `fsq-v0.1.0-demo-preview.gif` — lightweight README animation built from approved product screenshots;
 - `https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939` — GitHub README media preview;
-- `../demo.html` — hosted-video demo page with muted YouTube autoplay;
 - `01-describe-goal.png` — goal entry and setup;
 - `02-execute-workflow.png` — execution timeline;
 - `03-capture-evidence.png` — captured evidence;
