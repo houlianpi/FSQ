@@ -38,10 +38,7 @@ FSQ turns a natural-language UI goal into an observable automation run, saves sc
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
 
 <p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">Watch on YouTube</a> ·
-  <a href="docs/demo.html">Autoplay demo page</a> ·
-  <a href="docs/media/demo.en.srt">English captions</a> ·
-  <a href="docs/media/demo.zh-CN.srt">中文字幕</a>
+  <a href="https://youtu.be/QqCahxGDdS0">Watch the full demo on YouTube</a>
 </p>
 
 <p align="center">

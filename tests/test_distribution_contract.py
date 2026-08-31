@@ -182,6 +182,9 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     assert "docs/demo.html" in readme
+    hero = readme.split("<p align=\"center\">\n  <img src=\"docs/assets/fsq-workflow.svg\"", 1)[0]
+    assert "Autoplay demo page" not in hero
+    assert "English captions" not in hero
     assert "Bilibili" not in readme
     for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
         assert command in readme
@@ -208,7 +211,9 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
     assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
-    assert "docs/demo.html" in readme
+    hero = readme.split("<p align=\"center\">\n  <img src=\"docs/assets/fsq-workflow.svg\"", 1)[0]
+    assert "自动播放演示页" not in readme
+    assert "中文字幕" not in hero
     assert "Bilibili" not in readme
     for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
         assert command in readme

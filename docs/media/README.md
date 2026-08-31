@@ -2,7 +2,7 @@
 
 This directory owns the v0.1.0 public demo video, product screenshots, subtitles, naming rules, privacy review, and new-user acceptance.
 
-The README uses `fsq-v0.1.0-demo-preview.gif` for an inline animated preview that works on GitHub. It also links to the GitHub-hosted full video at <https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939> and the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. The GitHub Pages-ready [`docs/demo.html`](../demo.html) page embeds the same YouTube video with muted autoplay for contexts that allow it.
+The README uses `fsq-v0.1.0-demo-preview.gif` for an inline animated preview that works on GitHub, followed by the GitHub-hosted full video at <https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939>. It keeps one secondary link to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. The GitHub Pages-ready [`docs/demo.html`](../demo.html) page embeds the same YouTube video with muted autoplay for contexts that allow it, but it is not linked from the README hero.
 
 The edited MP4 is hosted outside the Git repository through GitHub media attachment and YouTube. The original local screen recording is intentionally not committed.
 
