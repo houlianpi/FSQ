@@ -29,13 +29,14 @@
 FSQ turns a natural-language UI goal into an observable automation run, saves screenshots, UI snapshots, events, and reports as evidence, and can turn successful actions into a reviewable Case for deterministic replay. It uses Playwright, uiautomator2, pywinauto, and Appium as platform backends; it does not replace or install their host prerequisites.
 
 <p align="center">
-  <a href="docs/media/fsq-v0.1.0-demo-1280.mp4">
+  <a href="https://youtu.be/QqCahxGDdS0">
     <img src="docs/media/fsq-v0.1.0-demo-thumbnail.png" alt="FSQ v0.1.0 demo: describe a UI goal, inspect evidence, review a candidate Case, replay, and open the static report" width="880">
   </a>
 </p>
 
 <p align="center">
-  <a href="docs/media/fsq-v0.1.0-demo-1280.mp4">Watch the 45-second FSQ demo</a> ·
+  <a href="https://youtu.be/QqCahxGDdS0">Watch on YouTube</a> ·
+  Bilibili link coming soon ·
   <a href="docs/media/demo.en.srt">English captions</a> ·
   <a href="docs/media/demo.zh-CN.srt">中文字幕</a>
 </p>

@@ -29,7 +29,8 @@
 - [x] English and Chinese subtitle files match the final edit.
 - [x] Captions remain readable at 1280x720 and do not cover evidence.
 - [x] Screenshots have descriptive alt text in consuming documents.
-- [x] The README uses a static thumbnail plus linked MP4 and subtitle files; no GIF is required for v0.1.0.
+- [x] The README uses a static thumbnail plus hosted YouTube video and subtitle file links; it does not depend on GitHub autoplaying repository MP4 files.
+- [ ] Add the Bilibili link after upload, or keep the README wording explicitly marked as coming soon.
 - [ ] Files meet the size targets in [the storyboard](demo-storyboard.md), except the committed MP4 may exceed the optional 12 MB target until a smaller export is produced.
 
 ## New-user test
