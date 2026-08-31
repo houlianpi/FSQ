@@ -234,6 +234,25 @@ def test_demo_page_embeds_youtube_autoplay_without_private_paths() -> None:
     assert "Bilibili" not in page
 
 
+def test_v010_release_materials_cover_public_launch_contract() -> None:
+    notes = (ROOT / "docs" / "releases" / "v0.1.0.md").read_text(encoding="utf-8")
+    release_copy = (ROOT / "docs" / "releases" / "v0.1.0-github-release.md").read_text(encoding="utf-8")
+
+    for text in (notes, release_copy):
+        assert "python -m pip install fsq-agent" in text
+        assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in text
+        assert "https://youtu.be/QqCahxGDdS0" in text
+        assert "alpha" in text.lower()
+        assert "Playwright" in text
+        assert "uiautomator2" in text
+        assert "pywinauto" in text
+        assert "Appium" in text
+        assert "token" in text.lower()
+        assert "API key" in text
+        assert "/Users/" not in text
+        assert "production ready" not in text.lower()
+
+
 def test_release_acceptance_checklist_uses_current_public_commands() -> None:
     checklist = (ROOT / "docs" / "release-acceptance-checklist.md").read_text(encoding="utf-8")
 

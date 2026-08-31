@@ -8,6 +8,7 @@
 - [Support and stability](support-and-stability.md)
 - [Architecture](architecture.md)
 - [v0.1.0 release notes](releases/v0.1.0.md)
+- [v0.1.0 GitHub Release copy](releases/v0.1.0-github-release.md)
 - [Autoplay demo page](demo.html)
 - [English launch article](launch/introducing-fsq.md)
 - [中文发布文章](launch/introducing-fsq.zh-CN.md)
