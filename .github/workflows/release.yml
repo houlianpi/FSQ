@@ -39,7 +39,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install Python dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --reinstall-package fsq-agent
 
       - name: Run Python quality and tests
         run: |

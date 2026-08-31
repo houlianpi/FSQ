@@ -132,6 +132,11 @@ def test_initialize_workspace_uses_registered_root_independently_of_current_dire
 
 
 def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    browser = tmp_path / "Google Chrome"
+    browser.write_text("", encoding="utf-8")
+    browser.chmod(0o755)
+    monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [browser])
+    monkeypatch.setattr(PlatformRuntimeService, "web_executable_matches_channel", lambda self, channel, path: True)
     monkeypatch.setattr(
         PlatformRuntimeService,
         "check",
