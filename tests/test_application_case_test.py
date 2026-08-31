@@ -83,27 +83,38 @@ def test_suggestion_artifacts_are_run_local_and_source_immutable(tmp_path: Path)
     assert not (tmp_path / "candidate.fsq.yaml").exists()
 
 
-def test_suggestion_rejects_candidate_for_another_platform_without_writes(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "schemaVersion: fsq.ai-test/v1\nname: Wrong\nplatform: android\n",
+        "schemaVersion: fsq.ai-test/v1\nname: Invalid: unquoted colon\nplatform: web\n",
+    ],
+)
+def test_suggestion_omits_invalid_candidate_but_preserves_valid_analysis(tmp_path: Path, candidate: str) -> None:
     source = tmp_path / "search.fsq.yaml"
     source.write_text("schemaVersion: fsq.ai-test/v1\nname: Search\nplatform: web\n", encoding="utf-8")
     run_dir = tmp_path / "runs" / "run-1"
     run_dir.mkdir(parents=True)
 
-    with pytest.raises(ValueError, match="platform"):
-        case_test_module._write_analysis_artifacts(
-            run_dir=run_dir,
-            source_case=source,
-            source_platform="web",
-            execution_status="passed",
-            execution_summary="Case passed.",
-            analysis=CaseSuggestionAnalysis(
-                summary="Wrong platform.",
-                suggestions=(),
-                candidate_case_yaml="schemaVersion: fsq.ai-test/v1\nname: Wrong\nplatform: android\n",
-            ),
-        )
+    suggestion_path, candidate_path = case_test_module._write_analysis_artifacts(
+        run_dir=run_dir,
+        source_case=source,
+        source_platform="web",
+        execution_status="passed",
+        execution_summary="Case passed.",
+        analysis=CaseSuggestionAnalysis(
+            summary="A useful analysis remains available.",
+            suggestions=({"kind": "stability", "message": "Use a stable locator."},),
+            candidate_case_yaml=candidate,
+        ),
+    )
 
-    assert list(run_dir.iterdir()) == []
+    payload = json.loads(suggestion_path.read_text(encoding="utf-8"))
+    assert candidate_path is None
+    assert payload["suggestions"] == [{"kind": "stability", "message": "Use a stable locator."}]
+    assert payload["candidate_case_path"] is None
+    assert payload["candidate_case_status"] == "invalid"
+    assert not (run_dir / "candidate.fsq.yaml").exists()
 
 
 def test_deprecated_suffix_warning_is_machine_visible() -> None:

@@ -285,10 +285,17 @@ def _write_analysis_artifacts(
     analysis: CaseSuggestionAnalysis,
 ) -> tuple[Path, Path | None]:
     candidate_path = None
+    candidate_status = "absent"
     if analysis.candidate_case_yaml is not None:
-        candidate_path = run_dir / "candidate.fsq.yaml"
-        _validate_candidate(analysis.candidate_case_yaml, candidate_path, source_platform)
-        _atomic_write(candidate_path, analysis.candidate_case_yaml)
+        proposed_path = run_dir / "candidate.fsq.yaml"
+        try:
+            _validate_candidate(analysis.candidate_case_yaml, proposed_path, source_platform)
+        except (ConfigurationError, ValueError):
+            candidate_status = "invalid"
+        else:
+            _atomic_write(proposed_path, analysis.candidate_case_yaml)
+            candidate_path = proposed_path
+            candidate_status = "available"
     suggestion_path = run_dir / "case-suggestions.json"
     _atomic_write(
         suggestion_path,
@@ -301,6 +308,7 @@ def _write_analysis_artifacts(
                 "analysis_summary": analysis.summary,
                 "suggestions": list(analysis.suggestions),
                 "candidate_case_path": str(candidate_path) if candidate_path else None,
+                "candidate_case_status": candidate_status,
             },
             indent=2,
             ensure_ascii=False,
