@@ -87,10 +87,27 @@ def test_distribution_includes_both_frontend_asset_trees() -> None:
         "fsq_agent/adapters/control_plane/playground/static",
     }
 
-    for target in ("wheel", "sdist"):
-        force_include = project["tool"]["hatch"]["build"]["targets"][target]["force-include"]
-        assert expected <= set(force_include)
-        assert all(force_include[path] == path for path in expected)
+    wheel = project["tool"]["hatch"]["build"]["targets"]["wheel"]
+    assert set(wheel["artifacts"]) == {*(f"{path}/**" for path in expected), "fsq_agent/resources/**"}
+    assert "force-include" not in wheel
+    sdist = project["tool"]["hatch"]["build"]["targets"]["sdist"]
+    assert {*(f"{path}/**" for path in expected)} <= set(sdist["artifacts"])
+    assert "force-include" not in sdist
+
+
+def test_sdist_maps_runtime_resources_to_package_paths() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    sdist = project["tool"]["hatch"]["build"]["targets"]["sdist"]
+    assert set(sdist["artifacts"]) == {
+        "config.android.yaml",
+        "config.web.yaml",
+        "config.windows.yaml",
+        "config.macos.yaml",
+        "knowledge/skills/**",
+        "fsq_agent/resources/**",
+        "fsq_agent/adapters/control_plane/static/**",
+        "fsq_agent/adapters/control_plane/playground/static/**",
+    }
 
 
 def test_ci_verifies_all_runtime_package_resources() -> None:
@@ -105,10 +122,19 @@ def test_ci_verifies_all_runtime_package_resources() -> None:
         "fsq_agent/resources/knowledge/skills/web-harness.md",
         "fsq_agent/resources/knowledge/skills/windows-harness.md",
         "fsq_agent/resources/knowledge/skills/macos-harness.md",
+        "fsq_agent/resources/knowledge/skills/automation-basics.md",
         "fsq_agent/agent/templates/agent_instructions.j2",
         "fsq_agent/agent/templates/task_input.j2",
     ):
         assert resource in workflow
+
+    for contract in (
+        "Verify clean checkout has no generated package resources",
+        "uv build --wheel dist/*.tar.gz --out-dir rebuilt-dist",
+        "Wheel rebuilt from sdist has different runtime package resources",
+        "Sdist is missing build input",
+    ):
+        assert contract in workflow
 
 
 def test_readme_uses_current_installation_and_cli_contract() -> None:
