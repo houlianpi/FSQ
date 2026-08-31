@@ -1,6 +1,6 @@
 # FSQ Release Acceptance Checklist
 
-Use this checklist for every release candidate. Run automated checks from a clean checkout, then complete the platform matrix on hosts that provide the real applications, browsers, devices, and services under test. A mocked unit test does not count as a platform acceptance result.
+Use this checklist for every release candidate. The release workflow automates source quality, package metadata, distribution checks, and clean installed-package smoke across GitHub-hosted Linux, macOS, and Windows runners. Complete the real-host platform matrix on hosts that provide the real applications, browsers, devices, and services under test. A mocked unit test does not count as a platform acceptance result.
 
 Record the commit SHA, operating system, Python version, installed artifact checksum, target identity, result, and evidence path for each run. Do not record credentials, tokens, API keys, `Authorization`, `Cookie`, or private target data.
 
@@ -8,8 +8,8 @@ Record the commit SHA, operating system, Python version, installed artifact chec
 
 A release candidate is ready only when:
 
-- quality, backend tests, frontend tests, frontend build, wheel build, and sdist build pass;
-- the wheel can be installed with `pip install fsq-agent` semantics in a clean Python 3.11+ environment without platform extras;
+- quality, backend tests, frontend tests, frontend build, package metadata guards, wheel build, and sdist build pass;
+- the verified wheel can be installed with `pip install fsq-agent` semantics in clean Python 3.11+ environments on Linux, macOS, and Windows without platform extras;
 - the installed distribution provides both `fsq` and `fsq-agent`, package-owned configuration/templates/skills, and both compiled frontends;
 - one real-host acceptance row passes for every supported platform included in the release;
 - Provider CLI and Control Plane read the same user-level configuration in both directions;
@@ -38,6 +38,8 @@ uv build
 
 Expected: all commands succeed, including the explicit clean-worktree assertion. Run this gate from a clean checkout of the candidate commit, not from an implementation worktree that still contains the proposed diff. Generated frontend output must exist before Python distributions are built. Local `.fsq/`, `runs/`, credentials, and test evidence must not enter the release commit or distribution.
 
+The release workflow runs the equivalent automated gate before publication, including package metadata guardrails, `twine check`, distribution contract tests, and upload of one verified `dist/` artifact consumed by downstream smoke and publish jobs.
+
 The CI package job is the executable contract for archive inspection. Confirm that it checks:
 
 - exactly one wheel and one sdist;
@@ -50,6 +52,8 @@ The CI package job is the executable contract for archive inspection. Confirm th
 
 ## 2. Clean Installation
 
+The release workflow automatically runs this smoke from the verified wheel artifact on `ubuntu-latest`, `macos-latest`, and `windows-latest`. Use this section for local reproduction, release-candidate spot checks, or investigating a failed matrix cell.
+
 Create a new temporary environment and install the built wheel without the repository on `PYTHONPATH`:
 
 ```bash
@@ -57,9 +61,18 @@ uv venv --python 3.11 /tmp/fsq-release-smoke
 uv pip install --python /tmp/fsq-release-smoke/bin/python dist/fsq_agent-*.whl
 /tmp/fsq-release-smoke/bin/fsq --help
 /tmp/fsq-release-smoke/bin/fsq-agent --help
+/tmp/fsq-release-smoke/bin/python -c "import fsq_agent"
 ```
 
-On Windows use the corresponding `Scripts\fsq.exe` and `Scripts\fsq-agent.exe` paths. Both help outputs must expose exactly the current top-level command families: `init`, `doctor`, `providers`, `case`, `runs`, and `ui`.
+On Windows use the corresponding paths:
+
+```powershell
+.\fsq-release-smoke\Scripts\fsq.exe --help
+.\fsq-release-smoke\Scripts\fsq-agent.exe --help
+.\fsq-release-smoke\Scripts\python.exe -c "import fsq_agent"
+```
+
+Both help outputs must expose exactly the current top-level command families: `init`, `doctor`, `providers`, `case`, `runs`, and `ui`.
 
 Run the remaining sections with the installed `fsq` executable.
 
