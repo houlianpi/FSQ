@@ -77,6 +77,9 @@ def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> N
     ):
         assert command in commands
     assert "uv sync --frozen --extra dev --reinstall-package fsq-agent" in commands
+    assert "uv run --no-sync ruff check ." in commands
+    assert "uv run --no-sync ruff format --check ." in commands
+    assert "uv run --no-sync python -m pytest" in commands
     assert "PYPI_API_TOKEN" not in raw
     assert "password:" not in raw
 
@@ -138,6 +141,9 @@ def test_ci_verifies_all_runtime_package_resources() -> None:
         assert contract in workflow
     assert "uv sync --frozen --extra dev --reinstall-package fsq-agent" in workflow
     assert "uv sync --frozen --all-extras --reinstall-package fsq-agent" in workflow
+    assert "uv run --no-sync ruff check ." in workflow
+    assert "uv run --no-sync ruff format --check ." in workflow
+    assert "uv run --no-sync python -m pytest" in workflow
 
 
 def test_readme_uses_current_installation_and_cli_contract() -> None:
