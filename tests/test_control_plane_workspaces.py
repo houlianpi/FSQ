@@ -369,11 +369,16 @@ def test_workspace_update_uses_revision_and_preserves_stale_draft(tmp_path: Path
     assert loaded == updated["platform"]
 
 
-def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path) -> None:
+def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = tmp_path / "projects"
     parent.mkdir()
     server = _server(tmp_path)
     _create(server, parent)
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
 
     status, payload = server.handle_post(
         "/api/control-plane/workspaces/checkout/platforms",
@@ -385,7 +390,7 @@ def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path)
         peer_host="127.0.0.1",
     )
 
-    assert status == 201
+    assert status == 201, payload
     assert [item["platform"] for item in payload["workspace"]["platforms"]] == ["android", "macos"]
     assert "private-mac-token" not in str(payload["workspace"])
     assert payload["platform"]["env"] == {"MAC_TOKEN": "private-mac-token"}
@@ -396,12 +401,17 @@ def test_workspace_adds_platform_without_exposing_env_in_summary(tmp_path: Path)
     assert delete_status == 404
 
 
-def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_path: Path) -> None:
+def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "projects"
     root.mkdir()
     server = _server(tmp_path)
     _create(server, root)
     root.rename(tmp_path / "moved-projects")
+    monkeypatch.setattr(
+        PlatformRuntimeService,
+        "check",
+        lambda self, selected: PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
+    )
 
     status, error = server.handle_post(
         "/api/control-plane/workspaces/checkout/platforms",
@@ -413,7 +423,7 @@ def test_workspace_add_platform_maps_missing_registered_root_to_unavailable(tmp_
         peer_host="127.0.0.1",
     )
 
-    assert status == 409
+    assert status == 409, error
     assert error["code"] == "workspace_unavailable"
 
 
