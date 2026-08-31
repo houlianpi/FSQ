@@ -33,6 +33,17 @@ body:
       required: true
 
   - type: textarea
+    id: command-output
+    attributes:
+      label: Command and output
+      description: Paste the exact command and sanitized output. Prefer text over screenshots for CLI failures.
+      placeholder: |
+        $ fsq doctor
+        ...
+    validations:
+      required: false
+
+  - type: textarea
     id: expected-behavior
     attributes:
       label: Expected behavior
@@ -85,9 +96,22 @@ body:
     id: logs-evidence
     attributes:
       label: Sanitized logs and evidence
-      description: Add relevant sanitized logs, screenshots, or report excerpts. You can attach files by dragging them here.
+      description: Add relevant sanitized logs, screenshots, report excerpts, Run ID, or redacted files from `.fsq/runs/<platform>/<run-id>/`. Do not attach raw evidence if it contains private UI data.
     validations:
       required: false
+
+  - type: dropdown
+    id: install-type
+    attributes:
+      label: Installation source
+      description: Tell us how FSQ was installed or run.
+      options:
+        - pip install fsq-agent
+        - Local source checkout with uv
+        - Built wheel or sdist
+        - Other
+    validations:
+      required: true
 
   - type: textarea
     id: additional-context

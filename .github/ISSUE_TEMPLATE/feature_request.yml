@@ -26,6 +26,14 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: current-workaround
+    attributes:
+      label: Current workaround
+      description: Describe how you solve this today, if at all.
+    validations:
+      required: false
+
   - type: dropdown
     id: affected-areas
     attributes:
@@ -40,6 +48,8 @@ body:
         - Windows
         - macOS
         - CLI
+        - Control Plane UI
+        - Runs / reports / evidence
         - Playground
         - Providers
         - Harness SDK / existing drivers
@@ -60,7 +70,7 @@ body:
     id: compatibility-risks
     attributes:
       label: Compatibility and rollout risks
-      description: Note any compatibility concerns, migrations, or rollout risks you foresee.
+      description: Note any public CLI, Case DSL, Provider, Workspace, Run artifact, or UI compatibility concerns you foresee.
     validations:
       required: false
 
