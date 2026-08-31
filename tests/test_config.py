@@ -61,6 +61,22 @@ def test_runtime_resource_root_ignores_incomplete_editable_package_resources(tmp
     assert _loader._runtime_resource_root() == checkout
 
 
+def test_resolve_platform_config_path_recovers_a_stale_editable_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("[project]\nname = 'example'\n", encoding="utf-8")
+    preset = checkout / "config.macos.yaml"
+    preset.write_text("harness:\n  platform: macos\n", encoding="utf-8")
+    stale = tmp_path / "build-cache" / "fsq_agent" / "resources" / "config.macos.yaml"
+    stale_module = stale.parents[1] / "config" / "_loader.py"
+    monkeypatch.setattr(_loader, "__file__", str(stale_module))
+    monkeypatch.setitem(_loader.PLATFORM_CONFIG_PATHS, "macos", stale)
+    monkeypatch.setitem(_loader._DEFAULT_PLATFORM_CONFIG_PATHS, "macos", stale)
+    monkeypatch.chdir(checkout)
+
+    assert _loader.resolve_platform_config_path("macos") == preset
+
+
 def test_load_workspace_platform_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
     workspace = tmp_path / "checkout-android"
     config_dir = workspace / ".fsq" / "config"

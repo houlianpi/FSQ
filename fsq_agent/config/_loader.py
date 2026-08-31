@@ -49,6 +49,7 @@ def _runtime_resource_root() -> Path:
 
 
 PLATFORM_CONFIG_PATHS = {platform: _runtime_resource_root() / filename for platform, filename in _PLATFORM_CONFIG_FILENAMES.items()}
+_DEFAULT_PLATFORM_CONFIG_PATHS = dict(PLATFORM_CONFIG_PATHS)
 SUPPORTED_LLM_PROVIDERS = ("github_copilot", "azure_openai")
 
 
@@ -98,6 +99,8 @@ def resolve_platform_config_path(platform: str) -> Path:
             "Unsupported harness platform.",
             context={"platform": platform, "supported": sorted(PLATFORM_CONFIG_PATHS)},
         )
+    if not config_path.is_file() and config_path == _DEFAULT_PLATFORM_CONFIG_PATHS[platform_id]:
+        config_path = _runtime_resource_root() / _PLATFORM_CONFIG_FILENAMES[platform_id]
     if not config_path.is_file():
         raise ConfigurationError(
             "Platform configuration file is missing.",
