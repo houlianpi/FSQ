@@ -28,20 +28,23 @@ it('clears the previous target on platform change and submits the complete maske
     name: 'web-check', rootPath: 'C:\\projects\\web-check', status: 'available', message: 'Workspace is available.',
     platforms: [{ platform: 'web', configPath: 'C:\\projects\\web-check\\.fsq\\config\\config.web.yaml', status: 'available', message: 'Platform is available.', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: [{ name: 'TEST_PASSWORD', configured: true }], revision: 'sha256:created' }],
   };
-  const pickParent = vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', parentPath: 'C:\\projects' });
+  const pickParent = vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', selectedPath: 'C:\\projects', isEmpty: false });
   const create = vi.spyOn(controlPlaneClient, 'createWorkspace').mockResolvedValue(created);
   const onSaved = vi.fn();
   const user = userEvent.setup();
   render(<WorkspaceForm mode="create" onCancel={vi.fn()} onSaved={onSaved} />);
 
   expect(screen.getByLabelText('Workspace name')).toBeVisible();
-  expect(screen.getByLabelText('Parent folder')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('Selected folder')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('Final path')).toHaveAttribute('readonly');
+  expect(screen.getByLabelText('Final path')).toHaveValue('');
   expect(screen.queryByRole('combobox', { name: 'Platform 1' })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Target' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'web-check' } });
   await user.click(screen.getByRole('button', { name: 'Choose folder' }));
   expect(pickParent).toHaveBeenCalledOnce();
-  expect(screen.getByLabelText('Parent folder')).toHaveValue('C:\\projects');
+  expect(screen.getByLabelText('Selected folder')).toHaveValue('C:\\projects');
+  expect(screen.getByLabelText('Final path')).toHaveValue('C:\\projects/web-check');
   await user.click(screen.getByRole('button', { name: 'Add platform' }));
   expect(screen.getByRole('combobox', { name: 'Platform 1' })).toBeVisible();
   await user.selectOptions(screen.getByRole('combobox', { name: 'Platform 1' }), 'web');
@@ -60,14 +63,14 @@ it('clears the previous target on platform change and submits the complete maske
 
   expect(create).toHaveBeenCalledWith({
     name: 'web-check',
-    parentPath: 'C:\\projects',
+    selectedPath: 'C:\\projects',
     platforms: [{ platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: { TEST_PASSWORD: 'new-secret' } }],
   });
   expect(onSaved).toHaveBeenCalledWith(created);
 });
 
 it('submits all unsaved platform drafts in one workspace creation request', async () => {
-  vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', parentPath: 'C:\\projects' });
+  vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', selectedPath: 'C:\\projects', isEmpty: false });
   const create = vi.spyOn(controlPlaneClient, 'createWorkspace').mockResolvedValue(workspace);
   const user = userEvent.setup();
   render(<WorkspaceForm mode="create" onCancel={vi.fn()} onSaved={vi.fn()} />);
@@ -84,7 +87,7 @@ it('submits all unsaved platform drafts in one workspace creation request', asyn
   await user.click(screen.getByRole('button', { name: 'Create workspace' }));
 
   expect(create).toHaveBeenCalledWith({
-    name: 'mobile', parentPath: 'C:\\projects',
+    name: 'mobile', selectedPath: 'C:\\projects',
     platforms: [
       { platform: 'android', target: { appId: 'com.example.mobile' }, env: {} },
       { platform: 'web', target: { browserChannel: 'chrome', browserExecutablePath: 'C:\\Browser\\browser.exe' }, env: {} },
@@ -93,7 +96,7 @@ it('submits all unsaved platform drafts in one workspace creation request', asyn
 });
 
 it('focuses the first invalid field in the first invalid platform section', async () => {
-  vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', parentPath: 'C:\\projects' });
+  vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockResolvedValue({ status: 'selected', selectedPath: 'C:\\projects', isEmpty: false });
   const user = userEvent.setup();
   render(<WorkspaceForm mode="create" onCancel={vi.fn()} onSaved={vi.fn()} />);
   await user.type(screen.getByLabelText('Workspace name'), 'mobile');
@@ -106,27 +109,27 @@ it('focuses the first invalid field in the first invalid platform section', asyn
   expect(platform).toHaveFocus();
 });
 
-it('requires parent-folder selection before validating platform drafts', async () => {
+it('requires selected-folder selection before validating platform drafts', async () => {
   const user = userEvent.setup();
   render(<WorkspaceForm mode="create" onCancel={vi.fn()} onSaved={vi.fn()} />);
   await user.type(screen.getByLabelText('Workspace name'), 'mobile');
 
   await user.click(screen.getByRole('button', { name: 'Create workspace' }));
 
-  expect(screen.getByText('Choose a parent folder.')).toBeVisible();
+  expect(screen.getByText('Choose a folder.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveFocus();
 });
 
 it('locks picker actions while pending and preserves selection across cancel and failure', async () => {
-  let resolveSelection!: (value: { status: 'selected'; parentPath: string }) => void;
-  const firstSelection = new Promise<{ status: 'selected'; parentPath: string }>((resolve) => { resolveSelection = resolve; });
+  let resolveSelection!: (value: { status: 'selected'; selectedPath: string; isEmpty: boolean }) => void;
+  const firstSelection = new Promise<{ status: 'selected'; selectedPath: string; isEmpty: boolean }>((resolve) => { resolveSelection = resolve; });
   const pickParent = vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory')
     .mockReturnValueOnce(firstSelection)
     .mockResolvedValueOnce({ status: 'cancelled' })
     .mockRejectedValueOnce(new ControlPlaneApiError(503, {
       code: 'directory_picker_unavailable', message: 'Folder selection is unavailable.', action: 'Restore the desktop session and retry.',
     }))
-    .mockResolvedValueOnce({ status: 'selected', parentPath: 'C:\\projects two' });
+    .mockResolvedValueOnce({ status: 'selected', selectedPath: 'C:\\projects two', isEmpty: true });
   const user = userEvent.setup();
   render(<WorkspaceForm mode="create" onCancel={vi.fn()} onSaved={vi.fn()} />);
 
@@ -136,23 +139,24 @@ it('locks picker actions while pending and preserves selection across cancel and
   expect(choose).toHaveAttribute('aria-busy', 'true');
   expect(screen.getByRole('button', { name: 'Create workspace' })).toBeDisabled();
 
-  resolveSelection({ status: 'selected', parentPath: 'C:\\projects one' });
+  resolveSelection({ status: 'selected', selectedPath: 'C:\\projects one', isEmpty: false });
   expect(await screen.findByDisplayValue('C:\\projects one')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Choose folder' }));
-  expect(screen.getByLabelText('Parent folder')).toHaveValue('C:\\projects one');
+  expect(screen.getByLabelText('Selected folder')).toHaveValue('C:\\projects one');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveFocus());
 
   await user.click(screen.getByRole('button', { name: 'Choose folder' }));
   expect(await screen.findByText('Folder selection is unavailable.')).toBeVisible();
-  expect(screen.getByLabelText('Parent folder')).toHaveValue('C:\\projects one');
+  expect(screen.getByLabelText('Selected folder')).toHaveValue('C:\\projects one');
 
   await user.click(screen.getByRole('button', { name: 'Retry folder selection' }));
-  expect(await screen.findByDisplayValue('C:\\projects two')).toBeVisible();
+  await waitFor(() => expect(screen.getByLabelText('Selected folder')).toHaveValue('C:\\projects two'));
+  expect(screen.getByLabelText('Final path')).toHaveValue('C:\\projects two');
   expect(pickParent).toHaveBeenCalledTimes(4);
 });
 
 it('ignores a picker response after the create form is abandoned', async () => {
-  let resolveSelection!: (value: { status: 'selected'; parentPath: string }) => void;
+  let resolveSelection!: (value: { status: 'selected'; selectedPath: string; isEmpty: boolean }) => void;
   vi.spyOn(controlPlaneClient, 'pickWorkspaceParentDirectory').mockReturnValue(new Promise((resolve) => { resolveSelection = resolve; }));
   const onDirtyChange = vi.fn();
   const user = userEvent.setup();
@@ -160,7 +164,7 @@ it('ignores a picker response after the create form is abandoned', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Choose folder' }));
   view.unmount();
-  await act(async () => resolveSelection({ status: 'selected', parentPath: 'C:\\late-response' }));
+  await act(async () => resolveSelection({ status: 'selected', selectedPath: 'C:\\late-response', isEmpty: true }));
 
   expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   expect(screen.queryByDisplayValue('C:\\late-response')).not.toBeInTheDocument();

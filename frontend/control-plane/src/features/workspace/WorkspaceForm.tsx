@@ -75,12 +75,6 @@ function targetPayload(platform: PlatformId, target: TargetDraft): WorkspaceTarg
   };
 }
 
-function finalPath(parentPath: string, name: string): string {
-  if (!parentPath.trim()) return name.trim();
-  const separator = parentPath.includes('\\') ? '\\' : '/';
-  return `${parentPath.trim().replace(/[\\/]+$/, '')}${separator}${name.trim()}`;
-}
-
 function envRecord(rows: EnvRow[]): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [row.name, row.value]));
 }
@@ -89,7 +83,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
   const initialPlatform = detail?.platform ?? allowedPlatforms[0] ?? 'android';
   const initialRows = Object.entries(detail?.env ?? {}).map(([name, value], index) => ({ id: index + 1, name, value }));
   const [name, setName] = useState(detail?.name ?? workspace?.name ?? '');
-  const [parentPath, setParentPath] = useState((detail?.rootPath ?? workspace?.rootPath ?? '').replace(/[\\/][^\\/]+$/, ''));
+  const [selectedPath, setSelectedPath] = useState('');
+  const [selectedPathIsEmpty, setSelectedPathIsEmpty] = useState<boolean | null>(null);
   const [drafts, setDrafts] = useState<PlatformDraft[]>(mode === 'create' ? [] : [{ id: 1, platform: initialPlatform, target: targetFromDetail(detail), envRows: initialRows }]);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [error, setError] = useState<ApiErrorBody | null>(null);
@@ -108,8 +103,9 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
     ? JSON.stringify({ target: targetPayload(singleDraft.platform, singleDraft.target), env: envRecord(singleDraft.envRows) })
     : '';
   const dirty = mode === 'create'
-    ? Boolean(name || parentPath || drafts.length)
+    ? Boolean(name || selectedPath || drafts.length)
     : mode === 'add' ? Boolean(singleDraft && (Object.values(singleDraft.target).some(Boolean) || singleDraft.envRows.length > 0)) : currentValue !== initialValue;
+  const finalPath = selectedPathIsEmpty === null ? '' : selectedPathIsEmpty ? selectedPath : `${selectedPath.replace(/[\\/]+$/, '')}/${name.trim()}`;
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => {
@@ -125,7 +121,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       const result = await controlPlaneClient.pickWorkspaceParentDirectory();
       if (request !== pickerRequest.current) return;
       if (result.status === 'selected') {
-        setParentPath(result.parentPath);
+        setSelectedPath(result.selectedPath);
+        setSelectedPathIsEmpty(result.isEmpty);
         setFieldError('');
       } else {
         pickerButton.current?.focus();
@@ -194,7 +191,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (mode === 'create' && !name.trim()) { setFieldError('Enter a workspace name.'); firstField.current?.focus(); return; }
-    if (mode === 'create' && !parentPath.trim()) { setFieldError('Choose a parent folder.'); pickerButton.current?.focus(); return; }
+    if (mode === 'create' && !selectedPath.trim()) { setFieldError('Choose a folder.'); pickerButton.current?.focus(); return; }
     if (mode === 'create' && drafts.length === 0) { setFieldError('Add at least one platform.'); document.querySelector<HTMLElement>('.cp-add-platform')?.focus(); return; }
     const platformPayloads: AddWorkspacePlatformPayload[] = [];
     for (const draft of drafts) {
@@ -207,7 +204,7 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
     setError(null);
     try {
       if (mode === 'create') {
-        const saved = await controlPlaneClient.createWorkspace({ name: name.trim(), parentPath: parentPath.trim(), platforms: platformPayloads });
+        const saved = await controlPlaneClient.createWorkspace({ name: name.trim(), selectedPath: selectedPath.trim(), platforms: platformPayloads });
         onSaved(saved);
       } else if (mode === 'add') {
         const saved = await controlPlaneClient.addWorkspacePlatform(workspace!.name, platformPayloads[0]);
@@ -239,8 +236,8 @@ export function WorkspaceForm({ mode, workspace, detail, allowedPlatforms = allP
       <legend>{mode === 'create' ? 'Create workspace' : mode === 'add' ? 'Add platform' : `Edit ${platformLabels[detail!.platform]}`}</legend>
       {mode === 'create' ? <div className="cp-form-grid cp-form-grid--identity">
         <label><span>Workspace name</span><input ref={firstField} value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" /></label>
-        <div className="cp-parent-folder"><label><span>Parent folder</span><input value={parentPath} placeholder="No folder selected" readOnly /></label><button ref={pickerButton} className="button" type="button" onClick={chooseParentFolder} disabled={pickerPending} aria-busy={pickerPending}>{pickerPending ? 'Choosing...' : <><FolderOpen aria-hidden="true" />Choose folder</>}</button></div>
-        <label className="cp-path-preview"><span>Final path</span><output>{finalPath(parentPath, name) || 'Complete the name and parent folder'}</output></label>
+        <div className="cp-selected-folder"><label><span>Selected folder</span><input value={selectedPath} placeholder="No folder selected" readOnly /></label><button ref={pickerButton} className="button" type="button" onClick={chooseParentFolder} disabled={pickerPending} aria-busy={pickerPending}>{pickerPending ? 'Choosing...' : <><FolderOpen aria-hidden="true" />Choose folder</>}</button></div>
+        <label><span>Final path</span><input value={finalPath} placeholder="Select a folder to preview the workspace path" readOnly /></label>
       </div> : <dl className="cp-workspace-immutable"><div><dt>Name</dt><dd>{detail?.name ?? workspace!.name}</dd></div><div><dt>Root</dt><dd className="mono">{detail?.rootPath ?? workspace!.rootPath}</dd></div><div><dt>Platform</dt><dd>{detail?.platform ? platformLabels[detail.platform] : singleDraft?.platform ? platformLabels[singleDraft.platform] : ''}</dd></div></dl>}
 
       {mode === 'create' && <div className="cp-platform-builder">

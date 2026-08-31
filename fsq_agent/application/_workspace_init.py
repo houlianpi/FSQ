@@ -8,22 +8,75 @@ from pydantic import ValidationError
 from fsq_agent.application.contracts import ApplicationError, ApplicationErrorCategory, ApplicationErrorCode, WorkspaceInitializeRequest, WorkspaceInitializeResult
 from fsq_agent.config import add_workspace_platform as persist_workspace_platform
 from fsq_agent.config import create_workspace as persist_workspace
-from fsq_agent.config import initialize_workspace_root
+from fsq_agent.config import inspect_registered_workspace, list_workspace_registry, load_registered_workspace, workspace_revision
 from fsq_agent.config import update_workspace_platform as persist_workspace_platform_update
 from fsq_agent.environments import PlatformRuntimeService
-from fsq_agent.models import AndroidWorkspaceTarget, ConfigurationError, MacOSWorkspaceTarget, WebWorkspaceTarget, WindowsWorkspaceTarget, WorkspaceConfig
+from fsq_agent.models import (
+    AndroidWorkspaceTarget,
+    ConfigurationError,
+    MacOSWorkspaceTarget,
+    WebWorkspaceTarget,
+    WindowsWorkspaceTarget,
+    WorkspacePlatformCreateInput,
+)
 
 
 def initialize_workspace(request: WorkspaceInitializeRequest) -> WorkspaceInitializeResult:
-    root = request.current_directory.expanduser().resolve()
     target = resolve_workspace_target(request)
     try:
-        config = WorkspaceConfig(version=2, name=request.name or root.name, root_path=root, platform=request.platform, target=target, env=request.env)
-        result = initialize_workspace_root(root_path=root, config=config, update_existing=request.update_existing, user_config_root=request.user_config_root)
+        selected = request.current_directory.expanduser().resolve()
+        name = (request.name or selected.name).strip()
+        entry = next(
+            (item for item in list_workspace_registry(request.user_config_root) if item.name.casefold() == name.casefold()),
+            None,
+        )
+        if entry is None:
+            status = persist_workspace(
+                selected_path=selected,
+                name=name,
+                platforms=[WorkspacePlatformCreateInput(platform=request.platform, target=target, env=request.env)],
+                user_config_root=request.user_config_root,
+            )
+            result_status = "initialized"
+            result_name = status.name
+            result_root = status.root_path
+        else:
+            status = inspect_registered_workspace(entry.name, request.user_config_root)
+            if status.status == "unavailable":
+                raise ConfigurationError("Registered workspace is unavailable.", context={"name": entry.name})  # noqa: TRY301
+            config_path = entry.root_path / ".fsq" / "config" / f"config.{request.platform}.yaml"
+            if not config_path.exists() and not config_path.is_symlink():
+                added = persist_workspace_platform(name=entry.name, platform=request.platform, target=target, env=request.env, user_config_root=request.user_config_root)
+                result_status, result_name, result_root = "platform_added", added.name, added.root_path
+            else:
+                current = load_registered_workspace(entry.name, request.platform, request.user_config_root)
+                if current.target == target and current.env == request.env:
+                    result_status, result_name, result_root = "unchanged", current.name, current.root_path
+                elif not request.update_existing:
+                    raise ConfigurationError(  # noqa: TRY301
+                        "Workspace platform configuration differs; use --update-existing to replace target and env values."
+                    )
+                else:
+                    updated = persist_workspace_platform_update(
+                        name=current.name,
+                        platform=current.platform,
+                        target=target,
+                        env=request.env,
+                        expected_revision=workspace_revision(config_path),
+                        user_config_root=request.user_config_root,
+                    )
+                    result_status, result_name, result_root = "updated", updated.name, updated.root_path
     except (ConfigurationError, ValidationError, ValueError) as exc:
         raise _configuration_error(exc) from exc
     browser_path = target.browser_executable_path if isinstance(target, WebWorkspaceTarget) else None
-    return WorkspaceInitializeResult(status=result.status, name=result.name, root_path=result.root_path, platform=result.platform, driver_status="ready", browser_executable_path=browser_path)
+    return WorkspaceInitializeResult(
+        status=result_status,
+        name=result_name,
+        root_path=result_root,
+        platform=request.platform,
+        driver_status="ready",
+        browser_executable_path=browser_path,
+    )
 
 
 def resolve_workspace_target(request: WorkspaceInitializeRequest):
@@ -41,9 +94,23 @@ def resolve_workspace_target(request: WorkspaceInitializeRequest):
     return target
 
 
-def create_workspace(*, parent_path: Path, configs: list[WorkspaceConfig | dict[str, object]], user_config_root: Path | None = None):
-    resolved = [_resolve_config_target(config) for config in configs]
-    return persist_workspace(parent_path=parent_path, configs=resolved, user_config_root=user_config_root)
+def create_workspace(*, selected_path: Path, name: str, platforms: list[WorkspacePlatformCreateInput | dict[str, object]], user_config_root: Path | None = None):
+    resolved: list[WorkspacePlatformCreateInput] = []
+    for platform in platforms:
+        if isinstance(platform, WorkspacePlatformCreateInput):
+            platform_name = platform.platform
+            target_input = platform.target.model_dump()
+            env = dict(platform.env)
+        else:
+            platform_name = str(platform["platform"])
+            target_input = platform["target"]
+            env = platform["env"]
+            if not isinstance(target_input, dict) or not isinstance(env, dict):
+                raise TypeError("Workspace target and environment must be objects.")
+        request = _request_from_target(selected_path, platform_name, target_input, env)  # type: ignore[arg-type]
+        target = resolve_workspace_target(request)
+        resolved.append(WorkspacePlatformCreateInput(platform=platform_name, target=target, env=env))  # type: ignore[arg-type]
+    return persist_workspace(selected_path=selected_path, name=name, platforms=resolved, user_config_root=user_config_root)
 
 
 def add_workspace_platform(*, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], user_config_root: Path | None = None):
@@ -54,22 +121,6 @@ def add_workspace_platform(*, name: str, root_path: Path, platform: str, target:
 def update_workspace_platform(*, name: str, root_path: Path, platform: str, target: dict[str, object], env: dict[str, str], expected_revision: str, user_config_root: Path | None = None):
     resolved = resolve_workspace_target(_request_from_target(root_path, platform, target, env))
     return persist_workspace_platform_update(name=name, platform=platform, target=resolved, env=env, expected_revision=expected_revision, user_config_root=user_config_root)
-
-
-def _resolve_config_target(config: WorkspaceConfig | dict[str, object]) -> WorkspaceConfig:
-    if not isinstance(config, WorkspaceConfig):
-        root_path = Path(str(config["root_path"]))
-        platform = str(config["platform"])
-        target = config["target"]
-        env = config["env"]
-        if not isinstance(target, dict) or not isinstance(env, dict):
-            raise TypeError("Workspace target and environment must be objects.")
-        request = _request_from_target(root_path, platform, target, env)  # type: ignore[arg-type]
-        resolved = resolve_workspace_target(request)
-        return WorkspaceConfig.model_validate({**config, "target": resolved})
-    request = _request_from_target(config.root_path, config.platform, config.target.model_dump(), dict(config.env))
-    resolved = resolve_workspace_target(request)
-    return config.model_copy(update={"target": resolved})
 
 
 def _request_from_target(root: Path, platform: str, target: dict[str, object], env: dict[str, str]) -> WorkspaceInitializeRequest:

@@ -57,18 +57,17 @@ def get_workspace(name: str, user_config_root: Path | None) -> dict[str, Any]:
 
 
 def create_workspace_request(body: dict[str, Any], user_config_root: Path | None) -> dict[str, Any]:
-    _require_exact_fields(body, {"name", "parentPath", "platforms"})
+    _require_exact_fields(body, {"name", "selectedPath", "platforms"})
     name = body["name"]
-    parent_path = body["parentPath"]
+    selected_path = body["selectedPath"]
     platforms = body["platforms"]
-    if not isinstance(name, str) or not isinstance(parent_path, str) or not isinstance(platforms, list) or not platforms:
+    if not isinstance(name, str) or not isinstance(selected_path, str) or not isinstance(platforms, list) or not platforms:
         raise WorkspaceAPIError(
             400,
             "invalid_workspace",
-            "name and parentPath must be strings and platforms must be a non-empty array.",
+            "name and selectedPath must be strings and platforms must be a non-empty array.",
             "Correct the workspace fields and retry.",
         )
-    parent = Path(parent_path).expanduser().resolve()
     try:
         configs: list[dict[str, object]] = []
         for item in platforms:
@@ -77,9 +76,6 @@ def create_workspace_request(body: dict[str, Any], user_config_root: Path | None
             _require_exact_fields(item, {"platform", "target", "env"})
             configs.append(
                 {
-                    "version": 2,
-                    "name": name,
-                    "root_path": parent / name,
                     "platform": item["platform"],
                     "target": _target_input(item["target"]),
                     "env": item["env"],
@@ -92,7 +88,12 @@ def create_workspace_request(body: dict[str, Any], user_config_root: Path | None
             "Workspace configuration is invalid.",
             "Correct the workspace fields and retry.",
         ) from exc
-    create_workspace(parent_path=parent, configs=configs, user_config_root=user_config_root)
+    create_workspace(
+        selected_path=Path(selected_path).expanduser(),
+        name=name,
+        platforms=configs,
+        user_config_root=user_config_root,
+    )
     return get_workspace(name, user_config_root)
 
 
@@ -186,9 +187,9 @@ def map_workspace_exception(exc: BaseException) -> WorkspaceAPIError:
         lowered = message.casefold()
         if "not registered" in lowered:
             return WorkspaceAPIError(404, "workspace_not_found", "Workspace is not registered.", "Refresh the workspace list.")
-        if "already registered" in lowered or "must be empty" in lowered or "must be a directory" in lowered:
-            return WorkspaceAPIError(409, "workspace_conflict", message, "Choose a different workspace name or parent path.")
-        if "unable to read" in lowered or "identity does not match" in lowered or "registered workspace path" in lowered:
+        if "already registered" in lowered or "already exists" in lowered or "path is already registered" in lowered:
+            return WorkspaceAPIError(409, "workspace_conflict", message, "Choose a different workspace name or selected folder.")
+        if "workspace root is unavailable" in lowered or "unable to read" in lowered or "identity does not match" in lowered or "registered workspace path" in lowered:
             return WorkspaceAPIError(409, "workspace_unavailable", "Workspace configuration is unavailable.", "Repair the registered workspace configuration.")
         return WorkspaceAPIError(400, "invalid_workspace", message, "Correct the workspace configuration and retry.")
     if isinstance(exc, OSError):

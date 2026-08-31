@@ -241,11 +241,11 @@ export interface WorkspacePlatformDetail {
 }
 export interface CreateWorkspacePayload {
   name: string;
-  parentPath: string;
+  selectedPath: string;
   platforms: { platform: PlatformId; target: WorkspaceTargetInput; env: Record<string, string> }[];
 }
 export type WorkspaceParentDirectoryPickerResponse =
-  | { status: 'selected'; parentPath: string }
+  | { status: 'selected'; selectedPath: string; isEmpty: boolean }
   | { status: 'cancelled' };
 export interface AddWorkspacePlatformPayload {
   platform: PlatformId;

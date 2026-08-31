@@ -61,12 +61,12 @@ def test_picker_commands_are_fixed_for_windows_macos_and_linux(monkeypatch: pyte
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picker_module.shutil, "which", lambda name: "/usr/bin/zenity" if name == "zenity" else None)
     linux = picker_module._picker_command()
-    assert linux.argv == ("/usr/bin/zenity", "--file-selection", "--directory", "--title=Choose workspace parent folder")
+    assert linux.argv == ("/usr/bin/zenity", "--file-selection", "--directory", "--title=Choose workspace folder")
     assert linux.cancelled_return_codes == frozenset({1})
 
     monkeypatch.setattr(picker_module.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
     kdialog = picker_module._picker_command()
-    assert kdialog.argv == ("/usr/bin/kdialog", "--getexistingdirectory", "--title", "Choose workspace parent folder")
+    assert kdialog.argv == ("/usr/bin/kdialog", "--getexistingdirectory", "--title", "Choose workspace folder")
     assert kdialog.cancelled_return_codes == frozenset({1})
 
 
@@ -80,8 +80,46 @@ def test_picker_decodes_selected_and_cancelled_results(tmp_path: Path) -> None:
     )
     cancelled = picker_module._decode_result(picker_module._PickerCommand(("picker",), frozenset({1})), 1, b"")
 
-    assert selected == windows == {"status": "selected", "parentPath": str(tmp_path.resolve())}
+    assert selected == windows == {"status": "selected", "selectedPath": str(tmp_path.resolve()), "isEmpty": True}
     assert cancelled == {"status": "cancelled"}
+
+
+def test_picker_reports_nonempty_directory_including_hidden_entries(tmp_path: Path) -> None:
+    (tmp_path / ".hidden").write_text("present", encoding="utf-8")
+
+    selected = picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{tmp_path}\n".encode())
+
+    assert selected["isEmpty"] is False
+
+
+def test_picker_reports_nonempty_directory_for_symbolic_link_entry(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    selected_path = tmp_path / "selected"
+    selected_path.mkdir()
+    (selected_path / "linked").symlink_to(target, target_is_directory=True)
+
+    selected = picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{selected_path}\n".encode())
+
+    assert selected["isEmpty"] is False
+
+
+def test_picker_maps_selected_directory_inspection_failure_to_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original_iterdir = Path.iterdir
+
+    def fail_selected(path: Path):
+        if path == tmp_path.resolve():
+            raise OSError("inspection denied")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail_selected)
+
+    with pytest.raises(DirectoryPickerAPIError) as error:
+        picker_module._decode_result(picker_module._PickerCommand(("picker",)), 0, f"{tmp_path}\n".encode())
+
+    assert error.value.status == 503
+    assert error.value.code == "directory_picker_unavailable"
+    assert error.value.message == "The selected folder could not be inspected."
 
 
 @pytest.mark.parametrize(

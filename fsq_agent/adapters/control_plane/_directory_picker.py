@@ -41,7 +41,7 @@ class DirectoryPicker:
         self._active_process: subprocess.Popen[bytes] | None = None
         self._closed = False
 
-    def choose(self) -> dict[str, str]:
+    def choose(self) -> dict[str, str | bool]:
         if not self._selection_lock.acquire(blocking=False):
             raise DirectoryPickerAPIError(
                 409,
@@ -110,7 +110,7 @@ def _picker_command() -> _PickerCommand:
         script = (
             "Add-Type -AssemblyName System.Windows.Forms;"
             "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;"
-            "$dialog.Description = 'Choose workspace parent folder';"
+            "$dialog.Description = 'Choose workspace folder';"
             "$dialog.ShowNewFolderButton = $false;"
             "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {"
             "$bytes = [System.Text.Encoding]::UTF8.GetBytes($dialog.SelectedPath);"
@@ -126,7 +126,7 @@ def _picker_command() -> _PickerCommand:
         if not Path(executable).is_file():
             raise _unavailable("The macOS folder chooser is unavailable.")
         script = (
-            'try\nset selectedFolder to choose folder with prompt "Choose workspace parent folder"\n'
+            'try\nset selectedFolder to choose folder with prompt "Choose workspace folder"\n'
             f'return "{_SELECTED_PREFIX}" & POSIX path of selectedFolder\n'
             f'on error number -128\nreturn "{_CANCELLED}"\nend try'
         )
@@ -135,18 +135,18 @@ def _picker_command() -> _PickerCommand:
         raise _unavailable("Folder selection requires a graphical desktop session.")
     if executable := shutil.which("zenity"):
         return _PickerCommand(
-            (executable, "--file-selection", "--directory", "--title=Choose workspace parent folder"),
+            (executable, "--file-selection", "--directory", "--title=Choose workspace folder"),
             frozenset({1}),
         )
     if executable := shutil.which("kdialog"):
         return _PickerCommand(
-            (executable, "--getexistingdirectory", "--title", "Choose workspace parent folder"),
+            (executable, "--getexistingdirectory", "--title", "Choose workspace folder"),
             frozenset({1}),
         )
     raise _unavailable("Folder selection requires zenity or kdialog on Linux.")
 
 
-def _decode_result(command: _PickerCommand, return_code: int, output: bytes) -> dict[str, str]:
+def _decode_result(command: _PickerCommand, return_code: int, output: bytes) -> dict[str, str | bool]:
     if return_code in command.cancelled_return_codes:
         return {"status": "cancelled"}
     if return_code != 0:
@@ -175,7 +175,11 @@ def _decode_result(command: _PickerCommand, return_code: int, output: bytes) -> 
         raise _invalid_selection() from exc
     if not resolved.is_dir():
         raise _invalid_selection()
-    return {"status": "selected", "parentPath": str(resolved)}
+    try:
+        is_empty = next(resolved.iterdir(), None) is None
+    except OSError as exc:
+        raise _unavailable("The selected folder could not be inspected.") from exc
+    return {"status": "selected", "selectedPath": str(resolved), "isEmpty": is_empty}
 
 
 def _terminate(process: subprocess.Popen[bytes]) -> None:

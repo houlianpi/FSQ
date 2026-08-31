@@ -16,7 +16,7 @@ from fsq_agent.application import (
     require_initialized_workspace,
 )
 from fsq_agent.environments import PlatformRuntimeService
-from fsq_agent.models import PlatformRuntimeCheck
+from fsq_agent.models import PlatformRuntimeCheck, WorkspaceRegistryEntry, WorkspaceStatus
 
 
 def test_require_initialized_workspace_returns_exact_registered_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,14 +73,62 @@ def test_initialize_workspace_resolves_web_browser_before_config_mutation(tmp_pa
     monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
     monkeypatch.setattr(PlatformRuntimeService, "discover_web_executables", lambda self, channel: [browser])
     monkeypatch.setattr(
-        "fsq_agent.application._workspace_init.initialize_workspace_root",
-        lambda **kwargs: calls.append(kwargs) or type("Result", (), {"status": "initialized", "name": "project", "root_path": tmp_path.resolve(), "platform": "web"})(),
+        "fsq_agent.application._workspace_init.persist_workspace",
+        lambda **kwargs: calls.append(kwargs) or type("Result", (), {"name": "project", "root_path": tmp_path.resolve()})(),
     )
 
     result = initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="web", browser_channel="chrome"))
 
     assert result.root_path == tmp_path.resolve()
-    assert calls[0]["config"].target.browser_executable_path == browser.resolve()
+    assert calls[0]["platforms"][0].target.browser_executable_path == browser.resolve()
+
+
+def test_initialize_workspace_delegates_nonempty_selected_directory_to_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = tmp_path / "projects"
+    selected.mkdir()
+    (selected / "existing.txt").write_text("owned", encoding="utf-8")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.list_workspace_registry", lambda root: [])
+    monkeypatch.setattr(
+        "fsq_agent.application._workspace_init.persist_workspace",
+        lambda **kwargs: captured.update(kwargs) or WorkspaceStatus(name="custom", root_path=selected / "custom", status="available", message="available"),
+    )
+
+    result = initialize_workspace(WorkspaceInitializeRequest(current_directory=selected, platform="android", name="custom", app_id="com.example.app", user_config_root=tmp_path / "user"))
+
+    assert captured["selected_path"] == selected.resolve()
+    assert captured["name"] == "custom"
+    assert result.root_path == selected / "custom"
+
+
+def test_initialize_workspace_uses_registered_root_independently_of_current_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    selected = tmp_path / "elsewhere"
+    selected.mkdir()
+    registered = tmp_path / "registered-root"
+    registered.mkdir()
+    config_path = registered / ".fsq" / "config" / "config.android.yaml"
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(PlatformRuntimeService, "check", lambda self, platform: PlatformRuntimeCheck(platform=platform, status="ready", ready=True, message="ready"))
+    monkeypatch.setattr(
+        "fsq_agent.application._workspace_init.list_workspace_registry",
+        lambda root: [WorkspaceRegistryEntry(name="Custom", root_path=registered)],
+    )
+    monkeypatch.setattr(
+        "fsq_agent.application._workspace_init.inspect_registered_workspace",
+        lambda name, root: WorkspaceStatus(name="Custom", root_path=registered, status="available", message="available"),
+    )
+    monkeypatch.setattr(
+        "fsq_agent.application._workspace_init.persist_workspace_platform",
+        lambda **kwargs: captured.update(kwargs) or type("Config", (), {"name": "Custom", "root_path": registered, "platform": "android"})(),
+    )
+
+    result = initialize_workspace(WorkspaceInitializeRequest(current_directory=selected, platform="android", name="custom", app_id="com.example.app", user_config_root=tmp_path / "user"))
+
+    assert not config_path.exists()
+    assert captured["name"] == "Custom"
+    assert result.status == "platform_added"
+    assert result.root_path == registered
 
 
 def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,7 +137,7 @@ def test_initialize_workspace_does_not_mutate_when_driver_is_missing(tmp_path: P
         "check",
         lambda self, platform: PlatformRuntimeCheck(platform=platform, status="missing", ready=False, message="missing", action="Reinstall or repair fsq-agent."),
     )
-    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("config mutation must not run"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.persist_workspace", lambda **kwargs: pytest.fail("config mutation must not run"))
 
     with pytest.raises(ApplicationError, match="missing"):
         initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="web", browser_channel="chrome"))
@@ -118,7 +166,7 @@ def test_initialize_workspace_rejects_unsupported_runtime_without_mutation(tmp_p
         "check",
         lambda self, platform: PlatformRuntimeCheck(platform=platform, status="unsupported", ready=False, message="unsupported"),
     )
-    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("config mutation must not run"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.persist_workspace", lambda **kwargs: pytest.fail("config mutation must not run"))
 
     with pytest.raises(ApplicationError, match="unsupported"):
         initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform="windows", app_path=executable))
@@ -167,8 +215,8 @@ def test_initialize_workspace_checks_readiness_before_persistence_for_every_plat
         lambda self, selected: calls.append(f"check:{selected}") or PlatformRuntimeCheck(platform=selected, status="ready", ready=True, message="ready"),
     )
     monkeypatch.setattr(
-        "fsq_agent.application._workspace_init.initialize_workspace_root",
-        lambda **kwargs: calls.append("persist") or type("Result", (), {"status": "initialized", "name": "project", "root_path": tmp_path.resolve(), "platform": platform})(),
+        "fsq_agent.application._workspace_init.persist_workspace",
+        lambda **kwargs: calls.append("persist") or type("Result", (), {"name": "project", "root_path": tmp_path.resolve()})(),
     )
 
     result = initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform=platform, **request_values))
@@ -199,7 +247,7 @@ def test_initialize_workspace_readiness_failure_never_persists_for_any_platform(
         "check",
         lambda self, selected: PlatformRuntimeCheck(platform=selected, status="missing", ready=False, message="runtime missing", action="Reinstall or repair fsq-agent."),
     )
-    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("workspace must not persist"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.persist_workspace", lambda **kwargs: pytest.fail("workspace must not persist"))
 
     with pytest.raises(ApplicationError) as error:
         initialize_workspace(WorkspaceInitializeRequest(current_directory=tmp_path, platform=platform, **request_values))

@@ -546,7 +546,7 @@ def test_init_maps_each_platform_request(monkeypatch, tmp_path: Path, arguments:
     ],
 )
 def test_init_invalid_platform_target_fails_before_workspace_mutation(tmp_path: Path, monkeypatch, arguments: list[str]) -> None:
-    monkeypatch.setattr("fsq_agent.application._workspace_init.initialize_workspace_root", lambda **kwargs: pytest.fail("workspace must not mutate"))
+    monkeypatch.setattr("fsq_agent.application._workspace_init.persist_workspace", lambda **kwargs: pytest.fail("workspace must not mutate"))
     with CliRunner().isolated_filesystem(temp_dir=tmp_path):
         result = CliRunner().invoke(main, ["init", *arguments])
 
