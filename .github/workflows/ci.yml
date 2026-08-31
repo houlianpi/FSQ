@@ -194,10 +194,13 @@ jobs:
         shell: python
         run: |
           import email
+          import re
           import tarfile
           from pathlib import Path
           from zipfile import ZipFile
-          from packaging.utils import canonicalize_name
+
+          def canonicalize_name(name):
+              return re.sub(r"[-_.]+", "-", name).lower()
 
           wheels = list(Path("dist").glob("*.whl"))
           rebuilt_wheels = list(Path("rebuilt-dist").glob("*.whl"))

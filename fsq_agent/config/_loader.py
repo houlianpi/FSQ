@@ -40,7 +40,7 @@ def _runtime_resource_root() -> Path:
     if (source_root / "pyproject.toml").is_file():
         return source_root
     package_root = Path(__file__).resolve().parents[1] / "resources"
-    if package_root.is_dir():
+    if all((package_root / filename).is_file() for filename in _PLATFORM_CONFIG_FILENAMES.values()):
         return package_root
     checkout_root = Path.cwd().resolve()
     if (checkout_root / "pyproject.toml").is_file():

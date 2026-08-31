@@ -8,6 +8,7 @@ import pytest
 
 from fsq_agent.config import (
     PLATFORM_CONFIG_PATHS,
+    _loader,
     activate_github_copilot_provider,
     load_settings,
     load_workspace_platform_settings,
@@ -44,6 +45,20 @@ def _windows_executable(tmp_path: Path, name: str = "app.exe") -> Path:
     app_path = tmp_path / name
     app_path.write_text("", encoding="utf-8")
     return app_path
+
+
+def test_runtime_resource_root_ignores_incomplete_editable_package_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("[project]\nname = 'example'\n", encoding="utf-8")
+    editable_package = tmp_path / "site-packages" / "fsq_agent"
+    config_module = editable_package / "config" / "_loader.py"
+    config_module.parent.mkdir(parents=True)
+    (editable_package / "resources").mkdir()
+    monkeypatch.setattr(_loader, "__file__", str(config_module))
+    monkeypatch.chdir(checkout)
+
+    assert _loader._runtime_resource_root() == checkout
 
 
 def test_load_workspace_platform_settings_composes_workspace_without_creating_content(tmp_path: Path) -> None:
