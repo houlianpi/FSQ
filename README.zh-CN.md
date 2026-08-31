@@ -23,7 +23,7 @@ FSQ 会把一个自然语言 UI 目标变成可观察的自动化 Run，保存�
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
-    <img src="docs/media/fsq-v0.1.0-demo-preview.gif" alt="FSQ v0.1.0 动态演示预览：目标、执行、证据、候选 Case 和报告" width="880">
+    <img src="docs/media/fsq-v0.1.0-android-demo-preview.gif" alt="FSQ v0.1.0 动态演示预览：目标、执行、证据、候选 Case 和报告" width="880">
   </a>
 </p>
 

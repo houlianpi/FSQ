@@ -177,7 +177,7 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     assert "pip install fsq-agent" in readme
     assert "README.zh-CN.md" in readme
     assert "docs/getting-started.zh-CN.md" in readme
-    assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
+    assert "docs/media/fsq-v0.1.0-android-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     hero = readme.split("<p align=\"center\">\n  <img src=\"docs/assets/fsq-workflow.svg\"", 1)[0]
@@ -207,7 +207,7 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
 
     assert "pip install fsq-agent" in readme
     assert "Workspace Root Strategy" in readme
-    assert "docs/media/fsq-v0.1.0-demo-preview.gif" in readme
+    assert "docs/media/fsq-v0.1.0-android-demo-preview.gif" in readme
     assert "https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939" in readme
     assert "https://youtu.be/QqCahxGDdS0" in readme
     hero = readme.split("<p align=\"center\">\n  <img src=\"docs/assets/fsq-workflow.svg\"", 1)[0]
@@ -232,7 +232,7 @@ def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
 
 
 def test_release_demo_gif_is_lightweight_and_committed() -> None:
-    demo_gif = ROOT / "docs" / "media" / "fsq-v0.1.0-demo-preview.gif"
+    demo_gif = ROOT / "docs" / "media" / "fsq-v0.1.0-android-demo-preview.gif"
 
     assert demo_gif.is_file()
     assert demo_gif.stat().st_size < 1_000_000

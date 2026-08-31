@@ -31,7 +31,7 @@ FSQ turns a natural-language UI goal into an observable automation run, saves sc
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
-    <img src="docs/media/fsq-v0.1.0-demo-preview.gif" alt="FSQ v0.1.0 animated demo preview: goal, execution, evidence, candidate Case, and report" width="880">
+    <img src="docs/media/fsq-v0.1.0-android-demo-preview.gif" alt="FSQ v0.1.0 animated demo preview: goal, execution, evidence, candidate Case, and report" width="880">
   </a>
 </p>
 
