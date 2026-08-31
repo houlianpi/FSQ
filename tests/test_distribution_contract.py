@@ -43,6 +43,7 @@ def test_sdist_includes_public_release_documentation_and_example() -> None:
 
     assert {
         "/CHANGELOG.md",
+        "/README.zh-CN.md",
         "/docs/README.md",
         "/docs/architecture.md",
         "/docs/assets/fsq-workflow.svg",
@@ -50,7 +51,9 @@ def test_sdist_includes_public_release_documentation_and_example() -> None:
         "/docs/assets/social-preview.svg",
         "/docs/case-format.md",
         "/docs/cli-reference.md",
+        "/docs/demo.html",
         "/docs/getting-started.md",
+        "/docs/getting-started.zh-CN.md",
         "/docs/launch",
         "/docs/media",
         "/docs/platform-prerequisites.md",
@@ -173,6 +176,11 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "pip install fsq-agent" in readme
+    assert "README.zh-CN.md" in readme
+    assert "docs/getting-started.zh-CN.md" in readme
+    assert "https://youtu.be/QqCahxGDdS0" in readme
+    assert "docs/demo.html" in readme
+    assert "Bilibili" not in readme
     for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
         assert command in readme
     for obsolete in (
@@ -188,6 +196,40 @@ def test_readme_uses_current_installation_and_cli_contract() -> None:
         "fsq-agent[macos]",
     ):
         assert obsolete not in readme
+
+
+def test_chinese_readme_uses_current_installation_and_cli_contract() -> None:
+    readme = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+    assert "pip install fsq-agent" in readme
+    assert "Workspace Root Strategy" in readme
+    assert "https://youtu.be/QqCahxGDdS0" in readme
+    assert "docs/demo.html" in readme
+    assert "Bilibili" not in readme
+    for command in ("fsq init", "fsq doctor", "fsq providers", "fsq case create", "fsq case test", "fsq runs", "fsq ui"):
+        assert command in readme
+    for obsolete in (
+        "fsq-agent run",
+        "run --strict",
+        "fsq-agent control-plane",
+        "fsq-agent report",
+        "fsq-agent playground",
+        "init --name",
+        "fsq-agent[web]",
+        "fsq-agent[android]",
+        "fsq-agent[windows]",
+        "fsq-agent[macos]",
+    ):
+        assert obsolete not in readme
+
+
+def test_demo_page_embeds_youtube_autoplay_without_private_paths() -> None:
+    page = (ROOT / "docs" / "demo.html").read_text(encoding="utf-8")
+
+    assert "https://www.youtube-nocookie.com/embed/QqCahxGDdS0?autoplay=1&mute=1" in page
+    assert "https://youtu.be/QqCahxGDdS0" in page
+    assert "/Users/" not in page
+    assert "Bilibili" not in page
 
 
 def test_release_acceptance_checklist_uses_current_public_commands() -> None:

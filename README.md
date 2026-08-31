@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="#five-minute-quickstart">Quickstart</a> ·
+  <a href="README.zh-CN.md">中文</a> ·
   <a href="#how-fsq-works">How it works</a> ·
   <a href="#supported-platforms">Platforms</a> ·
   <a href="docs/getting-started.md">Documentation</a> ·
@@ -36,7 +37,7 @@ FSQ turns a natural-language UI goal into an observable automation run, saves sc
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">Watch on YouTube</a> ·
-  Bilibili link coming soon ·
+  <a href="docs/demo.html">Autoplay demo page</a> ·
   <a href="docs/media/demo.en.srt">English captions</a> ·
   <a href="docs/media/demo.zh-CN.srt">中文字幕</a>
 </p>
@@ -178,7 +179,10 @@ Provider configuration is stored under `~/.fsq` and shared by the CLI and local 
 
 | Resource | Purpose |
 |---|---|
+| [中文 README](README.zh-CN.md) | Chinese overview, quickstart, and release links |
+| [Autoplay demo page](docs/demo.html) | GitHub Pages-ready YouTube demo page |
 | [Getting started](docs/getting-started.md) | Installation, Workspace rules, first Web run, and next commands |
+| [中文快速开始](docs/getting-started.zh-CN.md) | Chinese installation and first-run guide |
 | [CLI reference](docs/cli-reference.md) | Current public command families and output modes |
 | [FSQ Case format](docs/case-format.md) | Case structure and a validated public example |
 | [Platform prerequisites](docs/platform-prerequisites.md) | Web, Android, Windows, and macOS host setup boundaries |

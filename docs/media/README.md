@@ -2,7 +2,7 @@
 
 This directory owns the v0.1.0 public demo video, product screenshots, subtitles, naming rules, privacy review, and new-user acceptance.
 
-The README uses the local thumbnail as a stable preview and links to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. It does not depend on GitHub autoplaying repository MP4 files. A Bilibili link can be added after that upload is available.
+The README uses the local thumbnail as a stable preview and links to the hosted YouTube demo at <https://youtu.be/QqCahxGDdS0>. It does not depend on GitHub autoplaying repository MP4 files. The GitHub Pages-ready [`docs/demo.html`](../demo.html) page embeds the same YouTube video with muted autoplay for contexts that allow it.
 
 The committed MP4 is the approved edited export for repository archival and release reuse. The original local screen recording is intentionally not committed.
 
@@ -10,6 +10,7 @@ The committed MP4 is the approved edited export for repository archival and rele
 
 - `fsq-v0.1.0-demo-1280.mp4` — public Web video;
 - `fsq-v0.1.0-demo-thumbnail.png` — linked video thumbnail;
+- `../demo.html` — hosted-video demo page with muted YouTube autoplay;
 - `01-describe-goal.png` — goal entry and setup;
 - `02-execute-workflow.png` — execution timeline;
 - `03-capture-evidence.png` — captured evidence;
