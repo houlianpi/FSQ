@@ -179,3 +179,16 @@ Copy this table into the release issue or pull request:
 | Installed Control Plane | | | | |
 
 Fill every blank Result cell before release. Allowed final results are `pass`, `fail`, `blocked`, and `not-applicable` only when the release scope explicitly excludes the gate. Every failure links to a blocking issue; every blocked result names the missing environment or authority.
+
+### Current real-host verification record (2026-08-31)
+
+This development-branch record is evidence for the next release issue; it is not a substitute for running the checklist against the final release commit and installed artifact. No credentials, device codes, or private Provider responses are retained.
+
+| Gate | Host/artifact | Result | Evidence | Reviewer |
+| --- | --- | --- | --- | --- |
+| Web init/doctor/lifecycle | macOS real host, installed Edge/Chrome-compatible browser | pass | Real Workspace initialization, Doctor, Case lifecycle, Runs, and UI acceptance completed | FSQ development acceptance |
+| Android init/doctor/lifecycle | macOS host, ADB device, Microsoft Edge Stable | pass | Edge launch and visible main-screen assertions; deterministic Case and Run-local suggestion lifecycle completed | FSQ development acceptance |
+| Windows init/doctor/lifecycle | No Windows real host available | blocked | `windows_status=skipped_by_user`; `windows_verified=false` | FSQ development acceptance |
+| macOS init/doctor/lifecycle | macOS real host | pass | Real-host acceptance completed | FSQ development acceptance |
+| Provider CLI → UI | User-level GitHub Copilot Provider | pass | CLI reported `github_copilot` / `gpt-5.5` ready; Control Plane Config displayed the same authenticated Provider and model | FSQ development acceptance |
+| Provider UI → CLI | User-level GitHub Copilot Provider | blocked | Contract tests cover shared persistence and failed replacement preservation, but the real UI re-save could not complete because GitHub rejected the disposable device code; the prior Provider remained ready | FSQ development acceptance |

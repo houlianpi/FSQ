@@ -78,6 +78,7 @@ def test_suggestion_artifacts_are_run_local_and_source_immutable(tmp_path: Path)
     assert payload["execution_status"] == "failed"
     assert payload["analysis_summary"] == "Improve the target."
     assert candidate_path == run_dir / "candidate.fsq.yaml"
+    assert payload["candidate_case_status"] == "available"
     assert candidate_path.read_text(encoding="utf-8") == candidate
     assert source.read_text(encoding="utf-8") == original
     assert not (tmp_path / "candidate.fsq.yaml").exists()
@@ -219,6 +220,8 @@ def test_suggest_runs_case_once_then_analyzes_and_returns_no_candidate(tmp_path:
     assert result.status == "success"
     assert result.suggestion_path == run_dir / "case-suggestions.json"
     assert result.candidate_case_path is None
+    payload = json.loads(result.suggestion_path.read_text(encoding="utf-8"))
+    assert payload["candidate_case_status"] == "absent"
     assert case_path.read_text(encoding="utf-8") == source
 
     class FailingAnalyzer:

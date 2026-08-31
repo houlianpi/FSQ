@@ -39,11 +39,10 @@ An existing maintainer may nominate a contributor for additional responsibility.
 
 ## Development
 
-Choose the platform you are working on and install its dependencies with the development tools:
+Install the default distribution, which contains all supported platform Python dependencies, together with the development tools:
 
 ```powershell
-$platform = "windows" # android, web, windows, or macos
-uv sync --frozen --extra dev --extra $platform
+uv sync --frozen --extra dev
 ```
 
 ### Python Quality
@@ -75,45 +74,44 @@ uv run --frozen --extra dev ruff format .
 Run the test file or matching test names for the area you changed:
 
 ```powershell
-uv run --frozen --extra dev --extra windows python -m pytest tests/test_windows_harness.py
-uv run --frozen --extra dev --extra windows python -m pytest tests/test_windows_harness.py -k launch
+uv run --frozen --extra dev python -m pytest tests/test_windows_harness.py
+uv run --frozen --extra dev python -m pytest tests/test_windows_harness.py -k launch
 ```
 
 Maintainers can run the complete repository suite with all locked platform dependencies:
 
 ```powershell
-uv run --frozen --all-extras python -m pytest
+uv run --frozen --extra dev python -m pytest
 ```
 
-### CLI And Playground
+### CLI And Control Plane
 
-Use the selected platform extra when running the CLI from a source checkout:
+Use the current public commands when running the CLI from a source checkout:
 
 ```powershell
-$agent = (Resolve-Path ".\.venv\Scripts\fsq-agent.exe").Path
-$workspace = "workspace-name"
-$workspaceRoot = "path\to\workspace"
-uv run --frozen --extra dev --extra $platform fsq-agent --help
-uv run --frozen --extra dev --extra $platform fsq-agent control-plane
-Set-Location $workspaceRoot
-& $agent run --platform $platform --goal "Describe the task"
-& $agent run --platform $platform --strict --case-yaml "path/to/case.fsq.yaml"
-& $agent report --workspace $workspace --platform $platform --run-id "run-id" --format markdown
-& $agent playground --workspace $workspace --platform $platform
+$fsq = (Resolve-Path ".\.venv\Scripts\fsq.exe").Path
+& $fsq --help
+& $fsq providers status
+& $fsq init --platform windows --app-path "C:\Path\To\App.exe"
+& $fsq doctor
+& $fsq case create --platform windows --goal "Describe the task"
+& $fsq case test --platform windows "cases\windows\example.fsq.yaml"
+& $fsq runs list --platform windows
+& $fsq ui --no-open-browser
 ```
 
-Build the browser Playground assets before starting the normal Python-served Playground from a source checkout:
+Build the browser assets before starting the Python-served Control Plane from a source checkout:
 
 ```powershell
 npm ci
 npm run build
 ```
 
-For live frontend development, run the Python API and Vite in separate terminals after installing npm dependencies:
+For live frontend development, run the Control Plane API and Vite in separate terminals after installing npm dependencies:
 
 ```powershell
 # Terminal 1: Vite proxies API requests to port 8878.
-uv run --frozen --extra dev --extra $platform fsq-agent playground --workspace $workspace --platform $platform --port 8878 --no-open-browser
+uv run --frozen --extra dev fsq ui --port 8878 --no-open-browser
 
 # Terminal 2
 npm run dev

@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,6 +23,61 @@ def test_default_distribution_contract() -> None:
         "fsq": "fsq_agent.adapters.cli:main",
         "fsq-agent": "fsq_agent.adapters.cli:main",
     }
+    assert project["project"]["license"] == "MIT"
+    assert project["project"]["authors"] == [{"name": "Microsoft Corporation"}]
+    assert project["project"]["urls"] == {
+        "Documentation": "https://github.com/microsoft/FSQ#readme",
+        "Issues": "https://github.com/microsoft/FSQ/issues",
+        "Repository": "https://github.com/microsoft/FSQ",
+    }
+    classifiers = set(project["project"]["classifiers"])
+    assert "Operating System :: OS Independent" in classifiers
+    assert "Intended Audience :: Developers" in classifiers
+    for version in ("3.11", "3.12", "3.13"):
+        assert f"Programming Language :: Python :: {version}" in classifiers
+
+
+def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> None:
+    workflow_path = ROOT / ".github" / "workflows" / "release.yml"
+    raw = workflow_path.read_text(encoding="utf-8")
+    workflow: dict[str, Any] = yaml.safe_load(raw)
+    trigger = workflow[True]  # PyYAML 1.1 parses the unquoted GitHub Actions `on` key as true.
+    dispatch = trigger["workflow_dispatch"]
+    assert set(trigger) == {"workflow_dispatch"}
+    assert dispatch["inputs"]["publish"] == {
+        "description": "Publish the verified distributions to PyPI",
+        "required": True,
+        "type": "boolean",
+        "default": False,
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"verify", "publish"}
+    publish = workflow["jobs"]["publish"]
+    assert publish["if"] == "${{ inputs.publish }}"
+    assert publish["needs"] == "verify"
+    assert publish["environment"] == "pypi"
+    assert publish["permissions"] == {"contents": "read", "id-token": "write"}
+    assert any(step.get("uses", "").startswith("actions/download-artifact@") for step in publish["steps"])
+    assert publish["steps"][-1]["run"] == "uv publish --trusted-publishing always dist/*"
+    verify = workflow["jobs"]["verify"]
+    assert any(step.get("uses", "").startswith("actions/upload-artifact@") for step in verify["steps"])
+    commands = "\n".join(str(step.get("run", "")) for step in verify["steps"])
+    for command in (
+        "ruff check .",
+        "ruff format --check .",
+        "python -m pytest",
+        "npm run typecheck",
+        "npm test",
+        "npm run build",
+        "uv build",
+        "twine check dist/*",
+        "tests/test_distribution_contract.py",
+        '"$RUNNER_TEMP/fsq-release-smoke/bin/fsq" --help',
+        '"$RUNNER_TEMP/fsq-release-smoke/bin/fsq-agent" --help',
+    ):
+        assert command in commands
+    assert "PYPI_API_TOKEN" not in raw
+    assert "password:" not in raw
 
 
 def test_distribution_includes_both_frontend_asset_trees() -> None:
