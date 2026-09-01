@@ -59,6 +59,7 @@ function platformRevision(detail: WorkspaceDetail): string {
 }
 
 export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onRecordCase, onReplayCase, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
+  const previousSelectedName = useRef(selectedName);
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiErrorBody | null>(null);
@@ -103,10 +104,12 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
   };
 
   useEffect(() => {
+    const selectionChanged = previousSelectedName.current !== selectedName;
+    previousSelectedName.current = selectedName;
     platformDetailController.current?.abort();
     platformDetailController.current = null;
     setDetail(null);
-    onConfigurationOpenChange(false);
+    if (selectionChanged) onConfigurationOpenChange(false);
     setSelectedPlatform(null);
     setFormMode(null);
     setPlatformDetail(null);
