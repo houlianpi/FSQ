@@ -218,7 +218,6 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
                 event_sink=projection.project_run_event,
                 record=True,
                 allow_recording_failure=True,
-                publication_directory=settings.cases.dir,
                 cancellation_check=lambda: state.raise_if_cancelled(request_id),
                 recording_error_sink=lambda exc: state.add_event(
                     request_id,

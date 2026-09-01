@@ -575,6 +575,7 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
     assert snapshot["reportAvailable"] is True
     assert captured["task"].planning_reference_kind == "goal"
     assert captured["record"]["allow_failure"] is True
+    assert captured["record"]["publication_directory"] is None
     assert any(event["label"] == "Dynamic recording" for event in snapshot["events"])
 
 

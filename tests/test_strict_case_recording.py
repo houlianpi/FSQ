@@ -509,6 +509,27 @@ def test_record_dynamic_goal_publishes_validated_case_to_platform_cases_dir(tmp_
     assert manifest["warnings"] == []
 
 
+def test_record_dynamic_goal_keeps_validated_case_run_local_when_publication_is_disabled(tmp_path: Path) -> None:
+    run_dir, task, result, settings = _recordable_web_run(tmp_path)
+
+    recording = record_dynamic_run_as_strict_case(
+        run_dir=run_dir,
+        task=task,
+        result=result,
+        settings=settings,
+        publication_directory=None,
+    )
+
+    assert recording.status == "recorded"
+    assert recording.validation_status == "passed"
+    assert recording.recorded_case_path == run_dir / "recorded.fsq.yaml"
+    assert recording.published_case_path is None
+    assert recording.recorded_case_path.is_file()
+    assert not settings.cases.dir.exists()
+    manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
+    assert manifest["published_case_path"] is None
+
+
 def test_record_dynamic_goal_atomically_overwrites_published_case_with_valid_draft(tmp_path: Path) -> None:
     run_dir, task, result, settings = _recordable_web_run(tmp_path, status="failed")
     published_path = settings.cases.dir / "goal-recording-run.fsq.yaml"

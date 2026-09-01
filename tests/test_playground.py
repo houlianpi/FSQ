@@ -2493,6 +2493,7 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
     assert progress is not None
     assert captured["task"].planning_reference_kind == "goal"
     assert captured["allow_failure"] is True
+    assert captured["publication_directory"] == settings.cases.dir
     assert progress["result"]["recording"]["draft"] is True
 
 

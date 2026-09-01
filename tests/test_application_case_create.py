@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -151,6 +152,8 @@ async def test_create_case_settings_failure_does_not_create_agent(tmp_path: Path
 async def test_create_case_only_returns_recorded_run_local_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording_status: str, has_candidate: bool) -> None:
     monkeypatch.setattr("fsq_agent.application.cases.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": tmp_path.resolve()})())
     candidate = tmp_path / "runs" / "run-1" / "candidate.fsq.yaml"
+    cases_dir = tmp_path / "cases" / "web"
+    settings = SimpleNamespace(cases=SimpleNamespace(dir=cases_dir))
     recording = RecordingResult(
         status=recording_status,
         recording_path=tmp_path / "runs" / "run-1" / "recording.json",
@@ -171,12 +174,13 @@ async def test_create_case_only_returns_recorded_run_local_candidate(tmp_path: P
 
         async def execute(self, request) -> DynamicExecutionResult:
             assert request.record is True
+            assert request.publication_directory == cases_dir
             return DynamicExecutionResult(task_result=_task_result(tmp_path), recording=recording)
 
     monkeypatch.setattr("fsq_agent.application.cases.DynamicExecutionService", FakeExecutionService)
     result = await create_case(
         CaseCreateRequest(current_directory=tmp_path, platform="web", goal="Verify search"),
-        settings_loader=lambda _platform, _path: object(),
+        settings_loader=lambda _platform, _path: settings,
         agent_factory=lambda _settings: object(),
     )
 
