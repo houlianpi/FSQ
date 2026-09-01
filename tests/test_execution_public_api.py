@@ -15,10 +15,12 @@ def test_lifecycle_public_module_is_canonical() -> None:
     assert execution.collect_strict_lifecycle_cases is canonical.collect_strict_lifecycle_cases
 
 
-def test_recording_public_module_is_canonical() -> None:
-    canonical = importlib.import_module("fsq_agent.execution.recording")
-    assert execution.StrictCaseRecording is canonical.StrictCaseRecording
-    assert execution.record_dynamic_run_as_strict_case is canonical.record_dynamic_run_as_strict_case
+def test_recording_exposes_only_service_and_immutable_result() -> None:
+    assert execution.RecordingService.__module__ == "fsq_agent.execution.recording"
+    assert execution.RecordingResult.__module__ == "fsq_agent.execution.recording"
+    assert not hasattr(execution.RecordingResult, "from_recording")
+    assert not hasattr(execution, "StrictCaseRecording")
+    assert not hasattr(execution, "record_dynamic_run_as_strict_case")
 
 
 def test_cli_uses_canonical_deterministic_module() -> None:
@@ -39,7 +41,7 @@ def test_recording_result_is_immutable(tmp_path) -> None:
         command_count=0,
         required_runtime_secret_names=(),
         warnings=(),
-        skipped_tool_calls=(),
+        skipped_tool_calls=({"reason": "not replayable"},),
         errors=(),
         validation_status="passed",
         draft=False,
@@ -47,3 +49,6 @@ def test_recording_result_is_immutable(tmp_path) -> None:
 
     with pytest.raises(FrozenInstanceError):
         result.status = "failed"
+
+    with pytest.raises(TypeError):
+        result.skipped_tool_calls[0]["reason"] = "changed"

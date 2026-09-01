@@ -22,13 +22,13 @@ from fsq_agent.execution import (
     DynamicExecutionService,
     LifecycleExecutionRequest,
     LifecycleExecutionService,
+    RecordingService,
     RunArtifactIndex,
     RunResultSummary,
     RunSource,
     RunStepCounts,
     allocate_run,
     collect_strict_lifecycle_cases,
-    record_dynamic_run_as_strict_case,
     run_strict_lifecycle_case,
     transition_run,
 )
@@ -206,11 +206,9 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
         state.raise_if_cancelled(request_id)
         state.transition(request_id, "running", summary="Explore run is executing.")
         task = _task_from_goal(prepared.goal or "", request_id)
-        from fsq_agent.execution import RecordingService
-
         execution = await DynamicExecutionService(
             agent=FsqAgent.from_settings(settings, create_coding_agent_runtime),
-            recording_service=RecordingService(recorder=record_dynamic_run_as_strict_case),
+            recording_service=RecordingService(),
         ).execute(
             DynamicExecutionRequest(
                 task=task,

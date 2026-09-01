@@ -8,6 +8,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
@@ -17,6 +18,8 @@ from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStep
 from fsq_agent.models import ConfigurationError, RunEvent, Task, TaskResult
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from fsq_agent.config import Settings
 
 RecordingStatus = Literal["recorded", "skipped", "failed"]
@@ -24,7 +27,7 @@ _DEFAULT_PUBLICATION = object()
 
 
 @dataclass
-class StrictCaseRecording:
+class _StrictCaseRecording:
     status: RecordingStatus
     recording_path: Path
     recorded_case_path: Path | None = None
@@ -62,32 +65,32 @@ class RecordingResult:
     command_count: int
     required_runtime_secret_names: tuple[str, ...]
     warnings: tuple[str, ...]
-    skipped_tool_calls: tuple[dict[str, Any], ...]
+    skipped_tool_calls: tuple[Mapping[str, str], ...]
     errors: tuple[str, ...]
     validation_status: str
     draft: bool
 
-    @classmethod
-    def from_recording(cls, recording: StrictCaseRecording) -> RecordingResult:
-        return cls(
-            status=recording.status,
-            recording_path=recording.recording_path,
-            recorded_case_path=recording.recorded_case_path,
-            published_case_path=recording.published_case_path,
-            command_count=recording.command_count,
-            required_runtime_secret_names=tuple(recording.required_runtime_secret_names),
-            warnings=tuple(recording.warnings),
-            skipped_tool_calls=tuple(dict(item) for item in recording.skipped_tool_calls),
-            errors=tuple(recording.errors),
-            validation_status=recording.validation_status,
-            draft=recording.draft,
-        )
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "skipped_tool_calls", tuple(MappingProxyType(dict(item)) for item in self.skipped_tool_calls))
+
+
+def _recording_result_from_state(recording: _StrictCaseRecording) -> RecordingResult:
+    return RecordingResult(
+        status=recording.status,
+        recording_path=recording.recording_path,
+        recorded_case_path=recording.recorded_case_path,
+        published_case_path=recording.published_case_path,
+        command_count=recording.command_count,
+        required_runtime_secret_names=tuple(recording.required_runtime_secret_names),
+        warnings=tuple(recording.warnings),
+        skipped_tool_calls=tuple(recording.skipped_tool_calls),
+        errors=tuple(recording.errors),
+        validation_status=recording.validation_status,
+        draft=recording.draft,
+    )
 
 
 class RecordingService:
-    def __init__(self, *, recorder: Any = None) -> None:
-        self._recorder = recorder or record_dynamic_run_as_strict_case
-
     def record(
         self,
         *,
@@ -98,7 +101,7 @@ class RecordingService:
         allow_failure: bool = False,
         publication_directory: Path | None = None,
     ) -> RecordingResult:
-        recording = self._recorder(
+        recording = _record_dynamic_run_as_strict_case(
             run_dir=run_dir,
             task=task,
             result=result,
@@ -106,25 +109,10 @@ class RecordingService:
             allow_failure=allow_failure,
             publication_directory=publication_directory,
         )
-        if isinstance(recording, StrictCaseRecording):
-            return RecordingResult.from_recording(recording)
-        payload = recording.to_json()
-        return RecordingResult(
-            status=payload.get("status", "failed"),
-            recording_path=Path(payload["recording_path"]),
-            recorded_case_path=Path(payload["recorded_case_path"]) if payload.get("recorded_case_path") else None,
-            published_case_path=Path(payload["published_case_path"]) if payload.get("published_case_path") else None,
-            command_count=int(payload.get("command_count", 0)),
-            required_runtime_secret_names=tuple(payload.get("required_runtime_secret_names", [])),
-            warnings=tuple(payload.get("warnings", [])),
-            skipped_tool_calls=tuple(payload.get("skipped_tool_calls", [])),
-            errors=tuple(payload.get("errors", [])),
-            validation_status=str(payload.get("validation_status", "not_run")),
-            draft=bool(payload.get("draft", False)),
-        )
+        return _recording_result_from_state(recording)
 
 
-def record_dynamic_run_as_strict_case(
+def _record_dynamic_run_as_strict_case(
     *,
     run_dir: Path,
     task: Task,
@@ -132,13 +120,13 @@ def record_dynamic_run_as_strict_case(
     settings: Settings,
     allow_failure: bool = False,
     publication_directory: Path | object | None = _DEFAULT_PUBLICATION,
-) -> StrictCaseRecording:
+) -> _StrictCaseRecording:
     run_dir.mkdir(parents=True, exist_ok=True)
     recording_path = run_dir / "recording.json"
     recorded_case_path = run_dir / "recorded.fsq.yaml"
     draft = result.status != "success"
     if draft and not allow_failure:
-        recording = StrictCaseRecording(
+        recording = _StrictCaseRecording(
             status="skipped",
             recording_path=recording_path,
             warnings=["Run did not finish successfully; use --record-on-failure to write a draft recording."],
@@ -147,7 +135,7 @@ def record_dynamic_run_as_strict_case(
         _write_recording(recording)
         return recording
     if recorded_case_path.exists():
-        recording = StrictCaseRecording(
+        recording = _StrictCaseRecording(
             status="failed",
             recording_path=recording_path,
             recorded_case_path=recorded_case_path,
@@ -161,7 +149,7 @@ def record_dynamic_run_as_strict_case(
     events = _load_events(run_dir / "events.jsonl")
     commands = collector.collect(events)
     if not commands:
-        recording = StrictCaseRecording(
+        recording = _StrictCaseRecording(
             status="failed",
             recording_path=recording_path,
             errors=["No replayable commands were found in the dynamic run event log."],
@@ -180,7 +168,7 @@ def record_dynamic_run_as_strict_case(
         encoding="utf-8",
     )
 
-    recording = StrictCaseRecording(
+    recording = _StrictCaseRecording(
         status="recorded",
         recording_path=recording_path,
         recorded_case_path=recorded_case_path,
@@ -415,10 +403,15 @@ def _metadata_doc(
     draft: bool,
 ) -> dict[str, Any]:
     app_id = settings.harness.android.app_id if settings.harness.platform == "android" else None
+    name = f"Recorded: {task.name}"
+    description = f"Generated from dynamic run {result.report.run_id}."
+    if task.planning_reference_kind == "goal":
+        name = result.report.run_id
+        description = " ".join(task.planning_reference_text.split()) if task.planning_reference_text and task.planning_reference_text.strip() else task.name
     doc: dict[str, Any] = {
         "schemaVersion": "fsq.ai-test/v1",
-        "name": f"Recorded: {task.name}",
-        "description": f"Generated from dynamic run {result.report.run_id}.",
+        "name": name,
+        "description": description,
         "platform": settings.harness.platform,
         "tags": ["recorded", "dynamic-llm"],
         "properties": {
@@ -437,5 +430,5 @@ def _metadata_doc(
     return doc
 
 
-def _write_recording(recording: StrictCaseRecording) -> None:
+def _write_recording(recording: _StrictCaseRecording) -> None:
     recording.recording_path.write_text(json.dumps(recording.to_json(), indent=2, ensure_ascii=False), encoding="utf-8")
