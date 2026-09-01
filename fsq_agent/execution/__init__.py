@@ -16,7 +16,7 @@ from .lifecycle import (
     collect_strict_lifecycle_cases,
     run_strict_lifecycle_case,
 )
-from .recording import RecordingResult, RecordingService, StrictCaseRecording, record_dynamic_run_as_strict_case
+from .recording import RecordingResult, RecordingService
 from .runs import RunArtifactIndex, RunMetadata, RunResultSummary, RunRuntime, RunSource, RunStepCounts, allocate_run, load_run_metadata, transition_run, write_run_metadata
 
 __all__ = [
@@ -37,11 +37,9 @@ __all__ = [
     "RunRuntime",
     "RunSource",
     "RunStepCounts",
-    "StrictCaseRecording",
     "allocate_run",
     "collect_strict_lifecycle_cases",
     "load_run_metadata",
-    "record_dynamic_run_as_strict_case",
     "run_fsq_core_case",
     "run_strict_fsq_core_case",
     "run_strict_lifecycle_case",

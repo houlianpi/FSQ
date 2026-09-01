@@ -22,6 +22,7 @@ from fsq_agent.adapters.control_plane.playground._server import STEP_ARTIFACT_TE
 from fsq_agent.adapters.control_plane.playground._state import BusyError, PlaygroundState
 from fsq_agent.case_dsl import FsqCaseLoader, FsqExecutableStepAdapter
 from fsq_agent.config import Settings, save_azure_openai_provider
+from fsq_agent.execution import RecordingResult
 from fsq_agent.models import (
     AndroidDevice,
     AndroidDeviceDiscoveryResult,
@@ -2459,23 +2460,28 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
                 report=ReportArtifact(run_id="run-1", path=tmp_path / "report.md"),
             )
 
-    class FakeRecording:
-        def __init__(self, recording_path: Path) -> None:
-            self.recording_path = recording_path
-
-        def to_json(self):
-            return {"status": "skipped", "recording_path": str(self.recording_path), "draft": True}
-
-    def fake_record_dynamic_run_as_strict_case(**kwargs):
+    def fake_record(_self, **kwargs):
         captured.update(kwargs)
-        return FakeRecording(kwargs["run_dir"] / "recording.json")
+        return RecordingResult(
+            status="skipped",
+            recording_path=kwargs["run_dir"] / "recording.json",
+            recorded_case_path=None,
+            published_case_path=None,
+            command_count=0,
+            required_runtime_secret_names=(),
+            warnings=(),
+            skipped_tool_calls=(),
+            errors=(),
+            validation_status="not_run",
+            draft=True,
+        )
 
     monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.validate_runtime_settings", lambda _settings: None)
     monkeypatch.setattr(
         "fsq_agent.adapters.control_plane.playground._execution.FsqAgent.from_settings",
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
-    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._recording._record_dynamic_run_as_strict_case", fake_record_dynamic_run_as_strict_case)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane.playground._execution.RecordingService.record", fake_record)
 
     _run_dynamic_task(
         settings=settings,
@@ -2493,6 +2499,7 @@ def test_playground_dynamic_goal_records_with_failure_drafts(tmp_path: Path, mon
     assert progress is not None
     assert captured["task"].planning_reference_kind == "goal"
     assert captured["allow_failure"] is True
+    assert captured["publication_directory"] == settings.cases.dir
     assert progress["result"]["recording"]["draft"] is True
 
 

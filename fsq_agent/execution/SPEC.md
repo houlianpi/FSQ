@@ -22,7 +22,7 @@ The package exports its supported services and result contracts through `executi
 - `DynamicExecutionService`: Coordinates one dynamic Goal or raw-reference task through the supplied Agent runtime, event sink, cancellation boundary, report generation, and optional recording policy.
 - `DeterministicExecutionService`: Coordinates one parsed deterministic Case through the supplied registry, runtime-secret store, harness, Core runners, evidence recorder, cancellation boundary, and report generator.
 - `LifecycleExecutionService`: Collects contained nested Cases and executes configuration-level and Case-level start/complete hooks plus the main Case with deterministic ordering and recursion protection.
-- `RecordingService`: Converts normalized replayable capability results and persisted safe events into one Run-local candidate `*.fsq.yaml` recording and optionally publishes a validated Goal recording to an explicitly supplied contained destination.
+- `RecordingService`: Converts normalized replayable capability results and persisted safe events into one Run-local candidate `*.fsq.yaml` recording and optionally publishes a validated Goal recording to an explicitly supplied contained destination. For valid and draft Goal recordings, generated Case metadata uses the originating Run id as `name` and normalized `planning_reference_text` as `description`, falling back to the Task name when that Goal reference is absent or blank. Non-Goal recordings retain their existing metadata derivation. The service and immutable `RecordingResult` are the complete public recording boundary; mutable recorder state and function-style recorder helpers are private implementation details.
 - `DynamicExecutionRequest`, `DynamicExecutionResult`, `DeterministicExecutionRequest`, `DeterministicExecutionResult`, `LifecycleExecutionRequest`, `LifecycleExecutionResult`, and `RecordingResult`: immutable execution-boundary contracts with no transport types.
 - Run lifecycle operations allocate a collision-resistant Workspace-wide ID, atomically create its direct platform directory, write `fsq.run/v1` metadata before actions, advance monotonic active states, and atomically finalize one immutable terminal state. Allocation checks every configured platform and retries a collision at most five times.
 
@@ -36,7 +36,7 @@ Execution services are imported from `fsq_agent.execution`. Package-root `_stric
 - `dynamic.py`: Dynamic Goal/reference coordination and normalized result assembly.
 - `deterministic.py`: Strict Case preparation and ordered Core execution coordination.
 - `lifecycle.py`: Lifecycle Case collection, contained nested execution, hook ordering, teardown, recursion, shell-hook, and cancellation semantics.
-- `recording.py`: Replay-policy-driven candidate Case construction, validation, atomic Run-local persistence, and optional contained publication.
+- `recording.py`: Replay-policy-driven candidate Case construction, private mutable recording state, validation, atomic Run-local persistence, and optional contained publication.
 - `runs.py`: Public Run allocation and metadata lifecycle boundary.
 - Private `_*.py` files may hold shared implementation details and are not imported across package boundaries.
 
@@ -61,7 +61,7 @@ Initial metadata failure prevents external actions and removes only an empty req
 - Dynamic, deterministic, lifecycle, and recording behavior is identical across CLI, Control Plane, and Playground for equivalent inputs and collaborators.
 - Lifecycle verification covers configuration and Case hook ordering, repeated actions, nested Cases, recursion, containment, start failure, completion hooks, teardown, cancellation, and platform shell selection.
 - Recording verification covers replay-policy filtering, authored aliases, normalized safe params, browser lifecycle facts, runtime-secret exclusion, validation, atomic Run-local writes, optional publication, and failure isolation.
-- Compatibility verification proves canonical and package-root lifecycle/recording symbols share identity and no adapter contains an independent lifecycle engine or recorder.
+- Compatibility verification proves canonical and package-root lifecycle symbols share identity and no adapter contains an independent lifecycle engine or recorder. Recording verification exercises the public `RecordingService` boundary rather than importing its private recorder implementation.
 
 ## Current Invariants
 
@@ -71,4 +71,5 @@ Initial metadata failure prevents external actions and removes only an empty req
 - Trailing teardown steps and completion hooks remain eligible after an earlier blocking normal-step failure.
 - Recording consumes final normalized capability results rather than low-level progress events as execution truth. It records only replayable non-observation facts allowed by capability metadata and never invents setup, cleanup, or browser lifecycle commands.
 - Runtime-secret values, sensitive raw arguments, subprocess output, and hidden reasoning are never persisted into generated Cases or returned in safe execution summaries.
+- Adapters depend on `RecordingService` and `RecordingResult`; they do not import, inject, or expose the private mutable recording state or function-style recorder implementation.
 - Adapters may supply transport-specific event sinks, cancellation callbacks, and progress recorders, but they do not determine lifecycle order, replayability, evidence policy, or recording content.

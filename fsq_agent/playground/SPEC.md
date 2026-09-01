@@ -111,7 +111,6 @@ macOS playground behavior:
 - `_yaml_lifecycle.py`: Private Input YAML lifecycle editing service. It validates structured hooks through public FSQ models, computes revisions, performs `ruamel.yaml` round-trip first-document mutation, validates temporary complete cases through `FsqCaseLoader`, preserves unrelated documents and formatting where supported, and atomically replaces source files.
 - `_state.py`: In-memory session/task state, one-task lock, progress event buffering with optional sequence-window projection, final result summaries, and request id generation.
 - `_android.py`: Playground target/error projection over shared `core` Android discovery, setup schema generation, Android session metadata, and screenshot helper boundaries.
-- `_recording.py`: Playground presentation adapter for public recording results and recording failure normalization.
 - `_execution.py`: Provider-only settings refresh at the complete-task boundary plus transport task-state, cancellation, preview, collaborator, and result adaptation around public Execution services.
 - `adapters/control_plane/playground/static/`: Untracked Vite-generated production assets included as Python package data beside the canonical Playground server. Authored source ownership is defined by `frontend/playground/SPEC.md`.
 - `SPEC.md`: Module design.
@@ -120,7 +119,7 @@ macOS playground behavior:
 
 - Architecture level: Level 3 Layered Application.
 - Public API: `PlaygroundServer`, `PlaygroundServerOptions`, `run_playground`, and the local HTTP endpoints listed in this SPEC.
-- Internal modules: `_server.py`, `_state.py`, `_android.py`, `_recording.py`, `_execution.py`, `_yaml_lifecycle.py`, and generated package assets under `static`.
+- Internal modules: `_server.py`, `_state.py`, `_android.py`, `_execution.py`, `_yaml_lifecycle.py`, and generated package assets under `static`.
 - Domain boundaries: playground owns HTTP behavior, Input YAML lifecycle editing, safe run-artifact lookup, replay persistence, execution presentation adaptation, and task/session state. Shared models and `fsq` own lifecycle syntax and case validation; Execution owns dynamic/deterministic coordination, lifecycle execution, and recording. The frontend Playground module owns browser-local rendering, view state, interaction, and replay generation.
 - Boundary models: JSON request and response payloads returned by `_server.py`, ordered `FsqCaseHook`/`FsqCaseHookAction` values consumed for lifecycle validation, shared `Settings`, `Task`, `TaskResult`, `RunEvent`, report artifacts, and session/task progress dictionaries.
 - Dependency direction: playground may import public APIs from `execution`, `models`, `config`, `providers`, `agent`, `fsq`, `core`, and `report`; those modules must not import playground. Playground must not import package-root composition helpers, CLI-private modules, `capabilities`, decorator internals, or authored frontend source. Python runtime code consumes generated assets only at the packaging and static-serving boundary.

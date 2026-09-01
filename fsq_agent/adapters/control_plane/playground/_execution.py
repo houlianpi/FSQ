@@ -16,7 +16,6 @@ from pydantic import ValidationError
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent._workspace_paths import resolve_workspace_cases_path
 from fsq_agent.adapters.coding_agent import create_coding_agent_runtime
-from fsq_agent.adapters.control_plane.playground import _recording as playground_recording
 from fsq_agent.agent import FsqAgent
 from fsq_agent.case_dsl import FSQ_CASE_SUFFIX, FsqCaseLoader, FsqExecutableStepAdapter, is_fsq_case_file
 from fsq_agent.config import refresh_provider_settings, validate_runtime_settings, validate_strict_core_settings
@@ -317,7 +316,7 @@ async def _run_dynamic_task_async(
                 "command_count": value.command_count,
                 "required_runtime_secret_names": list(value.required_runtime_secret_names),
                 "warnings": list(value.warnings),
-                "skipped_tool_calls": list(value.skipped_tool_calls),
+                "skipped_tool_calls": [dict(item) for item in value.skipped_tool_calls],
                 "errors": list(value.errors),
                 "validation_status": value.validation_status,
                 "draft": value.draft,
@@ -353,7 +352,7 @@ async def _run_agent_task_async(
 ) -> TaskResult:
     harness_factory = _preview_harness_factory(settings, handle) if handle is not None and settings.harness.platform in {"web", "windows", "macos"} else None
     agent = FsqAgent.from_settings(settings, create_coding_agent_runtime, harness_factory=harness_factory)
-    execution = await DynamicExecutionService(agent=agent, recording_service=RecordingService(recorder=playground_recording._record_dynamic_run_as_strict_case)).execute(
+    execution = await DynamicExecutionService(agent=agent, recording_service=RecordingService()).execute(
         DynamicExecutionRequest(
             task=task,
             settings=settings,

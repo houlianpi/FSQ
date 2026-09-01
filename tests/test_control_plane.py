@@ -562,11 +562,11 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
         lambda _settings, _runtime_factory, harness_factory=None: FakeAgent(),
     )
 
-    def record(**kwargs):
+    def record(_self, **kwargs):
         captured["record"] = kwargs
         raise OSError("recording unavailable")
 
-    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.record_dynamic_run_as_strict_case", record)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.RecordingService.record", record)
 
     await _run_explore(prepared, state)
 
@@ -575,6 +575,7 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
     assert snapshot["reportAvailable"] is True
     assert captured["task"].planning_reference_kind == "goal"
     assert captured["record"]["allow_failure"] is True
+    assert captured["record"]["publication_directory"] is None
     assert any(event["label"] == "Dynamic recording" for event in snapshot["events"])
 
 
@@ -1307,7 +1308,7 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
     monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_runtime_settings", lambda *_args: None)
     monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_strict_core_settings", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda *_args: None)
-    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.record_dynamic_run_as_strict_case", lambda **_kwargs: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.RecordingService.record", lambda _self, **_kwargs: None)
 
     class FakeAgent:
         async def run(self, task, event_sink=None):
