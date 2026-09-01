@@ -629,6 +629,31 @@ def test_strict_step_results_project_to_case_steps_without_event_status_override
     assert step["message"] == "Target was not found."
 
 
+def test_strict_step_projection_preserves_exception_type_when_redacting_local_path(tmp_path: Path) -> None:
+    long_local_path = "C:/Users/toyu/fsq_workspace/ws_001/.fsq/runs/android/" + ("very-long-segment/" * 12) + "artifact.png"
+    state = ControlPlaneState()
+    request_id = state.reserve(
+        workspace_name="checkout",
+        platform="android",
+        target_id="device",
+        mode="strict",
+        source={"casePath": "recorded.fsq.yaml", "caseSteps": [{"stepId": "step-1", "index": 1, "authoredActionName": "launchApp", "actionName": "launch_app", "kind": "setup"}]},
+    )
+    projection = EvidenceProjection(state, request_id, tmp_path / "runs")
+
+    projection.project_step_result(
+        RunnerStepResult(
+            step_id="step-1",
+            status="failed",
+            failure_category="action_error",
+            error_message=f"FileNotFoundError: [Errno 2] No such file or directory: '{long_local_path}' (local path length: {len(long_local_path)})",
+        )
+    )
+
+    step = state.snapshot(request_id)["source"]["caseSteps"][0]
+    assert step["message"] == f"FileNotFoundError: [Errno 2] No such file or directory: '[local path]' (local path length: {len(long_local_path)})"
+
+
 def test_terminal_strict_steps_without_results_are_marked_skipped() -> None:
     state = ControlPlaneState()
     request_id = state.reserve(
