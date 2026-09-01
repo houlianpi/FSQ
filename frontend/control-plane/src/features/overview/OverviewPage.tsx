@@ -1,83 +1,64 @@
-import { useRef } from 'react';
+import { AlertTriangle, ArrowLeft, Bot, Check, ChevronRight, Folder, Play, Plus, RefreshCw, Settings } from 'lucide-react';
+import type { WorkspaceRegistryEntry } from '../../api/types';
 import type { ControlPlanePageId } from '../../app/shell/navigation';
 import './overview.css';
 
+export type OverviewProviderState =
+  | { status: 'loading' }
+  | { status: 'unconfigured' }
+  | { status: 'configured'; provider: 'Azure OpenAI' | 'GitHub Copilot'; modelName: string; authenticated?: true }
+  | { status: 'error'; error: { message: string; action: string } };
+
 interface OverviewPageProps {
+  workspaces: readonly WorkspaceRegistryEntry[];
+  selectedWorkspace: WorkspaceRegistryEntry | null;
+  registryStatus: 'loading' | 'ready' | 'error';
+  registryError?: string;
+  provider: OverviewProviderState;
   onNavigate: (page: ControlPlanePageId) => void;
+  onCreateWorkspace: () => void;
+  onSelectWorkspace: (name: string) => void;
+  onClearWorkspace: () => void;
+  onOpenWorkspace: (name: string) => void;
+  onConfigureWorkspace: (name: string) => void;
+  onRetryWorkspaces: () => void;
+  onRetryProvider: () => void;
 }
 
-const workflow = [
-  ['Explore', 'Turn a human goal into key actions.'],
-  ['Capture', 'Record screenshots, UI trees, and tool facts.'],
-  ['Verify', 'Judge the goal from evidence, not self-report.'],
-  ['Save Case', 'Review actual successful actions as YAML.'],
-  ['Replay', 'Run deterministically for regression.'],
-] as const;
+function ProviderSummary({ provider, onManage, onRetry }: { provider: OverviewProviderState; onManage: () => void; onRetry: () => void }) {
+  return <section className="cp-overview-card cp-provider-card" aria-labelledby="provider-heading">
+    <div className="cp-overview-card-heading"><span className="cp-overview-icon"><Bot aria-hidden="true" /></span><div><p className="cp-overview-eyebrow">Global AI configuration</p><h2 id="provider-heading">AI Provider</h2><p>Loaded from <code>~/.fsq</code> and shared by every Workspace.</p></div></div>
+    <div className="cp-provider-state">
+      {provider.status === 'loading' && <p role="status">Loading Provider configuration…</p>}
+      {provider.status === 'unconfigured' && <><span className="cp-status-pill">Not configured</span><p>Configure a Provider to enable AI-assisted Case workflows.</p></>}
+      {provider.status === 'configured' && <><span className="cp-status-pill cp-status-pill--success"><Check aria-hidden="true" /> Configured</span><dl><div><dt>Provider</dt><dd>{provider.provider}</dd></div><div><dt>Model</dt><dd>{provider.modelName}</dd></div>{provider.authenticated && <div><dt>Status</dt><dd>Authenticated</dd></div>}</dl></>}
+      {provider.status === 'error' && <div className="cp-inline-error" role="alert"><strong>{provider.error.message}</strong><span>{provider.error.action}</span><button className="button" type="button" onClick={onRetry}><RefreshCw aria-hidden="true" /> Retry</button></div>}
+    </div>
+    <button className="button" type="button" onClick={onManage}><Settings aria-hidden="true" /> Manage Provider</button>
+  </section>;
+}
 
-export function OverviewPage({ onNavigate }: OverviewPageProps) {
-  const workflowRef = useRef<HTMLDivElement>(null);
-  const showWorkflow = () => workflowRef.current?.scrollIntoView?.({
-    behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-    block: 'center',
-  });
+export function OverviewPage({ workspaces, selectedWorkspace, registryStatus, registryError, provider, onNavigate, onCreateWorkspace, onSelectWorkspace, onClearWorkspace, onOpenWorkspace, onConfigureWorkspace, onRetryWorkspaces, onRetryProvider }: OverviewPageProps) {
+  const currentWorkspace = registryStatus === 'ready' && selectedWorkspace?.status !== 'unavailable' ? selectedWorkspace : null;
+  const availablePlatforms = currentWorkspace?.platforms.filter((item) => item.status === 'available') ?? [];
+  const hasAvailablePlatform = availablePlatforms.length > 0;
+  const devicesBlockedReason = currentWorkspace ? 'Initialize or repair a platform in Workspace until at least one platform is available.' : 'Select an available Workspace before continuing.';
+  const openWorkspace = () => currentWorkspace ? onOpenWorkspace(currentWorkspace.name) : onNavigate('workspace');
 
   return <div className="cp-overview">
-    <section className="cp-overview-card cp-overview-start" aria-labelledby="start-run-heading">
-      <div className="cp-overview-card-head">
-        <div className="cp-overview-start-copy">
-          <h1 id="start-run-heading">Start a run</h1>
-          <p>Start with the core loop, follow a guided tutorial, or launch a task on one of your connected devices.</p>
-        </div>
-        <button className="button" type="button" onClick={showWorkflow}>How FSQ works</button>
-      </div>
-      <div className="cp-overview-card-body">
-        <div className="cp-launch-grid">
-          <button className="cp-launch-card" type="button" onClick={() => onNavigate('devices')}>
-            <span className="cp-launch-number">01 / DYNAMIC LOOP</span>
-            <h2>Explore with AI</h2>
-            <p>Describe a user-visible goal. FSQ plans, operates your app, captures every step, verifies the result, and drafts a replayable case.</p>
-            <span className="cp-launch-footer"><span className="cp-tag cp-tag--accent">Uses configured LLM</span><span className="cp-launch-arrow">→</span></span>
-          </button>
-          <button className="cp-launch-card" type="button" onClick={() => onNavigate('devices')}>
-            <span className="cp-launch-number">02 / STRICT LOOP</span>
-            <h2>Replay a Case</h2>
-            <p>Select a reviewed YAML case. FSQ executes authored commands exactly and produces fresh evidence for regression testing.</p>
-            <span className="cp-launch-footer"><span className="cp-tag">No planning LLM</span><span className="cp-launch-arrow">→</span></span>
-          </button>
-        </div>
-      </div>
+    <header className="cp-overview-intro"><p className="cp-overview-eyebrow">Overview</p><h1>Start from a real Workspace</h1><p>Configure AI once, then create, run, and inspect tests in the Workspace that owns their evidence.</p></header>
+    <ProviderSummary provider={provider} onManage={() => onNavigate('config')} onRetry={onRetryProvider} />
+    <section className="cp-overview-card cp-workflow-card" aria-labelledby="workspace-flow-heading">
+      <div className="cp-workspace-identity">{currentWorkspace && <button className="cp-workspace-back" type="button" onClick={onClearWorkspace} aria-label="Back to Workspaces" title="Back to Workspaces"><ArrowLeft aria-hidden="true" /></button>}<div className="cp-workspace-identity-copy"><p className="cp-overview-eyebrow">Current Workspace</p><h2 id="workspace-flow-heading">{currentWorkspace?.name ?? 'No Workspace selected'}</h2></div>{currentWorkspace && <button className="button cp-workspace-open" type="button" onClick={() => onConfigureWorkspace(currentWorkspace.name)}>Configure Workspace <ChevronRight aria-hidden="true" /></button>}</div>
+      {registryStatus === 'loading' && <div className="cp-workspace-state" role="status">Loading registered Workspaces…</div>}
+      {registryStatus === 'error' && <div className="cp-workspace-state cp-workspace-state--error" role="alert"><AlertTriangle aria-hidden="true" /><div><strong>Workspace registry unavailable</strong><span>{registryError || 'FSQ could not load registered Workspaces.'}</span></div><button className="button" type="button" onClick={onRetryWorkspaces}><RefreshCw aria-hidden="true" /> Retry</button></div>}
+      {registryStatus === 'ready' && !currentWorkspace && <div className="cp-workspace-empty"><div><strong>Choose the Workspace you want to test.</strong><span>{workspaces.length ? 'Select an available Workspace below, or create another one.' : 'Create a Workspace with at least one platform to begin.'}</span></div>{workspaces.some((item) => item.status !== 'unavailable') && <div className="cp-workspace-choices">{workspaces.filter((item) => item.status !== 'unavailable').map((item) => <button type="button" key={item.name} onClick={() => onSelectWorkspace(item.name)}><Folder aria-hidden="true" /><span><strong>{item.name}</strong><small>{item.platforms.length ? item.platforms.map((platform) => `${platform.platform}${platform.status === 'available' ? '' : ` (${platform.status})`}`).join(', ') : 'No platforms configured'}</small></span></button>)}</div>}<button className="button button--primary" type="button" onClick={onCreateWorkspace}><Plus aria-hidden="true" /> Create Workspace</button></div>}
+      {currentWorkspace && <div className="cp-platform-summary" aria-label="Configured platforms">{currentWorkspace.platforms.length ? currentWorkspace.platforms.map((item) => <span key={item.platform} className={item.status === 'available' ? 'is-available' : ''}><strong>{item.platform}</strong><small><i aria-hidden="true" />{item.status}</small></span>) : <span>No platforms configured</span>}</div>}
+      <ol className="cp-workflow-steps" aria-label="Test this Workspace">
+        <li><span className="cp-step-number">1</span><div><h3>Workspace and platform</h3><p>{currentWorkspace ? hasAvailablePlatform ? 'This Workspace has an available platform.' : 'This Workspace needs an available platform before testing.' : 'Create or select a Workspace with at least one platform.'}</p></div>{!hasAvailablePlatform && <span className="cp-step-status cp-status-pill">{currentWorkspace ? 'Needs attention' : 'Not started'}</span>}<button className="button cp-step-action" type="button" onClick={currentWorkspace ? openWorkspace : onCreateWorkspace}>{currentWorkspace ? 'Open Workspace' : 'Create Workspace'}</button></li>
+        <li><span className="cp-step-number">2</span><div><h3>Create or run a Case</h3><p>Explore from a goal or replay a reviewed Case in Devices.</p></div><button className="button cp-step-action" type="button" onClick={() => onNavigate('devices')} disabled={!hasAvailablePlatform} aria-describedby={!hasAvailablePlatform ? 'case-step-blocked' : undefined}><Play aria-hidden="true" /> Open Devices</button>{!hasAvailablePlatform && <small id="case-step-blocked" className="cp-step-blocked">{devicesBlockedReason}</small>}</li>
+        <li><span className="cp-step-number">3</span><div><h3>Inspect the latest Run</h3><p>Run history and evidence review will be available in a future release.</p></div><span className="cp-step-coming cp-status-pill">Coming soon</span></li>
+      </ol>
     </section>
-
-    <section ref={workflowRef} className="cp-overview-card cp-loop-strip" aria-label="FSQ workflow">
-      {workflow.map(([title, description], index) => <div className="cp-loop-step" key={title}>
-        <span className="mono">{String(index + 1).padStart(2, '0')}</span><strong>{title}</strong><small>{description}</small>
-      </div>)}
-    </section>
-
-    <div className="cp-dashboard-grid">
-      <section className="cp-overview-card" aria-labelledby="recent-heading">
-        <div className="cp-overview-card-head">
-          <div><h2 id="recent-heading">Recent activity</h2><p>Evidence from this workspace</p></div>
-          <button className="button cp-button-small" type="button" onClick={() => onNavigate('workspace')}>Open workspace</button>
-        </div>
-        <div className="cp-overview-card-body cp-activity-list">
-          <button className="cp-activity-row" type="button" onClick={() => onNavigate('devices')}><span><strong>Create project flow</strong><small>AI explore · Web · 4m ago</small></span><span className="cp-tag cp-tag--success">success</span></button>
-          <button className="cp-activity-row" type="button" onClick={() => onNavigate('devices')}><span><strong>Checkout smoke</strong><small>Strict replay · Web · 38m ago</small></span><span className="cp-tag cp-tag--failed">failed</span></button>
-          <button className="cp-activity-row" type="button" onClick={() => onNavigate('devices')}><span><strong>Settings profile</strong><small>AI explore · macOS · yesterday</small></span><span className="cp-tag cp-tag--warning">inconclusive</span></button>
-        </div>
-      </section>
-      <section className="cp-overview-card" aria-labelledby="environment-heading">
-        <div className="cp-overview-card-head">
-          <div><h2 id="environment-heading">Environment</h2><p>Ready to run</p></div>
-          <span className="cp-tag cp-tag--success">3 / 3</span>
-        </div>
-        <div className="cp-overview-card-body cp-health-list">
-          <div className="cp-health-row"><span className="cp-dot cp-dot--success" /><span><strong>Provider</strong><small>GitHub Copilot · authenticated</small></span><span className="cp-tag cp-tag--success">ready</span></div>
-          <div className="cp-health-row"><span className="cp-dot cp-dot--success" /><span><strong>Platform</strong><small>Web · Playwright · Chrome</small></span><span className="cp-tag cp-tag--success">ready</span></div>
-          <div className="cp-health-row"><span className="cp-dot cp-dot--success" /><span><strong>Workspace</strong><small>Cases and evidence writable</small></span><span className="cp-tag cp-tag--success">ready</span></div>
-          <button className="button cp-button-small cp-manage-config" type="button" onClick={() => onNavigate('config')}>Manage config</button>
-        </div>
-      </section>
-    </div>
   </div>;
 }

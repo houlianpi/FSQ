@@ -5,19 +5,19 @@ import { controlPlaneClient } from '../api/controlPlaneClient';
 import { ControlPlaneApp } from './ControlPlaneApp';
 
 vi.mock('../api/controlPlaneClient', () => ({
-  controlPlaneClient: { workspaces: vi.fn().mockResolvedValue({ workspaces: [] }) },
+  controlPlaneClient: { workspaces: vi.fn().mockResolvedValue({ workspaces: [] }), config: vi.fn().mockResolvedValue({ configured: false, provider: null }) },
   toApiError: vi.fn((error) => error),
 }));
 
 vi.mock('../features/devices/DevicesPage', () => ({
-  DevicesPage: ({ workspaceRegistryReady, launchIntent, onLaunchIntentConsumed, renderShell }: { workspaceRegistryReady: boolean; launchIntent?: { id: number; mode: string; workspaceName: string; platform?: string; casePath?: string } | null; onLaunchIntentConsumed?: (id: number) => void; renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode }) =>
-    renderShell(null, <div>Devices content<span>Registry {workspaceRegistryReady ? 'ready' : 'pending'}</span><span>{launchIntent ? `${launchIntent.mode}:${launchIntent.workspaceName}:${launchIntent.platform ?? ''}:${launchIntent.casePath ?? ''}` : 'No launch intent'}</span>{launchIntent && <button type="button" onClick={() => onLaunchIntentConsumed?.(launchIntent.id)}>Consume launch intent</button>}</div>),
+  DevicesPage: ({ workspaceRegistryReady, selectedWorkspaceName, launchIntent, onLaunchIntentConsumed, renderShell }: { workspaceRegistryReady: boolean; selectedWorkspaceName: string | null; launchIntent?: { id: number; mode: string; workspaceName: string; platform?: string; casePath?: string } | null; onLaunchIntentConsumed?: (id: number) => void; renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode }) =>
+    renderShell(null, <div>Devices content<span>Registry {workspaceRegistryReady ? 'ready' : 'pending'}</span><span>Devices Workspace {selectedWorkspaceName ?? 'unselected'}</span><span>{launchIntent ? `${launchIntent.mode}:${launchIntent.workspaceName}:${launchIntent.platform ?? ''}:${launchIntent.casePath ?? ''}` : 'No launch intent'}</span>{launchIntent && <button type="button" onClick={() => onLaunchIntentConsumed?.(launchIntent.id)}>Consume launch intent</button>}</div>),
 }));
 vi.mock('../features/config/ConfigPage', () => ({
   ConfigPage: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => <div>Config content<button type="button" onClick={() => onDirtyChange?.(true)}>Make draft dirty</button></div>,
 }));
 vi.mock('../features/overview/OverviewPage', () => ({
-  OverviewPage: ({ onNavigate }: { onNavigate: (page: 'devices') => void }) => <div>Overview content<button type="button" onClick={() => onNavigate('devices')}>Start dynamic</button></div>,
+  OverviewPage: ({ workspaces, selectedWorkspace, provider, onNavigate, onSelectWorkspace, onClearWorkspace, onOpenWorkspace, onConfigureWorkspace, onRetryWorkspaces }: { workspaces: { name: string; status: string }[]; selectedWorkspace: { name: string; status: string } | null; provider: { status: string; provider?: string; modelName?: string }; onNavigate: (page: 'devices') => void; onSelectWorkspace: (name: string) => void; onClearWorkspace: () => void; onOpenWorkspace: (name: string) => void; onConfigureWorkspace: (name: string) => void; onRetryWorkspaces: () => void }) => <div>Overview content<span>{selectedWorkspace ? `Overview ${selectedWorkspace.name}` : 'Overview unselected'}</span><span data-testid="overview-provider-projection">{JSON.stringify(provider)}</span><button type="button" onClick={() => onNavigate('devices')}>Start dynamic</button><button type="button" onClick={onRetryWorkspaces}>Overview retry</button>{selectedWorkspace && <><button type="button" onClick={onClearWorkspace}>Overview clear</button><button type="button" onClick={() => onConfigureWorkspace(selectedWorkspace.name)}>Overview configure</button></>}{workspaces[0]?.status !== 'unavailable' && <><button type="button" onClick={() => onSelectWorkspace(workspaces[0].name)}>Overview select</button><button type="button" onClick={() => onOpenWorkspace(workspaces[0].name)}>Overview open</button></>}</div>,
 }));
 vi.mock('../features/workspace/WorkspacePage', () => ({
   WorkspaceTitlebar: ({ workspace, onConfigure }: { workspace: { name: string }; onConfigure: () => void }) => <div><h1 id="workspace-heading" tabIndex={-1}>{workspace.name}</h1><button type="button" onClick={onConfigure}>Configure workspace</button></div>,
@@ -27,6 +27,7 @@ vi.mock('../features/workspace/WorkspacePage', () => ({
     }, [configurationOpen, createRequested, onPresentationChange, selectedName]);
     return <div>
       {createRequested ? 'Create workspace content' : selectedName ? `Workspace ${selectedName}` : 'Workspace content'}
+      {configurationOpen && <span>Workspace configuration open</span>}
       <button type="button" onClick={() => onDirtyChange?.(true)}>Make workspace draft dirty</button>
       {createRequested && <button type="button" onClick={() => onCreated({ name: 'created', rootPath: 'C:\\projects\\created', status: 'available', message: 'Available.', platforms: [] })}>Complete creation</button>}
       {selectedName && !createRequested && <><button type="button" onClick={onRecordCase}>Record case from browser</button><button type="button" onClick={() => onReplayCase?.('web', 'flows/login.fsq.yaml')}>Replay case from browser</button></>}
@@ -35,7 +36,10 @@ vi.mock('../features/workspace/WorkspacePage', () => ({
   },
 }));
 
-beforeEach(() => vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [] }));
+beforeEach(() => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [] });
+  vi.mocked(controlPlaneClient.config).mockResolvedValue({ configured: false, provider: null });
+});
 afterEach(() => vi.restoreAllMocks());
 
 it('defaults to Overview and selects available pages through centralized navigation', async () => {
@@ -55,6 +59,127 @@ it('defaults to Overview and selects available pages through centralized navigat
 
   await user.click(screen.getByRole('button', { name: 'Create workspace' }));
   expect(screen.getByText('Create workspace content')).toBeVisible();
+});
+
+it('keeps Overview active for context selection and opens Workspace only on request', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available', message: 'Available.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+  await user.click(await screen.findByRole('button', { name: 'Overview select' }));
+  expect(screen.getByText('Overview web-app')).toBeVisible();
+  expect(screen.queryByText('Workspace web-app')).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Overview open' }));
+  expect(screen.getByText('Workspace web-app')).toBeVisible();
+});
+
+it('opens the selected Workspace configuration directly from Overview', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available', message: 'Available.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  await user.click(await screen.findByRole('button', { name: 'Overview select' }));
+  await user.click(screen.getByRole('button', { name: 'Overview configure' }));
+
+  expect(screen.getByText('Workspace web-app')).toBeVisible();
+  expect(screen.getByText('Workspace configuration open')).toBeVisible();
+});
+
+it('clears only the current Overview Workspace selection', async () => {
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({ workspaces: [
+    { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available', message: 'Available.', platforms: [] },
+  ] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  await user.click(await screen.findByRole('button', { name: 'Overview select' }));
+  await user.click(screen.getByRole('button', { name: 'Overview clear' }));
+
+  expect(screen.getByText('Overview unselected')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Overview select' })).toBeVisible();
+  expect(screen.queryByText('Workspace web-app')).not.toBeInTheDocument();
+});
+
+it('projects Azure configuration into a secret-free Overview summary', async () => {
+  vi.mocked(controlPlaneClient.config).mockResolvedValue({
+    configured: true,
+    provider: {
+      type: 'azure_openai',
+      modelName: 'gpt-5.6',
+      baseUrl: 'https://private-resource.example.invalid',
+      apiKey: 'overview-must-never-receive-this-secret',
+    },
+  });
+
+  render(<ControlPlaneApp />);
+
+  const projection = await screen.findByTestId('overview-provider-projection');
+  expect(projection).toHaveTextContent('Azure OpenAI');
+  expect(projection).toHaveTextContent('gpt-5.6');
+  expect(projection).not.toHaveTextContent('private-resource');
+  expect(projection).not.toHaveTextContent('overview-must-never-receive-this-secret');
+});
+
+it('drops Provider error details before projecting the failure into Overview', async () => {
+  vi.mocked(controlPlaneClient.config).mockRejectedValue({
+    code: 'config_unavailable',
+    message: 'Provider configuration unavailable.',
+    action: 'Open Config and retry.',
+    details: { apiKey: 'must-not-enter-overview', endpoint: 'https://private.example.invalid' },
+  });
+
+  render(<ControlPlaneApp />);
+
+  const projection = await screen.findByTestId('overview-provider-projection');
+  expect(projection).toHaveTextContent('Provider configuration unavailable.');
+  expect(projection).toHaveTextContent('Open Config and retry.');
+  expect(projection).not.toHaveTextContent('must-not-enter-overview');
+  expect(projection).not.toHaveTextContent('private.example.invalid');
+  expect(projection).not.toHaveTextContent('details');
+});
+
+it('revokes selected Workspace truth when registry refresh marks the same entry unavailable', async () => {
+  const available = { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available' as const, message: 'Available.', platforms: [] };
+  const unavailable = { ...available, status: 'unavailable' as const, message: 'Configuration is unavailable.', action: 'Repair config.yaml.' };
+  vi.mocked(controlPlaneClient.workspaces)
+    .mockResolvedValueOnce({ workspaces: [available] })
+    .mockResolvedValueOnce({ workspaces: [unavailable] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  await user.click(await screen.findByRole('button', { name: 'Overview select' }));
+  expect(screen.getByText('Overview web-app')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Overview retry' }));
+
+  await waitFor(() => expect(screen.getByText('Overview unselected')).toBeVisible());
+  expect(controlPlaneClient.workspaces).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('button', { name: 'Overview open' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Workspace web-app')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
+  expect(screen.getByText('Devices Workspace unselected')).toBeVisible();
+  expect(screen.getByText('web-app').closest('[aria-disabled="true"]')).toBeInTheDocument();
+});
+
+it('revokes selected Workspace truth when the entry disappears during refresh', async () => {
+  const available = { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available' as const, message: 'Available.', platforms: [] };
+  vi.mocked(controlPlaneClient.workspaces)
+    .mockResolvedValueOnce({ workspaces: [available] })
+    .mockResolvedValueOnce({ workspaces: [] });
+  const user = userEvent.setup();
+  render(<ControlPlaneApp />);
+
+  await user.click(await screen.findByRole('button', { name: 'Overview select' }));
+  expect(screen.getByText('Overview web-app')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Overview retry' }));
+
+  await waitFor(() => expect(screen.getByText('Overview unselected')).toBeVisible());
+  expect(screen.queryByText('Workspace web-app')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
+  expect(screen.getByText('Devices Workspace unselected')).toBeVisible();
 });
 
 it('hands Workspace case actions to Devices and clears them for ordinary navigation', async () => {
@@ -78,7 +203,7 @@ it('hands Workspace case actions to Devices and clears them for ordinary navigat
   expect(screen.getByText('No launch intent')).toBeVisible();
 });
 
-it('does not authenticate retained workspace platforms after a registry refresh fails', async () => {
+it('revokes Workspace, Record, and Replay consumers after a registry refresh fails', async () => {
   vi.mocked(controlPlaneClient.workspaces)
     .mockResolvedValueOnce({ workspaces: [
       { name: 'web-app', rootPath: 'C:\\projects\\web-app', status: 'available', message: 'Available.', platforms: [{ platform: 'web', configPath: 'web.yaml', status: 'available', message: 'Available.' }] },
@@ -90,10 +215,13 @@ it('does not authenticate retained workspace platforms after a registry refresh 
   await user.click(await screen.findByRole('button', { name: /web-app/i }));
   await user.click(screen.getByRole('button', { name: 'Cancel registry fixture' }));
   await waitFor(() => expect(controlPlaneClient.workspaces).toHaveBeenCalledTimes(2));
-  await user.click(screen.getByRole('button', { name: 'Replay case from browser' }));
-
+  expect(screen.getByText('Workspace content')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Record case from browser' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Replay case from browser' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Devices' }));
   expect(screen.getByText('Registry pending')).toBeVisible();
-  expect(screen.getByText('strict:web-app:web:flows/login.fsq.yaml')).toBeVisible();
+  expect(screen.getByText('Devices Workspace unselected')).toBeVisible();
+  expect(screen.getByText('No launch intent')).toBeVisible();
 });
 
 it('keeps Config active when the user rejects dirty-draft navigation', async () => {

@@ -5,7 +5,7 @@ import { controlPlaneClient, toApiError } from '../api/controlPlaneClient';
 import type { ApiErrorBody, WorkspaceRegistryEntry } from '../api/types';
 import { ConfigPage } from '../features/config/ConfigPage';
 import { DevicesPage, type DevicesLaunchIntent } from '../features/devices/DevicesPage';
-import { OverviewPage } from '../features/overview/OverviewPage';
+import { OverviewPage, type OverviewProviderState } from '../features/overview/OverviewPage';
 import { WorkspacePage, WorkspaceTitlebar } from '../features/workspace/WorkspacePage';
 
 type DevicesLaunchRequest =
@@ -19,35 +19,66 @@ export function ControlPlaneApp() {
   const [workspaces, setWorkspaces] = useState<WorkspaceRegistryEntry[]>([]);
   const [workspaceRegistryLoading, setWorkspaceRegistryLoading] = useState(true);
   const [workspaceRegistryError, setWorkspaceRegistryError] = useState<ApiErrorBody | null>(null);
+  const [overviewProvider, setOverviewProvider] = useState<OverviewProviderState>({ status: 'loading' });
   const [selectedWorkspaceName, setSelectedWorkspaceName] = useState<string | null>(null);
   const [createRequested, setCreateRequested] = useState(false);
   const [workspaceConfigurationOpen, setWorkspaceConfigurationOpen] = useState(false);
   const [workspaceOutletPresentation, setWorkspaceOutletPresentation] = useState<'default' | 'full-bleed'>('default');
   const [devicesLaunchIntent, setDevicesLaunchIntent] = useState<DevicesLaunchIntent | null>(null);
   const workspaceRegistryRequest = useRef(0);
+  const providerRequest = useRef(0);
   const devicesLaunchSequence = useRef(0);
   const workspaceCreateInitiator = useRef<{ element: HTMLElement; id: string | null } | null>(null);
   const workspaceCreateFocusRestore = useRef<(() => void) | null>(null);
   const workspaceCreatePreviousSelection = useRef<string | null>(null);
   const focusCreatedWorkspace = useRef(false);
-  const selectedWorkspace = workspaces.find((workspace) => workspace.name === selectedWorkspaceName) ?? null;
+  const workspaceRegistryReady = !workspaceRegistryLoading && workspaceRegistryError === null;
+  const authoritativeWorkspaces = workspaceRegistryReady ? workspaces : [];
+  const selectedWorkspace = authoritativeWorkspaces.find((workspace) => workspace.name === selectedWorkspaceName && workspace.status !== 'unavailable') ?? null;
 
   const refreshWorkspaces = (signal?: AbortSignal) => {
     const request = ++workspaceRegistryRequest.current;
     setWorkspaceRegistryLoading(true);
     setWorkspaceRegistryError(null);
     return controlPlaneClient.workspaces(signal).then((response) => {
-      if (request === workspaceRegistryRequest.current && !signal?.aborted) setWorkspaces(response.workspaces);
+      if (request === workspaceRegistryRequest.current && !signal?.aborted) {
+        setWorkspaces(response.workspaces);
+        setSelectedWorkspaceName((current) => current && response.workspaces.some((workspace) => workspace.name === current && workspace.status !== 'unavailable') ? current : null);
+      }
     }).catch((error) => {
-      if (request === workspaceRegistryRequest.current && !signal?.aborted) setWorkspaceRegistryError(toApiError(error));
+      if (request === workspaceRegistryRequest.current && !signal?.aborted) {
+        setWorkspaceRegistryError(toApiError(error));
+        setSelectedWorkspaceName(null);
+      }
     }).finally(() => {
       if (request === workspaceRegistryRequest.current && !signal?.aborted) setWorkspaceRegistryLoading(false);
+    });
+  };
+
+  const refreshOverviewProvider = (signal?: AbortSignal) => {
+    const request = ++providerRequest.current;
+    setOverviewProvider({ status: 'loading' });
+    return controlPlaneClient.config(signal).then((response) => {
+      if (request !== providerRequest.current || signal?.aborted) return;
+      if (!response.configured) {
+        setOverviewProvider({ status: 'unconfigured' });
+      } else if (response.provider.type === 'github_copilot') {
+        setOverviewProvider({ status: 'configured', provider: 'GitHub Copilot', modelName: response.provider.modelName, authenticated: true });
+      } else {
+        setOverviewProvider({ status: 'configured', provider: 'Azure OpenAI', modelName: response.provider.modelName });
+      }
+    }).catch((error) => {
+      if (request === providerRequest.current && !signal?.aborted) {
+        const safeError = toApiError(error);
+        setOverviewProvider({ status: 'error', error: { message: safeError.message, action: safeError.action } });
+      }
     });
   };
 
   useEffect(() => {
     const controller = new AbortController();
     void refreshWorkspaces(controller.signal);
+    void refreshOverviewProvider(controller.signal);
     return () => controller.abort();
   }, []);
 
@@ -78,6 +109,7 @@ export function ControlPlaneApp() {
       setCreateRequested(false);
       setWorkspaceConfigurationOpen(false);
     }
+    if (page === 'overview') void refreshOverviewProvider();
     setActivePage(page);
   };
 
@@ -141,7 +173,7 @@ export function ControlPlaneApp() {
     setActivePage('workspace');
   };
 
-  const workspaceNavigation: WorkspaceNavigationItem[] = workspaces.map((workspace) => ({
+  const workspaceNavigation: WorkspaceNavigationItem[] = authoritativeWorkspaces.map((workspace) => ({
     id: workspace.name,
     label: workspace.name,
     description: workspace.platforms.map((item) => `${item.platform}${item.status === 'available' ? '' : ` ${item.status}`}`).join(', ')
@@ -151,7 +183,7 @@ export function ControlPlaneApp() {
   }));
   const shellWorkspaceProps = {
     workspaces: workspaceNavigation,
-    selectedWorkspaceId: selectedWorkspaceName,
+    selectedWorkspaceId: selectedWorkspace?.name ?? null,
     workspaceRegistryStatus: workspaceRegistryLoading ? 'loading' as const : workspaceRegistryError ? 'error' as const : 'ready' as const,
     workspaceRegistryError: workspaceRegistryError?.message,
     onRetryWorkspaces: refreshWorkspaces,
@@ -159,9 +191,23 @@ export function ControlPlaneApp() {
     onSelectWorkspace: selectWorkspace,
   };
   if (activePage === 'overview') return <ControlPlaneShell
-    activePage="overview" title="" description=""
+    activePage="overview" title="Overview" description="Set up this Workspace and complete your first evidence-backed run."
     onNavigate={navigate} {...shellWorkspaceProps}
-  ><OverviewPage onNavigate={navigate} /></ControlPlaneShell>;
+  ><OverviewPage
+      workspaces={authoritativeWorkspaces}
+      selectedWorkspace={selectedWorkspace}
+      registryStatus={workspaceRegistryLoading ? 'loading' : workspaceRegistryError ? 'error' : 'ready'}
+      registryError={workspaceRegistryError?.message}
+      provider={overviewProvider}
+      onNavigate={navigate}
+      onCreateWorkspace={requestCreateWorkspace}
+      onSelectWorkspace={(name) => { setSelectedWorkspaceName(name); setActivePage('overview'); }}
+      onClearWorkspace={() => setSelectedWorkspaceName(null)}
+      onOpenWorkspace={selectWorkspace}
+      onConfigureWorkspace={(name) => { setSelectedWorkspaceName(name); setCreateRequested(false); setWorkspaceConfigurationOpen(true); setWorkspaceOutletPresentation('default'); setActivePage('workspace'); }}
+      onRetryWorkspaces={refreshWorkspaces}
+      onRetryProvider={refreshOverviewProvider}
+    /></ControlPlaneShell>;
 
   if (activePage === 'workspace') return <ControlPlaneShell
     activePage="workspace" title="Workspace" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
@@ -169,7 +215,7 @@ export function ControlPlaneApp() {
     titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => { setWorkspaceOutletPresentation('default'); setWorkspaceConfigurationOpen(true); }} /> : undefined}
     onNavigate={navigate} {...shellWorkspaceProps}
   ><WorkspacePage
-      selectedName={selectedWorkspaceName}
+      selectedName={selectedWorkspace?.name ?? null}
       createRequested={createRequested}
       configurationOpen={workspaceConfigurationOpen}
       registryError={workspaceRegistryError}
@@ -178,8 +224,8 @@ export function ControlPlaneApp() {
       onCancelCreate={cancelWorkspaceCreation}
       onConfigurationOpenChange={setWorkspaceConfigurationOpen}
       onPresentationChange={setWorkspaceOutletPresentation}
-      onRecordCase={() => selectedWorkspaceName && launchDevices({ mode: 'explore', workspaceName: selectedWorkspaceName })}
-      onReplayCase={(platform, casePath) => selectedWorkspaceName && launchDevices({ mode: 'strict', workspaceName: selectedWorkspaceName, platform, casePath })}
+      onRecordCase={() => selectedWorkspace && launchDevices({ mode: 'explore', workspaceName: selectedWorkspace.name })}
+      onReplayCase={(platform, casePath) => selectedWorkspace && launchDevices({ mode: 'strict', workspaceName: selectedWorkspace.name, platform, casePath })}
       onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onDirtyChange={setWorkspaceDirty}
@@ -190,7 +236,7 @@ export function ControlPlaneApp() {
     onNavigate={navigate} {...shellWorkspaceProps}
   ><ConfigPage onDirtyChange={setConfigDirty} /></ControlPlaneShell>;
 
-  return <DevicesPage workspaces={workspaces} workspaceRegistryReady={!workspaceRegistryLoading && workspaceRegistryError === null} selectedWorkspaceName={selectedWorkspaceName} onWorkspaceChange={setSelectedWorkspaceName}
+  return <DevicesPage workspaces={authoritativeWorkspaces} workspaceRegistryReady={workspaceRegistryReady} selectedWorkspaceName={selectedWorkspace?.name ?? null} onWorkspaceChange={setSelectedWorkspaceName}
     launchIntent={devicesLaunchIntent}
     onLaunchIntentConsumed={(intentId) => setDevicesLaunchIntent((current) => current?.id === intentId ? null : current)}
     renderShell={(toolbar, content) => <ControlPlaneShell
