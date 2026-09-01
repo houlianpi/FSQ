@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,21 @@ import yaml
 from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
+EXACT_REQUIREMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9._,-]+\])?==[^;\s]+(?:\s*;.*)?$")
+
+
+def test_python_dependencies_are_lock_free_public_and_exactly_versioned() -> None:
+    pyproject_path = ROOT / "pyproject.toml"
+    pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    project = tomllib.loads(pyproject_text)
+
+    ignored_paths = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "uv.lock" in ignored_paths
+    assert "tool" not in project or "uv" not in project["tool"]
+    assert "packagefeedproxy.microsoft.io" not in pyproject_text
+    assert all(EXACT_REQUIREMENT.fullmatch(requirement) for requirement in project["build-system"]["requires"])
+    assert all(EXACT_REQUIREMENT.fullmatch(requirement) for requirement in project["project"]["dependencies"])
+    assert all(EXACT_REQUIREMENT.fullmatch(requirement) for requirements in project["project"]["optional-dependencies"].values() for requirement in requirements)
 
 
 def test_default_distribution_contract() -> None:
@@ -118,7 +134,9 @@ def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> N
         '"$RUNNER_TEMP/fsq-release-smoke/bin/fsq-agent" --help',
     ):
         assert command in commands
-    assert "uv sync --frozen --extra dev --reinstall-package fsq-agent" in commands
+    assert "uv sync --extra dev --reinstall-package fsq-agent" in commands
+    assert "--frozen" not in commands
+    assert "--locked" not in commands
     assert "uv run --no-sync ruff check ." in commands
     assert "uv run --no-sync ruff format --check ." in commands
     assert "uv run --no-sync python -m pytest" in commands
@@ -176,13 +194,18 @@ def test_ci_verifies_all_runtime_package_resources() -> None:
 
     for contract in (
         "Verify clean checkout has no generated package resources",
+        "uv.lock must not be tracked",
         "uv build --wheel dist/*.tar.gz --out-dir rebuilt-dist",
         "Wheel rebuilt from sdist has different runtime package resources",
         "Sdist is missing build input",
     ):
         assert contract in workflow
-    assert "uv sync --frozen --extra dev --reinstall-package fsq-agent" in workflow
-    assert "uv sync --frozen --all-extras --reinstall-package fsq-agent" in workflow
+    assert "uv sync --extra dev --reinstall-package fsq-agent" in workflow
+    assert "uv sync --all-extras --reinstall-package fsq-agent" in workflow
+    assert "cache-dependency-glob: pyproject.toml" in workflow
+    assert "cache-dependency-glob: uv.lock" not in workflow
+    assert "--frozen" not in workflow
+    assert "--locked" not in workflow
     assert "uv run --no-sync ruff check ." in workflow
     assert "uv run --no-sync ruff format --check ." in workflow
     assert "uv run --no-sync python -m pytest" in workflow
