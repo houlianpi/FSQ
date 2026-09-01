@@ -22,6 +22,8 @@ Use when `harness.platform` is Web. This skill contains Web-specific stability g
 ## Argument Rules
 
 - Use `wait_for` for waits so waiting does not change page state.
+- Prefer waiting for a semantic page element that proves readiness. A URL wait confirms navigation only, not that page content has rendered.
+- URL waits use Playwright glob syntax: `*` does not cross `/`; use `**` when the match must span URL path separators.
 - Do not use `Alt+F4`, `Control+W`, or other key presses as browser lifecycle controls. Use `close_browser`.
 
 ## Correct Key Examples
@@ -45,6 +47,27 @@ Use one payload from the matching semantic action. Do not combine unrelated fiel
   "textType": "runtimeSecret"
 }
 ```
+
+### `waitFor` for rendered content (preferred)
+
+```json
+{
+  "locator": {"role": "main", "name": "Search Results"},
+  "state": "visible",
+  "timeout_ms": 15000
+}
+```
+
+### `waitFor` for URL navigation
+
+```json
+{
+  "url": "**/search**",
+  "timeout_ms": 15000
+}
+```
+
+Do not use `*example.com/search*` to match a full URL; the single `*` cannot cross the `/` characters in `https://example.com/search`.
 
 ## Tool Usage Error Recovery
 

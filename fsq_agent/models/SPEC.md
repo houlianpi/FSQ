@@ -103,7 +103,7 @@ Web platform exports:
 - `WebSelectOptionParams`: Pydantic model for `select_option` parameters. It requires one or more `values` plus either an exact snapshot `target` or non-empty `locator`, with optional human-readable `element`.
 - `WebHoverOnParams`: Pydantic model for `hover_on` parameters. It requires either an exact snapshot `target` or non-empty `locator`, with optional human-readable `element`.
 - `WebPressKeyParams`: Pydantic model for `press_key` parameters with one normalized required key string.
-- `WebWaitForParams`: Pydantic model for `wait_for` parameters. It requires exactly one bounded wait condition: `time`, `text`, or `text_gone`.
+- `WebWaitForParams`: Pydantic model for `wait_for` parameters. It requires a populated snapshot `target`, non-empty `locator`, visible `text`, URL text/pattern, or bounded `timeout_ms`; optional `state` applies to target/locator waits, and `timeout_ms` bounds condition waits or acts as a fixed delay when supplied alone.
 - `WebTakeScreenshotParams`: Pydantic model for `take_screenshot` parameters. It accepts optional exact snapshot `target` or non-empty `locator`, optional human-readable `element`, optional image `type`, and optional `full_page`; artifact filenames are not user-controlled through the parameter model.
 - `WebAssertVisibleParams`: Pydantic model for Web `assert_visible` parameters. It requires either `target` or non-empty `locator` plus optional assertion metadata.
 - `WebAssertNotVisibleParams`: Pydantic model for Web `assert_not_visible` parameters. It requires either `target` or non-empty `locator` plus optional assertion metadata.
