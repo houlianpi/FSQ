@@ -25,10 +25,10 @@ From the repository root:
 ```bash
 git status --short
 test -z "$(git status --porcelain)"
-uv sync --frozen --extra dev
-uv run --frozen --extra dev ruff check .
-uv run --frozen --extra dev ruff format --check .
-uv run --frozen --extra dev python -m pytest
+uv sync --extra dev
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync python -m pytest
 npm ci
 npm run typecheck
 npm test

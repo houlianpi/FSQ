@@ -36,12 +36,21 @@ jobs:
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: pyproject.toml
 
       - name: Verify clean checkout has no generated package resources
         shell: python
         run: |
+          import subprocess
           from pathlib import Path
+
+          tracked_lock = subprocess.run(
+              ["git", "ls-files", "--error-unmatch", "uv.lock"],
+              capture_output=True,
+              check=False,
+          )
+          if tracked_lock.returncode == 0:
+              raise SystemExit("uv.lock must not be tracked")
 
           generated = (
               Path("fsq_agent/adapters/control_plane/static"),
@@ -53,7 +62,7 @@ jobs:
               raise SystemExit(f"Generated package resources are unexpectedly tracked: {present}")
 
       - name: Install quality dependencies
-        run: uv sync --frozen --extra dev --reinstall-package fsq-agent
+        run: uv sync --extra dev --reinstall-package fsq-agent
 
       - name: Run Ruff lint
         run: uv run --no-sync ruff check .
@@ -92,7 +101,7 @@ jobs:
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: pyproject.toml
 
       - name: Verify clean checkout has no generated package resources
         shell: python
@@ -109,7 +118,7 @@ jobs:
               raise SystemExit(f"Generated package resources are unexpectedly tracked: {present}")
 
       - name: Install test dependencies
-        run: uv sync --frozen --all-extras --reinstall-package fsq-agent
+        run: uv sync --all-extras --reinstall-package fsq-agent
 
       - name: Run test suite
         run: uv run --no-sync python -m pytest
@@ -168,7 +177,7 @@ jobs:
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: pyproject.toml
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

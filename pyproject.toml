@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.24.0"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
  
 [project]
@@ -107,11 +107,6 @@ artifacts = [
     "fsq_agent/adapters/control_plane/playground/static/**",
 ]
 
-[[tool.uv.index]]
-name = "microsoft-cfs"
-url = "https://packagefeedproxy.microsoft.io/pypi/simple"
-default = true
- 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

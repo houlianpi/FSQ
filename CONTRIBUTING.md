@@ -42,7 +42,7 @@ An existing maintainer may nominate a contributor for additional responsibility.
 Install the default distribution, which contains all supported platform Python dependencies, together with the development tools:
 
 ```powershell
-uv sync --frozen --extra dev
+uv sync --extra dev
 ```
 
 ### Python Quality
@@ -50,23 +50,23 @@ uv sync --frozen --extra dev
 Install the repository Git hook once after syncing the development dependencies:
 
 ```powershell
-uv run --frozen --extra dev pre-commit install
+uv run --no-sync pre-commit install
 ```
 
 The hook runs the same Ruff lint and format checks as CI before every commit. Run it manually across the repository with:
 
 ```powershell
-uv run --frozen --extra dev pre-commit run --all-files
+uv run --no-sync pre-commit run --all-files
 ```
 
 ```powershell
 # Validate.
-uv run --frozen --extra dev ruff check .
-uv run --frozen --extra dev ruff format --check .
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
 
 # Apply safe lint fixes and formatting.
-uv run --frozen --extra dev ruff check . --fix
-uv run --frozen --extra dev ruff format .
+uv run --no-sync ruff check . --fix
+uv run --no-sync ruff format .
 ```
 
 ### Tests
@@ -74,14 +74,14 @@ uv run --frozen --extra dev ruff format .
 Run the test file or matching test names for the area you changed:
 
 ```powershell
-uv run --frozen --extra dev python -m pytest tests/test_windows_harness.py
-uv run --frozen --extra dev python -m pytest tests/test_windows_harness.py -k launch
+uv run --no-sync python -m pytest tests/test_windows_harness.py
+uv run --no-sync python -m pytest tests/test_windows_harness.py -k launch
 ```
 
-Maintainers can run the complete repository suite with all locked platform dependencies:
+Maintainers can run the complete repository suite with all configured platform dependencies:
 
 ```powershell
-uv run --frozen --extra dev python -m pytest
+uv run --no-sync python -m pytest
 ```
 
 ### CLI And Control Plane
@@ -111,7 +111,7 @@ For live frontend development, run the Control Plane API and Vite in separate te
 
 ```powershell
 # Terminal 1: Vite proxies API requests to port 8878.
-uv run --frozen --extra dev fsq ui --port 8878 --no-open-browser
+uv run --no-sync fsq ui --port 8878 --no-open-browser
 
 # Terminal 2
 npm run dev
@@ -119,14 +119,13 @@ npm run dev
 
 ### Dependency Changes
 
-Regenerate and verify the Python lock file after changing `pyproject.toml`:
+FSQ intentionally does not commit a Python lock file. Keep direct runtime, development, and build requirements exactly versioned in `pyproject.toml`, then resync after changing them:
 
 ```powershell
-uv lock
-uv lock --check
+uv sync --extra dev
 ```
 
-Commit `package-lock.json` whenever npm dependencies change.
+The repository uses the standard public Python package index by default. If your organization requires a package mirror, configure it in your local uv configuration or environment; do not commit organization-specific index settings. Commit `package-lock.json` whenever npm dependencies change.
 
 ## Security Issues
 
