@@ -54,9 +54,7 @@ Configure an LLM Provider, then use `fsq case create --platform web --goal "..."
   </a>
 </p>
 
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">Watch the full demo on YouTube</a>
-</p>
+https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ workflow: describe a goal, execute once, capture evidence, verify, review a Case, and replay deterministically" width="880">

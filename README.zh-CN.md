@@ -45,9 +45,7 @@ fsq runs show RUN_ID --open
   </a>
 </p>
 
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">在 YouTube 观看完整演示</a>
-</p>
+https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ 工作流：描述目标、执行一次、捕获证据、验证、审查 Case、确定性重放" width="880">
