@@ -15,7 +15,7 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
     result: { status: 'success' }, summary: 'Goal verified.', screenshotRevision: 1, uiSnapshotRevision: 1,
     evidenceAvailable: true, reportAvailable: true, terminal: true,
   };
-  render(<RunTimeline snapshot={{ ...snapshot, events: [{ ...snapshot.events[0], stepId: 'step-1' }] }} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+  render(<RunTimeline snapshot={{ ...snapshot, events: [{ ...snapshot.events[0], stepId: 'step-1' }, { sequence: 2, stepId: 'step-1', label: 'Screenshot captured', payload: { kind: 'screenshot' } }] }} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
   expect(screen.getByText('navigateTo')).toBeInTheDocument();
   expect(screen.getByText('Run source · Explore').closest('.run-source-summary')).not.toHaveTextContent('success');
   expect(screen.queryByText(/Updates:/)).not.toBeInTheDocument();
@@ -37,6 +37,30 @@ it('keeps truthful terminal timeline, separates terminal actions, and selects ac
   await userEvent.click(document.getElementById('timeline-message-1') as HTMLElement);
   expect(onSelectStep).toHaveBeenCalledWith('step-1');
   expect(onSelectStep).toHaveBeenCalledOnce();
+});
+
+it('distinguishes terminal explore actions without screenshots from selectable action cards', async () => {
+  const onSelectStep = vi.fn();
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'failed',
+    source: { goal: 'Verify' }, startedAt: '', completedAt: '', cancelRequested: false,
+    events: [
+      { sequence: 1, stepId: 'step-with-screen', label: 'clickOn', status: 'failed', message: 'Click failed.' },
+      { sequence: 2, stepId: 'step-with-screen', label: 'Screenshot captured', payload: { artifact_refs: [{ kind: 'screenshot' }] } },
+      { sequence: 3, stepId: 'step-without-screen', label: 'assertVisible', status: 'skipped', message: 'Action was not executed.' },
+    ], activeStep: null,
+    result: { status: 'failed' }, summary: 'Run failed.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+
+  render(<RunTimeline snapshot={snapshot} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('clickOn').closest('li')).toHaveClass('timeline-row--selectable');
+  expect(screen.getByRole('button', { name: 'Select action clickOn' })).toBeInTheDocument();
+  expect(screen.getByText('assertVisible').closest('li')).not.toHaveClass('timeline-row--selectable');
+  expect(screen.queryByRole('button', { name: 'Select action assertVisible' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText('assertVisible'));
+  expect(onSelectStep).not.toHaveBeenCalled();
 });
 
 it('hides Save yaml for terminal strict replay runs and reports save status', async () => {
@@ -158,6 +182,8 @@ it('shows strict authored actions with step results and selects evidence by step
     events: [
       { sequence: 1, stepId: 'step-launch', label: 'launch_app', status: 'completed', message: 'step finish' },
       { sequence: 2, stepId: 'step-tap', label: 'tap_on', status: 'completed', message: 'step finish' },
+      { sequence: 3, stepId: 'step-tap', label: 'Screenshot captured', payload: { kind: 'screenshot' } },
+      { sequence: 4, stepId: 'step-assert', label: 'Screenshot captured', payload: { kind: 'screenshot' } },
     ],
     activeStep: null, result: { status: 'failed' }, summary: 'Strict replay failed.', screenshotRevision: 1, uiSnapshotRevision: 1,
     evidenceAvailable: true, reportAvailable: true, terminal: true,
@@ -177,6 +203,33 @@ it('shows strict authored actions with step results and selects evidence by step
 
   await userEvent.click(screen.getByRole('button', { name: 'Select action tapOn' }));
   expect(onSelectStep).toHaveBeenCalledWith('step-tap');
+});
+
+it('distinguishes terminal strict actions with screenshots from ordinary rows without evidence', async () => {
+  const onSelectStep = vi.fn();
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'android', targetId: 'device', mode: 'strict', status: 'failed',
+    source: {
+      casePath: 'recorded.codex.yaml',
+      caseSteps: [
+        { stepId: 'step-launch', index: 1, authoredActionName: 'launchApp', actionName: 'launch_app', kind: 'setup', status: 'failed', message: 'FileNotFoundError' },
+        { stepId: 'step-assert', index: 2, authoredActionName: 'assertVisible', actionName: 'assert_visible', kind: 'assertion', status: 'skipped', message: 'Action was not executed.' },
+      ],
+    },
+    startedAt: '', completedAt: '', cancelRequested: false,
+    events: [{ sequence: 1, stepId: 'step-launch', label: 'Screenshot captured', payload: { kind: 'screenshot' } }],
+    activeStep: null, result: { status: 'failed' }, summary: 'Strict replay failed.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+
+  render(<RunTimeline snapshot={snapshot} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  expect(screen.getByText('launchApp').closest('li')).toHaveClass('timeline-row--selectable');
+  expect(screen.getByRole('button', { name: 'Select action launchApp' })).toBeInTheDocument();
+  expect(screen.getByText('assertVisible').closest('li')).not.toHaveClass('timeline-row--selectable');
+  expect(screen.queryByRole('button', { name: 'Select action assertVisible' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Select action launchApp' }));
+  expect(onSelectStep).toHaveBeenCalledWith('step-launch');
 });
 
 it('discloses overflowing strict authored action messages', async () => {
@@ -199,6 +252,30 @@ it('discloses overflowing strict authored action messages', async () => {
   await userEvent.click(actionDisclosure as HTMLButtonElement);
   expect(actionDisclosure).toHaveAttribute('aria-expanded', 'true');
   expect(actionDisclosure).toHaveTextContent('⌃');
+});
+
+it('keeps selectable strict message disclosure outside the action selection button', async () => {
+  const onSelectStep = vi.fn();
+  const longMessage = 'Strict action completed with a long safe backend message. '.repeat(8);
+  const snapshot: RunSnapshot = {
+    requestId: 'request', runId: 'run-1', workspaceName: 'test', platform: 'android', targetId: 'device', mode: 'strict', status: 'failed',
+    source: { casePath: 'recorded.codex.yaml', caseSteps: [{ stepId: 'step-tap', index: 1, authoredActionName: 'tapOn', actionName: 'tap_on', kind: 'action', status: 'failed', message: longMessage }] },
+    startedAt: '', completedAt: '', cancelRequested: false,
+    events: [{ sequence: 1, stepId: 'step-tap', label: 'Screenshot captured', payload: { kind: 'screenshot' } }],
+    activeStep: null, result: { status: 'failed' }, summary: 'Strict replay failed.', screenshotRevision: 1, uiSnapshotRevision: 1,
+    evidenceAvailable: true, reportAvailable: true, terminal: true,
+  };
+
+  const { container } = render(<RunTimeline snapshot={snapshot} connection="ended" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={onSelectStep} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+
+  const selectButton = screen.getByRole('button', { name: 'Select action tapOn' });
+  const disclosure = await screen.findByRole('button', { name: 'Expand message' });
+  expect(selectButton).not.toContainElement(disclosure);
+  expect(container.querySelector('.timeline-action-select .message-disclosure')).toBeNull();
+  await userEvent.click(disclosure);
+  expect(onSelectStep).not.toHaveBeenCalled();
+  await userEvent.click(selectButton);
+  expect(onSelectStep).toHaveBeenCalledWith('step-tap');
 });
 
 it('keeps strict actions pending until matching step events arrive', () => {
@@ -306,7 +383,7 @@ it('highlights only the active running action and clears active highlighting aft
   expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--active');
   expect(screen.getByText('First').closest('li')).not.toHaveClass('timeline-row--active');
 
-  rerender(<RunTimeline snapshot={{ ...snapshot, terminal: true, status: 'success', completedAt: 'now' }} connection="ended" selectedStepId="step-2" resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
+  rerender(<RunTimeline snapshot={{ ...snapshot, terminal: true, status: 'success', completedAt: 'now', events: [...snapshot.events, { sequence: 3, label: 'Screenshot captured', stepId: 'step-2', payload: { kind: 'screenshot' } }] }} connection="ended" selectedStepId="step-2" resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
   expect(screen.getByText('Second').closest('li')).not.toHaveClass('timeline-row--active');
   expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--selected');
 });
