@@ -46,7 +46,7 @@ Provider metadata and the workspace registry are read only from `~/.fsq/config.y
 
 Shared configuration rules:
 
-- The explicitly selected configured workspace platform selects exactly one committed preset and matching `harness.<platform>` settings block for dynamic, strict, and Playground execution.
+- The explicitly selected configured workspace platform selects exactly one committed preset and matching `harness.<platform>` settings block for dynamic and strict execution.
 - Repository presets own stable platform/backend, turn-limit, timeout, snapshot, browser policy, lifecycle, delay, and reusable skill settings. Workspace config owns target identity, private runtime secrets, and workspace paths.
 - `agent_context.knowledge.root_dir` resolves to workspace `knowledge/<platform>/`. Preset-configured reusable skill paths remain repository-relative and do not move under that workspace root. Optional pre-plan page knowledge uses the selected platform knowledge root.
 - Validation rejects unsupported platform/backend combinations, mismatched workspace target variants, unsafe roots, and invalid local target files before external actions.
@@ -71,7 +71,7 @@ Android configuration:
 
 - `harness.android.backend` supports `uiautomator2` in the first Android backend.
 - Workspace target `app_id` is required. Android serial is not a configuration field; an entry layer may assign it only to a run-specific settings copy after device selection.
-- Strict Android runs may fall back to FSQ case `appId` metadata where the CLI/playground strict entry permits it.
+- Strict Android runs may fall back to FSQ case `appId` metadata where the active entry contract permits it.
 
 Web configuration:
 

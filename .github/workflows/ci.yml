@@ -54,7 +54,6 @@ jobs:
 
           generated = (
               Path("fsq_agent/adapters/control_plane/static"),
-              Path("fsq_agent/adapters/control_plane/playground/static"),
               Path("fsq_agent/resources"),
           )
           present = [str(path) for path in generated if path.exists()]
@@ -110,7 +109,6 @@ jobs:
 
           generated = (
               Path("fsq_agent/adapters/control_plane/static"),
-              Path("fsq_agent/adapters/control_plane/playground/static"),
               Path("fsq_agent/resources"),
           )
           present = [str(path) for path in generated if path.exists()]
@@ -229,13 +227,10 @@ jobs:
 
           required_prefixes = (
               "fsq_agent/adapters/control_plane/static/",
-              "fsq_agent/adapters/control_plane/playground/static/",
           )
           required_files = (
               "fsq_agent/adapters/control_plane/static/control-plane/index.html",
               "fsq_agent/adapters/control_plane/static/entry-assets.json",
-              "fsq_agent/adapters/control_plane/playground/static/playground/index.html",
-              "fsq_agent/adapters/control_plane/playground/static/entry-assets.json",
               "fsq_agent/resources/config.android.yaml",
               "fsq_agent/resources/config.web.yaml",
               "fsq_agent/resources/config.windows.yaml",

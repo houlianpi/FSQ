@@ -30,7 +30,7 @@ The public Case workflows are `fsq case create` and `fsq case test`. Case creati
 
 ## Recorded Case Artifacts
 
-AI-participating Case operations may record a replayable trace as a Run-local candidate `*.fsq.yaml`. The agent persists normalized capability events and Execution coordinates conversion of replayable non-observation results according to `ReplayPolicy` metadata. Generated Goal Cases use the originating Run id as `name` and the normalized Goal as `description`, identically for valid and draft recordings across entry workflows. Generated Cases never mutate source Cases, and secrets are never persisted. Publication into `cases.dir` is selected by the entry workflow: CLI Goal-based Case creation and Playground Goal execution automatically publish validated recordings under the Run id, while Control Plane Explore keeps the recording Run-local until the user explicitly saves it under a chosen Case name. Suggestion-enabled existing-Case testing never publishes into `cases.dir`.
+AI-participating Case operations may record a replayable trace as a Run-local candidate `*.fsq.yaml`. The agent persists normalized capability events and Execution coordinates conversion of replayable non-observation results according to `ReplayPolicy` metadata. Generated Goal Cases use the originating Run id as `name` and the normalized Goal as `description`, identically for valid and draft recordings across entry workflows. Generated Cases never mutate source Cases, and secrets are never persisted. CLI Goal-based Case creation automatically publishes validated recordings under the Run id, while Control Plane Explore keeps the recording Run-local until the user explicitly saves it under a chosen Case name. Suggestion-enabled existing-Case testing never publishes into `cases.dir`.
 
 Recorded strict cases may contain runtime-secret text input references using `textType: runtimeSecret` and `waitMs` replay aliases. Strict execution bootstraps the active platform capability registry before YAML parsing, treats missing `textType` on text-entry commands as literal text for case compatibility, resolves runtime-secret text values in memory before external text-entry actions begin, and resolves `waitMs` through the registry to the inherited `wait_ms` CommonTool capability.
 
@@ -70,7 +70,7 @@ Every new Run has a versioned `run.json` inside its direct platform Run director
 
 Shared platform rules:
 
-- `harness.platform` selects exactly one active platform for normal dynamic, strict, and playground execution.
+- `harness.platform` selects exactly one active platform for normal dynamic and strict execution.
 - Public CLI entry points select the active platform with `--platform android|web|windows|macos` where platform context is needed; config loading maps that platform id to the corresponding repository-owned `config.<platform>.yaml` preset before validation. Public CLI commands do not expose workspace selection and use the exact registered current directory with canonical `.fsq` platform configuration. Provider configuration is separate from `fsq init`.
 - Entry layers build a platform-selected capability registry: inherited CommonTool capabilities plus only the active platform's PlatformTool capabilities.
 - `StepRunner`, `StepSequenceRunner`, evidence, recording, report generation, and FSQ parsing stay platform-neutral and consume capability metadata rather than platform action-name branches.
@@ -90,7 +90,7 @@ Web platform block:
 - Platform id: `web`.
 - Backend: `playwright`.
 - Runtime settings include browser channel, environment-backed browser executable path, headless mode, optional base URL, and optional viewport fields when specified by module specs.
-- Browser lifecycle is explicit through `start_browser`/`startBrowser` and `close_browser`/`closeBrowser`. Runtime, CLI, FSQ parsing, StepRunner, StepSequenceRunner, and playground entry paths must not auto-inject lifecycle commands or launch a browser as a driver-construction side effect.
+- Browser lifecycle is explicit through `start_browser`/`startBrowser` and `close_browser`/`closeBrowser`. Runtime, CLI, Control Plane, FSQ parsing, StepRunner, and StepSequenceRunner must not auto-inject lifecycle commands or launch a browser as a driver-construction side effect.
 - `startBrowser` is idempotent and reuses the active browser/page when one is already started. `closeBrowser` is idempotent, closes the active browser/page when present, resets driver-owned state, and permits a later `startBrowser` in the same task.
 - Web page-dependent actions, including `navigateTo`, require an active browser/page and must fail clearly when invoked before `startBrowser`; `navigateTo` must not implicitly start the browser.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; Web must not expose Android `ui_tree`/`uiTree` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using Web page/accessibility snapshot content.
@@ -148,21 +148,20 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 | agent | fsq_agent/agent/SPEC.md | Orchestrates dynamic goal/reference execution through OpenAI Agents SDK, AgentTool exposure, active-platform capability exposure, verification, replayable event metadata, and report generation. |
 | execution | fsq_agent/execution/SPEC.md | Coordinates transport-neutral dynamic and deterministic runs, Case lifecycle ordering, cancellation/teardown, and Run-local candidate Case recording. |
 | application | fsq_agent/application/SPEC.md | Provides transport-neutral Workspace, Case, Run, Provider, and Environment operations through resource-owned modules, with shared Request, Result, Event, and Error contracts organized under `application/contracts`. |
-| adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, Playground, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
+| adapters | fsq_agent/adapters/SPEC.md | Owns CLI, Control Plane, and coding-agent external protocol adaptation while depending inward on Application and public runtime contracts. |
 | adapters.coding_agent | fsq_agent/adapters/coding_agent/SPEC.md | Implements Agent runtime protocols through OpenAI Agents SDK tool, session, stream, and result adaptation. |
-| playground | fsq_agent/playground/SPEC.md | Serves the local browser playground for active-platform runtime status, Android session setup where applicable, dynamic goal/raw-case execution, strict YAML execution, loading existing run results, screenshots, replay video preview, and report lookup. |
 | control_plane | fsq_agent/control_plane/SPEC.md | Adapts Application operations to local HTTP/SSE/static delivery, cancellation transport, and browser evidence projection. |
 | cli | fsq_agent/cli/SPEC.md | Adapts the public `fsq` command tree to Application operations with human, JSON, and JSONL output and stable exit categories. |
 | frontend | frontend/SPEC.md | Owns the repository npm/Vite workspace, browser dependency and build policy, generated-asset boundary, and navigation to independently owned frontend application modules. |
 
 ## Frontend Build Boundary
 
-- The repository root npm project owns browser-source dependency resolution and Vite compilation for repository web pages. It uses one lock file and a multi-page Vite configuration so independently owned page entries build to distinct output paths.
-- `frontend/SPEC.md` owns the frontend workspace contract and links to child application specs without repeating their behavior. `frontend/playground/SPEC.md` and `frontend/control-plane/SPEC.md` own their authored browser applications; the corresponding Python modules own HTTP contracts and production static serving.
-- New frontend application modules use Vite, React, and TypeScript/TSX unless their confirmed module SPEC records a concrete exception. The current `frontend/playground` module is a documented Vite-built vanilla JavaScript application and remains governed by its current module SPEC.
+- The repository root npm project owns browser-source dependency resolution and Vite compilation for repository web pages. It uses one lock file and a multi-page Vite configuration for the Control Plane entry.
+- `frontend/SPEC.md` owns the frontend workspace contract and links to `frontend/control-plane/SPEC.md` without repeating application behavior; the corresponding Python module owns HTTP contracts and production static serving.
+- New frontend application modules use Vite, React, and TypeScript/TSX unless their confirmed module SPEC records a concrete exception.
 - `ts-ebml` is an exact npm dependency consumed through an ES module import. Third-party browser bundles and Vite-generated assets are not tracked in Git.
-- Vite-generated Playground and Control Plane assets live with their canonical owners under `fsq_agent/adapters/control_plane/playground/static` and `fsq_agent/adapters/control_plane/static`. Their HTML entry points, JavaScript, CSS, entry-asset manifests, and referenced generated assets are included in both wheel and source distribution. Release builds run the npm build before Python distribution construction. An installed distribution is self-contained and does not require Node.js or network access to serve these frontends at runtime.
-- Frontend development may use the Vite development server with API and streaming requests proxied to the corresponding Python server. Production and installed-wheel usage serve each generated entry and its APIs from its owning Python process.
+- Vite-generated Control Plane assets live under `fsq_agent/adapters/control_plane/static`. Its HTML entry point, JavaScript, CSS, entry-asset manifest, and referenced generated assets are included in both wheel and source distribution. Release builds run the npm build before Python distribution construction. An installed distribution is self-contained and does not require Node.js or network access to serve the frontend at runtime.
+- Frontend development may use the Vite development server with API and streaming requests proxied to the Control Plane Python server. Production and installed-wheel usage serve the generated entry and its APIs from one Python process.
 
 ## Architecture Diagram
 
@@ -173,12 +172,9 @@ flowchart TD
     CLI --> Application[application]
     CLI --> ControlPlane
     ControlPlane --> Application
-    ControlPlane --> Playground[adapters/control_plane/playground]
     ControlPlane --> Execution[execution]
     CLI --> CodingAgent[adapters/coding_agent]
     ControlPlane --> CodingAgent
-    Playground --> Execution
-    Playground --> CodingAgent
     Application --> Agent[agent]
     Application --> Execution
     Application --> Core[core]
@@ -229,11 +225,7 @@ flowchart TD
     Capabilities[capabilities] --> Models
     Core --> Capabilities
     Core -->|PlatformRuntimeService compatibility export| Environments
-    Frontend[frontend] --> FrontendPlayground[frontend/playground]
     Frontend --> FrontendControlPlane[frontend/control-plane]
-    FrontendPlayground --> Playground
-    FrontendPlayground --> StaticAssets[generated static assets]
-    Playground --> StaticAssets
     FrontendControlPlane --> ControlPlane
     FrontendControlPlane --> ControlPlaneStatic[generated Control Plane static assets]
     ControlPlane --> ControlPlaneStatic
@@ -255,10 +247,10 @@ flowchart TD
 - Internal Python implementation files are prefixed with `_`.
 - Shared data structures and exceptions live only in the `models` module. Capability declaration decorators, catalog-backed platform validation, and decorated-method discovery live only in the `capabilities` module.
 - Module imports must follow the DAG in the architecture diagram.
-- Transport implementation and package data live under `adapters`. The installed scripts target `fsq_agent.adapters.cli:main`. Legacy `fsq_agent.cli`, `fsq_agent.control_plane`, and `fsq_agent.playground` packages preserve only their documented public entry symbols as compatibility exports; old private transport submodule paths are unsupported and absent.
+- Transport implementation and package data live under `adapters`. The installed scripts target `fsq_agent.adapters.cli:main`. Legacy `fsq_agent.cli` and `fsq_agent.control_plane` packages preserve only their documented public entry symbols as compatibility exports; old private transport submodule paths are unsupported and absent.
 - Package-root execution helpers and old Agent SDK implementation paths are absent. Repository code imports canonical `execution`, `adapters.coding_agent`, `case_dsl`, Drivers, Harnesses, Environments, and public Core subpackages directly.
-- Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer capability bootstrap, registry-metadata-based provider requirement detection, strict lifecycle orchestration, and dynamic-run recording used by CLI, Playground, and Control Plane. Provider requirement detection compares the active platform registry with and without provider-backed capabilities and resolves executable steps through the registry snapshot rather than branching on action names. These helpers must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
-- `capabilities` may import `models` only among project modules. It must not import `tools`, `core`, `agent`, `cli`, `fsq`, `providers`, `report`, `playground`, SDK objects, concrete drivers, or backend runtime types.
+- Package-private composition helpers at the `fsq_agent` package root may compose public module APIs for shared entry-layer capability bootstrap, registry-metadata-based provider requirement detection, strict lifecycle orchestration, and dynamic-run recording used by CLI and Control Plane. Provider requirement detection compares the active platform registry with and without provider-backed capabilities and resolves executable steps through the registry snapshot rather than branching on action names. These helpers must remain private, must not expose public module contracts, and must not be imported by `models`, `capabilities`, `tools`, `fsq`, `core`, `providers`, or `report`.
+- `capabilities` may import `models` only among project modules. It must not import `tools`, `core`, `agent`, `cli`, `fsq`, `providers`, `report`, SDK objects, concrete drivers, or backend runtime types.
 - Provider construction lives in `providers`; `core` must use provider-neutral protocols and must not import provider/runtime modules.
 - Dynamic-only local helper utilities live as AgentTools in `tools`; recordable CommonTool and PlatformTool capabilities live in `core`, with CommonTool bodies in platform tool providers and backend PlatformTool bodies on concrete drivers. CommonTools and PlatformTools declare executable metadata through `capabilities`. All recordable capabilities must be registered before strict YAML parsing or SDK capability exposure, and platform registries must contain only inherited CommonTools plus the active platform's PlatformTools. AgentTools must not be registered for strict replay.
 - Replay, sensitivity, evidence, and tool-origin behavior must come from capability metadata and normalized `StepRunner` results, not hard-coded tool-name sets.
@@ -268,6 +260,6 @@ flowchart TD
 
 - Use the lowest architecture level that keeps the module clear, testable, and changeable.
 - `models`, `capabilities`, `tools`, `case_dsl`, `report`, `knowledge`, `skills`, `config`, `providers`, and `observation` default to Level 2 Simple Package unless a module SPEC records a stronger need.
-- `core`, `agent`, `execution`, `application`, `adapters`, `cli`, `playground`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
+- `core`, `agent`, `execution`, `application`, `adapters`, `cli`, and `control_plane` use Level 3 because they coordinate execution flows, external SDKs, harnesses, providers, persistence, shared application operations, or transport entry points.
 - Public APIs must be exported from module `__init__.py` files, and internal implementation modules must remain private across module boundaries. Modules that have adopted the stricter public API boundary must not export concrete implementation-selection classes, helper functions, decorators, or discovery utilities unless their module SPEC records an explicit exception. Public factories should own construction/selection of private implementations when a caller only needs a protocol or service contract.
 - Do not introduce Repository, Unit of Work, Clean Architecture, or DDD patterns unless a confirmed SPEC records the concrete reason.

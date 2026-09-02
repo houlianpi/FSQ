@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import importlib
+from importlib.util import find_spec
 
 
 def test_cli_compatibility_paths_share_canonical_module_objects() -> None:
@@ -16,7 +17,6 @@ def test_control_plane_compatibility_paths_share_canonical_module_objects() -> N
     assert legacy.ControlPlaneServer is canonical.ControlPlaneServer
 
 
-def test_playground_compatibility_paths_share_canonical_module_objects() -> None:
-    legacy = importlib.import_module("fsq_agent.playground")
-    canonical = importlib.import_module("fsq_agent.adapters.control_plane.playground")
-    assert legacy.PlaygroundServer is canonical.PlaygroundServer
+def test_legacy_playground_packages_are_absent() -> None:
+    assert find_spec("fsq_agent.playground") is None
+    assert find_spec("fsq_agent.adapters.control_plane.playground") is None

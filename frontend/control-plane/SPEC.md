@@ -17,7 +17,7 @@ The entry does not own backend validation, Provider/workspace persistence or aut
 - `react-markdown` renders workspace Markdown previews with raw HTML disabled and no raw-HTML plugin.
 - `/api/control-plane/*` is the only backend contract consumed by this entry.
 
-The entry must not import Playground source, Python-generated static assets, backend implementation files, or another frontend entry's private code. It does not introduce Redux, React Query, a client router, Tailwind, CSS-in-JS, or a component framework.
+The entry must not import Python-generated static assets, backend implementation files, or another frontend entry's private code. It does not introduce Redux, React Query, a client router, Tailwind, CSS-in-JS, or a component framework.
 
 ## Public Behavior
 
@@ -220,7 +220,7 @@ Current Devices ownership:
 - `src/features/devices/components/ScreenView.tsx`, `UiSnapshotView.tsx`, and `RunLogsView.tsx`: current/selected-step evidence presentation; Logs owns structured-row message disclosure, sticky-table semantics, and log scroll following.
 - `src/features/devices/components/ReplayVideoView.tsx`: terminal replay resolution, generation state, stored-video playback, and browser-resource cleanup.
 - `src/features/devices/components/StepEvidenceView.tsx`: selected-step screenshot comparison and UI-snapshot diff presentation.
-- `src/features/devices/replay/`: frame timing, Canvas/MediaRecorder capture, seekable WebM conversion, and diff helpers that remain independent from Playground source.
+- `src/features/devices/replay/`: frame timing, Canvas/MediaRecorder capture, seekable WebM conversion, and diff helpers.
 - `src/features/devices/hooks/useDeviceWorkspace.ts`: page state, one-time launch-intent validation/consumption, and discovery/run commands.
 - `src/features/devices/hooks/useRunStream.ts`: sequence, SSE reconnect, and snapshot fallback.
 - `src/styles/`: entry tokens and Devices-specific styles that do not override shell structure.
@@ -264,7 +264,7 @@ The application owns the Config request used to derive Overview's read-only safe
 - Development requests under `/api/control-plane` proxy to the local Control Plane Python server and preserve unbuffered SSE.
 - Production output is generated under `fsq_agent/adapters/control_plane/static`, remains untracked, and is included in the Python wheel beside the canonical Control Plane adapter.
 - Installed-wheel use serves the generated entry and API from one Python process and requires no Node.js/network access.
-- Static route fallback is limited to the Control Plane entry and never falls back to Playground.
+- Static route fallback is limited to the Control Plane entry.
 - The root package manifest and lock file own all frontend dependencies. No nested package project or second lock file exists.
 
 ## Error Handling
@@ -303,7 +303,7 @@ Empty states direct the user to create/select a workspace, add a configured plat
 - Config tests cover malformed-response rejection, loading/empty/configured/unavailable states, complete Azure save and key visibility, dirty-state discard behavior, provider replacement preservation, immediate GitHub device-flow start, authorization/model-discovery polling, no-default model selection, offered-model save eligibility, discovery error/empty retry, save success/failure, expiration/cancel cleanup, saved-only Test connection eligibility/results, dialog keyboard/focus behavior, and secret-safe presentation.
 - Devices tests cover shared workspace selection, ordinary entry with no implicit platform selection, available Workspace replay-intent platform/mode/case initialization, active-task precedence, missing/unavailable platform fallback, missing/non-selectable case fallback, valid configured-platform options, compound stale-request protection, derived start eligibility, workspace/platform Explore/Strict payloads, active workspace/platform/target locks, flat sequence-ordered timeline events, one-line overflow disclosure, active-run-only Jump visibility, exact bottom scrolling, immediate Jump dismissal/focus transfer, terminal Action selection, selected-step artifact states, screenshot comparison, UI Tree diff, replay generation/reuse/error cleanup, range-video playback, timeline/cancel/terminal/new-run behavior, stream resume/fallback, sticky Logs structure, per-row full event disclosure, tabs, accessible names, live announcements, and focus behavior.
 - Browser verification covers Overview default with separate global AI and current-Workspace regions, safe Workspace identity, three-step flow, no selected Workspace, only-unavailable platforms, Provider configured/unconfigured/error states, desktop and narrow keyboard order, and navigation into Config, Workspace, and Devices; expanded Workspace group with path-free entries; multi-platform create, compact banner, configuration tabs, add/edit, and file-browser workflows; record-new-case navigation with workspace preservation and no platform; eligible top-level/nested FSQ replay navigation with explicit workspace/platform/Strict/case initialization and no automatic start; ineligible-file metadata without replay; stale-case empty selection; Markdown preview; selected-Workspace desktop title alignment and compact Configure presentation, edge-to-edge geometry, fixed structural dimensions, independent desktop scrolling, and omitted controls at 1440×900 and 1024×768; selected-Workspace stacked title and content flow without overlap or page-level horizontal overflow at 390×844; Devices workspace/platform selection plus viewport containment and independent scrolling at 1440×900 and 1280×720; keyboard-only navigation/disclosures/tree/tabs, Action selection, Show run replay, and immediate Jump dismissal; secret cleanup/visibility; long-path/content wrapping; Before/After comparison with original image edges; UI Tree diff including XML structured rendering; generated-video playback/seeking; constrained screenshot/replay media; sticky Logs; all four platform forms/readiness presentations; and at least one available platform's Explore/Strict progress, evidence, cancellation, and terminal behavior. Layout changes require reviewed desktop and narrow screenshots plus a clean browser console.
-- Build/package verification proves both Vite entries are generated, existing Playground remains functional, and an isolated wheel starts Control Plane without Node.js.
+- Build/package verification proves the Control Plane Vite entry is generated and an isolated wheel starts Control Plane without Node.js.
 
 ## Current Invariants
 
@@ -325,4 +325,3 @@ Empty states direct the user to create/select a workspace, add a configured plat
 - Compound workspace-platform request generations prevent stale responses from changing the selected context.
 - Terminal selected-Action evidence loading is non-destructive: changing Action selection does not clear the current selected-Action Screen/UI Tree presentation before the next Action's artifacts resolve, and stale artifact reads cannot replace the current selection.
 - No large evidence bytes are carried in SSE.
-- Existing Playground source and behavior remain independent.

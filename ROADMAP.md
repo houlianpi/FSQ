@@ -16,7 +16,7 @@ This roadmap communicates direction rather than a release commitment. Scope and 
 
 Make the repository trustworthy and practical for external contributors.
 
-- Establish CI for linting, tests, package builds, and Playground builds.
+- Establish CI for linting, tests, package builds, and Control Plane builds.
 - Complete contributor-facing Issue and pull request workflows.
 - Improve installation, quick-start, architecture, and troubleshooting documentation.
 - Define the changelog, semantic versioning, and automated release process.
@@ -48,7 +48,7 @@ Target a five-minute path from installation to a first successful automation run
 - Publish preconfigured Web and Android container images.
 - Add Codespaces or equivalent cloud development setup.
 - Add environment diagnostics and harness scaffolding commands.
-- Improve interactive recording and Playground workflows.
+- Improve interactive recording and Control Plane workflows.
 
 ## 2027 Q1-Q2: Ecosystem
 
@@ -57,7 +57,7 @@ Make FSQ useful as both a tool and a platform.
 - Publish an official GitHub Action and CI integration guidance.
 - Build a curated registry of reusable FSQ cases and skills.
 - Add a compatibility matrix generated from tests and run evidence.
-- Expand Playground into a case authoring and contribution workflow.
+- Expand Control Plane into a case authoring and contribution workflow.
 - Provide an embeddable Python SDK and progress toward a stable 1.0 release.
 - Explore a VS Code extension for YAML authoring, evidence inspection, and run management.
 

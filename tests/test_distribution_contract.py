@@ -144,18 +144,18 @@ def test_release_workflow_is_manual_safe_and_uses_oidc_trusted_publishing() -> N
     assert "password:" not in raw
 
 
-def test_distribution_includes_both_frontend_asset_trees() -> None:
+def test_distribution_includes_only_control_plane_frontend_assets() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    expected = {
-        "fsq_agent/adapters/control_plane/static",
-        "fsq_agent/adapters/control_plane/playground/static",
-    }
+    expected = "fsq_agent/adapters/control_plane/static/**"
+    retired = "fsq_agent/adapters/control_plane/playground/static/**"
 
     wheel = project["tool"]["hatch"]["build"]["targets"]["wheel"]
-    assert set(wheel["artifacts"]) == {*(f"{path}/**" for path in expected), "fsq_agent/resources/**"}
+    assert set(wheel["artifacts"]) == {expected, "fsq_agent/resources/**"}
+    assert retired not in wheel["artifacts"]
     assert "force-include" not in wheel
     sdist = project["tool"]["hatch"]["build"]["targets"]["sdist"]
-    assert {*(f"{path}/**" for path in expected)} <= set(sdist["artifacts"])
+    assert expected in sdist["artifacts"]
+    assert retired not in sdist["artifacts"]
     assert "force-include" not in sdist
 
 
@@ -170,7 +170,6 @@ def test_sdist_maps_runtime_resources_to_package_paths() -> None:
         "knowledge/skills/**",
         "fsq_agent/resources/**",
         "fsq_agent/adapters/control_plane/static/**",
-        "fsq_agent/adapters/control_plane/playground/static/**",
     }
 
 

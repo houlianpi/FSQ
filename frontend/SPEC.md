@@ -11,15 +11,14 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - The root `package.json` and `package-lock.json` own exact npm dependencies and the single lock-file dependency graph.
 - Supported Node.js versions are `^20.19.0 || >=22.12.0`.
 - Vite is the frontend development and production build tool.
-- `ts-ebml` is the current browser runtime dependency used by the Playground and Control Plane child modules for seekable WebM replay generation.
+- `ts-ebml` is the current browser runtime dependency used by the Control Plane child module for seekable WebM replay generation.
 - `react-markdown` is the current browser runtime dependency used by the Control Plane child module for safe Markdown preview without raw HTML support.
-- The workspace consumes Python Playground and Control Plane HTTP origins only through Vite development proxy configuration and browser HTTP requests. Frontend source does not import Python modules.
+- The workspace consumes the Python Control Plane HTTP origin only through Vite development proxy configuration and browser HTTP requests. Frontend source does not import Python modules.
 
 ## Public Interface
 
-- `npm run dev` starts the Vite development server for frontend entries and proxies configured Playground API paths to `FSQ_PLAYGROUND_API_ORIGIN`, defaulting to `http://127.0.0.1:8878`.
-- `npm run build` compiles all configured page entries through the untracked `.frontend-dist` staging directory and distributes each entry into its owning Python package static directory.
-- `frontend/playground/SPEC.md` defines the Playground browser application's public behavior and source boundary.
+- `npm run dev` starts the Vite development server for the Control Plane entry and proxies `/api/control-plane` to `FSQ_CONTROL_PLANE_API_ORIGIN`, defaulting to `http://127.0.0.1:8879`.
+- `npm run build` compiles the configured Control Plane page entry through the untracked `.frontend-dist` staging directory and distributes it into its owning Python package static directory.
 - `frontend/control-plane/SPEC.md` defines the Control Plane browser application's public behavior and source boundary.
 
 ## Internal Structure
@@ -27,10 +26,8 @@ This parent module does not own child application behavior or Python HTTP/runtim
 - `../package.json`: Root npm metadata, scripts, Node.js compatibility, and exact direct dependency versions.
 - `../package-lock.json`: Complete locked npm dependency graph.
 - `../vite.config.js`: Multi-page entry configuration, development API proxying, and production output mapping.
-- `playground/`: Independently specified Playground browser application.
 - `control-plane/`: Independently specified Control Plane browser application.
 - `../.frontend-dist/`: Untracked temporary Vite build staging.
-- `../fsq_agent/adapters/control_plane/playground/static/`: Untracked generated Playground build output consumed by canonical Python packaging and production static serving; it is not authored frontend source.
 - `../fsq_agent/adapters/control_plane/static/`: Untracked generated Control Plane build output consumed by canonical Python packaging and production static serving; it is not authored frontend source.
 
 ## Frontend Architecture

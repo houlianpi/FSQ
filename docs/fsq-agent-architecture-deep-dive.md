@@ -91,7 +91,7 @@ Midscene uses a similar layered shape: entry integrations such as CLI, Playwrigh
 flowchart LR
     subgraph Entry[Entry Modules]
         CLI[CLI / API]
-        PLAY[Playground / Debug UI]
+        UI[Control Plane]
     end
 
     subgraph Testcase[Testcase Modules]
@@ -125,7 +125,7 @@ flowchart LR
 
     CLI --> FSQYAML
     CLI --> GOAL
-    PLAY --> DEBUG
+    UI --> DEBUG
     FSQYAML --> NORMALIZER --> RUNNER --> ACTIONIR
     GOAL --> PLANNER
     MODEL <--> PLANNER
@@ -188,7 +188,7 @@ The regression flow must not depend on a planner model. This is the main differe
 ```mermaid
 sequenceDiagram
     participant User as User / Team
-    participant Entry as CLI / API / Playground
+    participant Entry as CLI / API / Control Plane
     participant Planner as Model-Agnostic Planner
     participant Model as Model Provider
     participant K as Knowledge System

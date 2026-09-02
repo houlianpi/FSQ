@@ -1,7 +1,7 @@
 flowchart LR
     subgraph Entry[Entry Modules]
         CLI[CLI / API]
-        PLAY[Playground / Debug UI]
+        UI[Control Plane]
     end
 
     subgraph Testcase[Testcase Modules]
@@ -35,7 +35,7 @@ flowchart LR
 
     CLI --> FSQYAML
     CLI --> GOAL
-    PLAY --> DEBUG
+    UI --> DEBUG
     FSQYAML --> NORMALIZER --> RUNNER --> ACTIONIR
     GOAL --> PLANNER
     MODEL <--> PLANNER
