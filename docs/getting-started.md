@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide takes a new user from installation to a deterministic Web run against the public [Example Domain](https://example.com/). FSQ v0.1.0 is alpha software; review [support and stability](support-and-stability.md) before production adoption.
+This guide takes a new user from installation to a deterministic Web run against public [TodoMVC](https://todomvc.com/examples/react/dist/). FSQ v0.1.0 is alpha software; review [support and stability](support-and-stability.md) before production adoption.
 
 ## Prerequisites
 
@@ -32,17 +32,17 @@ An empty current directory becomes the Workspace root. When the current director
 
 ## Run the public deterministic example
 
-Download the versioned [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml) into `cases/web/` in the Workspace, then run:
+Download the current [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml) into `cases/web/` in the Workspace, then run:
 
 ```bash
 mkdir -p cases/web
 curl --fail --location --output cases/web/example-domain.fsq.yaml \
-  https://raw.githubusercontent.com/microsoft/FSQ/v0.1.0/examples/web/example-domain.fsq.yaml
+  https://raw.githubusercontent.com/microsoft/FSQ/main/examples/web/example-domain.fsq.yaml
 fsq case test --platform web cases/web/example-domain.fsq.yaml
 fsq runs list --platform web
 ```
 
-The Case starts the configured browser, opens `https://example.com/`, verifies its public heading, and closes the browser. Evidence is stored below `.fsq/runs/web/<run-id>/`.
+The Case starts the configured browser, opens TodoMVC, adds two tasks, completes the first task, filters to active tasks, verifies the expected visible state, and closes the browser. Evidence is stored below `.fsq/runs/web/<run-id>/`.
 
 ## Configure AI exploration
 
@@ -86,4 +86,4 @@ The installed frontend is served locally on `127.0.0.1:8879` by default.
 - Review [platform prerequisites](platform-prerequisites.md).
 - Learn the [Case format](case-format.md).
 - See the [CLI reference](cli-reference.md).
-- Read the [architecture overview](architecture.md).
+- Review the root and module `SPEC.md` files for implementation-level architecture and behavior contracts.

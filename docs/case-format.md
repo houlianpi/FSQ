@@ -1,25 +1,25 @@
 # FSQ Case Format
 
-An FSQ Case is UTF-8 YAML with the `.fsq.yaml` suffix. The current schema identifier is `fsq.ai-test/v1`.
+An FSQ Case is UTF-8 YAML with the `.fsq.yaml` suffix. The current schema identifier is `fsq.ai-test/v1`. The following independent minimum example opens TodoMVC and verifies its heading:
 
 ```yaml
 schemaVersion: fsq.ai-test/v1
-name: Example Domain smoke test
+name: TodoMVC smoke test
 platform: web
 ---
 - startBrowser
 - navigateTo:
-    url: https://example.com/
+    url: https://todomvc.com/examples/react/dist/
 - assertVisible:
-    target: Example Domain heading
+    target: TodoMVC heading
     locator:
       role: heading
-      name: Example Domain
+      name: todos
     optional: false
 - closeBrowser
 ```
 
-The complete validated example is [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml).
+For a complete recorded workflow with text entry, clicks, and final-state assertions, see [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml).
 
 The first YAML document contains metadata. The optional second document contains ordered commands. Unknown fields, unsupported schema versions, malformed commands, and platform mismatches fail validation.
 

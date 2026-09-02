@@ -79,7 +79,7 @@ See the remaining approved screenshots in [release media](docs/media/README.md).
 
 ## Five-minute quickstart
 
-This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally. Steps 1-3 exercise the provider-free harness path. A configured Provider is only needed for AI-driven Case creation or post-run suggestions.
+This public Web example uses [TodoMVC](https://todomvc.com/examples/react/dist/), requires an installed Chromium-family browser, and writes all project data locally. Steps 1-3 exercise the provider-free harness path. A configured Provider is only needed for AI-driven Case creation or post-run suggestions.
 
 ### 1. Install
 
@@ -106,7 +106,7 @@ Workspace root selection is exact:
 
 ### 3. Replay the public example without a planning LLM
 
-Download the versioned [`examples/web/example-domain.fsq.yaml`](examples/web/example-domain.fsq.yaml) into the Workspace and run it:
+Download the current [`examples/web/example-domain.fsq.yaml`](examples/web/example-domain.fsq.yaml) into the Workspace and run it:
 
 ```bash
 mkdir -p cases/web
@@ -173,7 +173,7 @@ Goal ──► AI exploration ──► evidence ──► verification ──�
 Reviewed Case ──► deterministic replay ──► fresh evidence ─┘
 ```
 
-Dynamic execution and deterministic replay share platform Harnesses and evidence contracts. The original execution result is immutable; later suggestion analysis cannot rewrite it or perform another UI execution. See the [architecture overview](docs/architecture.md).
+Dynamic execution and deterministic replay share platform Harnesses and evidence contracts. The original execution result is immutable; later suggestion analysis cannot rewrite it or perform another UI execution. Implementation-level architecture and behavior are defined by the root and module `SPEC.md` files.
 
 ## Supported platforms
 
@@ -220,10 +220,6 @@ Provider configuration is stored under `~/.fsq` and shared by the CLI and local 
 | [FSQ Case format](docs/case-format.md) | Case structure and a validated public example |
 | [Platform prerequisites](docs/platform-prerequisites.md) | Web, Android, Windows, and macOS host setup boundaries |
 | [Support and stability](docs/support-and-stability.md) | Alpha scope, compatibility, privacy, and support expectations |
-| [Architecture](docs/architecture.md) | Current runtime layers and ownership boundaries |
-| [Release acceptance](docs/release-acceptance-checklist.md) | Maintainer release-candidate verification |
-| [Directory migration guide](docs/package-directory-migration-guide.md) | Package ownership and future migration criteria |
-| [Roadmap](ROADMAP.md) | Direction rather than release commitment |
 
 ## Contributing
 

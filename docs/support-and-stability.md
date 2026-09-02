@@ -10,11 +10,11 @@ FSQ v0.1.0 is an alpha release for evaluation and early contribution, not a 1.0 
 
 ## Supported environment
 
-Package metadata lists Python 3.11, 3.12, and 3.13. CI validates its documented host/version matrix. Web, Android, Windows, and macOS require external applications, devices, or services. First-release Providers are GitHub Copilot and Azure OpenAI.
+Package metadata supports Python 3.11, 3.12, and 3.13. CI currently tests Python 3.11 on Linux and Python 3.13 on Linux, macOS, and Windows; Python 3.12 is supported but does not have a dedicated CI matrix cell. Web, Android, Windows, and macOS require external applications, devices, or services. The current Providers are GitHub Copilot and Azure OpenAI.
 
 ## Local data and privacy
 
-FSQ stores Workspace configuration, Cases, knowledge, Run evidence, logs, metadata, suggestions, and reports locally. User-level Provider state is below `~/.fsq`. Model-backed operations send required inputs to the configured Provider; consult that Provider's data policy.
+FSQ stores Workspace configuration, Cases, knowledge, Run evidence, logs, metadata, suggestions, and reports locally. User-level Provider configuration and authentication state are stored below `~/.fsq`. Model-backed operations send the inputs required for the operation to the configured Provider; consult that Provider's data policy.
 
 Evidence may capture visible application content, UI text, screenshots, local paths, or target metadata. Inspect artifacts before sharing them. Never use production credentials or private personal data in public demonstrations.
 

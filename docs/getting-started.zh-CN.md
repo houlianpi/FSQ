@@ -1,6 +1,6 @@
 # 快速开始
 
-这份指南帮助新用户从安装开始，完成一次针对公开 [Example Domain](https://example.com/) 的确定性 Web Run。FSQ v0.1.0 是 Alpha 软件；生产采用前请先阅读[支持与稳定性说明](support-and-stability.md)。
+这份指南帮助新用户从安装开始，完成一次针对公开 [TodoMVC](https://todomvc.com/examples/react/dist/) 的确定性 Web Run。FSQ v0.1.0 是 Alpha 软件；生产采用前请先阅读[支持与稳定性说明](support-and-stability.md)。
 
 ## 前置条件
 
@@ -32,17 +32,17 @@ fsq doctor
 
 ## 运行公开确定性示例
 
-把版本化的 [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml) 下载到 Workspace 的 `cases/web/`，然后运行：
+把当前的 [`examples/web/example-domain.fsq.yaml`](../examples/web/example-domain.fsq.yaml) 下载到 Workspace 的 `cases/web/`，然后运行：
 
 ```bash
 mkdir -p cases/web
 curl --fail --location --output cases/web/example-domain.fsq.yaml \
-  https://raw.githubusercontent.com/microsoft/FSQ/v0.1.0/examples/web/example-domain.fsq.yaml
+  https://raw.githubusercontent.com/microsoft/FSQ/main/examples/web/example-domain.fsq.yaml
 fsq case test --platform web cases/web/example-domain.fsq.yaml
 fsq runs list --platform web
 ```
 
-这个 Case 会启动已配置的浏览器，打开 `https://example.com/`，验证公开 heading，然后关闭浏览器。证据保存在 `.fsq/runs/web/<run-id>/` 下。
+这个 Case 会启动已配置的浏览器，打开 TodoMVC，添加两个任务、完成第一个任务、筛选未完成任务、验证预期可见状态，然后关闭浏览器。证据保存在 `.fsq/runs/web/<run-id>/` 下。
 
 ## 配置 AI 探索
 
@@ -86,4 +86,4 @@ fsq ui
 - 阅读[平台前置条件](platform-prerequisites.md)。
 - 学习 [Case 格式](case-format.md)。
 - 查看 [CLI reference](cli-reference.md)。
-- 阅读[架构概览](architecture.md)。
+- 实现级架构与行为契约请查阅根目录及各模块的 `SPEC.md` 文件。
