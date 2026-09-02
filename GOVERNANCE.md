@@ -10,7 +10,7 @@ This document governs project collaboration. Microsoft organization policies, th
 - Community participation should be accessible without weakening quality or security.
 - Public behavior and architecture should remain aligned with confirmed specifications.
 - Maintainer authority comes with service responsibilities, not only merge access.
-- Project direction should follow the published [Roadmap](ROADMAP.md) and its grounding strategy.
+- Project direction should be discussed through public Issues, milestones, design documents, and pull requests.
 
 ## Roles
 
@@ -37,7 +37,7 @@ Maintainers steward the project as a whole. Their responsibilities include:
 - Triaging Issues and reviewing pull requests.
 - Protecting public contracts, architecture boundaries, and specification accuracy.
 - Maintaining CI, releases, dependencies, security response, and repository policy.
-- Keeping the Roadmap and contributor documentation current.
+- Keeping contributor and project documentation current.
 - Developing other contributors and sharing project knowledge.
 
 The current maintainers are the recognized owners listed in [.github/CODEOWNERS](.github/CODEOWNERS). Repository permissions determine whether GitHub recognizes an account as a code owner.
@@ -66,11 +66,11 @@ Maintainers seek consensus. If material disagreement remains after reasonable di
 
 Administrators may use repository-rule bypasses only through a pull request when the configured ruleset permits it. A pull request and auditable rationale remain required.
 
-## Roadmap and Releases
+## Project Direction and Releases
 
-[ROADMAP.md](ROADMAP.md) communicates project direction. GitHub Issues and milestones represent committed or scheduled work; roadmap placement alone does not promise delivery.
+GitHub Issues and milestones communicate proposed, committed, or scheduled work. Material strategy and priority changes should be recorded in a public Issue, design document, or pull request unless security or privacy requires private handling.
 
-Maintainers review roadmap accuracy at least monthly and after material strategy changes. Releases are approved and published by maintainers after required validation succeeds. Release frequency depends on readiness rather than a fixed calendar.
+Releases are approved and published by maintainers after required validation succeeds. Release frequency depends on readiness rather than a fixed calendar.
 
 ## Role Progression
 

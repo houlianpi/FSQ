@@ -29,4 +29,4 @@ fsq doctor
 
 v0.1.0 是 Alpha 版本，适合评估、实验和早期贡献，但不是 1.0 兼容性承诺。
 
-请从[入门指南](../getting-started.md)开始，阅读[架构说明](../architecture.md)，并通过[贡献指南](../../CONTRIBUTING.md)参与项目。
+请从[入门指南](../getting-started.md)开始，以根目录和各模块的 `SPEC.md` 文件为实现契约，并通过[贡献指南](../../CONTRIBUTING.md)参与项目。

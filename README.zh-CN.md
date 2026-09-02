@@ -62,7 +62,7 @@ FSQ 补充而不是替代平台自动化库。Playwright、uiautomator2、pywina
 
 ## 五分钟快速开始
 
-这个公开 Web 示例使用 [Example Domain](https://example.com/)，需要已安装 Chromium 系浏览器，并且只在本地写入项目数据。AI 驱动命令还需要配置 Provider。
+这个公开 Web 示例使用 [TodoMVC](https://todomvc.com/examples/react/dist/)，需要已安装 Chromium 系浏览器，并且只在本地写入项目数据。AI 驱动命令还需要配置 Provider。
 
 ### 1. 安装
 
@@ -89,7 +89,7 @@ Workspace Root Strategy 是精确规则：
 
 ### 3. 不依赖规划 LLM，重放公开示例
 
-把版本化的 [`examples/web/example-domain.fsq.yaml`](examples/web/example-domain.fsq.yaml) 下载到 Workspace 的 `cases/web/`，然后运行：
+把当前的 [`examples/web/example-domain.fsq.yaml`](examples/web/example-domain.fsq.yaml) 下载到 Workspace 的 `cases/web/`，然后运行：
 
 ```bash
 mkdir -p cases/web
@@ -160,7 +160,6 @@ fsq ui
 | [FSQ Case format](docs/case-format.md) | Case 结构和公开示例 |
 | [Platform prerequisites](docs/platform-prerequisites.md) | 平台前置条件边界 |
 | [Support and stability](docs/support-and-stability.md) | Alpha 范围、兼容性、隐私和支持预期 |
-| [Architecture](docs/architecture.md) | 当前运行时层级和职责边界 |
 
 ## License
 

@@ -29,4 +29,4 @@ fsq doctor
 
 The v0.1.0 release is alpha software. It is an invitation to evaluate the model, inspect the architecture, report gaps, and help define a dependable path to 1.0.
 
-Read the [getting-started guide](../getting-started.md), explore the [architecture](../architecture.md), and join through the [contribution guide](../../CONTRIBUTING.md).
+Read the [getting-started guide](../getting-started.md), use the root and module `SPEC.md` files for implementation contracts, and join through the [contribution guide](../../CONTRIBUTING.md).

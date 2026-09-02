@@ -66,7 +66,6 @@ def test_sdist_includes_public_release_documentation_and_example() -> None:
         "/CHANGELOG.md",
         "/README.zh-CN.md",
         "/docs/README.md",
-        "/docs/architecture.md",
         "/docs/assets/fsq-workflow.svg",
         "/docs/assets/social-preview.png",
         "/docs/assets/social-preview.svg",
@@ -292,35 +291,3 @@ def test_v010_release_materials_cover_public_launch_contract() -> None:
         assert "API key" in text
         assert "/Users/" not in text
         assert "production ready" not in text.lower()
-
-
-def test_release_acceptance_checklist_uses_current_public_commands() -> None:
-    checklist = (ROOT / "docs" / "release-acceptance-checklist.md").read_text(encoding="utf-8")
-
-    for command in (
-        "pip install fsq-agent",
-        "fsq init",
-        "fsq doctor",
-        "fsq providers configure",
-        "fsq providers status",
-        "fsq case create",
-        "fsq case test",
-        "fsq runs list",
-        "fsq runs show",
-        "fsq runs logs",
-        "fsq ui",
-    ):
-        assert command in checklist
-    for obsolete in (
-        "fsq-agent run",
-        "run --strict",
-        "fsq-agent control-plane",
-        "fsq-agent report",
-        "fsq-agent playground",
-        "init --name",
-        "fsq-agent[web]",
-        "fsq-agent[android]",
-        "fsq-agent[windows]",
-        "fsq-agent[macos]",
-    ):
-        assert obsolete not in checklist
