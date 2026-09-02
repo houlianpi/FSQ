@@ -32,17 +32,21 @@ FSQ turns a natural-language UI goal into an observable automation run, saves sc
 
 ## Run existing Cases without an LLM
 
-Use FSQ like a test harness once a Case exists. Strict replay, Run history, and offline reports do **not** require a configured LLM Provider unless the authored Case contains an AI assertion.
+Use FSQ like a test harness once a Case exists. Run history and offline reports do **not** require a configured LLM Provider. Strict replay is also provider-free unless the authored Case contains an AI assertion.
 
 ```bash
 python -m pip install fsq-agent
 fsq init --platform web --browser-channel chrome
 # Store reviewed Case assets in your repo, for example: cases/web/*.fsq.yaml
-fsq case test --platform web cases/web/example-domain.fsq.yaml
+fsq case test --platform web cases/web/YOUR_CASE.fsq.yaml
 fsq runs show RUN_ID --open
 ```
 
-Configure an LLM Provider first, then use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a Run-local candidate `.fsq.yaml` Case. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
+## Create Cases with AI
+
+Configure an LLM Provider, then use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and create a reviewable `.fsq.yaml` Case from the successful Run. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
+
+## See FSQ in action
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
@@ -51,10 +55,6 @@ Configure an LLM Provider first, then use `fsq case create --platform web --goal
 </p>
 
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
-
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">Watch the full demo on YouTube</a>
-</p>
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ workflow: describe a goal, execute once, capture evidence, verify, review a Case, and replay deterministically" width="880">
@@ -159,8 +159,8 @@ fsq runs list --platform web
 fsq runs show RUN_ID
 fsq runs logs RUN_ID
 
-# 3. Replay the reviewed Case deterministically before committing it.
-fsq case test --platform web cases/web/example-domain.fsq.yaml
+# 3. Replay the reviewed generated Case deterministically before committing it.
+fsq case test --platform web cases/web/RUN_ID.fsq.yaml
 ```
 
 The durable asset is the reviewed `.fsq.yaml` Case. The proof lives in `.fsq/runs/<platform>/<run-id>/` as events, screenshots, UI snapshots, evidence manifests, and reports. The strict replay path is provider-free, so CI and coding agents can verify committed Cases without configuring another LLM.

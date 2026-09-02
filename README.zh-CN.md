@@ -21,6 +21,24 @@
 
 FSQ 会把一个自然语言 UI 目标变成可观察的自动化 Run，保存截图、UI Snapshot、事件和报告作为证据，并可把成功执行的真实动作转换为可审查的 Case，用于确定性重放。FSQ 使用 Playwright、uiautomator2、pywinauto 和 Appium 作为平台后端；它不会替代或自动安装这些后端所需的主机前置条件。
 
+## 无需 LLM，运行已有 Case
+
+已有 Case 后，可以把 FSQ 当作测试工具使用。查看 Run 历史和生成离线报告不需要配置 LLM Provider；严格重放也不需要 Provider，除非编写的 Case 包含 AI assertion。
+
+```bash
+python -m pip install fsq-agent
+fsq init --platform web --browser-channel chrome
+# 将审查后的 Case 保存在仓库中，例如：cases/web/*.fsq.yaml
+fsq case test --platform web cases/web/YOUR_CASE.fsq.yaml
+fsq runs show RUN_ID --open
+```
+
+## 使用 AI 创建 Case
+
+配置 LLM Provider 后，可以使用 `fsq case create --platform web --goal "..."`，让 FSQ 操作真实 UI，并根据成功的 Run 创建可审查的 `.fsq.yaml` Case。Coding agent 应提供目标和上下文；FSQ 通过真实执行和证据验证路径。
+
+## 查看 FSQ 实际运行
+
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
     <img src="docs/media/fsq-v0.1.0-android-demo-preview.gif" alt="FSQ v0.1.0 动态演示预览：目标、执行、证据、候选 Case 和报告" width="880">
@@ -28,10 +46,6 @@ FSQ 会把一个自然语言 UI 目标变成可观察的自动化 Run，保存�
 </p>
 
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
-
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">在 YouTube 观看完整演示</a>
-</p>
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ 工作流：描述目标、执行一次、捕获证据、验证、审查 Case、确定性重放" width="880">
