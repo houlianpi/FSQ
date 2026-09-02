@@ -42,7 +42,7 @@ fsq case test --platform web cases/web/example-domain.fsq.yaml
 fsq runs show RUN_ID --open
 ```
 
-Use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a Run-local candidate `.fsq.yaml` Case. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
+Configure an LLM Provider first, then use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a Run-local candidate `.fsq.yaml` Case. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
