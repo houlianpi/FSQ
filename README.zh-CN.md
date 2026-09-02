@@ -94,7 +94,7 @@ Workspace Root Strategy 是精确规则：
 ```bash
 mkdir -p cases/web
 curl --fail --location --output cases/web/example-domain.fsq.yaml \
-  https://raw.githubusercontent.com/microsoft/FSQ/v0.1.0/examples/web/example-domain.fsq.yaml
+  https://raw.githubusercontent.com/microsoft/FSQ/main/examples/web/example-domain.fsq.yaml
 fsq case test --platform web cases/web/example-domain.fsq.yaml
 fsq runs list --platform web
 ```
