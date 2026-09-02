@@ -39,13 +39,13 @@ fsq runs show RUN_ID --open
 
 ## 查看 FSQ 实际运行
 
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">
-    <img src="docs/media/fsq-v0.1.0-android-demo-preview.gif" alt="FSQ v0.1.0 动态演示预览：目标、执行、证据、候选 Case 和报告" width="880">
-  </a>
-</p>
+观看 FSQ 如何把自然语言目标转化为真实 UI 执行、证据捕获、可审查 Case 和确定性重放。
 
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
+
+<p align="center">
+  <a href="https://youtu.be/QqCahxGDdS0">在 YouTube 观看完整演示</a>
+</p>
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ 工作流：描述目标、执行一次、捕获证据、验证、审查 Case、确定性重放" width="880">

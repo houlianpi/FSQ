@@ -48,13 +48,13 @@ Configure an LLM Provider, then use `fsq case create --platform web --goal "..."
 
 ## See FSQ in action
 
-<p align="center">
-  <a href="https://youtu.be/QqCahxGDdS0">
-    <img src="docs/media/fsq-v0.1.0-android-demo-preview.gif" alt="FSQ v0.1.0 animated demo preview: goal, execution, evidence, candidate Case, and report" width="880">
-  </a>
-</p>
+Watch FSQ turn a natural-language goal into live UI execution, captured evidence, a reviewable Case, and deterministic replay.
 
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
+
+<p align="center">
+  <a href="https://youtu.be/QqCahxGDdS0">Watch the full demo on YouTube</a>
+</p>
 
 <p align="center">
   <img src="docs/assets/fsq-workflow.svg" alt="FSQ workflow: describe a goal, execute once, capture evidence, verify, review a Case, and replay deterministically" width="880">
