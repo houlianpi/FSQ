@@ -96,9 +96,7 @@ def test_public_web_example_matches_current_executable_contract() -> None:
     assert steps[4].params["text"] == "Publish v0.1.0"
     assert steps[4].params["textType"] == "literal"
     assert steps[4].params["clear"] is True
-    assert steps[6].params["locator"] == {
-        "css": ".todo-list li:nth-child(1) input.toggle"
-    }
+    assert steps[6].params["locator"] == {"css": ".todo-list li:nth-child(1) input.toggle"}
     assert "Active" in steps[7].params["target"]
     assert steps[8].params == {
         "locator": {"text": "Publish v0.1.0"},
