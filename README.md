@@ -18,6 +18,7 @@
 <p align="center">
   <a href="#five-minute-quickstart">Quickstart</a> ·
   <a href="README.zh-CN.md">中文</a> ·
+  <a href="#coding-agent-workflow">Coding agents</a> ·
   <a href="#how-fsq-works">How it works</a> ·
   <a href="#supported-platforms">Platforms</a> ·
   <a href="docs/getting-started.md">Documentation</a> ·
@@ -28,6 +29,20 @@
 > FSQ v0.1.0 is an alpha release. It is ready for evaluation and contribution, but public APIs and Case authoring details may evolve before 1.0. See [support and stability](docs/support-and-stability.md).
 
 FSQ turns a natural-language UI goal into an observable automation run, saves screenshots, UI snapshots, events, and reports as evidence, and can turn successful actions into a reviewable Case for deterministic replay. It uses Playwright, uiautomator2, pywinauto, and Appium as platform backends; it does not replace or install their host prerequisites.
+
+## Run existing Cases without an LLM
+
+Use FSQ like a test harness once a Case exists. Strict replay, Run history, and offline reports do **not** require a configured LLM Provider unless the authored Case contains an AI assertion.
+
+```bash
+python -m pip install fsq-agent
+fsq init --platform web --browser-channel chrome
+# Store reviewed Case assets in your repo, for example: cases/web/*.fsq.yaml
+fsq case test --platform web cases/web/example-domain.fsq.yaml
+fsq runs show RUN_ID --open
+```
+
+Configure an LLM Provider first, then use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a Run-local candidate `.fsq.yaml` Case. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
@@ -64,7 +79,7 @@ See the remaining approved screenshots in [release media](docs/media/README.md).
 
 ## Five-minute quickstart
 
-This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally. AI-driven commands additionally require a configured Provider.
+This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally. Steps 1-3 exercise the provider-free harness path. A configured Provider is only needed for AI-driven Case creation or post-run suggestions.
 
 ### 1. Install
 
@@ -129,6 +144,26 @@ fsq ui
 ```
 
 The installed wheel includes the compiled frontend. It listens on `127.0.0.1:8879` by default and does not require Node.js at runtime.
+
+## Coding agent workflow
+
+Coding agents should not guess UI action steps or hand-author final Case YAML from code context alone. They should understand the product change, provide a precise goal to FSQ, and let FSQ operate the real UI before a Case is reviewed and committed.
+
+```bash
+# 1. Ask FSQ to prove a goal against the live UI and record evidence.
+fsq case create --platform web \
+  --goal "Open https://example.com and verify the Example Domain heading is visible."
+
+# 2. Inspect the generated Run and candidate Case.
+fsq runs list --platform web
+fsq runs show RUN_ID
+fsq runs logs RUN_ID
+
+# 3. Replay the reviewed Case deterministically before committing it.
+fsq case test --platform web cases/web/example-domain.fsq.yaml
+```
+
+The durable asset is the reviewed `.fsq.yaml` Case. The proof lives in `.fsq/runs/<platform>/<run-id>/` as events, screenshots, UI snapshots, evidence manifests, and reports. The strict replay path is provider-free, so CI and coding agents can verify committed Cases without configuring another LLM.
 
 ## How FSQ works
 
