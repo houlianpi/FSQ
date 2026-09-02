@@ -30,7 +30,7 @@
 
 FSQ turns a natural-language UI goal into an observable automation run, saves screenshots, UI snapshots, events, and reports as evidence, and can turn successful actions into a reviewable Case for deterministic replay. It uses Playwright, uiautomator2, pywinauto, and Appium as platform backends; it does not replace or install their host prerequisites.
 
-## Core loop: replay without a second LLM
+## Run existing Cases without an LLM
 
 Use FSQ like a test harness once a Case exists. Strict replay, Run history, and offline reports do **not** require a configured LLM Provider unless the authored Case contains an AI assertion.
 
