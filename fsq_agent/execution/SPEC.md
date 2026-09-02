@@ -26,7 +26,7 @@ The package exports its supported services and result contracts through `executi
 - `DynamicExecutionRequest`, `DynamicExecutionResult`, `DeterministicExecutionRequest`, `DeterministicExecutionResult`, `LifecycleExecutionRequest`, `LifecycleExecutionResult`, and `RecordingResult`: immutable execution-boundary contracts with no transport types.
 - Run lifecycle operations allocate a collision-resistant Workspace-wide ID, atomically create its direct platform directory, write `fsq.run/v1` metadata before actions, advance monotonic active states, and atomically finalize one immutable terminal state. Allocation checks every configured platform and retries a collision at most five times.
 
-Public services accept already resolved Workspace/platform settings and explicit collaborators. They return normalized results and safe artifact references; adapters alone map them to CLI output, HTTP/SSE state, or Playground responses.
+Public services accept already resolved Workspace/platform settings and explicit collaborators. They return normalized results and safe artifact references; adapters alone map them to CLI output or HTTP/SSE state.
 
 Execution services are imported from `fsq_agent.execution`. Package-root `_strict_lifecycle` and `_strict_case_recording` compatibility modules are absent.
 
@@ -58,7 +58,7 @@ Initial metadata failure prevents external actions and removes only an empty req
 
 ## Verification Scope
 
-- Dynamic, deterministic, lifecycle, and recording behavior is identical across CLI, Control Plane, and Playground for equivalent inputs and collaborators.
+- Dynamic, deterministic, lifecycle, and recording behavior is identical across CLI and Control Plane for equivalent inputs and collaborators.
 - Lifecycle verification covers configuration and Case hook ordering, repeated actions, nested Cases, recursion, containment, start failure, completion hooks, teardown, cancellation, and platform shell selection.
 - Recording verification covers replay-policy filtering, authored aliases, normalized safe params, browser lifecycle facts, runtime-secret exclusion, validation, atomic Run-local writes, optional publication, and failure isolation.
 - Compatibility verification proves canonical and package-root lifecycle symbols share identity and no adapter contains an independent lifecycle engine or recorder. Recording verification exercises the public `RecordingService` boundary rather than importing its private recorder implementation.

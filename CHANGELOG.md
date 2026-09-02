@@ -8,6 +8,10 @@ All notable changes are documented here. FSQ follows Semantic Versioning after p
 
 - Initial open-source release preparation.
 
+### Removed
+
+- Removed the legacy Playground browser application, standalone HTTP server, Python APIs, and packaged frontend assets. Use `fsq ui` for the supported Control Plane browser workflows; raw YAML dynamic execution, lifecycle-hook editing, completed-Run loading, and automatic Goal Case publication are not carried forward.
+
 ## [0.1.0] - Unreleased
 
 ### Added

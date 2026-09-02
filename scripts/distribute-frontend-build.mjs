@@ -3,10 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const staging = resolve(root, '.frontend-dist');
-const entries = [
-  { name: 'playground', target: resolve(root, 'fsq_agent/adapters/control_plane/playground/static') },
-  { name: 'control-plane', target: resolve(root, 'fsq_agent/adapters/control_plane/static') },
-];
+const entries = [{ name: 'control-plane', target: resolve(root, 'fsq_agent/adapters/control_plane/static') }];
 
 const manifest = JSON.parse(await readFile(resolve(staging, '.vite/manifest.json'), 'utf8'));
 

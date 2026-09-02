@@ -12,7 +12,7 @@ Before choosing a visual direction, identify:
 - Existing visual and interaction conventions that must remain coherent.
 - Real content, data density, and exceptional states.
 
-For operational tools such as the FSQ Playground, prefer a quiet, work-focused interface optimized for scanning, comparison, repeated action, and clear status. Do not turn an application workspace into a marketing page.
+For operational tools such as the FSQ Control Plane, prefer a quiet, work-focused interface optimized for scanning, comparison, repeated action, and clear status. Do not turn an application workspace into a marketing page.
 
 ## Design Before Implementation
 

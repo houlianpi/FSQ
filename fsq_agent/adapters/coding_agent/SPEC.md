@@ -47,5 +47,5 @@ Missing SDK packages remain runtime configuration errors rather than import-time
 - Main execution, pre-plan, and verification preserve current SDK behavior, model settings, tracing, context trimming, event metadata, and structured output contracts.
 - Capability calls continue through Core `StepRunner`; AgentTool calls continue through Tools-owned behavior.
 - Harness construction remains lazy and browser/application lifecycle remains explicit capability behavior.
-- CLI, Control Plane, and Playground inject the same runtime factory at composition boundaries.
+- CLI and Control Plane inject the same runtime factory at composition boundaries.
 - Relocation does not change CLI, HTTP/SSE, reports, evidence, provider configuration, workspace behavior, or `fsq runs`.

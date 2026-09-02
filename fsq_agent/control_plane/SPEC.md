@@ -4,7 +4,7 @@
 
 Preserve documented `fsq_agent.control_plane` server entry symbols as compatibility exports for canonical `adapters.control_plane`. Canonical modules own HTTP/static delivery, generated package data, trusted-local Provider/workspace transport, directory selection, authorization state, Devices state, streaming, evidence projection, and replay transport. Old `fsq_agent.control_plane._*` private module paths are unsupported and absent.
 
-The module is an entry-layer application. Shared workspace initialization, target resolution, Driver readiness/install coordination, and Web executable discovery use the public Application boundary; Control Plane projects those results through HTTP and browser UI. Explore and Strict execution delegate to public Execution services while Control Plane retains task state, cancellation projection, streaming, and safe evidence presentation. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, recorder, evidence schema, report generator, platform driver, browser discovery table, installer, or Playground behavior.
+The module is an entry-layer application. Shared workspace initialization, target resolution, Driver readiness/install coordination, and Web executable discovery use the public Application boundary; Control Plane projects those results through HTTP and browser UI. Explore and Strict execution delegate to public Execution services while Control Plane retains task state, cancellation projection, streaming, and safe evidence presentation. It does not own a second model/tool loop, capability implementation, FSQ parser, strict lifecycle semantics, recorder, evidence schema, report generator, platform driver, browser discovery table, or installer.
 
 ## Dependencies
 
@@ -19,7 +19,7 @@ The module is an entry-layer application. Shared workspace initialization, targe
 - `report`: Uses existing report generation and report-artifact contracts.
 - External dependencies: Python standard-library HTTP, threading, subprocess, path, MIME, JSON, base64, and browser-opening facilities. Optional platform backend dependencies remain lazy runtime concerns of their owning modules.
 
-The module must not import `playground`, `cli`, `capabilities`, module-private `_*.py` files from another public module, concrete private harnesses/drivers, OpenAI Agents SDK runtime types, or frontend source. Other domain/runtime modules must not import `control_plane`; `cli` may import its public server API.
+The module must not import `cli`, `capabilities`, module-private `_*.py` files from another public module, concrete private harnesses/drivers, OpenAI Agents SDK runtime types, or frontend source. Other domain/runtime modules must not import `control_plane`; `cli` may import its public server API.
 
 ## Public Interface
 
@@ -108,7 +108,7 @@ Control Plane projects existing execution facts into:
 - A contained ordered per-step evidence index sourced from persisted event artifact references and `evidence-manifest.json`.
 - A contained chronological screenshot-frame sequence used only by the explicit replay endpoint.
 
-SSE payloads do not embed screenshot bytes, large UI snapshots, replay frames/video, hidden reasoning, secret values, or unrestricted backend objects. Artifact paths are resolved only below the frozen run directory. Evidence absence or read failure is explicit and does not imply run success or failure. Control Plane replay storage is independent of Playground replay storage and neither module imports or delegates to the other.
+SSE payloads do not embed screenshot bytes, large UI snapshots, replay frames/video, hidden reasoning, secret values, or unrestricted backend objects. Artifact paths are resolved only below the frozen run directory. Evidence absence or read failure is explicit and does not imply run success or failure. Control Plane stores generated replay video only under its run-local `control-plane-replay` directory and ignores unrelated Run files.
 
 All API errors use `code`, `message`, `action`, and optional safe `details`.
 
@@ -138,7 +138,7 @@ All API errors use `code`, `message`, `action`, and optional safe `details`.
 - Internal modules: all `_*.py` files and generated `static` content are private implementation details.
 - Domain boundaries: Control Plane owns local HTTP/UI adaptation, trusted-local Provider/workspace transport, host-native directory chooser orchestration, safe projections, device-flow task lifecycle, workspace-aware Devices state, evidence presentation, and replay-video transport. Application owns workspace target/readiness/mutation use cases; Config owns Provider/registry/platform persistence and settings composition; other modules retain their execution and domain responsibilities.
 - Boundary models: HTTP request/response dictionaries and private immutable discovery/projection records sit at the transport boundary; shared runtime facts use `models` contracts.
-- Dependency direction: CLI may import Control Plane public APIs; Control Plane imports Application, Execution, and other owning-module public APIs only; owning modules and Playground do not import Control Plane.
+- Dependency direction: CLI may import Control Plane public APIs; Control Plane imports Application, Execution, and other owning-module public APIs only; owning modules do not import Control Plane.
 - Rationale: The module coordinates trusted local transport, multi-file workspace creation and platform mutation, read-only filesystem browsing, Provider configuration, workspace-selected local targets, two Devices execution paths, state streaming, evidence persistence, and static delivery, so Level 3 is required. Additional repository/domain layers would only pass data through.
 
 ## Error Handling
@@ -158,13 +158,13 @@ Static serving rejects path traversal and cross-entry fallback. Missing generate
 ## Verification Scope
 
 - Verification covers Provider Config plus workspace parent-directory selection and workspace list/summary/create/platform-detail/add/update route methods and shapes; picker exact-body, selected/cancelled, normalization, one-active conflict, unavailable/failure, fixed-argument no-shell host adapters, bounded output, and shutdown cleanup; registry/canonical platform ordering, partial/unavailable projection, all four platform target variants, immutable identity, independent exact revisions/conflicts, no platform deletion path, atomic writes, rollback/adoption preservation, bounded tree/file browsing, no-store behavior, loopback/same-origin gates, independent GitHub authorization/discovery/save lifecycle, offered-model validation, expiration/cancellation/shutdown scrubbing, saved-only connection testing, workspace-platform readiness/target discovery, safe platform-scoped case discovery, Explore/Strict validation and delegation, strict AI-assertion provider gating, frozen workspace-platform run state, one-task locking, state transitions, cancellation, SSE resume, latest and per-step evidence projection, replay-frame ordering, replay-video validation/storage/range reads, terminal Explore generated-YAML saving to the frozen cases directory, safe errors, static serving, and isolated-wheel startup.
-- Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, exact server-issued step ids, bounded reads/discovery and artifact/frame/video IO, atomic video replacement, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from Playground or module-private implementation files.
+- Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, exact server-issued step ids, bounded reads/discovery and artifact/frame/video IO, atomic video replacement, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from module-private implementation files.
 - Compatibility verification proves Control Plane can start from any directory, workspace APIs and Devices use only registered roots plus explicit platform selection, unsupported legacy workspaces remain safely unavailable, and no execution derives configuration or output from the process startup directory.
 - Integration verification proves at least one available platform can start Explore and Strict runs, emit progress/evidence, switch evidence views through the API, cancel, reach a truthful terminal state, retrieve one step's Before/After artifacts, enumerate replay frames, upload a generated WebM, and seek its stored range response.
 
 ## Current Invariants
 
-- Control Plane is independent from Playground and does not delegate to it.
+- Control Plane composes its browser transport directly over public Application and Execution boundaries and does not delegate to another browser adapter.
 - Control Plane composes shared execution authority; it never implements a second agent loop, strict runner, parser, lifecycle engine, capability table, evidence schema, recorder, or report generator.
 - Control Plane transport never owns Provider/registry/config file formats, GitHub protocol behavior, token exchange, or model invocation. It delegates persistence/settings rules to `config` and provider protocols to `providers`.
 - Provider Config and workspace APIs require a loopback bind and peer, reject cross-origin writes, disable caching, and do not enable CORS. The complete Azure key and platform env values are returned only through their documented trusted-local selected-platform detail surface; GitHub tokens are never returned.

@@ -62,7 +62,6 @@ fsq-agent = "fsq_agent.adapters.cli:main"
 packages = ["fsq_agent"]
 artifacts = [
     "fsq_agent/adapters/control_plane/static/**",
-    "fsq_agent/adapters/control_plane/playground/static/**",
     "fsq_agent/resources/**",
 ]
 
@@ -104,7 +103,6 @@ artifacts = [
     "knowledge/skills/**",
     "fsq_agent/resources/**",
     "fsq_agent/adapters/control_plane/static/**",
-    "fsq_agent/adapters/control_plane/playground/static/**",
 ]
 
 [tool.pytest.ini_options]

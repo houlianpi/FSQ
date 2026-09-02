@@ -10,7 +10,7 @@ This module does not execute capabilities, invoke CommonTool or PlatformTool pro
 
 - Internal project dependencies: `models` only. Uses `CapabilityDefinition`, `CapabilityExecutorKind`, `ExecutableStepKind`, `HarnessPlatform`, `ReplayPolicy`, and `ConfigurationError`.
 - External dependencies: standard library dataclasses, inspect, typing, and Pydantic `BaseModel` type references.
-- Forbidden dependencies: `core`, `tools`, `agent`, `cli`, `fsq`, `config`, `providers`, `report`, `playground`, `observation`, `knowledge`, `skills`, OpenAI Agents SDK types, concrete driver/runtime objects, and backend SDKs.
+- Forbidden dependencies: `core`, `tools`, `agent`, `cli`, `fsq`, `config`, `providers`, `report`, `observation`, `knowledge`, `skills`, OpenAI Agents SDK types, concrete driver/runtime objects, and backend SDKs.
 
 ## Public Interface
 

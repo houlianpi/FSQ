@@ -423,7 +423,7 @@ Planner output / FSQ step
   terminal progress
   debug timeline
   json report
-  live playground
+  Control Plane live timeline
   CI reporter
 
   这比让 Runner 直接 import 所有模块干净得多。

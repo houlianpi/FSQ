@@ -43,7 +43,7 @@ The release workflow runs the equivalent automated gate before publication, incl
 The CI package job is the executable contract for archive inspection. Confirm that it checks:
 
 - exactly one wheel and one sdist;
-- Control Plane and Playground HTML, JavaScript, CSS, and `entry-assets.json` in both archives;
+- Control Plane HTML, JavaScript, CSS, and `entry-assets.json` in both archives;
 - repository platform presets, default prompt templates, and configured skills in both archives;
 - default dependencies for uiautomator2, Playwright, pywinauto, Pillow, and Appium Python Client;
 - no platform extras;

@@ -357,7 +357,6 @@ def test_capabilities_imports_only_models_across_project_modules() -> None:
         "fsq_agent.fsq",
         "fsq_agent.knowledge",
         "fsq_agent.observation",
-        "fsq_agent.playground",
         "fsq_agent.providers",
         "fsq_agent.report",
         "fsq_agent.skills",

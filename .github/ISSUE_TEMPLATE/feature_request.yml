@@ -50,7 +50,6 @@ body:
         - CLI
         - Control Plane UI
         - Runs / reports / evidence
-        - Playground
         - Providers
         - Harness SDK / existing drivers
         - Documentation / build / tooling
