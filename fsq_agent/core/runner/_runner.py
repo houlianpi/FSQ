@@ -218,7 +218,7 @@ class StepRunner:
             )
         except Exception as exc:  # noqa: BLE001 - runner converts phase exceptions into structured results.
             state.failure_category = self.harness.classify_error(exc, "invoke", step)
-            state.error_message = str(exc)
+            state.error_message = _safe_exception_message(exc)
             self._emit(run_id=run_id, event_type="harness_call_finish", step=step, phase="invoke")
             self._emit(run_id=run_id, event_type="step_error", step=step, phase="invoke")
             self._append_phase_report(
@@ -449,7 +449,7 @@ class StepRunner:
                     phase=phase,
                 )
             except Exception as exc:  # noqa: BLE001 - artifact capture failures are recorded as phase facts.
-                return refs, str(exc)
+                return refs, _safe_exception_message(exc)
             ref = self._to_evidence_artifact_ref(harness_ref, step.step_id, phase)
             refs.append(ref)
             self._emit(
@@ -651,3 +651,21 @@ class StepRunner:
 
     def _duration_ms(self, started: float) -> int:
         return max(0, int((time.perf_counter() - started) * 1000))
+
+
+def _safe_exception_message(error: BaseException) -> str:
+    message = str(error).strip()
+    exception_type = type(error).__name__
+    diagnostic = _filesystem_path_diagnostic(error)
+    text = f"{exception_type}: {message}" if message else exception_type
+    return f"{text} ({diagnostic})" if diagnostic else text
+
+
+def _filesystem_path_diagnostic(error: BaseException) -> str | None:
+    if not isinstance(error, OSError):
+        return None
+    filename = getattr(error, "filename", None)
+    if not isinstance(filename, str) or not filename:
+        return None
+    path_length = len(filename)
+    return f"local path length: {path_length}"

@@ -70,6 +70,23 @@ function strictStepStatus(step: StrictCaseStep, stepEvents: TimelineEvent[], sna
   return snapshot.terminal ? 'skipped' : 'pending';
 }
 
+function payloadHasScreenshotArtifact(value: unknown, depth = 0): boolean {
+  if (depth > 4 || value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.some((item) => payloadHasScreenshotArtifact(item, depth + 1));
+  if (typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  if (record.kind === 'screenshot') return true;
+  return Object.values(record).some((item) => payloadHasScreenshotArtifact(item, depth + 1));
+}
+
+function stepIdsWithScreenshotEvidence(events: TimelineEvent[]): Set<string> {
+  const values = new Set<string>();
+  for (const event of events) {
+    if (event.stepId && payloadHasScreenshotArtifact(event.payload)) values.add(event.stepId);
+  }
+  return values;
+}
+
 function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }: { snapshot: RunSnapshot; events: TimelineEvent[]; selectedStepId: string | null; onSelectStep: (stepId: string | null) => void }) {
   const steps = snapshot.source.caseSteps ?? [];
   if (snapshot.mode !== 'strict') return null;
@@ -81,6 +98,7 @@ function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }:
     existing.push(event);
     eventsByStep.set(event.stepId, existing);
   }
+  const screenshotStepIds = stepIdsWithScreenshotEvidence(events);
   return <section className="strict-action-summary" aria-label="Strict replay action results">
     <ol className="strict-action-list">
       {steps.map((step) => {
@@ -88,18 +106,19 @@ function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }:
         const status = strictStepStatus(step, stepEvents, snapshot);
         const durationMs = typeof step.durationMs === 'number' ? step.durationMs : null;
         const message = step.message || null;
-        const selected = selectedStepId === step.stepId;
+        const hasScreenshotEvidence = screenshotStepIds.has(step.stepId);
+        const selected = hasScreenshotEvidence && selectedStepId === step.stepId;
         const active = !snapshot.terminal && snapshot.activeStep?.stepId === step.stepId;
-        const selectable = snapshot.terminal && Boolean(step.stepId);
+        const selectable = snapshot.terminal && hasScreenshotEvidence;
         const selectAction = () => onSelectStep(selected ? null : step.stepId);
-        const content = <>
+        const summaryContent = <>
           <span className="timeline-index">{String(step.index).padStart(2, '0')}</span>
           <span className="timeline-event-title"><strong>{step.authoredActionName}</strong><small>{step.actionName} · {step.kind}</small></span>
           <span className="timeline-event-meta"><span className={`status-badge status-badge--${status}`}>{status}</span>{durationMs !== null && <small>{durationMs}ms</small>}</span>
-          {message && <span className="timeline-event-main"><ExpandableMessage message={message} messageId={`strict-action-message-${step.stepId}`} /></span>}
         </>;
         return <li key={step.stepId} className={`strict-action-row timeline-row timeline-row--${status}${active ? ' timeline-row--active' : ''}${selectable ? ' timeline-row--selectable' : ''}${selected ? ' timeline-row--selected' : ''}`}>
-          {selectable ? <button className="timeline-action-select" type="button" aria-label={`Select action ${step.authoredActionName}`} aria-pressed={selected} onClick={selectAction}>{content}</button> : content}
+          {selectable ? <button className="timeline-action-select" type="button" aria-label={`Select action ${step.authoredActionName}`} aria-pressed={selected} onClick={selectAction}>{summaryContent}</button> : summaryContent}
+          {message && <span className="timeline-event-main"><ExpandableMessage message={message} messageId={`strict-action-message-${step.stepId}`} /></span>}
         </li>;
       })}
     </ol>
@@ -241,6 +260,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [source, sourceExpanded]);
   if (!snapshot) return <div className="run-loading" role="status"><span className="spinner" aria-hidden="true" />Preparing run details…</div>;
+  const screenshotStepIds = stepIdsWithScreenshotEvidence(events);
   const activeStepId = !snapshot.terminal ? snapshot.activeStep?.stepId : null;
   let latestActiveStepSequence: number | null = null;
   if (activeStepId) {
@@ -279,7 +299,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
         {events.length ? <ol className="timeline-list">
           {events.map((event) => {
             const label = event.label || event.tool || event.phase || 'Run update';
-            const selectable = snapshot.terminal && Boolean(event.stepId);
+            const selectable = snapshot.terminal && Boolean(event.stepId && screenshotStepIds.has(event.stepId));
             const selected = selectable && selectedStepId === event.stepId;
             const active = !snapshot.terminal && (activeStepMatched ? event.stepId === activeStepId : event.sequence === activeFallbackSequence);
             const selectAction = () => onSelectStep(selected ? null : event.stepId ?? null);

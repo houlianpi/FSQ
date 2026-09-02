@@ -97,6 +97,12 @@ class InvokeFailureHarness(SuccessfulHarness):
         return "action_error"
 
 
+class FileNotFoundInvokeFailureHarness(InvokeFailureHarness):
+    def invoke_action(self, step: ExecutableStep, context: HarnessContext) -> HarnessActionResult:
+        self.calls.append(f"invoke:{step.action_name}:{context.session_id}")
+        raise FileNotFoundError(2, "No such file or directory", "C:/local/tool.exe")
+
+
 class FailedResultHarness(SuccessfulHarness):
     def invoke_action(self, step: ExecutableStep, context: HarnessContext) -> HarnessActionResult:
         self.calls.append(f"invoke:{step.action_name}:{context.session_id}")
@@ -142,6 +148,19 @@ class FailingCaptureHarness(SuccessfulHarness):
     ) -> HarnessArtifactRef:
         self.calls.append(f"capture:{kind}:{reason}:{step_id}:{phase}")
         raise RuntimeError("capture failed")
+
+
+class FileNotFoundCaptureHarness(FailingCaptureHarness):
+    def capture_artifact(
+        self,
+        kind: str,
+        reason: str,
+        context: HarnessContext,
+        step_id: str,
+        phase: StepPhase,
+    ) -> HarnessArtifactRef:
+        self.calls.append(f"capture:{kind}:{reason}:{step_id}:{phase}")
+        raise FileNotFoundError(2, "No such file or directory", "C:/local/artifact.png")
 
 
 class FailedCapturingHarness(CapturingHarness):
@@ -457,12 +476,12 @@ def test_step_runner_wraps_invoke_exception_and_still_finalizes() -> None:
 
     assert result.status == "failed"
     assert result.failure_category == "action_error"
-    assert result.error_message == "tap failed"
+    assert result.error_message == "RuntimeError: tap failed"
     assert [phase.phase for phase in result.phase_reports] == ["prepare", "invoke", "finalize"]
     assert [phase.status for phase in result.phase_reports] == ["passed", "failed", "passed"]
     invoke_report = result.phase_reports[1]
     assert invoke_report.failure_category == "action_error"
-    assert invoke_report.error_message == "tap failed"
+    assert invoke_report.error_message == "RuntimeError: tap failed"
     assert harness.calls == [
         "get_context",
         "before:tap:session-1",
@@ -472,6 +491,16 @@ def test_step_runner_wraps_invoke_exception_and_still_finalizes() -> None:
     ]
     assert "step_error" in [event.event_type for event in runner.events]
     assert runner.events[-1].event_type == "step_finish"
+
+
+def test_step_runner_includes_exception_type_for_filesystem_invoke_failures() -> None:
+    runner = StepRunner(harness=FileNotFoundInvokeFailureHarness())
+
+    result = runner.run_step(run_id="run-1", step=_tap_step())
+
+    assert result.status == "failed"
+    assert result.error_message.startswith("FileNotFoundError: [Errno 2] No such file or directory")
+    assert "C:/local/tool.exe" in result.error_message
 
 
 def test_step_runner_preserves_failed_harness_action_result() -> None:
@@ -707,4 +736,22 @@ def test_step_runner_reports_artifact_capture_errors_without_crashing() -> None:
     assert result.status == "failed"
     assert finalize_report.status == "failed"
     assert finalize_report.failure_category == "artifact_error"
-    assert finalize_report.error_message == "capture failed"
+    assert finalize_report.error_message == "RuntimeError: capture failed"
+
+
+def test_step_runner_includes_exception_type_for_artifact_capture_failures() -> None:
+    runner = _runner(FileNotFoundCaptureHarness())
+    step = ExecutableStep(
+        step_id="step-1",
+        kind="action",
+        action_name="tapOn",
+        params={"target": "Login"},
+    )
+
+    result = runner.run_step(run_id="run-1", step=step)
+
+    assert result.status == "failed"
+    assert result.failure_category == "artifact_error"
+    assert result.error_message.startswith("FileNotFoundError: [Errno 2] No such file or directory")
+    assert "C:/local/artifact.png" in result.error_message
+    assert "local path length: 21" in result.error_message
