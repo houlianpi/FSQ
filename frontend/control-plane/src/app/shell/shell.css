@@ -5,7 +5,7 @@
 .cp-brand > span:last-child, .cp-brand strong, .cp-brand small { display: block; min-width: 0; }
 .cp-brand small { margin-top: 3px; color: var(--cp-muted); font-size: 11px; }
 .cp-mark { width: 46px; height: 46px; flex: 0 0 46px; display: grid; place-items: center; border-radius: var(--cp-radius); background: var(--cp-text); color: var(--cp-surface); font-weight: 900; letter-spacing: -1px; }
-.cp-primary-nav { min-height: 0; flex: 1; overflow-y: auto; }
+.cp-primary-nav { min-height: 0; flex: 1; margin-left: -11px; padding-left: 11px; overflow-y: auto; }
 .cp-primary-nav, .cp-footer-nav { display: flex; flex-direction: column; gap: 3px; }
 .cp-footer-nav { padding-top: 10px; border-top: 1px solid var(--cp-border); }
 .cp-nav-item { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; position: relative; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--cp-radius); background: transparent; color: var(--cp-muted); text-align: left; }
