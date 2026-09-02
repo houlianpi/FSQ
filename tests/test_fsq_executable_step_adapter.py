@@ -80,11 +80,34 @@ def test_public_web_example_matches_current_executable_contract() -> None:
     assert [step.action_name for step in steps] == [
         "start_browser",
         "navigate_to",
+        "type_text",
+        "press_key",
+        "type_text",
+        "press_key",
+        "click_on",
+        "click_on",
         "assert_visible",
-        "assert_text",
+        "assert_not_visible",
         "close_browser",
     ]
-    assert steps[3].params["text"] == {"equals": "Example Domain"}
+    assert steps[2].params["text"] == "Review FSQ evidence"
+    assert steps[2].params["textType"] == "literal"
+    assert steps[2].params["clear"] is True
+    assert steps[4].params["text"] == "Publish v0.1.0"
+    assert steps[4].params["textType"] == "literal"
+    assert steps[4].params["clear"] is True
+    assert steps[6].params["locator"] == {
+        "css": ".todo-list li:nth-child(1) input.toggle"
+    }
+    assert "Active" in steps[7].params["target"]
+    assert steps[8].params == {
+        "locator": {"text": "Publish v0.1.0"},
+        "optional": False,
+    }
+    assert steps[9].params == {
+        "locator": {"text": "Review FSQ evidence"},
+        "optional": False,
+    }
 
 
 def test_windows_strict_replay_allows_null_targets(tmp_path: Path) -> None:
