@@ -32,17 +32,16 @@ FSQ turns a natural-language UI goal into an observable automation run, saves sc
 
 ## Core loop: replay without a second LLM
 
-Use FSQ like a test harness once a Case exists. Strict replay, Run history, and offline reports do **not** require a configured LLM Provider unless the authored Case contains an AI assertion.
+Once a `.fsq.yaml` Case exists, FSQ can replay it, record evidence, and open an offline report without configuring an LLM Provider.
 
 ```bash
 python -m pip install fsq-agent
 fsq init --platform web --browser-channel chrome
-# Store reviewed Case assets in your repo, for example: cases/web/*.fsq.yaml
 fsq case test --platform web cases/web/example-domain.fsq.yaml
 fsq runs show RUN_ID --open
 ```
 
-Use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a Run-local candidate `.fsq.yaml` Case. Coding agents should provide the goal and context; FSQ proves the path through live execution and evidence.
+Use `fsq case create --platform web --goal "..."` when you want FSQ to operate the real UI and record a candidate Case.
 
 <p align="center">
   <a href="https://youtu.be/QqCahxGDdS0">
@@ -79,7 +78,7 @@ See the remaining approved screenshots in [release media](docs/media/README.md).
 
 ## Five-minute quickstart
 
-This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally. Steps 1-3 exercise the provider-free harness path. A configured Provider is only needed for AI-driven Case creation or post-run suggestions.
+This public Web example uses [Example Domain](https://example.com/), requires an installed Chromium-family browser, and writes all project data locally.
 
 ### 1. Install
 
@@ -163,7 +162,7 @@ fsq runs logs RUN_ID
 fsq case test --platform web cases/web/example-domain.fsq.yaml
 ```
 
-The durable asset is the reviewed `.fsq.yaml` Case. The proof lives in `.fsq/runs/<platform>/<run-id>/` as events, screenshots, UI snapshots, evidence manifests, and reports. The strict replay path is provider-free, so CI and coding agents can verify committed Cases without configuring another LLM.
+The durable asset is the reviewed `.fsq.yaml` Case. The proof lives in `.fsq/runs/<platform>/<run-id>/` as events, screenshots, UI snapshots, evidence manifests, and reports.
 
 ## How FSQ works
 
