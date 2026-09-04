@@ -45,6 +45,7 @@ Missing SDK packages remain runtime configuration errors rather than import-time
 ## Current Invariants
 
 - Main execution, pre-plan, and verification preserve current SDK behavior, model settings, tracing, context trimming, event metadata, and structured output contracts.
+- After the streamed main execution reaches a terminal outcome, the adapter reads the OpenAI Agents SDK Run context's aggregated Provider usage and emits exactly one SDK-neutral `dynamic_agent_token_usage` event. Its safe payload contains the configured provider and model plus SDK-reported request, input, output, total, cached-input, and reasoning token counts. It does not estimate missing usage, inspect prompts or responses, include pre-plan or verification usage, write Run files directly, or mutate `run.json`.
 - Capability calls continue through Core `StepRunner`; AgentTool calls continue through Tools-owned behavior.
 - Harness construction remains lazy and browser/application lifecycle remains explicit capability behavior.
 - CLI and Control Plane inject the same runtime factory at composition boundaries.

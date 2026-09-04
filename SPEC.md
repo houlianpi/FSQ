@@ -36,6 +36,8 @@ Recorded strict cases may contain runtime-secret text input references using `te
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
+For Goal-based Case creation, completion of the Dynamic Agent main execution appends one `dynamic_agent_token_usage` event to the Run-local `events.jsonl`. The event reports only the OpenAI Agents SDK's aggregated usage for that main execution and excludes pre-plan, final verification, AI assertions, suggestions, readiness, authentication, and metadata requests. Token counts are never estimated, and this usage event does not change `run.json`.
+
 FSQ Case metadata may declare optional deterministic lifecycle hooks through `onCaseStart` and `onCaseComplete`; platform config may declare reusable hooks through `caseLifecycle`. `runCase` executes another `*.fsq.yaml` using the same contained Case path policy, and recursive chains fail before infinite execution. Application coordinates lifecycle execution through FSQ and Core authorities; adapters do not own lifecycle semantics.
 
 ## Dynamic LLM Pre-Plan and Goal Verification
