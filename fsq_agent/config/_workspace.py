@@ -127,7 +127,7 @@ def _find_registry_entry(name: str, user_config_root: str | Path | None = None) 
     return entry
 
 
-def inspect_registered_workspace(name: str, user_config_root: str | Path | None = None) -> WorkspaceStatus:
+def inspect_registered_workspace(name: str, user_config_root: str | Path | None = None, *, validate_target_paths: bool = True) -> WorkspaceStatus:
     entry = _find_registry_entry(name, user_config_root)
     root = entry.root_path
     if root.is_symlink() or not root.is_dir():
@@ -161,7 +161,8 @@ def inspect_registered_workspace(name: str, user_config_root: str | Path | None 
             config, _, loaded_path = load_workspace_config(root, platform)
             if config.name != entry.name or loaded_path.resolve() != config_path.resolve():
                 raise ConfigurationError("Registered workspace identity does not match its configuration.")  # noqa: TRY301
-            _validate_target_paths(config)
+            if validate_target_paths:
+                _validate_target_paths(config)
         except ConfigurationError:
             unavailable_count += 1
             platforms.append(

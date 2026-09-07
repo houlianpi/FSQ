@@ -12,6 +12,7 @@ from fsq_agent.application.contracts import (
     DoctorChecks,
     DoctorCommands,
     DoctorPlatformResult,
+    DoctorPrerequisite,
     DoctorRequest,
     DoctorResult,
     DoctorStatusDetail,
@@ -45,7 +46,7 @@ def diagnose_workspace(request: DoctorRequest) -> DoctorResult:
             action="Run 'fsq init' here or change to an initialized FSQ Workspace.",
         )
     try:
-        workspace_status = inspect_registered_workspace(entry.name)
+        workspace_status = inspect_registered_workspace(entry.name, validate_target_paths=False)
     except Exception as exc:
         raise _workspace_error() from exc
     if workspace_status.root_path.resolve() != root or not workspace_status.platforms:
@@ -77,9 +78,11 @@ def _diagnose_platform(platform: str, root: Path, workspace_platform) -> DoctorP
         return DoctorPlatformResult(platform=platform, status="unavailable", checks=checks, commands=commands)
 
     environment = PlatformRuntimeService()
+    prerequisite_facts = _safe_prerequisites(environment, settings)
+    prerequisites = tuple(DoctorPrerequisite.model_validate(item.model_dump()) for item in prerequisite_facts)
     runtime_check = _safe_check("runtime", lambda: _runtime(environment, platform))
     target_configuration = _configuration_check("target_configuration", lambda: environment.check_target_configuration(settings))
-    target_availability = _safe_check("target_availability", lambda: environment.check_target_availability(settings))
+    target_availability = _safe_check("target_availability", lambda: environment.check_target_availability(settings, prerequisite_facts))
     foundation = (runtime_check, target_configuration, target_availability)
     strict_core = _dependent_check("strict_core", foundation, lambda: _strict(settings))
     provider = _safe_check("provider", lambda: check_provider_readiness(settings))
@@ -99,6 +102,7 @@ def _diagnose_platform(platform: str, root: Path, workspace_platform) -> DoctorP
     return DoctorPlatformResult(
         platform=platform,
         status=_summary_status([commands.case_test.status, commands.case_test_suggest.status, commands.case_create.status]),
+        prerequisites=prerequisites,
         checks=checks,
         commands=commands,
     )
@@ -107,6 +111,22 @@ def _diagnose_platform(platform: str, root: Path, workspace_platform) -> DoctorP
 def _runtime(environment: PlatformRuntimeService, platform: str) -> tuple[bool, str, str]:
     result = environment.check(platform)
     return result.ready, result.message, result.action or ""
+
+
+def _safe_prerequisites(environment: PlatformRuntimeService, settings):
+    try:
+        return environment.check_prerequisites(settings)
+    except Exception:  # noqa: BLE001 - diagnostic isolation returns one safe prerequisite fact.
+        from fsq_agent.models import PlatformPrerequisiteCheck
+
+        return (
+            PlatformPrerequisiteCheck(
+                identifier="prerequisite_diagnostics",
+                status="error",
+                message="Platform prerequisite diagnostics could not be completed safely.",
+                action="Inspect the platform prerequisite installation manually.",
+            ),
+        )
 
 
 def _strict(settings) -> tuple[bool, str, str]:
@@ -174,6 +194,7 @@ def _blocked(dependency: str) -> DoctorStatusDetail:
 
 def _details(platform: DoctorPlatformResult):
     return [
+        *platform.prerequisites,
         *(getattr(platform.checks, name) for name in _CHECK_ORDER),
         *(getattr(platform.commands, name) for name in _COMMAND_DEPENDENCIES),
     ]

@@ -23,6 +23,14 @@ class DoctorStatusDetail(BaseModel):
     action: str | None = None
 
 
+class DoctorPrerequisite(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    identifier: str
+    status: DetailStatus
+    message: str
+    action: str | None = None
+
+
 class DoctorChecks(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     configuration: DoctorStatusDetail
@@ -46,6 +54,7 @@ class DoctorPlatformResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     platform: Literal["android", "web", "windows", "macos"]
     status: SummaryStatus
+    prerequisites: tuple[DoctorPrerequisite, ...] = ()
     checks: DoctorChecks
     commands: DoctorCommands
 

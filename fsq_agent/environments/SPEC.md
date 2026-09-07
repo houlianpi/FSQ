@@ -13,7 +13,7 @@ The module must not import Application, adapters, Config persistence, concrete d
 
 ## Public Interface
 
-`PlatformRuntimeService` is the stable service for read-only Runtime `check`, exact-channel Web executable discovery, explicit executable validation, and platform Target configuration/availability diagnosis from resolved settings. Target diagnosis returns safe normalized status facts without env values, unrestricted local target details, raw subprocess output, or backend objects. `PlatformRuntimeCheck` remains owned by Models. Core's legacy export references the canonical service class.
+`PlatformRuntimeService` is the stable service for read-only Runtime `check`, exact-channel Web executable discovery, explicit executable validation, platform Target configuration/availability diagnosis from resolved settings, and ordered platform prerequisite diagnosis. Target and prerequisite diagnosis return safe normalized status facts without env values, unrestricted local target details, raw subprocess output, or backend objects. `PlatformRuntimeCheck` and `PlatformPrerequisiteCheck` remain owned by Models. Core's legacy export references the canonical service class.
 
 ## Internal Structure
 
@@ -37,6 +37,10 @@ Readiness checks never install or modify software. Missing Python platform depen
 
 Target configuration diagnosis validates required identities and local path/channel shape. Target availability uses read-only discovery for current candidates, including Android online/authorized device and application discovery, without installing applications, changing device state, starting a browser/application, or creating a Driver/Appium session.
 
+macOS prerequisite diagnosis performs bounded read-only host inspection and returns details in this order: `xcode_installation`, `xcode_developer_directory`, `appium_cli`, `appium_mac2_driver`, `appium_endpoint`, `application_path`, and `bundle_identifier`. It distinguishes a full Xcode application from Command Line Tools, verifies that the active developer directory belongs to full Xcode, resolves the Appium executable without changing `PATH`, queries installed Appium drivers with fixed non-interactive arguments and a bounded timeout, probes only the configured endpoint's status availability, validates the configured application bundle or executable path, and checks that a configured bundle identifier resolves consistently with the configured application when both are present. A prerequisite blocked by an earlier prerequisite is `not_applicable` with safe guidance rather than a fabricated ready result.
+
+A valid active full-Xcode developer directory proves installation even outside standard application folders. Each host probe isolates unexpected errors into its own safe `error` fact and preserves other independent results. Invalid or non-dictionary application plists fail bundle identity verification without falling back to another installed application. For an executable within an application bundle, that enclosing bundle supplies its identity; path-only targets do not require a separate bundle identifier.
+
 ## Current Invariants
 
 - Current host support behavior remains unchanged.
@@ -44,4 +48,5 @@ Target configuration diagnosis validates required identities and local path/chan
 - Explicit Web validation delegates to the pure Models identity contract and never trusts a shared basename or generic substring.
 - Candidates are normalized, deduplicated, ordered, and never selected when multiple distinct matches exist.
 - The module does not provision targets, start services, authenticate, mutate Workspaces, or expose subprocess output.
+- macOS checks never install Xcode, accept its license, run first-launch setup, change `xcode-select`, install npm packages or Appium drivers, grant Accessibility/Automation permissions, start Appium, launch the target application, or create an Appium session.
 - Environment diagnosis does not inspect Provider readiness; Workspace Doctor composes Environment facts with other public readiness boundaries.

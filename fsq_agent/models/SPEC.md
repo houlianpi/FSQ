@@ -173,6 +173,8 @@ Platform settings exports:
 - `CaseSettings`: Pydantic model for the read-only FSQ case directory.
 - `OutputSettings`: Pydantic model for the managed output root. The per-run report/artifact layout under the output root is internal policy. All logs, reports, tool artifacts, and generated files must live under the output root.
 
+Platform-runtime diagnostic exports include immutable `PlatformPrerequisiteCheck` values with a stable prerequisite identifier, `ready`, `unavailable`, `error`, or `not_applicable` status, safe message, and optional safe action. These SDK-neutral facts contain no raw subprocess output, environment values, credentials, or backend objects and are suitable for Application Doctor projection.
+
 Exception exports:
 
 - `FsqAgentError`: Base exception for all project errors.

@@ -57,3 +57,12 @@ class PlatformRuntimeCheck(BaseModel):
         if self.ready != (self.status == "ready"):
             raise ValueError("platform runtime status and readiness must agree")
         return self
+
+
+class PlatformPrerequisiteCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    identifier: str
+    status: Literal["ready", "unavailable", "error", "not_applicable"]
+    message: str
+    action: str | None = None

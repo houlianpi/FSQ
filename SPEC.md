@@ -58,6 +58,8 @@ The local workspace setup entry is `fsq init --platform android|web|windows|maco
 
 `fsq doctor` is the read-only health summary for the exact current registered Workspace. It checks every identifiable configured platform in Android, Web, Windows, macOS order, isolates one platform's diagnostic failures from the others, and reports both fixed component checks and command readiness for `fsq case test`, `fsq case test --suggest`, and `fsq case create`. Overall `ready`, `partial`, or `unavailable` status is derived from those command verdicts.
 
+Doctor also reports ordered platform prerequisite details when a platform has independently diagnosable host requirements. For macOS these details cover full Xcode installation, the active Xcode developer directory, the Appium CLI, the installed Appium Mac2 driver, the configured Appium endpoint, the configured application path, and the configured bundle identifier. Each detail has a stable identifier, safe status, explanation, and actionable operator guidance. The existing component and command verdicts remain the summary authority.
+
 Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
 
 ## Workspace Run History
