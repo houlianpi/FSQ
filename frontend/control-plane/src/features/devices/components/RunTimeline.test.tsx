@@ -251,7 +251,7 @@ it('discloses overflowing strict authored action messages', async () => {
   expect(actionDisclosure).toHaveAttribute('aria-expanded', 'false');
   await userEvent.click(actionDisclosure as HTMLButtonElement);
   expect(actionDisclosure).toHaveAttribute('aria-expanded', 'true');
-  expect(actionDisclosure).toHaveTextContent('⌃');
+  expect(actionDisclosure).toHaveAccessibleName('Collapse message');
 });
 
 it('keeps selectable strict message disclosure outside the action selection button', async () => {
@@ -358,13 +358,13 @@ it('renders a flat sequence-ordered event list and discloses long messages', asy
   expect(screen.getByText('Plan').closest('li')).not.toHaveTextContent(/\d{1,2}:\d{2}/);
   expect(screen.getByText('Plan').closest('li')).not.toHaveClass('timeline-row--running');
   const disclosure = await screen.findByRole('button', { name: 'Expand message' });
-  expect(disclosure).toHaveTextContent('⌄');
+  expect(disclosure).toHaveAccessibleName('Expand message');
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
   await userEvent.click(disclosure);
-  expect(disclosure).toHaveTextContent('⌃');
+  expect(disclosure).toHaveAccessibleName('Collapse message');
   expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   await userEvent.click(disclosure);
-  expect(disclosure).toHaveTextContent('⌄');
+  expect(disclosure).toHaveAccessibleName('Expand message');
   expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 });
 
@@ -388,7 +388,7 @@ it('highlights only the active running action and clears active highlighting aft
   expect(screen.getByText('Second').closest('li')).toHaveClass('timeline-row--selected');
 });
 
-it('moves active highlighting to newer non-step progress after an active action', () => {
+it('keeps explicit active-step priority over newer non-step progress', () => {
   const snapshot: RunSnapshot = {
     requestId: 'request', runId: 'run-1', suggestedCaseName: 'run-1', workspaceName: 'test', platform: 'web', targetId: 'chrome', mode: 'explore', status: 'running',
     source: { goal: 'Verify' }, startedAt: '', completedAt: null, cancelRequested: false,
@@ -402,8 +402,8 @@ it('moves active highlighting to newer non-step progress after an active action'
   };
   render(<RunTimeline snapshot={snapshot} connection="live" selectedStepId={null} resultHeadingRef={createRef()} onSelectStep={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()} />);
 
-  expect(screen.getByText('assert_with_ai').closest('li')).not.toHaveClass('timeline-row--active');
-  expect(screen.getByText('Verification started').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.getByText('assert_with_ai').closest('li')).toHaveClass('timeline-row--active');
+  expect(screen.getByText('Verification started').closest('li')).not.toHaveClass('timeline-row--active');
   expect(screen.getByText('Agent updated').closest('li')).not.toHaveClass('timeline-row--active');
 });
 
@@ -453,4 +453,13 @@ it('pauses timeline following and jumps to appended events', async () => {
   expect(scrollTo).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument());
   expect(scrolling).toHaveFocus();
+});
+
+it('does not scroll terminal timeline appends',()=>{
+  const snapshot:RunSnapshot={requestId:'request',runId:'run',workspaceName:'test',platform:'web',targetId:'chrome',mode:'explore',status:'success',source:{goal:'Verify'},startedAt:'',completedAt:'now',cancelRequested:false,events:[{sequence:1,label:'First'}],activeStep:null,result:null,summary:'Done',screenshotRevision:0,uiSnapshotRevision:0,evidenceAvailable:false,reportAvailable:false,terminal:true};
+  const p={connection:'ended',selectedStepId:null,resultHeadingRef:createRef<HTMLHeadingElement>(),onSelectStep:vi.fn(),onCancel:vi.fn(),onNewRun:vi.fn()};
+  const {rerender}=render(<RunTimeline {...p} snapshot={snapshot}/>);
+  const scroll=vi.fn();screen.getByLabelText('Run timeline history').scrollTo=scroll;
+  rerender(<RunTimeline {...p} snapshot={{...snapshot,events:[...snapshot.events,{sequence:2,label:'Final event'}]}}/>);
+  expect(scroll).not.toHaveBeenCalled();
 });

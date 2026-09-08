@@ -1,3 +1,4 @@
+import { Check, Ellipsis, TriangleAlert } from 'lucide-react';
 import type { ReadinessRecord, ReadinessResponse, RunMode } from '../../../api/types';
 import { PrerequisiteList } from './PrerequisiteList';
 import ReactMarkdown from 'react-markdown';
@@ -24,7 +25,7 @@ function PreflightItem({ label, record, loading }: { label: string; record?: Rea
   const status = loading ? 'loading' : record?.status ?? 'unavailable';
   const detail = loading ? 'Checking readiness…' : record?.message ?? 'Readiness is unavailable.';
   return <li className={`preflight-item preflight-item--${status}`}>
-    <span className="preflight-icon" aria-hidden="true">{status === 'ready' ? '✓' : status === 'loading' ? '…' : '!'}</span>
+    <span className="preflight-icon" aria-hidden="true">{status === 'ready' ? <Check/> : status === 'loading' ? <Ellipsis/> : <TriangleAlert/>}</span>
     <span><strong>{label}</strong><small>{detail}</small>{record?.action && status !== 'ready' && <small className="preflight-action">{record.action}</small>}</span>
   </li>;
 }

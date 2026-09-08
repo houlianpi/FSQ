@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Menu, X } from 'lucide-react';
 import { ControlPlaneSidebar } from './ControlPlaneSidebar';
 import { CONTROL_PLANE_NAVIGATION, type ControlPlanePageId, type WorkspaceNavigationItem } from './navigation';
 import './shell.css';
@@ -41,7 +42,8 @@ export function ControlPlaneShell({ activePage, title, description, outletPresen
   useEffect(() => {
     if (!drawerOpen) return;
     const drawer = drawerRef.current;
-    const focusable = drawer?.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    const getFocusable = () => drawer?.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    const focusable = getFocusable();
     const requestedFocus = drawerFocusTarget.current ? document.getElementById(drawerFocusTarget.current) : null;
     (requestedFocus ?? focusable?.[0])?.focus();
     drawerFocusTarget.current = null;
@@ -51,9 +53,10 @@ export function ControlPlaneShell({ activePage, title, description, outletPresen
         setDrawerOpen(false);
         return;
       }
-      if (event.key !== 'Tab' || !focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const controls = getFocusable();
+      if (event.key !== 'Tab' || !controls?.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
@@ -86,10 +89,10 @@ export function ControlPlaneShell({ activePage, title, description, outletPresen
         aria-expanded={drawerOpen}
         aria-controls="control-plane-sidebar"
         onClick={() => setDrawerOpen(true)}
-      >☰</button>
+      ><Menu aria-hidden="true"/></button>
       {drawerOpen && <button className="cp-drawer-scrim" type="button" aria-label="Dismiss navigation overlay" onClick={closeDrawer} />}
       <aside ref={drawerRef} id="control-plane-sidebar" className={`cp-sidebar${drawerOpen ? ' cp-sidebar--open' : ''}`} aria-label="Control Plane sidebar" aria-hidden={narrow && !drawerOpen ? true : undefined} inert={narrow && !drawerOpen ? true : undefined}>
-        <button className="cp-drawer-close" type="button" aria-label="Close navigation" onClick={closeDrawer}>×</button>
+        <button className="cp-drawer-close" type="button" aria-label="Close navigation" onClick={closeDrawer}><X aria-hidden="true"/></button>
         <ControlPlaneSidebar
           interactionLocked={interactionLocked}
           activePage={activePage}
