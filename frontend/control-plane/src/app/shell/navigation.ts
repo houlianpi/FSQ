@@ -24,4 +24,5 @@ export interface WorkspaceNavigationItem {
   description?: string;
   available?: boolean;
   message?: string;
+  diagnosticAvailable?: boolean;
 }

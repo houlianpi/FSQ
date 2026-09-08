@@ -202,8 +202,9 @@ class _FakeToolOutputTrimmer:
 
 
 class _FakeRunResult:
-    def __init__(self, final_output: Any | None = None) -> None:
+    def __init__(self, final_output: Any | None = None, usage: Any | None = None) -> None:
         self.final_output = final_output or AgentFinalOutput(status="success", summary="Done.")
+        self.context_wrapper = SimpleNamespace(usage=usage)
 
     async def stream_events(self) -> Any:
         if False:
@@ -293,6 +294,119 @@ async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: py
     harness_completed = events[titles.index("Harness setup completed")]
     assert harness_completed.payload["harness_class"] == "_FakeHarness"
     assert "driver_class" not in harness_completed.payload
+
+
+@pytest.mark.asyncio
+async def test_runtime_emits_one_dynamic_agent_token_usage_event_from_sdk_aggregate(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agents
+
+    usage = SimpleNamespace(
+        requests=3,
+        input_tokens=1200,
+        output_tokens=80,
+        total_tokens=1280,
+        input_tokens_details=SimpleNamespace(cached_tokens=900),
+        output_tokens_details=SimpleNamespace(reasoning_tokens=25),
+    )
+
+    class _UsageRunner:
+        @staticmethod
+        def run_streamed(_agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _FakeRunResult:
+            return _FakeRunResult(usage=usage)
+
+    _patch_runtime_sdk(monkeypatch)
+    monkeypatch.setattr(agents, "Runner", _UsageRunner)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
+    events: list[Any] = []
+
+    results = await runtime.run_task(Task(id="usage", description="Measure usage."), KnowledgeBundle(), [], "usage-run", events.append)
+
+    assert results[-1].status == "success"
+    usage_events = [event for event in events if event.type == "dynamic_agent_token_usage"]
+    assert len(usage_events) == 1
+    assert usage_events[0].payload == {
+        "provider": "azure_openai",
+        "model": "gpt-5.4",
+        "requests": 3,
+        "input_tokens": 1200,
+        "output_tokens": 80,
+        "total_tokens": 1280,
+        "cached_input_tokens": 900,
+        "reasoning_tokens": 25,
+    }
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_estimate_or_emit_token_usage_without_sdk_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime_sdk(monkeypatch)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
+    events: list[Any] = []
+
+    await runtime.run_task(Task(id="no-usage", description="No usage."), KnowledgeBundle(), [], "no-usage-run", events.append)
+
+    assert all(event.type != "dynamic_agent_token_usage" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_runtime_emits_available_sdk_usage_when_main_stream_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agents
+
+    class _FailedUsageResult(_FakeRunResult):
+        async def stream_events(self) -> Any:
+            raise RuntimeError("provider stream failed")
+            yield None
+
+    class _FailedUsageRunner:
+        @staticmethod
+        def run_streamed(_agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _FailedUsageResult:
+            return _FailedUsageResult(usage=SimpleNamespace(requests=1, input_tokens=400, output_tokens=20, total_tokens=420))
+
+    _patch_runtime_sdk(monkeypatch)
+    monkeypatch.setattr(agents, "Runner", _FailedUsageRunner)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
+    events: list[Any] = []
+
+    results = await runtime.run_task(Task(id="failed-usage", description="Fail after usage."), KnowledgeBundle(), [], "failed-usage-run", events.append)
+
+    assert results[0].status == "failed"
+    usage_events = [event for event in events if event.type == "dynamic_agent_token_usage"]
+    assert len(usage_events) == 1
+    assert usage_events[0].payload["total_tokens"] == 420
+    assert events[-1].type == "run_failed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_retry_usage_event_when_sink_fails_after_receiving_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agents
+
+    usage = SimpleNamespace(requests=1, input_tokens=100, output_tokens=10, total_tokens=110)
+
+    class _UsageRunner:
+        @staticmethod
+        def run_streamed(_agent: _FakeAgent, *_args: Any, **_kwargs: Any) -> _FakeRunResult:
+            return _FakeRunResult(usage=usage)
+
+    _patch_runtime_sdk(monkeypatch)
+    monkeypatch.setattr(agents, "Runner", _UsageRunner)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
+    events: list[Any] = []
+
+    def failing_usage_sink(event: Any) -> None:
+        events.append(event)
+        if event.type == "dynamic_agent_token_usage":
+            raise RuntimeError("downstream sink failed after persistence")
+
+    results = await runtime.run_task(
+        Task(id="usage-sink-failure", description="Fail the usage sink."),
+        KnowledgeBundle(),
+        [],
+        "usage-sink-failure-run",
+        failing_usage_sink,
+    )
+
+    assert results[0].status == "failed"
+    assert len([event for event in events if event.type == "dynamic_agent_token_usage"]) == 1
+    assert events[-1].type == "run_failed"
 
 
 @pytest.mark.asyncio

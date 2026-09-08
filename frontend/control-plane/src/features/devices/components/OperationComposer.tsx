@@ -34,6 +34,12 @@ interface OperationComposerProps {
   onGoalChange: (goal: string) => void;
   onCaseChange: (path: string) => void;
   onStart: () => void;
+  macos?: boolean;
+  android?: boolean;
+  starting?: boolean;
+  blockedReason?: string;
+  onRecheck?: () => void;
+  onRepair?: () => void;
 }
 
 function insertCasePath(nodes: CaseTreeNode[], item: CaseRecord) {
@@ -95,7 +101,7 @@ export function OperationComposer(props: OperationComposerProps) {
     setTreeOpen(false);
   };
   return <div className="operation-composer">
-    <div className="mode-switch" role="radiogroup" aria-label="Operation mode">
+    <fieldset className="composer-inputs" disabled={props.starting}><div className="mode-switch" role="radiogroup" aria-label="Operation mode">
       <button type="button" role="radio" aria-checked={props.mode === 'explore'} className={props.mode === 'explore' ? 'active' : ''} onClick={() => props.onModeChange('explore')}>Explore</button>
       <button type="button" role="radio" aria-checked={props.mode === 'strict'} className={props.mode === 'strict' ? 'active' : ''} onClick={() => props.onModeChange('strict')}>Strict Replay</button>
     </div>
@@ -120,8 +126,10 @@ export function OperationComposer(props: OperationComposerProps) {
       </dl>}
       {props.cases.length > selectableCases.length && <p className="field-help">{props.cases.length - selectableCases.length} invalid or platform-mismatched case(s) are unavailable.</p>}
     </div>}
-    <PreflightStatus mode={props.mode} workspace={props.readiness?.workspace} provider={props.readiness?.provider} target={props.readiness?.target} strict={props.readiness?.strict} requiresProvider={selectedCase?.requiresAiAssertion} loading={props.discoveryLoading} />
+    </fieldset>
+    <PreflightStatus mode={props.mode} workspace={props.readiness?.workspace} provider={props.readiness?.provider} target={props.readiness?.target} strict={props.readiness?.strict} requiresProvider={selectedCase?.requiresAiAssertion} loading={props.discoveryLoading} diagnostics={props.readiness} macos={props.macos} android={props.android} onRecheck={props.onRecheck} onRepair={props.onRepair} locked={props.starting}/>
     {props.errorMessage && <div className="inline-error" role="alert"><strong>{props.errorMessage}</strong>{props.errorAction && <span>{props.errorAction}</span>}</div>}
-    <button className="button button--primary start-button" type="button" disabled={!props.canStart} onClick={props.onStart}>{props.mode === 'explore' ? 'Start exploration' : 'Start strict replay'}</button>
+    {(props.macos || props.android) && !props.canStart && <p id="start-blocked-reason" className="field-help">{props.blockedReason}</p>}
+    <button className="button button--primary start-button" type="button" disabled={!props.canStart} aria-describedby={(props.macos||props.android)&&!props.canStart?'start-blocked-reason':undefined} onClick={props.onStart}>{props.starting && (props.macos||props.android)?'Checking environment…':props.mode === 'explore' ? 'Start exploration' : 'Start strict replay'}</button>
   </div>;
 }

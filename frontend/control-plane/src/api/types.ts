@@ -38,6 +38,7 @@ export interface BootstrapResponse {
 
 export type ReadinessStatus = 'ready' | 'unavailable' | 'error';
 export interface ReadinessRecord { status: ReadinessStatus; message: string; action: string }
+export interface PrerequisiteRecord { identifier: string; code?: string | null; status: ReadinessStatus | 'not_applicable'; message: string; action?: string | null; commands: string[] }
 export interface ReadinessResponse {
   workspaceName: string;
   platformId: PlatformId;
@@ -46,6 +47,10 @@ export interface ReadinessResponse {
   provider: ReadinessRecord;
   target: ReadinessRecord;
   strict: ReadinessRecord;
+  prerequisites?: PrerequisiteRecord[];
+  commands?: {caseCreate: ReadinessRecord; caseTest: ReadinessRecord};
+  checkedAt?: string;
+  targetId?: string | null;
 }
 
 export interface TargetRecord {
@@ -216,6 +221,8 @@ interface WorkspacePlatformStatusBase {
   status: 'available' | 'unavailable';
   message: string;
   action?: string;
+  diagnosticAvailable?: boolean;
+  repairAvailable?: boolean;
 }
 export interface WorkspaceRegistryEntry extends WorkspaceStatusBase {
   platforms: WorkspacePlatformStatusBase[];

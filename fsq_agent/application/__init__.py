@@ -16,6 +16,7 @@ from fsq_agent.application.contracts import (
     DoctorChecks,
     DoctorCommands,
     DoctorPlatformResult,
+    DoctorPrerequisite,
     DoctorRequest,
     DoctorResult,
     DoctorStatusDetail,
@@ -29,6 +30,7 @@ from fsq_agent.application.contracts import (
     ProviderStatusResult,
     ReadRunLogsRequest,
     ReadRunLogsResult,
+    RegisteredPlatformDoctorRequest,
     RunArtifactIndex,
     RunDetail,
     RunLogEvent,
@@ -47,7 +49,7 @@ from fsq_agent.application.contracts import (
     event_record,
     result_record,
 )
-from fsq_agent.application.doctor import diagnose_workspace
+from fsq_agent.application.doctor import diagnose_platform_settings, diagnose_registered_platform, diagnose_workspace
 from fsq_agent.application.environments import list_environments
 from fsq_agent.application.providers import complete_github_configuration, configure_azure_openai, provider_status, request_github_device_code
 from fsq_agent.application.runs import generate_run_html, list_runs, read_run_logs, show_run
@@ -66,6 +68,7 @@ __all__ = [
     "DoctorChecks",
     "DoctorCommands",
     "DoctorPlatformResult",
+    "DoctorPrerequisite",
     "DoctorRequest",
     "DoctorResult",
     "DoctorStatusDetail",
@@ -79,6 +82,7 @@ __all__ = [
     "ProviderStatusResult",
     "ReadRunLogsRequest",
     "ReadRunLogsResult",
+    "RegisteredPlatformDoctorRequest",
     "RunArtifactIndex",
     "RunDetail",
     "RunLogEvent",
@@ -99,6 +103,8 @@ __all__ = [
     "configure_azure_openai",
     "create_case",
     "create_workspace",
+    "diagnose_platform_settings",
+    "diagnose_registered_platform",
     "diagnose_workspace",
     "event_record",
     "generate_run_html",
