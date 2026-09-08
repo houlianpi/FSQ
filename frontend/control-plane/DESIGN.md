@@ -54,7 +54,7 @@ than non-interactive panel dividers.
 - Monospace: ui-monospace, SFMono-Regular, Consolas, monospace for paths,
   commands, source, and logs.
 - Body 14px; metadata and status 12px; compact controls 12–13px;
-  section headings 16–20px; page headings 24–28px.
+  subsection headings 16px, section headings 18px, dialog titles 20px and page headings 24px.
 - Body weight 400, controls 500, headings and important values 600.
 - Use 4 / 8 / 12 / 16 / 20 / 24 / 28 / 32px spacing. Labels sit close to their
   fields; separate workflow regions with more space than rows inside a region.
@@ -65,7 +65,7 @@ than non-interactive panel dividers.
 
 ### Shell and navigation
 
-Use a pale sidebar, small graphite FSQ mark, aligned icons, and a white context
+Use a pale sidebar, bundled FSQ light SVG logo, aligned icons, and a white context
 bar. A selected item has a soft indigo fill, darker indigo text, and a vertical
 edge cue. Workspace names elide with safe platform metadata on the following
 line. Order the primary pages Home, Test Runner, Runs, then the Workspaces group. Keep one Settings entry at the bottom, using the existing Provider page. Runs stays Coming soon. Workspaces only expands/collapses; it never navigates or clears state. Current Workspace uses a checkmark and accessible description, while only the current page uses page-current styling. The shell owns the mobile drawer.
@@ -142,3 +142,11 @@ browser console whenever shared styles change.
 - Disabled Start always has a nearby reason. Retry never starts execution. Secret
   controls keep show/hide names, masking and cleanup. Focus returns to a connected
   initiating control after cancellation.
+
+## Consistency details
+
+Typography roles and line heights come from tokens.css: page 24/32, dialog 20/28, section 18/26, subsection 16/24, body 14/21, label 13/20 and metadata 12/18. Weights are 400 for values, 500 for controls and 600 for headings. Browser-default heading and legend margins are reset.
+
+The supplied FSQ light SVG is bundled locally without altering its artwork. Workspace platform indicators have their own wrapped row below identity; Record new case occupies a separate action column. Target headings are subordinate to Platform configuration. Full revision identifiers live inside Configuration details rather than dominating the summary.
+
+Create, add, edit and Provider fields share control geometry and 6px label gaps, 16px field gaps and 24px section spacing. Add/edit stay left-aligned with Configuration content at a 640px maximum measure. Target sections stack vertically. Environment rows retain masked values and aligned visibility/delete controls. Dialogs use 12px corners and 24px padding (16px on narrow screens) with bounded scrolling.
