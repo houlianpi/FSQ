@@ -1,3 +1,4 @@
+import logoLight from '../../assets/logo-light.svg';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ControlPlaneShell } from './ControlPlaneShell';
@@ -77,4 +78,9 @@ it('keeps drawer keyboard containment correct after Workspaces is collapsed',asy
  expect(screen.getByRole('button',{name:'Close navigation'})).toHaveFocus();
  await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
  expect(screen.getByRole('button',{name:'Settings'})).toHaveFocus();
+});
+
+it('bundles the supplied accessible FSQ logo', () => {
+  render(<ControlPlaneShell activePage="overview" title="Home" description="Test"><div>Content</div></ControlPlaneShell>);
+  expect(screen.getByRole('img', { name: 'FSQ' })).toHaveAttribute('src', logoLight);
 });
