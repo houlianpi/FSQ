@@ -19,9 +19,11 @@ interface ControlPlaneShellProps {
   onRetryWorkspaces?: () => void;
   onCreateWorkspace?: (restoreFocus?: () => void) => void;
   onSelectWorkspace?: (workspaceId: string) => void;
+  onDiagnoseWorkspace?: (workspaceId:string) => void;
+  interactionLocked?: boolean;
 }
 
-export function ControlPlaneShell({ activePage, title, description, outletPresentation = 'default', titleContent, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneShellProps) {
+export function ControlPlaneShell({ activePage, title, description, outletPresentation = 'default', titleContent, titleActions, children, workspaces, selectedWorkspaceId, workspaceRegistryStatus, workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace, onDiagnoseWorkspace, interactionLocked }: ControlPlaneShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -89,6 +91,7 @@ export function ControlPlaneShell({ activePage, title, description, outletPresen
       <aside ref={drawerRef} id="control-plane-sidebar" className={`cp-sidebar${drawerOpen ? ' cp-sidebar--open' : ''}`} aria-label="Control Plane sidebar" aria-hidden={narrow && !drawerOpen ? true : undefined} inert={narrow && !drawerOpen ? true : undefined}>
         <button className="cp-drawer-close" type="button" aria-label="Close navigation" onClick={closeDrawer}>×</button>
         <ControlPlaneSidebar
+          interactionLocked={interactionLocked}
           activePage={activePage}
           navigation={CONTROL_PLANE_NAVIGATION}
           workspaces={workspaces}
@@ -99,6 +102,7 @@ export function ControlPlaneShell({ activePage, title, description, outletPresen
           onRetryWorkspaces={onRetryWorkspaces}
           onCreateWorkspace={() => { onCreateWorkspace?.(restoreWorkspaceCreateFocus); closeDrawer(); }}
           onSelectWorkspace={(workspaceId) => { onSelectWorkspace?.(workspaceId); closeDrawer(); }}
+          onDiagnoseWorkspace={(workspaceId)=>{onDiagnoseWorkspace?.(workspaceId);closeDrawer();}}
         />
       </aside>
       <div className={`cp-main-column${outletPresentation === 'full-bleed' ? ' cp-main-column--full-bleed' : ''}`}>

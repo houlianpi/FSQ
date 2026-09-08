@@ -212,6 +212,7 @@ class OpenAIAgentsRuntime:
 
         provider_session = None
         result = None
+        usage_event_emitted = False
         try:
             await self._emit(
                 event_sink,
@@ -351,11 +352,20 @@ class OpenAIAgentsRuntime:
                     run_event = self._map_stream_event(event, run_id, task.id)
                     if run_event:
                         await self._emit(event_sink, run_event)
+                usage_event = self._dynamic_agent_token_usage_event(result, run_id, task.id)
+                if usage_event is not None:
+                    usage_event_emitted = True
+                    await self._emit(event_sink, usage_event)
             # SDK and provider packages raise implementation-specific exceptions that become failed steps.
             except Exception as exc:  # noqa: BLE001
                 duration_ms = int((time.perf_counter() - started) * 1000)
                 failure_metadata = _sdk_failure_metadata(exc)
                 error_message = self._replace_secret_values(str(exc), self._runtime_secret_values())
+                if result is not None and not usage_event_emitted:
+                    usage_event = self._dynamic_agent_token_usage_event(result, run_id, task.id)
+                    if usage_event is not None:
+                        usage_event_emitted = True
+                        await self._emit(event_sink, usage_event)
                 await self._emit(
                     event_sink,
                     RunEvent(
@@ -806,6 +816,35 @@ class OpenAIAgentsRuntime:
         result = event_sink(event)
         if inspect.isawaitable(result):
             await result
+
+    def _dynamic_agent_token_usage_event(self, result: Any, run_id: str, task_id: str) -> RunEvent | None:
+        context_wrapper = getattr(result, "context_wrapper", None)
+        usage = getattr(context_wrapper, "usage", None)
+        if usage is None:
+            return None
+        input_details = getattr(usage, "input_tokens_details", None)
+        output_details = getattr(usage, "output_tokens_details", None)
+        payload = {
+            "provider": self.settings.openai_agents.provider,
+            "model": self.settings.openai_agents.model,
+            "requests": getattr(usage, "requests", None),
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None),
+            "cached_input_tokens": getattr(input_details, "cached_tokens", None),
+            "reasoning_tokens": getattr(output_details, "reasoning_tokens", None),
+        }
+        reported = {key: value for key, value in payload.items() if value is not None}
+        if not any(key in reported for key in ("requests", "input_tokens", "output_tokens", "total_tokens")):
+            return None
+        return RunEvent(
+            run_id=run_id,
+            task_id=task_id,
+            type="dynamic_agent_token_usage",
+            title="Dynamic Agent token usage",
+            message="OpenAI Agents SDK usage for the Dynamic Agent main execution.",
+            payload=reported,
+        )
 
     def _sdk_tracing_disabled(self) -> bool:
         if not self.settings.openai_agents.tracing_enabled:

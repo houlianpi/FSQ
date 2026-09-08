@@ -36,6 +36,8 @@ Recorded strict cases may contain runtime-secret text input references using `te
 
 Recorded Web lifecycle commands are ordinary replayable capability results when the dynamic run actually executed `startBrowser` or `closeBrowser`. The recorder must not invent browser lifecycle commands as cleanup or setup guesses.
 
+For Goal-based Case creation, completion of the Dynamic Agent main execution appends one `dynamic_agent_token_usage` event to the Run-local `events.jsonl`. The event reports only the OpenAI Agents SDK's aggregated usage for that main execution and excludes pre-plan, final verification, AI assertions, suggestions, readiness, authentication, and metadata requests. Token counts are never estimated, and this usage event does not change `run.json`.
+
 FSQ Case metadata may declare optional deterministic lifecycle hooks through `onCaseStart` and `onCaseComplete`; platform config may declare reusable hooks through `caseLifecycle`. `runCase` executes another `*.fsq.yaml` using the same contained Case path policy, and recursive chains fail before infinite execution. Application coordinates lifecycle execution through FSQ and Core authorities; adapters do not own lifecycle semantics.
 
 ## Deterministic Case Formatting
@@ -54,13 +56,21 @@ Existing-Case testing parses the Case through FSQ rather than treating YAML as u
 
 Except for user-level Provider commands, static Case formatting, and creation of an unregistered Workspace, the exact CLI current directory is a registered workspace root using the canonical `.fsq/config/config.<platform>.yaml`, `.fsq/runs/<platform>/`, `cases/<platform>/`, and `knowledge/<platform>/` layout. CLI does not create or accept `.fsq-agent-workspace` markers, search parents, or auto-initialize. For a new name, `fsq init` treats the current directory as the selected directory: an empty directory becomes the Workspace root, while a non-empty directory receives a new `<selected-directory>/<workspace-name>` child. For an existing registered name, initialization uses its stored root independently of the process current directory. Workspace-scoped CLI commands require the exact registered root, and platform execution operations require the selected platform. Control Plane uses the same Application and Config-owned root-selection and registry rules while retaining explicit browser workspace selection independent of its startup directory.
 
-Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Provider selection and credentials are managed by the Provider configuration surface rather than workspace initialization. Repository-owned platform YAML presets are committed as `config.android.yaml`, `config.web.yaml`, `config.windows.yaml`, and `config.macos.yaml`; `config.example.yaml` is reference-only. Workspace platform configuration owns local target identity and private runtime-secret values. A Web target always names a browser channel and may omit its executable path so Application can discover exactly one compatible host executable before Driver readiness or workspace mutation.
+Default local LLM runs use GitHub Copilot provider authentication with Copilot model `gpt-5.5` and tracing enabled. Provider selection and credentials are managed by the Provider configuration surface rather than workspace initialization. Repository-owned platform YAML presets are package-owned files under `fsq_agent/config/`; the sibling `config.example.yaml` is reference-only. Reusable preset skills are tracked package resources under `fsq_agent/resources/skills/`. Source checkouts and installed distributions resolve the same package-owned preset and skill files. Workspace platform configuration owns local target identity and private runtime-secret values. A Web target always names a browser channel and may omit its executable path so Application can discover exactly one compatible host executable before Driver readiness or workspace mutation.
 
 The local workspace setup entry is `fsq init --platform android|web|windows|macos` with the selected platform's target options and optional `--name`. It creates an unregistered Workspace from the current selected directory or initializes and updates exactly one platform at the stored root of an existing registered name. It does not configure Providers or create legacy workspace markers.
 
 ## Workspace Doctor
 
 `fsq doctor` is the read-only health summary for the exact current registered Workspace. It checks every identifiable configured platform in Android, Web, Windows, macOS order, isolates one platform's diagnostic failures from the others, and reports both fixed component checks and command readiness for `fsq case test`, `fsq case test --suggest`, and `fsq case create`. Overall `ready`, `partial`, or `unavailable` status is derived from those command verdicts.
+
+Doctor also reports ordered platform prerequisite details when a platform has independently diagnosable host requirements. For macOS these details cover full Xcode installation, the active Xcode developer directory, the Appium CLI, the installed Appium Mac2 driver, the configured Appium endpoint, the configured application path, and the configured bundle identifier. Each detail has a stable identifier, safe status, explanation, and actionable operator guidance. The existing component and command verdicts remain the summary authority.
+
+Control Plane Android and macOS Preflight consume the same Application-owned diagnosis as CLI Doctor for the explicitly selected registered Workspace and platform. They display prerequisite failures and operator repair guidance before execution, refresh diagnosis on request, and recheck readiness before starting Explore or Strict Replay. Missing applications remain diagnosable when Workspace configuration identity is trustworthy; diagnostic access does not imply execution readiness. macOS retains its repairable-missing-path entry. Android diagnosis binds device-specific checks to the current transient device selection, without persisting a serial. Web and Windows retain their existing Control Plane checks.
+
+Android prerequisites cover ADB availability, the uiautomator2 Python dependency, an already-running ADB server, device discovery/authorization, exact device selection, application identity, and application installation on that selected device. Shared diagnosis distinguishes missing requirements, timeout, query failure, authorization/offline state, and ambiguous selection. It never conflates an unsuccessful package query with a proven missing application.
+
+Android diagnostic and target-discovery operations communicate with an existing ADB server using bounded read-only protocol requests that cannot start or restart it. They do not invoke auto-starting ADB client discovery or backend connection helpers. An absent server is an actionable prerequisite failure; `adb start-server` is operator-run guidance only. Opening a read-only ADB diagnostic transport is not a Driver or device-automation session. Diagnosis does not initialize uiautomator2, install device agents, grant permissions, or promise readiness of device-side automation that has not been exercised.
 
 Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
 
@@ -120,6 +130,8 @@ macOS platform block:
 - Operator-local values come from environment variables: `FSQ_MACOS_APPIUM_SERVER_URL`, `FSQ_MACOS_BUNDLE_ID`, and `FSQ_MACOS_APP_PATH`. YAML owns stable macOS defaults such as backend selection, page-source simplification depth, and action timeout seconds.
 - Current action surface exposes desktop aliases through the existing PlatformTool registry: `launchApp`, `killApp`, `clickOn`, `doubleClickOn`, `rightClickOn`, `typeText`, `pressKey`, `hoverOn`, `dragTo`, `takeScreenshot`, `uiSnapshot`, `assertVisible`, `assertElementsOrder`, and `assertWithAI`.
 - Explicit observation capability: `ui_snapshot` with alias `uiSnapshot`; macOS must not expose Android `ui_tree`/`uiTree` naming. Automatic runner evidence captures `screenshot` plus normalized `ui_snapshot` using a bounded compact semantic Appium Mac2 control tree that preserves useful locator, text, state, and geometry signals.
+- macOS `ui_snapshot` also supports bounded structured element queries over current, unabridged backend page-source attributes before display compaction. Query results distinguish display previews from complete locator values, expose ambiguity and incomplete coverage, and do not treat a missing snapshot match as proof that a control is absent from the application. Existing unfiltered snapshot fields and raw artifact-search semantics remain compatible.
+- macOS element resolution preserves all supplied locator constraints, safely handles literal text, and rejects ambiguous matches before acting. Locator syntax, missing targets, ambiguous targets, unavailable sessions, and backend failures remain distinguishable in safe diagnostics.
 - Harness skill: `macos-harness.md`.
 - The Appium MCP reference project may guide Mac2 session mechanics and action semantics, but fsq-agent must not wrap or depend on that MCP server as a runtime capability source.
 
@@ -167,6 +179,7 @@ Loader diagnostics such as missing optional skills or missing optional knowledge
 - New frontend application modules use Vite, React, and TypeScript/TSX unless their confirmed module SPEC records a concrete exception.
 - `ts-ebml` is an exact npm dependency consumed through an ES module import. Third-party browser bundles and Vite-generated assets are not tracked in Git.
 - Vite-generated Control Plane assets live under `fsq_agent/adapters/control_plane/static`. Its HTML entry point, JavaScript, CSS, entry-asset manifest, and referenced generated assets are included in both wheel and source distribution. Release builds run the npm build before Python distribution construction. An installed distribution is self-contained and does not require Node.js or network access to serve the frontend at runtime.
+- The npm build generates and distributes frontend assets only; it does not generate, copy, delete, or mutate tracked Python platform presets or reusable skill resources.
 - Frontend development may use the Vite development server with API and streaming requests proxied to the Control Plane Python server. Production and installed-wheel usage serve the generated entry and its APIs from one Python process.
 
 ## Architecture Diagram
@@ -230,7 +243,7 @@ flowchart TD
     Drivers --> CoreInterfaces
     Capabilities[capabilities] --> Models
     Core --> Capabilities
-    Core -->|PlatformRuntimeService compatibility export| Environments
+    Core -->|Runtime and Android discovery compatibility exports| Environments
     Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendControlPlane --> ControlPlane
     FrontendControlPlane --> ControlPlaneStatic[generated Control Plane static assets]

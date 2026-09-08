@@ -13,7 +13,17 @@ from fsq_agent.application.contracts.cases import (
     CaseTestRequest,
     CaseTestResult,
 )
-from fsq_agent.application.contracts.doctor import DoctorChecks, DoctorCommands, DoctorPlatformResult, DoctorRequest, DoctorResult, DoctorStatusDetail, DoctorWorkspaceSummary
+from fsq_agent.application.contracts.doctor import (
+    DoctorChecks,
+    DoctorCommands,
+    DoctorPlatformResult,
+    DoctorPrerequisite,
+    DoctorRequest,
+    DoctorResult,
+    DoctorStatusDetail,
+    DoctorWorkspaceSummary,
+    RegisteredPlatformDoctorRequest,
+)
 from fsq_agent.application.contracts.environments import EnvironmentSummary
 from fsq_agent.application.contracts.providers import ProviderConfigurationResult, ProviderStatusResult
 from fsq_agent.application.contracts.runs import (
@@ -56,6 +66,7 @@ __all__ = [
     "DoctorChecks",
     "DoctorCommands",
     "DoctorPlatformResult",
+    "DoctorPrerequisite",
     "DoctorRequest",
     "DoctorResult",
     "DoctorStatusDetail",
@@ -69,6 +80,7 @@ __all__ = [
     "ProviderStatusResult",
     "ReadRunLogsRequest",
     "ReadRunLogsResult",
+    "RegisteredPlatformDoctorRequest",
     "RunArtifactIndex",
     "RunDetail",
     "RunLogEvent",

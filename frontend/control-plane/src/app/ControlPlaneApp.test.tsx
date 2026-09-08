@@ -10,8 +10,8 @@ vi.mock('../api/controlPlaneClient', () => ({
 }));
 
 vi.mock('../features/devices/DevicesPage', () => ({
-  DevicesPage: ({ workspaceRegistryReady, selectedWorkspaceName, launchIntent, onLaunchIntentConsumed, renderShell }: { workspaceRegistryReady: boolean; selectedWorkspaceName: string | null; launchIntent?: { id: number; mode: string; workspaceName: string; platform?: string; casePath?: string } | null; onLaunchIntentConsumed?: (id: number) => void; renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode }) =>
-    renderShell(null, <div>Devices content<span>Registry {workspaceRegistryReady ? 'ready' : 'pending'}</span><span>Devices Workspace {selectedWorkspaceName ?? 'unselected'}</span><span>{launchIntent ? `${launchIntent.mode}:${launchIntent.workspaceName}:${launchIntent.platform ?? ''}:${launchIntent.casePath ?? ''}` : 'No launch intent'}</span>{launchIntent && <button type="button" onClick={() => onLaunchIntentConsumed?.(launchIntent.id)}>Consume launch intent</button>}</div>),
+  DevicesPage: ({ workspaceRegistryReady, selectedWorkspaceName, launchIntent, onLaunchIntentConsumed, onStartPendingChange, onRepairTarget, renderShell }: { workspaceRegistryReady: boolean; selectedWorkspaceName: string | null; launchIntent?: { id: number; mode: string; workspaceName: string; platform?: string; casePath?: string } | null; onLaunchIntentConsumed?: (id: number) => void; onStartPendingChange?: (pending:boolean)=>void; onRepairTarget?: (name:string)=>void; renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode }) =>
+    renderShell(null, <div>Devices content<button onClick={()=>onStartPendingChange?.(true)}>Simulate pending start</button><button onClick={()=>onStartPendingChange?.(false)}>Finish pending start</button><button onClick={()=>selectedWorkspaceName&&onRepairTarget?.(selectedWorkspaceName)}>Repair selected target</button><span>Registry {workspaceRegistryReady ? 'ready' : 'pending'}</span><span>Devices Workspace {selectedWorkspaceName ?? 'unselected'}</span><span>{launchIntent ? `${launchIntent.mode}:${launchIntent.workspaceName}:${launchIntent.platform ?? ''}:${launchIntent.casePath ?? ''}` : 'No launch intent'}</span>{launchIntent && <button type="button" onClick={() => onLaunchIntentConsumed?.(launchIntent.id)}>Consume launch intent</button>}</div>),
 }));
 vi.mock('../features/config/ConfigPage', () => ({
   ConfigPage: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => <div>Config content<button type="button" onClick={() => onDirtyChange?.(true)}>Make draft dirty</button></div>,
@@ -41,6 +41,28 @@ beforeEach(() => {
   vi.mocked(controlPlaneClient.config).mockResolvedValue({ configured: false, provider: null });
 });
 afterEach(() => vi.restoreAllMocks());
+
+it('locks sidebar navigation and diagnostic context changes during pending Start',async()=>{
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({workspaces:[{name:'repair',rootPath:'/local',status:'unavailable',message:'Missing',action:'Repair',platforms:[{platform:'macos',configPath:'/local/config',status:'unavailable',message:'Missing',action:'Repair',diagnosticAvailable:true,repairAvailable:true}]}]});
+  render(<ControlPlaneApp/>);
+  await userEvent.click(await screen.findByRole('button',{name:'Check macOS environment: repair'}));
+  await userEvent.click(screen.getByRole('button',{name:'Simulate pending start'}));
+  for(const name of ['Overview','Workspace','Config','Create workspace','Check macOS environment: repair'])expect(screen.getByRole('button',{name})).toBeDisabled();
+  await userEvent.click(screen.getByRole('button',{name:'Overview'}));
+  expect(screen.getByText('Devices content')).toBeVisible();
+  await userEvent.click(screen.getByRole('button',{name:'Finish pending start'}));
+  expect(screen.getByRole('button',{name:'Overview'})).toBeEnabled();
+});
+
+it('opens a repairable unavailable macOS workspace for diagnosis without a ready selection',async()=>{
+  vi.mocked(controlPlaneClient.workspaces).mockResolvedValue({workspaces:[{name:'broken-mac',rootPath:'/local',status:'unavailable',message:'Missing app',action:'Repair',platforms:[{platform:'macos',status:'unavailable',configPath:'/local/config',message:'Missing app',action:'Repair',diagnosticAvailable:true,repairAvailable:true}]}]});
+  render(<ControlPlaneApp/>);
+  await userEvent.click(await screen.findByRole('button',{name:'Check macOS environment: broken-mac'}));
+  expect(screen.getByText('Devices Workspace broken-mac')).toBeVisible();
+  expect(screen.getByText('diagnostic:broken-mac:macos:')).toBeVisible();
+  await userEvent.click(screen.getByRole('button',{name:'Overview'}));
+  expect(screen.getByText('Overview unselected')).toBeVisible();
+});
 
 it('defaults to Overview and selects available pages through centralized navigation', async () => {
   const user = userEvent.setup();
