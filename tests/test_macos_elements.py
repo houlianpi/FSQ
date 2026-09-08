@@ -156,7 +156,11 @@ def test_query_semantics_and_button_recovery_from_depth_clipping():
     assert result["match_count"] == 0
 
 
-@pytest.mark.parametrize("source", ['<!DOCTYPE x [<!ENTITY a "xx">]><x>&a;</x>', "<bad", "<x>" * 130 + "</x>" * 130, "<x>" + "<Button/>" * 10001 + "</x>"])
+@pytest.mark.parametrize(
+    "source",
+    ['<!DOCTYPE x [<!ENTITY a "xx">]><x>&a;</x>', "<bad", "<x>" * 130 + "</x>" * 130, "<x>" + "<Button/>" * 10001 + "</x>"],
+    ids=["dtd", "malformed", "depth-limit", "node-limit"],
+)
 def test_query_invalid_or_excessive_source_is_incomplete(source):
     result = AppiumMac2Driver(session=Session(source=source)).ui_snapshot(MacOSUiSnapshotParams(query=MacOSElementQuery(text="button")))
     assert result["coverage"] == "incomplete"
