@@ -1,7 +1,18 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fsq_agent.application.contracts.cases import CaseCreateEventSink, CaseCreateRequest, CaseCreateResult, CaseTestRequest, CaseTestResult
+from fsq_agent.application.contracts.cases import (
+    CaseCreateEventSink,
+    CaseCreateRequest,
+    CaseCreateResult,
+    CaseFormatDiagnostic,
+    CaseFormatRequest,
+    CaseFormatResult,
+    CaseSaveRequest,
+    CaseSaveResult,
+    CaseTestRequest,
+    CaseTestResult,
+)
 from fsq_agent.application.contracts.doctor import (
     DoctorChecks,
     DoctorCommands,
@@ -45,6 +56,11 @@ __all__ = [
     "CaseCreateEventSink",
     "CaseCreateRequest",
     "CaseCreateResult",
+    "CaseFormatDiagnostic",
+    "CaseFormatRequest",
+    "CaseFormatResult",
+    "CaseSaveRequest",
+    "CaseSaveResult",
     "CaseTestRequest",
     "CaseTestResult",
     "DoctorChecks",

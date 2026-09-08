@@ -114,7 +114,9 @@ export function validateRunSnapshot(value: unknown, path = 'run snapshot'): RunS
   if (!validSource || !string(value.startedAt) || !nullableString(value.completedAt) || !bool(value.cancelRequested)
     || !arrayOf(value.events, timelineEvent) || !validActiveStep || !(value.result === null || record(value.result))
     || !string(value.summary) || !nonNegativeInteger(value.screenshotRevision) || !nonNegativeInteger(value.uiSnapshotRevision)
-    || !bool(value.evidenceAvailable) || !bool(value.reportAvailable) || !bool(value.terminal)) {
+    || !bool(value.evidenceAvailable) || !bool(value.reportAvailable) || !bool(value.terminal)
+    || (value.suggestedCaseName !== undefined && !nullableString(value.suggestedCaseName))
+    || (value.recordingDraft !== undefined && value.recordingDraft !== null && !bool(value.recordingDraft))) {
     invalidResponse(path, 'Invalid run snapshot fields.');
   }
   return value as unknown as RunSnapshot;
@@ -183,7 +185,8 @@ function validateReplayVideo(value: unknown): ReplayVideoResponse {
   return value as unknown as ReplayVideoResponse;
 }
 function validateSaveYaml(value: unknown): SaveYamlResponse {
-  if (!record(value) || !hasOnlyKeys(value, ['savedPath', 'message']) || !string(value.savedPath) || !value.savedPath || !string(value.message) || !value.message) {
+  if (!record(value) || !hasOnlyKeys(value, ['savedPath', 'message', 'outcome', 'draft']) || !string(value.savedPath) || !value.savedPath || !string(value.message) || !value.message
+    || (value.outcome !== undefined && value.outcome !== 'created' && value.outcome !== 'unchanged') || (value.draft !== undefined && !bool(value.draft))) {
     invalidResponse('save yaml', 'Invalid Save yaml response fields.');
   }
   return value as unknown as SaveYamlResponse;

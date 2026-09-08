@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 
 from fsq_agent.application._errors import normalize_application_error
-from fsq_agent.application.cases import create_case, test_case
+from fsq_agent.application.cases import create_case, format_case, save_recorded_case, test_case
 from fsq_agent.application.contracts import (
     ApplicationError,
     ApplicationErrorCategory,
@@ -49,6 +49,7 @@ from fsq_agent.application.contracts import (
     event_record,
     result_record,
 )
+from fsq_agent.application.contracts.cases import CaseFormatDiagnostic, CaseFormatRequest, CaseFormatResult, CaseSaveRequest, CaseSaveResult
 from fsq_agent.application.doctor import diagnose_platform_settings, diagnose_registered_platform, diagnose_workspace
 from fsq_agent.application.environments import list_environments
 from fsq_agent.application.providers import complete_github_configuration, configure_azure_openai, provider_status, request_github_device_code
@@ -63,6 +64,11 @@ __all__ = [
     "CaseCreateEventSink",
     "CaseCreateRequest",
     "CaseCreateResult",
+    "CaseFormatDiagnostic",
+    "CaseFormatRequest",
+    "CaseFormatResult",
+    "CaseSaveRequest",
+    "CaseSaveResult",
     "CaseTestRequest",
     "CaseTestResult",
     "DoctorChecks",
@@ -107,6 +113,7 @@ __all__ = [
     "diagnose_registered_platform",
     "diagnose_workspace",
     "event_record",
+    "format_case",
     "generate_run_html",
     "initialize_workspace",
     "list_environments",
@@ -118,6 +125,7 @@ __all__ = [
     "require_initialized_workspace",
     "resolve_workspace_target",
     "result_record",
+    "save_recorded_case",
     "show_run",
     "test_case",
     "update_workspace_platform",

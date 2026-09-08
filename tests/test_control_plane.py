@@ -999,7 +999,7 @@ def test_server_save_yaml_copies_terminal_explore_recording_to_cases(tmp_path: P
     request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\nname: candidate\nplatform: web\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
     server.state.bind_cases_dir(request_id, settings.cases.dir.resolve())
     server.state.bind_run(request_id, "run-1", run_dir.resolve())
 
@@ -1009,7 +1009,7 @@ def test_server_save_yaml_copies_terminal_explore_recording_to_cases(tmp_path: P
 
     assert (active_status, active_payload["code"]) == (409, "run_not_terminal")
     assert status == 200
-    assert payload == {"savedPath": "checkout-flow.fsq.yaml", "message": "Saved YAML to cases/web/checkout-flow.fsq.yaml."}
+    assert payload == {"savedPath": "checkout-flow.fsq.yaml", "message": "Saved YAML to cases/web/checkout-flow.fsq.yaml.", "outcome": "created", "draft": False}
     assert (settings.cases.dir / "checkout-flow.fsq.yaml").read_text(encoding="utf-8").startswith("schemaVersion: fsq.ai-test/v1")
 
 
@@ -1021,7 +1021,7 @@ def test_server_save_yaml_uses_frozen_cases_directory(tmp_path: Path, monkeypatc
     request_id = server.state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     run_dir = original_settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\nname: candidate\nplatform: web\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
     server.state.bind_cases_dir(request_id, original_settings.cases.dir.resolve())
     server.state.bind_run(request_id, "run-1", run_dir.resolve())
     server.state.finish(request_id, status="success", summary="done")
@@ -1065,7 +1065,7 @@ def test_server_save_yaml_rejects_unsafe_case_names(tmp_path: Path, monkeypatch:
     request_id = server.state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="explore", source={"goal": "Go"})
     run_dir = settings.output.runs_dir / "run-1"
     run_dir.mkdir(parents=True)
-    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
+    (run_dir / "recorded.fsq.yaml").write_text("schemaVersion: fsq.ai-test/v1\nname: candidate\nplatform: web\n---\n- waitMs:\n    duration_ms: 1\n", encoding="utf-8")
     server.state.bind_cases_dir(request_id, settings.cases.dir.resolve())
     server.state.bind_run(request_id, "run-1", run_dir.resolve())
     server.state.finish(request_id, status="success", summary="done")
