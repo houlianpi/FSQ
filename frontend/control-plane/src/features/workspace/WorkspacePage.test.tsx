@@ -178,3 +178,14 @@ it('explains a pending configuration save separately from missing platform eligi
  render(<WorkspaceTitlebar workspace={{name:'ready',rootPath:'/ready',status:'available',message:'Ready',platforms:[{platform:'web',status:'available',message:'Ready',configPath:'/ready/web'}]}} onRecordCase={vi.fn()} recordDisabled recordDisabledReason="Wait for the Workspace configuration to finish saving."/>);
  expect(screen.getByRole('button',{name:'Record new case'})).toHaveAccessibleDescription('Wait for the Workspace configuration to finish saving.');
 });
+
+it('keeps the revision in an accessible collapsed details disclosure', async () => {
+  vi.spyOn(controlPlaneClient, 'workspace').mockResolvedValue(summary('demo'));
+  render(<WorkspacePage {...props} selectedName="demo" />);
+  const revision = await screen.findByText('sha256:android');
+  const disclosure = revision.closest('details');
+  expect(disclosure).not.toHaveAttribute('open');
+  await userEvent.click(screen.getByText('Configuration details'));
+  expect(disclosure).toHaveAttribute('open');
+  expect(screen.getByRole('button', {name:'Edit'})).toBeEnabled();
+});

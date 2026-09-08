@@ -1,3 +1,4 @@
+import logoLight from '../../assets/logo-light.svg';
 import { useId, useState, type ComponentType } from 'react';
 import { AlertTriangle, ChevronDown, Check, CircleHelp, Folder, History, House, LoaderCircle, PanelTop, Plus, RefreshCw, Settings } from 'lucide-react';
 import type { ControlPlanePageId, NavigationIcon, NavigationItem, WorkspaceNavigationItem } from './navigation';
@@ -67,7 +68,7 @@ export function ControlPlaneSidebar({ activePage, navigation, workspaces = [], s
   const afterWorkspace = workspaceIndex >= 0 ? primary.slice(workspaceIndex + 1) : [];
   return (
     <div className="cp-sidebar-inner">
-      <div className="cp-brand"><span className="cp-mark">FSQ</span><span><strong>Control Plane</strong><small>Local automation workspace</small></span></div>
+      <div className="cp-brand"><img className="cp-brand-logo" src={logoLight} alt="FSQ" width="400" height="120" /></div>
       <nav className="cp-primary-nav" aria-label="Primary navigation">
         <NavGroup items={beforeWorkspace} activePage={activePage} onNavigate={onNavigate} interactionLocked={interactionLocked} />
         {workspaceNavigation && <div className="cp-workspaces" aria-label="Workspaces">

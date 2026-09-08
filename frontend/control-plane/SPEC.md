@@ -31,6 +31,12 @@ Navigation remains compact and persistent on desktop, with a neutral FSQ mark, a
 
 `DESIGN.md` in this module documents the FSQ-specific palette, type scale, component states, and layout examples under these SPEC contracts. Its visual references are the Vercel and Linear analyses in `VoltAgent/awesome-design-md`, pinned to commit `8147538b4226ae41e2487a9179e3bcc1f68e8554`; it adapts their neutral hierarchy, fine borders, compact rhythm, and restrained accent to an operational application. Visual examples and component recipes remain subordinate to this module SPEC. Runtime rendering uses bundled CSS, existing icons, and local fonts without fetching reference documents, remote styles, brand assets, or fonts.
 
+### Typography and FSQ brand
+
+Shared typography tokens define page titles at 24px/32px, dialog titles at 20px/28px, section titles at 18px/26px, subsection titles at 16px/24px, body and form values at 14px/21px, field labels and ordinary controls at 13px/20px, and metadata, status and compact controls at 12px/18px. Body/value weight is 400, labels/controls 500, and headings 600. Native heading/legend margins are explicitly reset within application UI; rendering does not rely on browser-default heading sizes. Source/Markdown rendering and coarse-pointer input accessibility retain their documented exceptions. Equivalent roles use the same tokens in Home, Workspace, Test Runner, Settings and dialogs.
+
+The shell displays the supplied FSQ light SVG, matching `docs/assets/logo-light.svg` and the requested upstream asset, as a bundled local image in `src/assets/logo-light.svg`. It preserves the original artwork and aspect ratio, has an accessible FSQ name, fits both desktop sidebar and mobile drawer, and replaces the synthetic text mark. Runtime does not request the GitHub/raw asset or a remote font.
+
 ### Shared controls and interaction consistency
 
 Standard buttons, inputs, native selects and complex-picker triggers use a 40px minimum control height; compact toolbar actions use 32px. Controls in one action row share a size tier and baseline. Coarse-pointer targets have at least 44px effective hit areas without overlap. Primary, secondary, quiet and destructive actions have consistent variants across features and dialogs. One action group emphasizes one principal action. Busy labels preserve control width; disabled actions expose their blocking reason nearby, not only on hover.
@@ -38,6 +44,10 @@ Standard buttons, inputs, native selects and complex-picker triggers use a 40px 
 Fields share labels, required/optional text, descriptions, inline validation, readonly/disabled treatments and secret visibility controls. Native selects serve bounded choices; hierarchical Case selection keeps its tree behavior with the same trigger geometry. Content tabs use one underline-selected style and standard tab-panel/keyboard behavior. Explore and Strict Replay are a separate radio-mode choice with concise descriptions. Status chips are non-interactive text/icon indicators. Icons use the existing Lucide family rather than prototype text glyphs; unfamiliar actions such as recording have visible action text.
 
 Unselected and not-yet-checked conditions are neutral setup guidance, not failed checks. Actual unavailable/error/busy/terminal states retain their backend meanings. Error/retry feedback stays next to its operation, preserves appropriate drafts and never starts a run implicitly. Dialogs retain explicit initial focus, bounded Tab order, cancellation rules and return focus. Cancelled creation restores the originating page and connected initiating control.
+
+Workspace create/add/edit and Provider forms share field padding, label spacing, neutral readonly surfaces, border/radius, focus rings and control height. Secret fields and their visibility buttons form one aligned control; environment-row delete actions share its baseline and remain reachable when rows stack. Form sections use 24px separation and 16px field gaps, with label/help gaps of 6px. Cancel and primary submission actions follow their form in a consistent action row. Shared controls are styled centrally; feature styles own geometry rather than overriding equivalent typography/control states with competing recipes.
+
+Provider choice/auth/result and Save YAML dialogs share the opaque white surface, 12px corners, restrained shadow, 24px desktop padding, heading/body/action spacing and shared button tiers. Narrow dialogs use 16px padding, viewport-bounded scrolling and fully reachable actions. Their existing validation, masking, pending, dismissal, focus and authorization behavior is preserved; host-native pickers and confirmation prompts retain native presentation.
 
 ### Application shell and sidebar
 
@@ -96,15 +106,21 @@ Client validation improves feedback but server validation remains authoritative.
 
 With no selection, Workspace shows explicit selection/create guidance. An available or partial selection loads its safe summary and renders one shared identity area with immutable name, complete root path and configured platform labels/status. Long paths wrap or elide accessibly without widening controls. A visible Record new case action in this page action area opens Devices Explore with the current Workspace and no platform selected. It does not add or directly modify files.
 
+Workspace identity has a flexible name/path region and a separate recording-action region. Platform/status badges occupy an intentional wrapped row below the name/path, rather than floating between the path and action or wrapping through the title. Badges are compact non-button indicators without a decorative left stripe; their backend status remains explicit through accessible text and icon. Long names and paths cannot displace or overlap the recording action. Narrow layouts stack identity, platform row, action and any disabled reason in reading order.
+
 Files and Configuration are in-memory presentation tabs below the shared identity. Configuration does not repeat a large Workspace title or root path. Files is initial on Workspace entry; Configure commands select Configuration, and Files returns to the same Workspace. Presentation changes preserve the existing dirty-draft confirmation and private-value cleanup rules. There is no durable route.
 
 Configuration provides canonical persisted platform tabs, one selected platform's read-only target summary and env names/configured state, Edit for an available selected platform and Add platform while fewer than four are configured. Unavailable tabs retain safe repair guidance and existing edit eligibility. No persisted-platform removal is offered.
+
+Configuration uses an 18px section heading and a subordinate 16px target heading aligned with its Edit action, without repeating a page-sized title. The selected platform is already identified by the platform tab. Target label/value rows and environment summary use matching neutral panel treatments and aligned spacing. Revision remains the unchanged concurrency token in state and requests; its full text is available under a keyboard-accessible Configuration details disclosure instead of a permanent raw-hash subtitle. Long values wrap within their panel.
 
 The macOS exception is a server-confirmed `repairAvailable` target failure. `Edit target configuration` is available from its diagnostic context and uses the existing selected-platform edit form and revision-conflict behavior. Invalid configuration documents remain non-editable. Opening diagnostics never loads complete env values; entering Edit loads only the selected platform's private detail. The repair context retains unavailable status and cannot enable unrelated Workspace actions. Other platform edit eligibility is unchanged.
 
 Entering Edit fetches only the selected available platform's complete detail, then reuses target and Environment controls while workspace/platform identity remains read-only. Add creates one absent-platform draft tab and persists it through the additive endpoint; Cancel removes only that draft. Complete env values are held only in trusted-local create/edit state, masked by default, and individually revealable. Save sends one platform's complete target/env replacement plus its `expectedRevision`; success refreshes platform and workspace-summary truth. A revision conflict does not overwrite and offers Reload latest while preserving the unsaved draft until the user chooses.
 
 The Add platform form uses a compact single-column layout with a maximum width of approximately 640px. It presents the Platform selector, the selected platform's target fields, and the optional Environment disclosure in that order, without a repeated Platform summary or a separate Target heading/description column. Environment is collapsed initially. Cancel and Add platform follow the form content immediately within the same column; narrow layouts keep controls and expanded environment rows within the viewport. The shared Workspace identity and Files/Configuration tabs remain visible. This presentation retains the existing platform eligibility, validation, additive save, pending/error, and dirty-draft protection contracts.
+
+Edit uses the same approximately 640px form measure, left-aligned to Configuration content, with vertical section headings and target fields rather than a separate 220px heading column. Create retains its multi-platform builder and uses one consistent bounded form measure; each platform draft stacks selector, target fields and Environment with the same field recipes as add/edit. Repeated section legends do not compete with the primary page title. Existing initial disclosure states, platform eligibility, folder selection, validation order, draft protection and private-value cleanup are unchanged.
 
 Changing tabs, returning, selecting another workspace, navigating elsewhere, or starting Add while a draft is dirty requests discard confirmation. Cancel, confirmed discard, successful save, selection change, and unmount clear private values and reveal state. Selecting another sidebar workspace always opens its main Workspace page rather than retaining the prior configuration subpage.
 
@@ -256,6 +272,9 @@ The run stream resumes from the last accepted sequence. On stream failure, the c
 
 ## Component And State Architecture
 
+`src/assets/logo-light.svg` owns the bundled supplied FSQ light logo, preserving the repository/upstream artwork. Shared typography/control primitives remain owned by `src/styles/tokens.css`; feature styles own layout and local density.
+
+
 Shared presentation ownership:
 
 - `src/shared/ContentTabs.tsx`: typed content-tab rendering, roving keyboard focus and selection, shared across feature presentation tabs without owning feature state or transport.
@@ -371,6 +390,9 @@ Empty states direct the user to create/select a workspace, add a configured plat
 - The visible `Record new case` control has a consistent action label and icon, and `Replay Case` keeps the same visible and accessible action name. Both are native keyboard-operable buttons with stable compact dimensions, visible focus, and narrow layouts that do not overlap the Files identity, presentation mode, or source content.
 
 ## Verification Scope
+
+Visual-consistency verification covers Home, Workspace create with all four platform field variants, Configuration summary, add/edit forms, expanded environment rows, Settings, Provider choice/auth/result dialogs, Save YAML dialogs, and Test Runner preparation/terminal surfaces. At 1440x900, 1024x768 and 390x844, long workspace names/paths/revisions and multiple status badges do not overlap or cause page-level horizontal overflow. Browser checks exercise initial focus, modal Tab containment, allowed Escape dismissal, focus restoration, loading/error/disabled states, and reduced motion without mutating real private configuration. Reviewed desktop/narrow screenshots include Workspace summary, create/edit and representative dialogs. The bundled logo loads from the local built application in source and installed-wheel smoke checks.
+
 
 - Android Preflight tests cover shared-diagnosis projection, stopped-server guidance without auto-start, missing host dependency/app, device authorization/offline/no-device/ambiguous selection, switching devices with out-of-order responses, selection disappearance, independent Case loading, Provider-free Strict, blocked/pending Start, start-time revalidation failure and source preservation. Browser review covers representative ready/unavailable/error states at 1440×900 and 390×844, keyboard use, copy success/failure and clean console output without starting device automation or mutating host/device prerequisites.
 
