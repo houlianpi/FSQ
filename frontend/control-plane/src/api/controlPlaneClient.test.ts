@@ -115,12 +115,12 @@ it.each([
 
 it('sends the confirmed Save yaml case name without a suffix', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-    savedPath: 'checkout-flow.fsq.yaml',
+    savedPath: 'checkout-flow.fsq.yaml', outcome: 'created', draft: false,
     message: 'Saved YAML to cases/web/checkout-flow.fsq.yaml.',
   }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
   await expect(controlPlaneClient.saveYaml('request-1', { caseName: 'checkout-flow' })).resolves.toEqual({
-    savedPath: 'checkout-flow.fsq.yaml',
+    savedPath: 'checkout-flow.fsq.yaml', outcome: 'created', draft: false,
     message: 'Saved YAML to cases/web/checkout-flow.fsq.yaml.',
   });
   expect(fetch).toHaveBeenCalledWith(

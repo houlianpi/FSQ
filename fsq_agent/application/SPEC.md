@@ -13,7 +13,7 @@ Application may consume public APIs from `models`, `config`, `providers`, `agent
 The package exports transport-neutral operations and their Request, Result, Event, and Error contracts through `__init__.py`. The same symbols are available from their canonical resource modules so callers may depend on the narrow boundary they use. Operations are organized by resource domain rather than exposed through one generic `execute(command)` facade:
 
 - Workspace operations support the shared workspace precondition, platform target resolution, read-only runtime readiness coordination, and workspace initialization needed by adapters.
-- Case operations support creating a Case from a Goal and testing an existing Case, including the optional suggestion policy.
+- Case operations support creating a Case from a Goal, testing an existing Case with optional suggestions, static formatting, and saving generated recordings.
 - Run operations support exact-Workspace multi-platform listing, stable detail lookup, safe structured log retrieval, historical inference, and on-demand static HTML generation.
 - Provider operations support user-level Azure OpenAI configuration, GitHub Copilot device authorization/model activation, and active-Provider readiness status. Provider inventory is not an Application operation in the first release.
 - Environment operations support listing and diagnostics.
@@ -24,7 +24,7 @@ Requests contain application inputs, Results contain operation outcomes and safe
 Canonical resource modules are:
 
 - `application.workspace`: Workspace operations.
-- `application.cases`: Case creation and testing operations.
+- `application.cases`: Case creation, testing, formatting, and generated-recording save operations.
 - `application.runs`: persisted Run query and log operations.
 - `application.providers`: Provider operations.
 - `application.environments`: Environment operations.
@@ -42,7 +42,7 @@ Application owns cross-module orchestration, shared request validation, workspac
 
 - `agent` owns AI planning, model/tool orchestration, and dynamic verification.
 - `execution` owns complete dynamic/deterministic run coordination, Case lifecycle semantics, cancellation/teardown ordering, and candidate Case recording.
-- `case_dsl` owns Case DSL parsing, validation, and canonical deterministic-step adaptation.
+- `case_dsl` owns Case parsing, static validation, normalization, canonical serialization, and deterministic-step adaptation.
 - `environments` owns host support, read-only runtime readiness, and Web executable discovery.
 - `core` owns capability execution, runtime-secret handling, evidence policy, and Harness/Driver routing.
 - `report` owns transformation of persisted execution facts into reports and failure analysis.
@@ -50,7 +50,7 @@ Application owns cross-module orchestration, shared request validation, workspac
 
 Application must not copy, reinterpret, or fork those rules. This specification does not require `case create`, `case test`, and suggestion handling to be three independent internal Use Cases.
 
-Goal-based Case creation requests Run-local recording and supplies the selected platform Case directory as the optional publication destination. A validated successful recording is atomically published there as `<run-id>.fsq.yaml`, while the Application result exposes the authoritative Run-local candidate path. Recording or publication failure does not replace the completed dynamic execution result.
+Goal-based Case creation requests Run-local recording and supplies the selected platform Case directory as the optional publication destination. An optional `case_name` selects the stable identity; otherwise Execution derives it from platform and normalized Goal. A validated successful recording is published there as `<case-name>.fsq.yaml` with conflict-safe publication. The result exposes the authoritative Run-local candidate, stable name, published path, publication outcome, and safe warnings, including publication conflicts. Recording or publication failure does not replace the completed dynamic execution result.
 
 Case testing always performs one deterministic Execution run. When suggestion is requested, Application invokes a separate post-execution analysis through an injected read-only suggestion collaborator using the parsed source Case and bounded persisted execution facts. The collaborator receives no Harness, Driver, capability registry, or action executor, cannot rerun the Case, and cannot change the completed Run result. Application returns only Run-local suggestion and optional candidate paths produced beneath the completed Run directory; the source Case and configured Case directory remain unchanged. Suggestion-analysis failure uses stable error code `case.suggestion_failed`, preserves the completed report path in safe error details, and does not rewrite or conceal the completed deterministic execution facts.
 
@@ -85,7 +85,8 @@ Doctor delegates component facts through public Config, Environments, Providers,
 - `__init__.py`: Complete convenience exports for the public Application API.
 - `contracts/`: Canonical transport-neutral Request, Result, Event, Error, summary, and machine-record contracts grouped by resource concern.
 - `workspace.py`: Public Workspace operation boundary and private Workspace orchestration helpers.
-- `cases.py`: Public Case creation/testing operation boundary and private Case orchestration helpers.
+- `cases.py`: Public Case creation, testing, formatting, and generated-recording save boundary.
+- `_case_format.py`: Static Case file orchestration and atomic conditional formatting writes.
 - `runs.py`: Public persisted Run query/log boundary.
 - `providers.py`: Public Provider operation boundary.
 - `environments.py`: Public Environment operation boundary.
@@ -116,3 +117,15 @@ Doctor component failures do not expose exception messages, arguments, traceback
 - Doctor is a read-only Application use case; CLI presents its result but does not reproduce diagnostic or command-readiness rules.
 - Provider configuration and status are user-level Application use cases shared in persistence authority with Control Plane, require no Workspace, and never recover Provider state from `.env` or process environment.
 - The first-release Provider boundary has one active Provider and no listing, profiles, fallback chain, or transport-specific UI models.
+
+## Static Case Formatting And Generated Save
+
+`format_case`, `CaseFormatRequest`, `CaseFormatResult`, and `CaseFormatDiagnostic` are public Application contracts exported through the Case resource and package entries. Requests identify one explicit file path, its current-directory base, and check/diff/write mode. No Workspace registration, platform configuration, Provider readiness, credential resolution, or external runtime construction is required. Platform comes from Case metadata and selects the declarative capability registry, including AI assertion schemas without constructing an evaluator.
+
+The operation delegates content validation and canonical bytes to Case DSL. Cross-file lifecycle resolution and runtime checks are outside its scope and are identified as such in results. Format does not rename files, strip recording metadata, or migrate historical files. Invalid data yields field-addressable safe diagnostics and no write. Successful writes replace atomically only after validating all data, preserve file permission bits, avoid a write when bytes match, and fail if the source changed since it was read rather than knowingly overwriting concurrent edits.
+
+Results include path, mode, `valid`, `formatted`, `changed`, `needs_formatting`, diagnostics, and optional unified diff. `valid` describes static validity; `formatted` describes whether the resulting on-disk file is canonical; `changed` means this invocation actually wrote different bytes; `needs_formatting` describes the original input. Read-only noncanonical input has valid=true, formatted=false, changed=false. Successful normalization writes have valid=true, formatted=true, changed=true. Invalid input has valid=false, formatted=false, changed=false. Diagnostic fields are stable code, safe message, file, optional zero-based command index, and field path; raw rejected values are excluded.
+
+`save_recorded_case`, `CaseSaveRequest`, and `CaseSaveResult` coordinate the supplied frozen candidate/destination/platform/name through Execution's public contained publication boundary. Control Plane owns terminal-run authorization and frozen input selection; Application and Execution own saving semantics.
+
+Suggestion candidates pass shared static validation and canonical serialization before persistence, preserve the parsed source identity and description, and never gain Run provenance in their YAML. Invalid candidates remain unavailable with safe diagnostics; the completed execution result and source bytes are preserved.

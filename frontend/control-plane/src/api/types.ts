@@ -100,6 +100,8 @@ export interface StrictCaseStep {
   message?: string | null;
 }
 export interface RunSnapshot extends ActiveTaskSummary {
+  suggestedCaseName?: string | null;
+  recordingDraft?: boolean | null;
   source: { goal?: string; casePath?: string; caseContent?: string; caseSteps?: StrictCaseStep[] };
   startedAt: string;
   completedAt: string | null;
@@ -159,6 +161,8 @@ export interface ReplayVideoResponse {
   sizeBytes?: number;
 }
 export interface SaveYamlResponse {
+  outcome?: 'created' | 'unchanged';
+  draft?: boolean;
   savedPath: string;
   message: string;
 }
