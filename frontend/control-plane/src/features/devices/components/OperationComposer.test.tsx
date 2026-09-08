@@ -13,6 +13,16 @@ const ready: ReadinessResponse = {
   strict: { status: 'ready', message: 'Strict ready', action: '' },
 };
 
+it('shows the macOS disabled reason and pending-start state',()=>{
+  const props={mode:'explore' as const,goal:'Keep',casePath:'',cases:[],casesState:'ready' as const,readiness:null,discoveryLoading:false,canStart:false,primaryInputRef:createRef<HTMLElement>(),onModeChange:vi.fn(),onGoalChange:vi.fn(),onCaseChange:vi.fn(),onStart:vi.fn()};
+  const {rerender}=render(<OperationComposer {...props} macos blockedReason="Appium is offline."/>);
+  expect(screen.getByRole('button',{name:'Start exploration'})).toBeDisabled();
+  expect(screen.getByText('Appium is offline.')).toBeVisible();
+  rerender(<OperationComposer {...props} macos starting blockedReason="Checking before starting."/>);
+  expect(screen.getByRole('button',{name:'Checking environment…'})).toBeDisabled();
+  expect(screen.getByLabelText('What should FSQ prove?')).toBeDisabled();
+});
+
 it('shows strict case facts without claiming human review', async () => {
   const onModeChange = vi.fn();
   render(<OperationComposer mode="strict" goal="" casePath="flow.fsq.yaml" cases={[{

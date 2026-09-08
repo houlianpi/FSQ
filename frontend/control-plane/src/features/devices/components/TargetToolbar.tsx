@@ -21,7 +21,7 @@ export function TargetToolbar({ workspaces, workspaceName, platforms, platform, 
     <label className="toolbar-select"><span>Workspace</span>
       <select aria-label="Workspace" value={workspaceName} disabled={locked} onChange={(event) => onWorkspaceChange(event.target.value)}>
         <option value="">Select a workspace</option>
-        {workspaces.map((item) => <option key={item.name} value={item.name} disabled={item.status === 'unavailable'}>{item.name}</option>)}
+        {workspaces.map((item) => <option key={item.name} value={item.name} disabled={item.status === 'unavailable' && !item.platforms.some(p=>p.platform==='macos'&&p.diagnosticAvailable)}>{item.name}{item.status==='unavailable'?' — diagnosis only':''}</option>)}
       </select>
     </label>
     <label className="toolbar-select"><span>Platform</span>

@@ -34,6 +34,36 @@ function deferred<T>() {
 
 afterEach(() => vi.restoreAllMocks());
 
+it('loads private repair details only on Edit and clears them during registry revalidation',async()=>{
+  const response:WorkspaceDetail={...summary('repair'),status:'unavailable',platforms:[{platform:'macos',configPath:'mac.yaml',status:'unavailable',message:'Missing app',action:'Repair',diagnosticAvailable:true,repairAvailable:true}]};
+  vi.spyOn(controlPlaneClient,'workspace').mockResolvedValue(response);
+  const detail=vi.spyOn(controlPlaneClient,'workspacePlatform').mockResolvedValue({name:'repair',rootPath:'/local',configPath:'mac.yaml',platform:'macos',target:{bundleId:'com.example.app',appPath:'/Missing.app'},env:{PRIVATE:'sensitive-local-value'},revision:'sha256:old'});
+  const {rerender}=render(<WorkspacePage {...props} selectedName="repair" repairContext/>);
+  await screen.findByRole('button',{name:'Edit target configuration'});
+  expect(detail).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button',{name:'Edit target configuration'}));
+  await waitFor(()=>expect(detail).toHaveBeenCalledWith('repair','macos',expect.any(AbortSignal)));
+  expect(await screen.findByDisplayValue('/Missing.app')).toBeInTheDocument();
+  rerender(<WorkspacePage {...props} selectedName={null} repairContext/>);
+  expect(screen.queryByDisplayValue('/Missing.app')).not.toBeInTheDocument();
+  expect(screen.queryByDisplayValue('sensitive-local-value')).not.toBeInTheDocument();
+});
+
+it('keeps repair configuration isolated across registry loading and reload',async()=>{
+  const response:WorkspaceDetail={...summary('repair'),status:'unavailable',platforms:[{platform:'macos',configPath:'mac.yaml',status:'unavailable',message:'Missing app',action:'Repair',diagnosticAvailable:true,repairAvailable:true}]};
+  vi.spyOn(controlPlaneClient,'workspace').mockResolvedValue(response);
+  const onConfigurationOpenChange=vi.fn();
+  const {rerender}=render(<WorkspacePage {...props} selectedName="repair" repairContext onConfigurationOpenChange={onConfigurationOpenChange}/>);
+  await screen.findByText('macOS configuration unavailable');
+  rerender(<WorkspacePage {...props} selectedName={null} repairContext onConfigurationOpenChange={onConfigurationOpenChange}/>);
+  expect(onConfigurationOpenChange).not.toHaveBeenCalledWith(false);
+  rerender(<WorkspacePage {...props} selectedName="repair" repairContext configurationOpen={false} onConfigurationOpenChange={onConfigurationOpenChange}/>);
+  expect(await screen.findByRole('button',{name:'Back to diagnostics'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Add platform'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('region',{name:/Workspace files/})).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Edit target configuration'})).toBeVisible();
+});
+
 it('groups the workspace name and full path separately from platform metadata', () => {
   const onConfigure = vi.fn();
   render(<WorkspaceTitlebar workspace={{

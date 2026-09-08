@@ -13,6 +13,8 @@ interface ControlPlaneSidebarProps {
   onRetryWorkspaces?: () => void;
   onCreateWorkspace?: () => void;
   onSelectWorkspace?: (workspaceId: string) => void;
+  onDiagnoseWorkspace?: (workspaceId:string) => void;
+  interactionLocked?: boolean;
 }
 
 function NavigationGlyph({ icon }: { icon: NavigationIcon }) {
@@ -35,13 +37,14 @@ function workspaceInitials(label: string) {
   return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 }
 
-function NavGroup({ items, activePage, onNavigate }: Pick<ControlPlaneSidebarProps, 'activePage' | 'onNavigate'> & { items: readonly NavigationItem[] }) {
+function NavGroup({ items, activePage, onNavigate, interactionLocked }: Pick<ControlPlaneSidebarProps, 'activePage' | 'onNavigate' | 'interactionLocked'> & { items: readonly NavigationItem[] }) {
   return items.map((item) => item.available ? (
     <button
       key={item.id}
       className="cp-nav-item"
       type="button"
       aria-current={item.id === activePage ? 'page' : undefined}
+      disabled={interactionLocked}
       onClick={() => onNavigate?.(item.id)}
     >
       <NavigationGlyph icon={item.icon} /><span>{item.label}</span>
@@ -53,7 +56,7 @@ function NavGroup({ items, activePage, onNavigate }: Pick<ControlPlaneSidebarPro
   ));
 }
 
-export function ControlPlaneSidebar({ activePage, navigation, workspaces = [], selectedWorkspaceId, workspaceRegistryStatus = 'ready', workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace }: ControlPlaneSidebarProps) {
+export function ControlPlaneSidebar({ activePage, navigation, workspaces = [], selectedWorkspaceId, workspaceRegistryStatus = 'ready', workspaceRegistryError, onNavigate, onRetryWorkspaces, onCreateWorkspace, onSelectWorkspace, onDiagnoseWorkspace, interactionLocked }: ControlPlaneSidebarProps) {
   const [workspacesExpanded, setWorkspacesExpanded] = useState(true);
   const primary = navigation.filter((item) => item.section === 'primary');
   const workspaceIndex = primary.findIndex((item) => item.id === 'workspace');
@@ -64,12 +67,13 @@ export function ControlPlaneSidebar({ activePage, navigation, workspaces = [], s
     <div className="cp-sidebar-inner">
       <div className="cp-brand"><span className="cp-mark">FSQ</span><span><strong>Control Plane</strong><small>Local automation workspace</small></span></div>
       <nav className="cp-primary-nav" aria-label="Primary navigation">
-        <NavGroup items={beforeWorkspace} activePage={activePage} onNavigate={onNavigate} />
+        <NavGroup items={beforeWorkspace} activePage={activePage} onNavigate={onNavigate} interactionLocked={interactionLocked} />
         {workspaceNavigation && <div className="cp-workspaces" aria-label="Workspaces">
           {workspaceNavigation.available ? <button
             className="cp-nav-item cp-workspaces-trigger"
             type="button"
             aria-current={activePage === workspaceNavigation.id && !selectedWorkspaceId ? 'page' : undefined}
+            disabled={interactionLocked}
             aria-expanded={workspacesExpanded}
             data-active={activePage === workspaceNavigation.id ? 'true' : undefined}
             onClick={() => {
@@ -80,25 +84,25 @@ export function ControlPlaneSidebar({ activePage, navigation, workspaces = [], s
             <NavigationGlyph icon={workspaceNavigation.icon} /><span>{workspaceNavigation.label}</span><ChevronDown className="cp-workspaces-chevron" aria-hidden="true" />
           </button> : <span className="cp-nav-item cp-nav-item--unavailable" aria-disabled="true"><NavigationGlyph icon={workspaceNavigation.icon} /><span>{workspaceNavigation.label}</span><small>Unavailable</small></span>}
           {workspaceNavigation.available && workspacesExpanded && <div className="cp-workspace-children">
-            <button id="workspace-create-sidebar" className="cp-workspace cp-workspace--create" type="button" onClick={onCreateWorkspace}><Plus aria-hidden="true" /><span>Create workspace</span></button>
+            <button id="workspace-create-sidebar" className="cp-workspace cp-workspace--create" type="button" onClick={onCreateWorkspace} disabled={interactionLocked}><Plus aria-hidden="true" /><span>Create workspace</span></button>
             {workspaces.map((workspace) => workspace.available === false ? (
-              <span key={workspace.id} className="cp-workspace cp-workspace--unavailable" aria-disabled="true" title={workspace.message}>
+              <div key={workspace.id}><span className="cp-workspace cp-workspace--unavailable" aria-disabled="true" title={workspace.message}>
                 <AlertTriangle aria-hidden="true" /><span><strong>{workspace.label}</strong>{workspace.description && <small>{workspace.description}</small>}</span>
-              </span>
+              </span>{workspace.diagnosticAvailable && <button className="cp-workspace-retry" type="button" disabled={interactionLocked} aria-label={'Check macOS environment: '+workspace.label} onClick={()=>onDiagnoseWorkspace?.(workspace.id)}>Check macOS environment</button>}</div>
             ) : (
-              <button key={workspace.id} className="cp-workspace" type="button" aria-current={workspace.id === selectedWorkspaceId ? 'page' : undefined} onClick={() => onSelectWorkspace?.(workspace.id)}>
+              <button key={workspace.id} className="cp-workspace" type="button" disabled={interactionLocked} aria-current={workspace.id === selectedWorkspaceId ? 'page' : undefined} onClick={() => onSelectWorkspace?.(workspace.id)}>
                 <span className="cp-project-glyph" aria-hidden="true">{workspaceInitials(workspace.label)}</span><span><strong>{workspace.label}</strong>{workspace.description && <small>{workspace.description}</small>}</span>
               </button>
             ))}
             {workspaceRegistryStatus === 'loading' && <span className="cp-workspaces-empty"><LoaderCircle aria-hidden="true" />Loading workspaces…</span>}
-            {workspaceRegistryStatus === 'error' && <span className="cp-workspaces-empty cp-workspaces-error"><AlertTriangle aria-hidden="true" /><span>{workspaceRegistryError || 'Workspace registry unavailable.'}</span><button className="cp-workspace-retry" type="button" aria-label="Retry workspace registry" onClick={onRetryWorkspaces}><RefreshCw aria-hidden="true" /></button></span>}
+            {workspaceRegistryStatus === 'error' && <span className="cp-workspaces-empty cp-workspaces-error"><AlertTriangle aria-hidden="true" /><span>{workspaceRegistryError || 'Workspace registry unavailable.'}</span><button className="cp-workspace-retry" type="button" disabled={interactionLocked} aria-label="Retry workspace registry" onClick={onRetryWorkspaces}><RefreshCw aria-hidden="true" /></button></span>}
             {workspaceRegistryStatus === 'ready' && workspaces.length === 0 && <span className="cp-workspaces-empty"><CircleHelp aria-hidden="true" />No registered workspaces</span>}
           </div>}
         </div>}
-        <NavGroup items={afterWorkspace} activePage={activePage} onNavigate={onNavigate} />
+        <NavGroup items={afterWorkspace} activePage={activePage} onNavigate={onNavigate} interactionLocked={interactionLocked} />
       </nav>
       <nav className="cp-footer-nav" aria-label="Configuration navigation">
-        <NavGroup items={navigation.filter((item) => item.section === 'footer')} activePage={activePage} onNavigate={onNavigate} />
+        <NavGroup items={navigation.filter((item) => item.section === 'footer')} activePage={activePage} onNavigate={onNavigate} interactionLocked={interactionLocked} />
       </nav>
     </div>
   );

@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 from typing import Any
 
+from fsq_agent.application import diagnose_platform_settings
 from fsq_agent.config import Settings, validate_strict_core_settings
 from fsq_agent.core import AndroidDeviceDiscovery
 
@@ -135,6 +136,11 @@ def _configured_target(settings: Settings) -> dict[str, Any]:
 
 
 def target_readiness_without_discovery(settings: Settings) -> tuple[bool, str, str]:
+    if settings.harness.platform == "macos":
+        result = diagnose_platform_settings(settings)
+        checks = result.checks
+        failed = next((item for item in (checks.runtime, checks.target_configuration, checks.target_availability) if item.status != "ready"), None)
+        return (False, failed.message or "macOS environment is not ready.", failed.action or "Recheck environment.") if failed else (True, "macOS target is ready.", "")
     module = _BACKEND_MODULES[settings.harness.platform]
     if importlib.util.find_spec(module) is None:
         return False, f"The {settings.harness.platform} backend package is not installed.", "Install the platform optional dependencies."

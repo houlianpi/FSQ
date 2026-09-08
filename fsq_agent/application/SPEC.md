@@ -77,6 +77,14 @@ For macOS, Doctor projects Environments-owned prerequisite facts without re-runn
 
 Doctor requests Config inspection with target-path validation deferred to Environments. A missing or unusable application does not prevent independent host prerequisites from being reported; malformed or identity-mismatched platform documents remain configuration errors and cannot authorize target inspection.
 
+### Registered-platform diagnosis
+
+`diagnose_registered_platform` and its immutable `RegisteredPlatformDoctorRequest` are public Application exports for explicitly selected registered Workspace diagnosis. The request supplies a Workspace name and platform; an optional user-config root is a trusted composition input and is not accepted from browser requests. Application resolves the registered root through Config and returns a `DoctorResult` containing only the requested platform. It shares component checks, ordered prerequisite facts, command dependency rules, and safe errors with CLI Doctor. CLI Doctor retains its exact-current-root, all-configured-platform behavior.
+
+The public `diagnose_platform_settings` operation diagnoses already resolved settings and returns a `DoctorPlatformResult`; registered-platform diagnosis and CLI Doctor use this same implementation after establishing trustworthy configuration. Control Plane macOS run preparation uses it on the settings frozen for that execution attempt. Explore requires the `case_create` verdict; Strict requires `case_test` plus Provider readiness only when the parsed Case requires AI assertions. A browser's earlier ready response is not reusable start authority. Failure prevents Run allocation, model execution, Driver construction, and UI actions.
+
+`DoctorPrerequisite` projects the explicit, default-empty `commands` tuple from Environments facts. Application does not extract commands from explanatory prose or execute remediation. Workspace diagnosis preserves independent check results and safe repair eligibility without returning private configuration values.
+
 ## Python Architecture
 
 - Architecture level: Level 3 Layered Application.

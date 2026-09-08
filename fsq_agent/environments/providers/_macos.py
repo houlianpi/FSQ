@@ -123,7 +123,17 @@ def _macos_prerequisites(settings) -> tuple[PlatformPrerequisiteCheck, ...]:
         if bundle_id
         else PlatformPrerequisiteCheck(identifier="bundle_identifier", status="not_applicable", message="No bundle identifier is configured; application path identity is used.")
     )
-    return tuple(errors.get(check.identifier, check) for check in checks)
+    commands = {
+        "appium_cli": ("npm install -g appium",),
+        "appium_mac2_driver": ("appium driver install mac2", "appium driver doctor mac2"),
+    }
+    if xcode == Path("/Applications/Xcode.app"):
+        commands["xcode_developer_directory"] = ("sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer",)
+    elif not developer_ready and xcode is not None:
+        checks[1] = checks[1].model_copy(update={"action": "Use xcode-select --switch with the Contents/Developer directory of your installed Xcode."})
+    if (settings.appium_server_url or "").rstrip("/") == "http://127.0.0.1:4723":
+        commands["appium_endpoint"] = ("appium --address 127.0.0.1 --port 4723",)
+    return tuple(errors.get(check.identifier, check.model_copy(update={"commands": commands.get(check.identifier, ()) if check.status != "ready" else ()})) for check in checks)
 
 
 def _macos_application_path_available(path: Path) -> bool:

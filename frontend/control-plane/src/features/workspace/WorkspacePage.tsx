@@ -15,6 +15,7 @@ import { WorkspaceForm } from './WorkspaceForm';
 import './workspace.css';
 
 interface WorkspacePageProps {
+  repairContext?: boolean;
   selectedName: string | null;
   createRequested: boolean;
   configurationOpen: boolean;
@@ -58,7 +59,7 @@ function platformRevision(detail: WorkspaceDetail): string {
   return detail.platforms.map((platform) => `${platform.platform}:${platform.revision ?? platform.status}`).join('|');
 }
 
-export function WorkspacePage({ selectedName, createRequested, configurationOpen, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onRecordCase, onReplayCase, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
+export function WorkspacePage({ selectedName, createRequested, configurationOpen, repairContext, registryError, onRetryRegistry, onRequestCreate, onCancelCreate, onConfigurationOpenChange, onPresentationChange, onRecordCase, onReplayCase, onCreated, onRegistryChanged, onDirtyChange }: WorkspacePageProps) {
   const previousSelectedName = useRef(selectedName);
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
     const controller = new AbortController();
     void controlPlaneClient.workspace(selectedName, controller.signal).then((response) => {
       setDetail(response);
-      setSelectedPlatform((current) => response.platforms.some((item) => item.platform === current) ? current : (response.platforms[0]?.platform ?? null));
+      setSelectedPlatform((current) => repairContext?'macos':response.platforms.some((item) => item.platform === current) ? current : (response.platforms[0]?.platform ?? null));
     }).catch((reason) => {
       if (!controller.signal.aborted) setError(toApiError(reason));
     }).finally(() => {
@@ -109,7 +110,7 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
     platformDetailController.current?.abort();
     platformDetailController.current = null;
     setDetail(null);
-    if (selectionChanged) onConfigurationOpenChange(false);
+    if (selectionChanged && !repairContext) onConfigurationOpenChange(false);
     setSelectedPlatform(null);
     setFormMode(null);
     setPlatformDetail(null);
@@ -125,7 +126,7 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
 
   useEffect(() => () => platformDetailController.current?.abort(), []);
 
-  const browserVisible = Boolean(detail && !loading && !error && !createRequested && !configurationOpen && !formMode);
+  const browserVisible = Boolean(detail && !loading && !error && !createRequested && !configurationOpen && !repairContext && !formMode);
   useEffect(() => {
     onPresentationChange?.(browserVisible ? 'full-bleed' : 'default');
   }, [browserVisible, onPresentationChange]);
@@ -154,6 +155,7 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
   if (!detail) return null;
 
   const selectedSummary: WorkspacePlatformSummary | null = detail.platforms.find((item) => item.platform === selectedPlatform) ?? null;
+  const visiblePlatforms = repairContext ? detail.platforms.filter(item=>item.platform==='macos') : detail.platforms;
   const absentPlatforms = allPlatforms.filter((platform) => !detail.platforms.some((item) => item.platform === platform));
 
   if (formMode === 'edit' && platformDetail) return <div className="cp-workspace-page cp-workspace-page--form"><WorkspaceForm
@@ -164,7 +166,7 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
     mode="add" workspace={detail} allowedPlatforms={absentPlatforms} onCancel={closeForm} onSaved={acceptPlatformSave} onDirtyChange={onDirtyChange}
   /></div>;
 
-  if (configurationOpen) {
+  if (configurationOpen || repairContext) {
     const selectPlatformTab = (platform: PlatformId) => {
       platformDetailController.current?.abort();
       platformDetailController.current = null;
@@ -176,21 +178,21 @@ export function WorkspacePage({ selectedName, createRequested, configurationOpen
     };
     const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
       let nextIndex: number | null = null;
-      if (event.key === 'ArrowRight') nextIndex = (index + 1) % detail.platforms.length;
-      if (event.key === 'ArrowLeft') nextIndex = (index - 1 + detail.platforms.length) % detail.platforms.length;
+      if (event.key === 'ArrowRight') nextIndex = (index + 1) % visiblePlatforms.length;
+      if (event.key === 'ArrowLeft') nextIndex = (index - 1 + visiblePlatforms.length) % visiblePlatforms.length;
       if (event.key === 'Home') nextIndex = 0;
-      if (event.key === 'End') nextIndex = detail.platforms.length - 1;
+      if (event.key === 'End') nextIndex = visiblePlatforms.length - 1;
       if (nextIndex === null) return;
       event.preventDefault();
-      const next = detail.platforms[nextIndex];
+      const next = visiblePlatforms[nextIndex];
       selectPlatformTab(next.platform);
       document.getElementById(`workspace-platform-tab-${next.platform}`)?.focus();
     };
     return <div className="cp-workspace-page"><section className="cp-workspace-configuration" aria-labelledby="workspace-configuration-heading">
-    <button className="button cp-back-button" type="button" onClick={() => { platformDetailController.current?.abort(); onConfigurationOpenChange(false); }}><ArrowLeft aria-hidden="true" />Workspace</button>
-    <header><div><span className="cp-kicker">Configuration</span><h1 id="workspace-configuration-heading">{detail.name}</h1><p className="mono">{detail.rootPath}</p></div>{absentPlatforms.length > 0 && <button className="button button--primary" type="button" onClick={() => setFormMode('add')}><Plus aria-hidden="true" />Add platform</button>}</header>
-    <div className="cp-platform-tabs" role="tablist" aria-label="Configured platforms">{detail.platforms.map((platform, index) => <button id={`workspace-platform-tab-${platform.platform}`} key={platform.platform} type="button" role="tab" aria-selected={selectedPlatform === platform.platform} aria-controls="workspace-platform-panel" tabIndex={selectedPlatform === platform.platform ? 0 : -1} onKeyDown={(event) => handleTabKeyDown(event, index)} onClick={() => selectPlatformTab(platform.platform)}>{platformLabels[platform.platform]}<span className={`cp-platform-status cp-platform-status--${platform.status}`}>{platform.status}</span></button>)}</div>
-    <div id="workspace-platform-panel" role="tabpanel" aria-labelledby={selectedPlatform ? `workspace-platform-tab-${selectedPlatform}` : undefined}>{!selectedSummary ? <div className="cp-pane-state">No platform configuration is available.</div> : selectedSummary.status === 'unavailable' ? <div className="cp-platform-unavailable" role="status"><AlertCircle aria-hidden="true" /><div><strong>{platformLabels[selectedSummary.platform]} configuration unavailable</strong><p>{selectedSummary.message}</p><small>{selectedSummary.action}</small></div></div> : <div className="cp-platform-summary">
+    <button className="button cp-back-button" type="button" onClick={() => { platformDetailController.current?.abort(); onConfigurationOpenChange(false); }}><ArrowLeft aria-hidden="true" />{repairContext?'Back to diagnostics':'Workspace'}</button>
+    <header><div><span className="cp-kicker">Configuration</span><h1 id="workspace-configuration-heading">{detail.name}</h1><p className="mono">{detail.rootPath}</p></div>{!repairContext && absentPlatforms.length > 0 && <button className="button button--primary" type="button" onClick={() => setFormMode('add')}><Plus aria-hidden="true" />Add platform</button>}</header>
+    <div className="cp-platform-tabs" role="tablist" aria-label="Configured platforms">{visiblePlatforms.map((platform, index) => <button id={`workspace-platform-tab-${platform.platform}`} key={platform.platform} type="button" role="tab" aria-selected={selectedPlatform === platform.platform} aria-controls="workspace-platform-panel" tabIndex={selectedPlatform === platform.platform ? 0 : -1} onKeyDown={(event) => handleTabKeyDown(event, index)} onClick={() => selectPlatformTab(platform.platform)}>{platformLabels[platform.platform]}<span className={`cp-platform-status cp-platform-status--${platform.status}`}>{platform.status}</span></button>)}</div>
+    <div id="workspace-platform-panel" role="tabpanel" aria-labelledby={selectedPlatform ? `workspace-platform-tab-${selectedPlatform}` : undefined}>{!selectedSummary ? <div className="cp-pane-state">No platform configuration is available.</div> : selectedSummary.status === 'unavailable' ? <div className="cp-platform-unavailable" role="status"><AlertCircle aria-hidden="true" /><div><strong>{platformLabels[selectedSummary.platform]} configuration unavailable</strong><p>{selectedSummary.message}</p><small>{selectedSummary.action}</small>{selectedSummary.platform==='macos' && selectedSummary.repairAvailable && <button className="button" type="button" disabled={platformLoading} onClick={()=>loadPlatformDetail('macos')}>Edit target configuration</button>}{platformError && <p role="alert">{platformError.message}</p>}</div></div> : <div className="cp-platform-summary">
       <div className="cp-platform-summary-heading"><div><h2>{platformLabels[selectedSummary.platform]} target</h2><p>Revision <code>{selectedSummary.revision}</code></p></div><button className="button" type="button" disabled={platformLoading} onClick={() => loadPlatformDetail(selectedSummary.platform)}><Edit3 aria-hidden="true" />{platformLoading ? 'Loading…' : 'Edit'}</button></div>
       {platformError && <div className="cp-inline-error" role="alert"><AlertCircle aria-hidden="true" /><span><strong>{platformError.message}</strong><small>{platformError.action}</small></span></div>}
       <div className="cp-workspace-facts"><dl>{targetRows(selectedSummary.target).map(([label, value]) => <div key={label}><dt>{label}</dt><dd className={label.toLowerCase().includes('path') ? 'mono' : undefined}>{value}</dd></div>)}</dl><div className="cp-secret-summary"><ShieldCheck aria-hidden="true" /><div><strong>Runtime environment</strong>{selectedSummary.env?.length ? <ul>{selectedSummary.env.map((item) => <li key={item.name}><code>{item.name}</code><span>Configured</span></li>)}</ul> : <p>No private environment values configured.</p>}</div></div></div>

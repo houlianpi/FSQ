@@ -40,6 +40,14 @@ The public HTTP prefix is `/api/control-plane`.
 
 Target labels are platform-specific presentation metadata: Android uses Device, Web uses Browser, and Windows/macOS use Application. Missing tools, offline/unauthorized Android targets, invalid local paths, unavailable backend packages, and unusable Appium settings remain visible unselectable discovery/readiness results rather than success-shaped empty data.
 
+### macOS Preflight
+
+For macOS, `/readiness` delegates to Application's registered-platform Doctor operation with the server's configured user-config root. It preserves the existing readiness record envelope and adds ordered `prerequisites`, shared `commands` verdicts, and `checkedAt` for the completed check. Prerequisites contain `identifier`, `status`, `message`, optional `action`, and default-empty `commands` strings. Safe diagnostic facts never include workspace env values, provider credentials, raw host output, or backend objects. Android, Web, and Windows retain their existing checks and response behavior.
+
+macOS target discovery reflects shared host/target readiness instead of treating configuration alone as ready. An unavailable configured target is retained as an unselectable result with safe guidance. Valid macOS configuration with a missing application does not prevent readiness or Case inventory queries. Application owns the shared diagnostic logic; transport code does not implement Xcode/Appium probes or another command-readiness matrix.
+
+Before a macOS Explore or Strict attempt starts, execution preparation obtains a fresh shared diagnosis of the resolved settings for that attempt and enforces the relevant command verdict, including authored Strict AI-assertion Provider requirements. Failure returns a structured `macos_preflight_failed` error with safe diagnosis details, releases any preparation reservation, and creates no Run or execution side effects. Browser-supplied ready flags or prerequisite results are never accepted. No diagnosis installs software, accepts licenses, grants permissions, starts services, or performs live UI automation.
+
 ### Provider configuration
 
 Config JSON keys use camelCase. Every Config response uses `Cache-Control: no-store`; GitHub token values are never returned.
@@ -72,6 +80,8 @@ Workspace JSON keys use camelCase. All routes below re-read registry/config trut
 - `GET /api/control-plane/workspaces/{workspaceName}/file?path=<relative>`: Reads one contained regular file below `cases/` or `knowledge/`, checks a fixed byte limit before decoding, requires UTF-8 text, and returns relative path, media/presentation kind, byte size, optional line count, safe modified time, and content. Directories, binary/invalid UTF-8/oversized content, `.fsq`, absolute/traversing paths, and path/symlink escapes return explicit safe errors.
 
 There are no workspace import, unregister, delete, rename, move, platform-delete, platform-rename/replacement, file-write, file-create, file-delete, search, download, or raw-root APIs.
+
+macOS has an explicit diagnostic/repair eligibility exception to unavailable-target navigation: Workspace list and summary may carry `diagnosticAvailable` and `repairAvailable` on a macOS platform whose configuration schema and identity remain valid even though its target path is missing or unusable. These flags are derived by trusted Config/Application inspection, not by parsing error text; they never relabel execution availability. An unavailable Workspace containing such a macOS platform still exposes its safe diagnostic entry. Trusted-local selected-platform detail may load that repairable macOS target for editing, and the existing revision-checked update may replace an unavailable old target with a valid candidate. Complete env values remain confined to the selected-platform edit response. Missing roots, unreadable/malformed documents, registry mismatches, and containment failures do not become editable or execution-ready. Other platforms retain their existing eligibility semantics.
 
 ### Workspace-Aware Devices Runs
 
@@ -156,6 +166,8 @@ SSE disconnection does not mutate execution status. Clients may resume by sequen
 Static serving rejects path traversal and cross-entry fallback. Missing generated assets fail before binding with the repository frontend build instruction.
 
 ## Verification Scope
+
+- macOS Preflight verification covers CLI/shared-diagnosis parity, user-config-root isolation, missing-target diagnostic/edit eligibility, safe command projection, malformed configuration rejection, readiness refresh, and start-time failure before Run allocation or any model/Driver action. Strict tests distinguish provider-free cases from authored AI assertions; other platform readiness remains unchanged.
 
 - Verification covers Provider Config plus workspace parent-directory selection and workspace list/summary/create/platform-detail/add/update route methods and shapes; picker exact-body, selected/cancelled, normalization, one-active conflict, unavailable/failure, fixed-argument no-shell host adapters, bounded output, and shutdown cleanup; registry/canonical platform ordering, partial/unavailable projection, all four platform target variants, immutable identity, independent exact revisions/conflicts, no platform deletion path, atomic writes, rollback/adoption preservation, bounded tree/file browsing, no-store behavior, loopback/same-origin gates, independent GitHub authorization/discovery/save lifecycle, offered-model validation, expiration/cancellation/shutdown scrubbing, saved-only connection testing, workspace-platform readiness/target discovery, safe platform-scoped case discovery, Explore/Strict validation and delegation, strict AI-assertion provider gating, frozen workspace-platform run state, one-task locking, state transitions, cancellation, SSE resume, latest and per-step evidence projection, replay-frame ordering, replay-video validation/storage/range reads, terminal Explore generated-YAML saving to the frozen cases directory, safe errors, static serving, and isolated-wheel startup.
 - Security boundaries cover trusted-local Provider/workspace data, list/detail secret separation, `.fsq` denial, path/symlink containment, exact server-issued step ids, bounded reads/discovery and artifact/frame/video IO, atomic video replacement, secret/reasoning redaction, no browser-supplied roots/artifact paths, no CORS, and no imports from module-private implementation files.

@@ -41,6 +41,8 @@ macOS prerequisite diagnosis performs bounded read-only host inspection and retu
 
 A valid active full-Xcode developer directory proves installation even outside standard application folders. Each host probe isolates unexpected errors into its own safe `error` fact and preserves other independent results. Invalid or non-dictionary application plists fail bundle identity verification without falling back to another installed application. For an executable within an application bundle, that enclosing bundle supplies its identity; path-only targets do not require a separate bundle identifier.
 
+macOS prerequisite facts include explicit copyable repair commands only where a safe, applicable command can be supplied. Custom Xcode installations and non-default Appium endpoints receive guidance that respects their configured values; a default-path command must not be presented as the exact fix for a different configuration. Commands never contain credentials or private target values and are never executed by diagnosis. Android, Web, and Windows prerequisite checks are not extended by the Control Plane integration.
+
 ## Current Invariants
 
 - Current host support behavior remains unchanged.

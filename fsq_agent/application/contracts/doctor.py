@@ -2,9 +2,9 @@
 # Licensed under the MIT License.
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 DetailStatus = Literal["ready", "unavailable", "error", "not_applicable"]
 SummaryStatus = Literal["ready", "partial", "unavailable"]
@@ -13,6 +13,13 @@ SummaryStatus = Literal["ready", "partial", "unavailable"]
 class DoctorRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     current_directory: Path
+
+
+class RegisteredPlatformDoctorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    workspace_name: str = Field(min_length=1, max_length=200)
+    platform: Literal["android", "web", "windows", "macos"]
+    user_config_root: Path | None = None
 
 
 class DoctorStatusDetail(BaseModel):
@@ -29,6 +36,7 @@ class DoctorPrerequisite(BaseModel):
     status: DetailStatus
     message: str
     action: str | None = None
+    commands: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=5)
 
 
 class DoctorChecks(BaseModel):

@@ -60,6 +60,33 @@
 .preflight-item--ready .preflight-icon { background: rgb(22 131 60 / 10%); color: var(--cp-success); }
 .preflight-item--error .preflight-icon, .preflight-item--unavailable .preflight-icon { color: var(--cp-danger); }
 .preflight-action { font-weight: 650; }
+.composer-inputs { border:0; margin:0; padding:0; min-width:0; }
+.preflight-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.preflight-heading h3 { margin:0; }
+.preflight-summary { padding:12px; border:1px solid var(--cp-border); border-radius:8px; background:var(--cp-accent-soft); }
+.preflight-summary--ready { background:rgb(22 131 60 / 8%); }
+.preflight-summary p, .prerequisite-row p { margin:5px 0; font-size:12px; color:var(--cp-muted); overflow-wrap:anywhere; }
+.preflight .prerequisite-list { display:block; }
+.prerequisite-row { padding:13px 0; border-bottom:1px solid var(--cp-border); }
+.prerequisite-heading { display:flex; gap:10px; justify-content:space-between; align-items:start; }
+.prerequisite-heading span { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--cp-warning); }
+.prerequisite-heading svg, .prerequisite-command svg { width:16px; height:16px; flex-shrink:0; }
+.prerequisite-row--ready .prerequisite-heading span { color:var(--cp-success); }
+.prerequisite-row--not_applicable .prerequisite-heading span { color:var(--cp-muted); }
+.prerequisite-command { display:flex; gap:8px; align-items:start; padding:9px; background:var(--cp-surface-soft); border-radius:6px; margin-top:8px; }
+.prerequisite-command code { min-width:0; flex:1; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; user-select:text; }
+.prerequisite-command button { border:0; background:none; min-width:28px; min-height:28px; display:grid; place-items:center; }
+.prerequisite-copy-control { position:relative; flex-shrink:0; }
+.prerequisite-command button[data-copy-state="copied"] { color:var(--cp-success); }
+.prerequisite-command button[data-copy-state="failed"] { color:var(--cp-danger); }
+.prerequisite-copy-feedback { position:absolute; right:0; bottom:calc(100% + 5px); z-index:1; width:max-content; max-width:180px; padding:5px 8px; border:1px solid var(--cp-border); border-radius:6px; background:var(--cp-surface); color:var(--cp-text); box-shadow:0 2px 6px rgb(0 0 0 / 10%); font-size:12px; line-height:1.4; overflow-wrap:anywhere; pointer-events:none; }
+.prerequisite-copy-feedback:empty { display:none; }
+.prerequisite-copy-feedback[data-copy-state="copied"] { color:var(--cp-success); }
+.prerequisite-copy-feedback[data-copy-state="failed"] { color:var(--cp-danger); }
+.prerequisite-passed summary, .prerequisite-guide summary { cursor:pointer; padding:12px 0; color:var(--cp-link); }
+.prerequisite-guide { font-size:12px; }
+.prerequisite-guide pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:10px; background:var(--cp-surface-soft); }
+.prerequisite-repair { margin-top:12px; }
 .inline-error, .page-notice { display: grid; gap: 3px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--cp-danger); border-radius: var(--cp-radius); background: #fff8f8; }
 .inline-error span, .page-notice span { color: var(--cp-muted); font-size: 12px; }
 .page-notice { margin: 0 0 12px; }

@@ -2,6 +2,15 @@ import { controlPlaneClient, ControlPlaneApiError, validateRunSnapshot } from '.
 
 afterEach(() => vi.restoreAllMocks());
 
+it('validates macOS diagnostic records including commands and verdicts',async()=>{
+  const ok={status:'ready',message:'Ready',action:''};
+  const payload={workspaceName:'mobile',platformId:'macos',workspace:ok,platform:ok,provider:ok,target:ok,strict:ok,prerequisites:[{identifier:'appium_cli',status:'unavailable',message:'Missing',action:'Install',commands:['npm install -g appium']}],commands:{caseCreate:ok,caseTest:ok},checkedAt:'2026-09-07T00:00:00Z'};
+  const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify(payload),{status:200}));
+  expect((await controlPlaneClient.readiness('mobile','macos')).prerequisites?.[0].commands).toEqual(['npm install -g appium']);
+  fetch.mockResolvedValue(new Response(JSON.stringify({...payload,commands:undefined}),{status:200}));
+  await expect(controlPlaneClient.readiness('mobile','macos')).rejects.toMatchObject({body:{code:'invalid_response'}});
+});
+
 it.each([
   ['bootstrap', () => controlPlaneClient.bootstrap()],
   ['readiness', () => controlPlaneClient.readiness('mobile', 'web')],

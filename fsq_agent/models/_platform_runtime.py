@@ -2,9 +2,9 @@
 # Licensed under the MIT License.
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 WebBrowserChannel = Literal["chromium", "chrome", "chrome-beta", "chrome-dev", "chrome-canary", "msedge", "msedge-beta", "msedge-dev", "msedge-canary"]
 
@@ -66,3 +66,4 @@ class PlatformPrerequisiteCheck(BaseModel):
     status: Literal["ready", "unavailable", "error", "not_applicable"]
     message: str
     action: str | None = None
+    commands: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=5)

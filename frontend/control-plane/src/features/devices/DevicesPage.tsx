@@ -15,15 +15,17 @@ interface DevicesPageProps {
   onWorkspaceChange: (workspaceName: string | null) => void;
   launchIntent?: DevicesLaunchIntent | null;
   onLaunchIntentConsumed?: (intentId: number) => void;
+  onRepairTarget?: (workspaceName:string) => void;
+  onStartPendingChange?: (pending: boolean) => void;
   renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode;
 }
 
 const platformLabels: Record<PlatformId, string> = { android: 'Android', web: 'Web', windows: 'Windows', macos: 'macOS' };
 
-export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorkspaceName, onWorkspaceChange, launchIntent, onLaunchIntentConsumed, renderShell }: DevicesPageProps) {
+export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorkspaceName, onWorkspaceChange, launchIntent, onLaunchIntentConsumed, onRepairTarget, onStartPendingChange, renderShell }: DevicesPageProps) {
   const selectedWorkspace = workspaces.find((item) => item.name === selectedWorkspaceName) ?? null;
   const platforms = useMemo<PlatformOption[]>(() => (selectedWorkspace?.platforms ?? [])
-    .filter((item) => item.status === 'available')
+    .filter((item) => item.status === 'available' || item.platform==='macos' && item.diagnosticAvailable)
     .map((item) => ({ id: item.platform, label: platformLabels[item.platform] })), [selectedWorkspace]);
   const workspace = useDeviceWorkspace({
     workspaceName: selectedWorkspaceName,
@@ -32,6 +34,7 @@ export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorksp
     onWorkspaceChange,
     launchIntent,
     onLaunchIntentConsumed,
+    onStartPendingChange,
   });
   const primaryInputRef = useRef<HTMLTextAreaElement | HTMLSelectElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -45,7 +48,7 @@ export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorksp
 
   const toolbar = <TargetToolbar
     workspaces={workspaces} workspaceName={selectedWorkspaceName ?? ''} platforms={platforms} platform={workspace.platform} targetId={workspace.targetId} targets={workspace.targets.data}
-    locked={workspace.controlsLocked} loading={workspace.targets.state === 'loading'} connectionLabel={workspace.connectionLabel}
+    locked={workspace.controlsLocked} loading={workspace.targets.state === 'loading'||workspace.readiness.state==='loading'} connectionLabel={workspace.connectionLabel}
     onWorkspaceChange={(name) => onWorkspaceChange(name || null)} onPlatformChange={workspace.setPlatform} onTargetChange={workspace.setTargetId} onRefresh={workspace.refresh}
   />;
   const content = <>
@@ -62,8 +65,10 @@ export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorksp
         <div className={`operation-body${hasRun ? ' operation-body--run' : ''}`}>
           {hasRun ? <RunTimeline snapshot={workspace.snapshot} connection={workspace.connection} selectedStepId={workspace.selectedStepId} resultHeadingRef={resultHeadingRef} onSelectStep={workspace.setSelectedStepId} onCancel={() => void workspace.cancel()} onSaveYaml={(caseName) => void workspace.saveYaml(caseName)} onNewRun={newRun} saveYamlState={workspace.saveYamlState} /> : <OperationComposer
             mode={workspace.mode} goal={workspace.goal} casePath={workspace.casePath} cases={workspace.cases.data?.cases ?? []} casesState={workspace.cases.state}
-            readiness={workspace.readiness.data} discoveryLoading={workspace.readiness.state === 'loading' || workspace.targets.state === 'loading' || workspace.cases.state === 'loading'}
+            readiness={workspace.readiness.data} discoveryLoading={workspace.readiness.state === 'loading' || workspace.targets.state === 'loading' || (workspace.platform !== 'macos' && workspace.cases.state === 'loading')}
             canStart={workspace.canStart} errorMessage={workspace.startError?.message} errorAction={workspace.startError?.action} primaryInputRef={primaryInputRef}
+            macos={workspace.platform==='macos'} starting={workspace.starting} blockedReason={workspace.blockedReason} onRecheck={workspace.refresh}
+            onRepair={workspace.platform==='macos' && selectedWorkspaceName && selectedWorkspace?.platforms.some(item=>item.platform==='macos'&&(item.status==='available'||item.repairAvailable)) && onRepairTarget?()=>onRepairTarget(selectedWorkspaceName):undefined}
             onModeChange={workspace.setMode} onGoalChange={workspace.setGoal} onCaseChange={workspace.setCasePath} onStart={() => void workspace.start()}
           />}
         </div>

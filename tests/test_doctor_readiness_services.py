@@ -344,6 +344,16 @@ def test_custom_active_xcode_satisfies_installation_and_developer_checks(macos_p
     assert service.check_target_availability(macos_probe_environment, checks)[0] is True
 
 
+def test_missing_appium_url_keeps_independent_prerequisites(macos_probe_environment, monkeypatch) -> None:
+    macos_probe_environment.harness.macos.appium_server_url = None
+    monkeypatch.setattr("fsq_agent.environments.providers._macos._endpoint_available", lambda _url: False)
+    checks = PlatformRuntimeService().check_prerequisites(macos_probe_environment)
+    assert len(checks) == 7
+    assert checks[4].status == "unavailable"
+    assert checks[4].commands == ()
+    assert all(item.status == "ready" for item in checks[:4] + checks[5:])
+
+
 def test_macos_prerequisites_accept_executable_target(macos_probe_environment, tmp_path: Path) -> None:
     executable = tmp_path / "application"
     executable.write_bytes(b"")

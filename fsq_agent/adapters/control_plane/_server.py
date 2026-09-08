@@ -17,6 +17,7 @@ from threading import Thread
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from fsq_agent.application import ApplicationError
 from fsq_agent.case_dsl import FSQ_CASE_SUFFIX
 from fsq_agent.models import FsqAgentError
 
@@ -26,7 +27,7 @@ from ._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
 from ._provider_auth import ProviderAuthState
-from ._readiness import load_control_plane_settings, readiness
+from ._readiness import MacOSPreflightError, load_control_plane_settings, readiness
 from ._replay import read_replay_video, replay_video_metadata, store_replay_video
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
@@ -157,11 +158,15 @@ class ControlPlaneServer:
                 return 200, self._readiness(workspace_name, platform), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/targets":
                 workspace_name, platform = _workspace_platform_query(query)
-                settings = self._load_settings(workspace_name, platform)
+                settings = (
+                    load_control_plane_settings(workspace_name, platform, self.options.user_config_root, diagnostic=True) if platform == "macos" else self._load_settings(workspace_name, platform)
+                )
                 return 200, discover_targets(settings), dict(_JSON_HEADERS)
             if path == f"{_API_PREFIX}/cases":
                 workspace_name, platform = _workspace_platform_query(query)
-                settings = self._load_settings(workspace_name, platform)
+                settings = (
+                    load_control_plane_settings(workspace_name, platform, self.options.user_config_root, diagnostic=True) if platform == "macos" else self._load_settings(workspace_name, platform)
+                )
                 return 200, discover_cases(settings), dict(_JSON_HEADERS)
             request_id, suffix = _run_route(path)
             if suffix == "":
@@ -203,6 +208,8 @@ class ControlPlaneServer:
             return 413, _error("evidence_too_large", str(exc), "Inspect the persisted artifact outside the Control Plane display."), dict(_JSON_HEADERS)
         except _RunNotTerminalError as exc:
             return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish."), dict(_JSON_HEADERS)
+        except ApplicationError as exc:
+            return 400, _error(exc.code.value, exc.message, exc.action or "Repair configuration and recheck."), dict(_JSON_HEADERS)
         except (ValueError, FsqAgentError) as exc:
             return 400, _exception_error("invalid_request", exc, "Correct the request and retry."), dict(_JSON_HEADERS)
         except OSError as exc:
@@ -391,7 +398,11 @@ class ControlPlaneServer:
         require_config_access(self.options.host, peer_host)
 
     def _load_settings(self, workspace_name: str, platform: str) -> Any:
-        return load_control_plane_settings(workspace_name, platform, self.options.user_config_root)
+        return (
+            load_control_plane_settings(workspace_name, platform, self.options.user_config_root, diagnostic=True)
+            if platform == "macos"
+            else load_control_plane_settings(workspace_name, platform, self.options.user_config_root)
+        )
 
     def _readiness(self, workspace_name: str, platform: str) -> dict[str, Any]:
         return readiness(workspace_name, platform, self.options.user_config_root)
@@ -447,6 +458,9 @@ class ControlPlaneServer:
             if getattr(prepared, "mode", None) == "strict":
                 self.state.update_source(request_id, {"caseSteps": _strict_case_steps(prepared)})
             self._handles[request_id] = start_execution(prepared, self.state)
+        except MacOSPreflightError as exc:
+            self.state.abandon_preparation(request_id)
+            return 400, {"code": "macos_preflight_failed", "message": exc.message, "action": exc.action, "details": exc.details}
         except (TypeError, ValueError, FsqAgentError, OSError, UnicodeDecodeError) as exc:
             self.state.abandon_preparation(request_id)
             return 400, _exception_error("run_validation_failed", exc, "Refresh readiness, targets, and cases, then retry.", settings=settings)

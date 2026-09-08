@@ -1163,6 +1163,20 @@ def test_readiness_covers_all_supported_platforms(tmp_path: Path, monkeypatch: p
     monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.provider_readiness", lambda _settings: {"status": "ready", "message": "ready", "action": ""})
     monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.target_readiness", lambda _settings: (True, "ready", ""))
     monkeypatch.setattr("fsq_agent.adapters.control_plane._readiness.validate_strict_core_settings", lambda _settings: None)
+    if platform == "macos":
+        from fsq_agent.application import DoctorPlatformResult, DoctorResult
+
+        ready = {"status": "ready", "message": "ready"}
+        diagnosis = DoctorPlatformResult(
+            platform="macos",
+            status="ready",
+            checks=dict.fromkeys(("configuration", "runtime", "target_configuration", "target_availability", "strict_core", "provider", "suggestion_analyzer", "dynamic_agent"), ready),
+            commands=dict.fromkeys(("case_test", "case_test_suggest", "case_create"), ready),
+        )
+        monkeypatch.setattr(
+            "fsq_agent.adapters.control_plane._readiness.diagnose_registered_platform",
+            lambda _request: DoctorResult(status="ready", workspace={"name": "checkout", "root": tmp_path}, platforms=(diagnosis,), actions=()),
+        )
 
     payload = readiness("checkout", platform)
 
