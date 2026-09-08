@@ -71,7 +71,7 @@ def diagnose_registered_platform(request: RegisteredPlatformDoctorRequest) -> Do
         selected = next(item for item in status.platforms if item.platform == request.platform)
     except Exception as exc:
         raise _workspace_error() from exc
-    result = _diagnose_platform(request.platform, status.root_path, selected, request.user_config_root)
+    result = _diagnose_platform(request.platform, status.root_path, selected, request.user_config_root, target_id=request.target_id)
     return DoctorResult(
         status=result.status,
         workspace=DoctorWorkspaceSummary(name=status.name, root=status.root_path),
@@ -80,7 +80,7 @@ def diagnose_registered_platform(request: RegisteredPlatformDoctorRequest) -> Do
     )
 
 
-def _diagnose_platform(platform: str, root: Path, workspace_platform, user_config_root: Path | None = None) -> DoctorPlatformResult:
+def _diagnose_platform(platform: str, root: Path, workspace_platform, user_config_root: Path | None = None, *, target_id: str | None = None) -> DoctorPlatformResult:
     unavailable = DoctorStatusDetail(status="error", code="doctor.configuration_invalid", message=workspace_platform.message, action=workspace_platform.action)
     if workspace_platform.status != "available":
         checks = DoctorChecks(configuration=unavailable, **{name: _blocked("configuration") for name in _CHECK_ORDER[1:]})
@@ -93,6 +93,9 @@ def _diagnose_platform(platform: str, root: Path, workspace_platform, user_confi
         commands = _commands(checks)
         return DoctorPlatformResult(platform=platform, status="unavailable", checks=checks, commands=commands)
 
+    if platform == "android" and target_id is not None:
+        settings = settings.model_copy(deep=True)
+        settings.harness.android.serial = target_id
     return diagnose_platform_settings(settings)
 
 
@@ -100,7 +103,7 @@ def diagnose_platform_settings(settings) -> DoctorPlatformResult:
     platform = settings.harness.platform
     environment = PlatformRuntimeService()
     prerequisite_facts = _safe_prerequisites(environment, settings)
-    prerequisites = tuple(DoctorPrerequisite.model_validate(item.model_dump()) for item in prerequisite_facts)
+    prerequisites = tuple(DoctorPrerequisite.model_validate(item.model_dump(exclude={"target_id"})) for item in prerequisite_facts)
     runtime_check = _safe_check("runtime", lambda: _runtime(environment, platform))
     target_configuration = _configuration_check("target_configuration", lambda: environment.check_target_configuration(settings))
     target_availability = _safe_check("target_availability", lambda: environment.check_target_availability(settings, prerequisite_facts))
@@ -122,6 +125,9 @@ def diagnose_platform_settings(settings) -> DoctorPlatformResult:
     commands = _commands(checks)
     return DoctorPlatformResult(
         platform=platform,
+        target_id=(getattr(getattr(settings.harness, "android", None), "serial", None) or next((item.target_id for item in prerequisite_facts if item.identifier == "device_selection"), None))
+        if platform == "android"
+        else None,
         status=_summary_status([commands.case_test.status, commands.case_test_suggest.status, commands.case_create.status]),
         prerequisites=prerequisites,
         checks=checks,

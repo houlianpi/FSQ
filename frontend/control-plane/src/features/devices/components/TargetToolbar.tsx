@@ -33,6 +33,7 @@ export function TargetToolbar({ workspaces, workspaceName, platforms, platform, 
     <label className="toolbar-select toolbar-select--target"><span>{targets?.targetLabel ?? (platform === 'android' ? 'Device' : platform === 'web' ? 'Browser' : 'Application')}</span>
       <select aria-label={targets?.targetLabel ?? 'Target'} value={targetId} disabled={locked || loading} onChange={(event) => onTargetChange(event.target.value)}>
         <option value="">{loading ? 'Discovering…' : 'Select a target'}</option>
+        {platform==='android' && targetId && !targets?.targets.some(target=>target.id===targetId) && <option value={targetId} disabled>Selected device unavailable — choose another</option>}
         {targets?.targets.map((target) => <option key={target.id} value={target.id} disabled={!target.selectable}>{target.label}{target.selectable ? '' : ` — ${target.status}`}</option>)}
       </select>
     </label>

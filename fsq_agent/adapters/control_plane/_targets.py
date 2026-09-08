@@ -88,6 +88,8 @@ def _target_metadata(metadata: dict[str, str]) -> dict[str, str]:
 
 def _android_discovery_error(error_code: str) -> dict[str, Any]:
     errors = {
+        "adb_server_unavailable": ("adb-server-unavailable", "ADB server is unavailable. Start it manually, then recheck.", "unavailable"),
+        "adb_endpoint_invalid": ("adb-endpoint-invalid", "ADB endpoint is invalid or unsupported. Repair local ADB endpoint settings.", "error"),
         "adb_missing": ("adb-missing", "ADB is not installed or not on PATH.", "missing"),
         "adb_timeout": ("adb-timeout", "ADB target discovery timed out.", "timeout"),
         "adb_start_failed": ("adb-error", "ADB target discovery could not start.", "error"),

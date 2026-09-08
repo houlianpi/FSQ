@@ -178,6 +178,12 @@ Platform-runtime diagnostic exports include immutable `PlatformPrerequisiteCheck
 
 Prerequisite facts may carry an immutable, default-empty `commands` tuple of bounded operator-run command strings. Commands are explicit guidance, never an execution request; they contain no credentials, workspace secrets, or unrestricted local target data. The four diagnostic statuses retain their meaning; `not_applicable` does not by itself prove readiness.
 
+`PlatformPrerequisiteCheck` additionally accepts an optional stable `code` for machine-readable failure reasons; existing consumers may omit it. Android diagnosis differentiates ADB missing/server unavailable/endpoint invalid/timeout/query failure, no device, unauthorized/offline/unsupported device state, selection required/selected device missing, and application identity/missing/query-failed outcomes without embedding raw backend details.
+
+`PlatformPrerequisiteCheck.target_id` is an optional bounded transient Android device identity carried by the device-selection fact for shared diagnosis composition. It has the same serial validation as `AndroidDevice`, is absent for other prerequisites/platforms, and is never persisted as Workspace configuration. Application removes it from individual `DoctorPrerequisite` projections and exposes the effective identity only as `DoctorPlatformResult.target_id` and the selected-device readiness response binding.
+
+`AndroidDevice` and `AndroidDeviceDiscoveryResult` are shared immutable, SDK-neutral device-inventory contracts. Existing serial/state/allowlisted metadata and paired error-code/error-message semantics remain. Discovery errors include an unavailable existing ADB server, invalid endpoint and protocol/query failure in addition to executable absence and timeout; they never encode auto-start as a successful diagnostic action. Serial values are bounded exact transient identifiers, reject protocol delimiters/control characters, and are not persisted Workspace configuration. Package-query outcomes preserve installed, absent, timeout and query failure distinctions for Environments-owned diagnosis rather than collapsing into a boolean.
+
 Exception exports:
 
 - `FsqAgentError`: Base exception for all project errors.

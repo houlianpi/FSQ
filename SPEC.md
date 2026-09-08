@@ -60,7 +60,11 @@ The local workspace setup entry is `fsq init --platform android|web|windows|maco
 
 Doctor also reports ordered platform prerequisite details when a platform has independently diagnosable host requirements. For macOS these details cover full Xcode installation, the active Xcode developer directory, the Appium CLI, the installed Appium Mac2 driver, the configured Appium endpoint, the configured application path, and the configured bundle identifier. Each detail has a stable identifier, safe status, explanation, and actionable operator guidance. The existing component and command verdicts remain the summary authority.
 
-Control Plane macOS Preflight consumes the same Application-owned diagnosis as CLI Doctor for the explicitly selected registered Workspace and platform. It displays prerequisite failures and operator repair guidance before execution, refreshes diagnosis on request, and rechecks readiness before starting Explore or Strict Replay. Missing applications remain diagnosable and repairable when Workspace configuration identity is trustworthy; diagnostic access does not imply execution readiness. Prerequisite presentation is reusable across platforms, while Android, Web, and Windows retain their existing Control Plane checks.
+Control Plane Android and macOS Preflight consume the same Application-owned diagnosis as CLI Doctor for the explicitly selected registered Workspace and platform. They display prerequisite failures and operator repair guidance before execution, refresh diagnosis on request, and recheck readiness before starting Explore or Strict Replay. Missing applications remain diagnosable when Workspace configuration identity is trustworthy; diagnostic access does not imply execution readiness. macOS retains its repairable-missing-path entry. Android diagnosis binds device-specific checks to the current transient device selection, without persisting a serial. Web and Windows retain their existing Control Plane checks.
+
+Android prerequisites cover ADB availability, the uiautomator2 Python dependency, an already-running ADB server, device discovery/authorization, exact device selection, application identity, and application installation on that selected device. Shared diagnosis distinguishes missing requirements, timeout, query failure, authorization/offline state, and ambiguous selection. It never conflates an unsuccessful package query with a proven missing application.
+
+Android diagnostic and target-discovery operations communicate with an existing ADB server using bounded read-only protocol requests that cannot start or restart it. They do not invoke auto-starting ADB client discovery or backend connection helpers. An absent server is an actionable prerequisite failure; `adb start-server` is operator-run guidance only. Opening a read-only ADB diagnostic transport is not a Driver or device-automation session. Diagnosis does not initialize uiautomator2, install device agents, grant permissions, or promise readiness of device-side automation that has not been exercised.
 
 Doctor does not mutate Workspace or Provider state, install software, start authentication, send model inference, launch an application/browser, construct an externally connecting Harness/Driver, or create an Appium/browser/device session. It may perform safe local inspection, cached-token refresh already permitted by Provider readiness, static settings validation, module import checks, and capability-registry construction. `init` remains the only CLI command that establishes Workspace state and checks only the selected platform's pre-persistence target and Runtime prerequisites; Doctor rechecks current state across all configured platforms.
 
@@ -232,7 +236,7 @@ flowchart TD
     Drivers --> CoreInterfaces
     Capabilities[capabilities] --> Models
     Core --> Capabilities
-    Core -->|PlatformRuntimeService compatibility export| Environments
+    Core -->|Runtime and Android discovery compatibility exports| Environments
     Frontend --> FrontendControlPlane[frontend/control-plane]
     FrontendControlPlane --> ControlPlane
     FrontendControlPlane --> ControlPlaneStatic[generated Control Plane static assets]

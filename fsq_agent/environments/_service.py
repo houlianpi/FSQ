@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
-from fsq_agent.environments.providers._android import ANDROID_RUNTIME_PROVIDER, android_application_is_installed, discover_android_devices
+from fsq_agent.environments.providers._android import ANDROID_RUNTIME_PROVIDER, android_prerequisites
 from fsq_agent.environments.providers._macos import MACOS_RUNTIME_PROVIDER, _macos_prerequisites
 from fsq_agent.environments.providers._web import WEB_NAMES, WEB_RUNTIME_PROVIDER, web_candidate_paths
 from fsq_agent.environments.providers._windows import WINDOWS_RUNTIME_PROVIDER
@@ -54,6 +54,10 @@ class PlatformRuntimeService:
         return True, "Platform Target configuration is ready.", ""
 
     def check_target_availability(self, settings, prerequisites: tuple[PlatformPrerequisiteCheck, ...] | None = None) -> tuple[bool, str, str]:
+        if settings.harness.platform == "android":
+            facts = prerequisites if prerequisites is not None else self.check_prerequisites(settings)
+            failed = next((item for item in facts if item.status != "ready"), None)
+            return (False, failed.message, failed.action or "Recheck Android environment.") if failed else (True, "The selected Android device and application are available.", "")
         configured, message, action = self.check_target_configuration(settings)
         if not configured:
             return configured, message, action
@@ -75,29 +79,11 @@ class PlatformRuntimeService:
             if failed is not None:
                 return False, failed.message, failed.action or "Repair the macOS host prerequisite."
             return True, "Configured macOS host prerequisites and application Target are available.", ""
-        from fsq_agent.models import AndroidDeviceDiscoveryResult
-
-        discovery = discover_android_devices()
-        if not isinstance(discovery, AndroidDeviceDiscoveryResult):
-            return False, "No online authorized Android device is available.", "Connect and authorize an Android device."
-        if discovery.error_code == "adb_missing":
-            return False, "ADB is unavailable for Android Target discovery.", "Install Android platform tools and make adb available on PATH."
-        if discovery.error_code:
-            return False, "Android Target discovery could not be completed.", "Run environment diagnostics and repair ADB connectivity."
-        serial = (settings.harness.android.serial or "").strip()
-        online = [device for device in discovery.devices if device.state == "device"]
-        if serial:
-            online = [device for device in online if device.serial == serial]
-        if not online:
-            return False, "The configured Android device is not online and authorized.", "Connect and authorize the configured Android device."
-        if not serial and len(online) != 1:
-            return False, "Android Target selection is ambiguous.", "Configure an exact Android device serial."
-        selected_device = online[0]
-        if not android_application_is_installed(selected_device.serial, settings.harness.android.app_id):
-            return False, "The configured Android application is not installed on the selected device.", "Install the application on the selected Android device."
-        return True, "The configured Android device and application are available.", ""
+        return False, "Unsupported platform target.", "Select a supported platform."
 
     def check_prerequisites(self, settings) -> tuple[PlatformPrerequisiteCheck, ...]:
+        if settings.harness.platform == "android":
+            return android_prerequisites(settings.harness.android)
         if settings.harness.platform != "macos":
             return ()
         return _macos_prerequisites(settings.harness.macos)

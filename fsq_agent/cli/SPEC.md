@@ -106,6 +106,8 @@ Azure OpenAI configuration requires base URL, model/deployment name, and API key
 
 Doctor is read-only: it does not install, mutate configuration, authenticate interactively, send model inference, launch applications/browsers, or create external sessions. Provider readiness may perform only its supported non-interactive cached-token refresh. Human color never carries unique information, and all output obeys the global secret and safe-error contract.
 
+Android Doctor presents ordered ADB executable, uiautomator2 dependency, existing ADB server, device connection/authorization, device selection, application identity and installation checks, including stable codes and explicit copyable/manual repair guidance. It uses shared Application diagnosis and does not spawn ADB or initialize device automation. Human and JSON/JSONL distinguish missing prerequisites, timeouts and query failures; `not_applicable` explains blocked checks. No new Doctor platform or serial option is introduced. Multiple online devices direct the user to explicit Control Plane selection or an operator-controlled unambiguous connection, never to a nonexistent persisted serial setting. The default-server startup command is manual guidance, not performed by Doctor.
+
 ## Run Commands
 
 ```bash

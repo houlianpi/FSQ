@@ -130,11 +130,12 @@ function validateReadiness(value: unknown): ReadinessResponse {
   if (!record(value) || !string(value.workspaceName) || !platform(value.platformId)
     || !readinessRecord(value.workspace) || !readinessRecord(value.platform) || !readinessRecord(value.provider)
     || !readinessRecord(value.target) || !readinessRecord(value.strict)) invalidResponse('readiness', 'Invalid readiness fields.');
-  if (value.platformId === 'macos' && (!arrayOf(value.prerequisites, item => record(item) && string(item.identifier)
+  if ((value.platformId === 'macos' || value.platformId === 'android') && (!arrayOf(value.prerequisites, item => record(item) && string(item.identifier)
     && ['ready','unavailable','error','not_applicable'].includes(String(item.status)) && string(item.message)
     && (item.action == null || string(item.action)) && arrayOf(item.commands, item => string(item) && item.length <= 2000))
     || !record(value.commands) || !readinessRecord(value.commands.caseCreate) || !readinessRecord(value.commands.caseTest)
-    || !string(value.checkedAt) || !Number.isFinite(Date.parse(value.checkedAt)))) invalidResponse('readiness', 'Invalid macOS diagnostics.');
+    || !string(value.checkedAt) || !Number.isFinite(Date.parse(value.checkedAt)))) invalidResponse('readiness', 'Invalid environment diagnostics.');
+  if (value.platformId === 'android' && !(value.targetId === null || string(value.targetId))) invalidResponse('readiness', 'Invalid Android device binding.');
   return value as unknown as ReadinessResponse;
 }
 function validateTargets(value: unknown): TargetsResponse {
@@ -373,8 +374,9 @@ export function toApiError(error: unknown): ApiErrorBody {
 
 export const controlPlaneClient = {
   bootstrap: (signal?: AbortSignal) => jsonRequest('/bootstrap', validateBootstrap, { signal }),
-  readiness: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
-    jsonRequest(`/readiness?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
+  readiness: (workspaceName: string, platform: PlatformId, signal?: AbortSignal, targetId?: string | null) =>
+    platform === 'android' ? jsonRequest('/readiness', validateReadiness, { method: 'POST', body: JSON.stringify({workspaceName, platform, targetId: targetId || null}), signal })
+      : jsonRequest(`/readiness?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateReadiness, { signal }),
   targets: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>
     jsonRequest(`/targets?workspace=${encodeURIComponent(workspaceName)}&platform=${encodeURIComponent(platform)}`, validateTargets, { signal }),
   cases: (workspaceName: string, platform: PlatformId, signal?: AbortSignal) =>

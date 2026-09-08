@@ -267,7 +267,7 @@ export function ControlPlaneApp() {
 
   return <DevicesPage workspaces={authoritativeWorkspaces} workspaceRegistryReady={workspaceRegistryReady} selectedWorkspaceName={diagnosticWorkspace?.name ?? selectedWorkspace?.name ?? null} onWorkspaceChange={selectDeviceWorkspace}
     onStartPendingChange={handleStartPendingChange}
-    onRepairTarget={(name)=>{if(startPendingRef.current)return;setDiagnosticWorkspaceName(name);setSelectedWorkspaceName(null);setWorkspaceConfigurationOpen(true);setCreateRequested(false);setWorkspaceOutletPresentation('default');setActivePage('workspace');}}
+    onRepairTarget={(name,platform)=>{if(startPendingRef.current)return;if(platform==='android'){setDiagnosticWorkspaceName(null);setSelectedWorkspaceName(name);}else{setDiagnosticWorkspaceName(name);setSelectedWorkspaceName(null);}setWorkspaceConfigurationOpen(true);setCreateRequested(false);setWorkspaceOutletPresentation('default');setActivePage('workspace');}}
     launchIntent={devicesLaunchIntent}
     onLaunchIntentConsumed={(intentId) => setDevicesLaunchIntent((current) => current?.id === intentId ? null : current)}
     renderShell={(toolbar, content) => <ControlPlaneShell

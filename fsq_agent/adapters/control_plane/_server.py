@@ -27,7 +27,7 @@ from ._directory_picker import DirectoryPicker, DirectoryPickerAPIError
 from ._evidence import EvidenceProjection, read_replay_frames, read_screenshot, read_step_artifacts, read_ui_snapshot, safe_exception_message, safe_text
 from ._execution import ExecutionHandle, prepare_run, start_execution
 from ._provider_auth import ProviderAuthState
-from ._readiness import MacOSPreflightError, load_control_plane_settings, readiness
+from ._readiness import AndroidPreflightError, MacOSPreflightError, load_control_plane_settings, readiness
 from ._replay import read_replay_video, replay_video_metadata, store_replay_video
 from ._state import BusyError, ControlPlaneState, RequestNotFoundError
 from ._targets import discover_targets
@@ -226,6 +226,17 @@ class ControlPlaneServer:
         origin: str | None = None,
         host: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
+        if path == f"{_API_PREFIX}/readiness":
+            try:
+                self._require_config_access(peer_host)
+                require_same_origin_write(origin, host)
+                if set(body) != {"workspaceName", "platform", "targetId"} or body.get("platform") != "android":
+                    return 400, _error("invalid_diagnosis", "Invalid Android diagnosis fields.", "Select a Workspace and device.")
+                return 200, readiness(body["workspaceName"], "android", self.options.user_config_root, target_id=body["targetId"])
+            except ConfigAPIError as exc:
+                return exc.status, _error(exc.code, exc.message, exc.action)
+            except Exception:  # noqa: BLE001 -- diagnosis boundary never returns private inputs.
+                return 400, _error("android_diagnosis_failed", "Android diagnosis could not be completed.", "Select a valid Workspace and device, then recheck.")
         if path == f"{_API_PREFIX}/workspaces/pick-parent-directory":
             return self._handle_workspace_write("POST", path, body, peer_host=peer_host, origin=origin, host=host)
         workspace_name, workspace_suffix = _workspace_route_or_none(path)
@@ -458,6 +469,9 @@ class ControlPlaneServer:
             if getattr(prepared, "mode", None) == "strict":
                 self.state.update_source(request_id, {"caseSteps": _strict_case_steps(prepared)})
             self._handles[request_id] = start_execution(prepared, self.state)
+        except AndroidPreflightError as exc:
+            self.state.abandon_preparation(request_id)
+            return 400, {"code": "android_preflight_failed", "message": exc.message, "action": exc.action, "details": exc.details}
         except MacOSPreflightError as exc:
             self.state.abandon_preparation(request_id)
             return 400, {"code": "macos_preflight_failed", "message": exc.message, "action": exc.action, "details": exc.details}

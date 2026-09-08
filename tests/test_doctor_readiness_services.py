@@ -57,7 +57,7 @@ def test_web_target_checks_are_static_and_do_not_construct_driver(tmp_path: Path
     def fail_driver_import(*_args, **_kwargs):
         raise AssertionError("Target readiness must not construct a Driver")
 
-    monkeypatch.setattr("fsq_agent.environments._service.discover_android_devices", fail_driver_import)
+    monkeypatch.setattr("fsq_agent.environments.providers._android.discover_android_devices", fail_driver_import)
     service = PlatformRuntimeService()
 
     assert service.check_target_configuration(settings)[0] is True
@@ -65,6 +65,7 @@ def test_web_target_checks_are_static_and_do_not_construct_driver(tmp_path: Path
 
 
 def test_android_target_requires_exact_online_device_and_installed_app(monkeypatch) -> None:
+    monkeypatch.setattr("fsq_agent.environments.providers._android.shutil.which", lambda _: "/adb")
     from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult
 
     settings = SimpleNamespace(
@@ -74,11 +75,11 @@ def test_android_target_requires_exact_online_device_and_installed_app(monkeypat
         )
     )
     monkeypatch.setattr(
-        "fsq_agent.environments._service.discover_android_devices",
+        "fsq_agent.environments.providers._android.discover_android_devices",
         lambda: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device"), AndroidDevice(serial="device-2", state="device")]),
     )
     calls = []
-    monkeypatch.setattr("fsq_agent.environments._service.android_application_is_installed", lambda serial, app_id: calls.append((serial, app_id)) or True)
+    monkeypatch.setattr("fsq_agent.environments.providers._android.package_status", lambda serial, app_id: calls.append((serial, app_id)) or "installed")
 
     ready, _, _ = PlatformRuntimeService().check_target_availability(settings)
 
@@ -87,14 +88,15 @@ def test_android_target_requires_exact_online_device_and_installed_app(monkeypat
 
 
 def test_android_target_fails_when_application_is_absent(monkeypatch) -> None:
+    monkeypatch.setattr("fsq_agent.environments.providers._android.shutil.which", lambda _: "/adb")
     from fsq_agent.models import AndroidDevice, AndroidDeviceDiscoveryResult
 
     settings = SimpleNamespace(harness=SimpleNamespace(platform="android", android=SimpleNamespace(app_id="com.example.app", serial="device-1")))
     monkeypatch.setattr(
-        "fsq_agent.environments._service.discover_android_devices",
+        "fsq_agent.environments.providers._android.discover_android_devices",
         lambda: AndroidDeviceDiscoveryResult(devices=[AndroidDevice(serial="device-1", state="device")]),
     )
-    monkeypatch.setattr("fsq_agent.environments._service.android_application_is_installed", lambda *_args: False)
+    monkeypatch.setattr("fsq_agent.environments.providers._android.package_status", lambda *_args: "absent")
 
     ready, message, _ = PlatformRuntimeService().check_target_availability(settings)
 
@@ -103,11 +105,12 @@ def test_android_target_fails_when_application_is_absent(monkeypatch) -> None:
 
 
 def test_android_target_reports_missing_adb_action(monkeypatch) -> None:
+    monkeypatch.setattr("fsq_agent.environments.providers._android.shutil.which", lambda _: None)
     from fsq_agent.models import AndroidDeviceDiscoveryResult
 
     settings = SimpleNamespace(harness=SimpleNamespace(platform="android", android=SimpleNamespace(app_id="com.example.app", serial="device-1")))
     monkeypatch.setattr(
-        "fsq_agent.environments._service.discover_android_devices",
+        "fsq_agent.environments.providers._android.discover_android_devices",
         lambda: AndroidDeviceDiscoveryResult(error_code="adb_missing", error_message="unsafe detail"),
     )
 
@@ -115,7 +118,7 @@ def test_android_target_reports_missing_adb_action(monkeypatch) -> None:
 
     assert ready is False
     assert "ADB is unavailable" in message
-    assert "platform tools" in action
+    assert "Platform-Tools" in action
 
 
 def test_macos_target_requires_available_appium_endpoint(tmp_path: Path, monkeypatch) -> None:

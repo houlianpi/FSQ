@@ -15,7 +15,7 @@ interface DevicesPageProps {
   onWorkspaceChange: (workspaceName: string | null) => void;
   launchIntent?: DevicesLaunchIntent | null;
   onLaunchIntentConsumed?: (intentId: number) => void;
-  onRepairTarget?: (workspaceName:string) => void;
+  onRepairTarget?: (workspaceName:string, platform?:'macos'|'android') => void;
   onStartPendingChange?: (pending: boolean) => void;
   renderShell: (toolbar: React.ReactNode, content: React.ReactNode) => React.ReactNode;
 }
@@ -65,10 +65,10 @@ export function DevicesPage({ workspaces, workspaceRegistryReady, selectedWorksp
         <div className={`operation-body${hasRun ? ' operation-body--run' : ''}`}>
           {hasRun ? <RunTimeline snapshot={workspace.snapshot} connection={workspace.connection} selectedStepId={workspace.selectedStepId} resultHeadingRef={resultHeadingRef} onSelectStep={workspace.setSelectedStepId} onCancel={() => void workspace.cancel()} onSaveYaml={(caseName) => void workspace.saveYaml(caseName)} onNewRun={newRun} saveYamlState={workspace.saveYamlState} /> : <OperationComposer
             mode={workspace.mode} goal={workspace.goal} casePath={workspace.casePath} cases={workspace.cases.data?.cases ?? []} casesState={workspace.cases.state}
-            readiness={workspace.readiness.data} discoveryLoading={workspace.readiness.state === 'loading' || workspace.targets.state === 'loading' || (workspace.platform !== 'macos' && workspace.cases.state === 'loading')}
+            readiness={workspace.readiness.data} discoveryLoading={workspace.readiness.state === 'loading' || workspace.targets.state === 'loading' || (workspace.platform !== 'macos' && workspace.platform !== 'android' && workspace.cases.state === 'loading')}
             canStart={workspace.canStart} errorMessage={workspace.startError?.message} errorAction={workspace.startError?.action} primaryInputRef={primaryInputRef}
-            macos={workspace.platform==='macos'} starting={workspace.starting} blockedReason={workspace.blockedReason} onRecheck={workspace.refresh}
-            onRepair={workspace.platform==='macos' && selectedWorkspaceName && selectedWorkspace?.platforms.some(item=>item.platform==='macos'&&(item.status==='available'||item.repairAvailable)) && onRepairTarget?()=>onRepairTarget(selectedWorkspaceName):undefined}
+            macos={workspace.platform==='macos'} android={workspace.platform==='android'} starting={workspace.starting} blockedReason={workspace.blockedReason} onRecheck={workspace.refresh}
+            onRepair={(workspace.platform==='macos'||workspace.platform==='android') && selectedWorkspaceName && selectedWorkspace?.platforms.some(item=>item.platform===workspace.platform&&(item.status==='available'||item.repairAvailable)) && onRepairTarget?()=>onRepairTarget(selectedWorkspaceName,workspace.platform as 'macos'|'android'):undefined}
             onModeChange={workspace.setMode} onGoalChange={workspace.setGoal} onCaseChange={workspace.setCasePath} onStart={() => void workspace.start()}
           />}
         </div>

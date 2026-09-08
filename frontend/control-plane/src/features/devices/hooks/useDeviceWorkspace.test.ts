@@ -8,6 +8,7 @@ const bootstrap: BootstrapResponse = {
   busy: false, activeTask: null,
 };
 const readiness = (platform: 'android' | 'web'): ReadinessResponse => ({
+  ...(platform === 'android' ? {targetId:'android-target',prerequisites:[],commands:{caseCreate:{status:'ready' as const,message:'Ready',action:''},caseTest:{status:'ready' as const,message:'Ready',action:''}},checkedAt:'2026-09-08T00:00:00Z'} : {}),
   workspaceName: 'test', platformId: platform,
   platform: { status: 'ready', message: 'ready', action: '' },
   workspace: { status: 'ready', message: 'ready', action: '' }, provider: { status: 'ready', message: 'ready', action: '' },
@@ -24,6 +25,45 @@ const runSnapshot = (requestId = 'request-1', platform: 'android' | 'web' = 'and
 });
 const platforms = bootstrap.platforms;
 const deviceContext = { workspaceName: 'test', platforms, onWorkspaceChange: vi.fn() };
+
+it('binds Android diagnosis to explicit selection and rejects stale device responses',async()=>{
+  const one=deferred<ReadinessResponse>();
+  const two=deferred<ReadinessResponse>();
+  const client={bootstrap:vi.fn().mockResolvedValue(bootstrap),readiness:vi.fn((_w,_p,_s,id)=>id==='one'?one.promise:id==='two'?two.promise:Promise.resolve({...readiness('android'),targetId:null})),targets:vi.fn().mockResolvedValue({platform:'android',targetLabel:'Device',targets:['one','two'].map(id=>({id,label:id,status:'ready',selectable:true,isDefault:false,description:'online',metadata:{}}))}),cases:vi.fn().mockResolvedValue(cases('android'))} as unknown as ControlPlaneClient;
+  const {result}=renderHook(()=>useDeviceWorkspace(deviceContext,client));
+  await waitFor(()=>expect(result.current.bootstrap.state).toBe('ready'));
+  act(()=>{result.current.setPlatform('android');result.current.setGoal('Keep goal');});
+  await waitFor(()=>expect(result.current.targets.state).toBe('ready'));
+  expect(result.current.targetId).toBe('');
+  expect(result.current.canStart).toBe(false);
+  act(()=>result.current.setTargetId('one'));
+  act(()=>result.current.setTargetId('two'));
+  await act(async()=>two.resolve({...readiness('android'),targetId:'two'}));
+  await waitFor(()=>expect(result.current.canStart).toBe(true));
+  await act(async()=>one.resolve({...readiness('android'),targetId:'one'}));
+  expect(result.current.readiness.data?.targetId).toBe('two');
+  vi.mocked(client.targets).mockResolvedValueOnce({platform:'android',targetLabel:'Device',targets:[{id:'one',label:'one',status:'ready',selectable:true,isDefault:true,description:'online',metadata:{}}]});
+  act(()=>result.current.refresh());
+  await waitFor(()=>expect(result.current.targets.state).toBe('ready'));
+  expect(result.current.targetId).toBe('two');
+  expect(result.current.canStart).toBe(false);
+  expect(result.current.goal).toBe('Keep goal');
+});
+
+it('allows provider-free Android Strict and keeps input after preflight failure',async()=>{
+  const data={...readiness('android'),provider:{status:'unavailable' as const,message:'Configure provider',action:''}};
+  const client={bootstrap:vi.fn().mockResolvedValue(bootstrap),readiness:vi.fn().mockResolvedValue(data),targets:vi.fn().mockResolvedValue(targets('android')),cases:vi.fn().mockResolvedValue(cases('android')),startRun:vi.fn().mockRejectedValue(new ControlPlaneApiError(400,{code:'android_preflight_failed',message:'Device disconnected',action:'Reconnect'}))} as unknown as ControlPlaneClient;
+  const {result}=renderHook(()=>useDeviceWorkspace(deviceContext,client));
+  await waitFor(()=>expect(result.current.bootstrap.state).toBe('ready'));
+  act(()=>result.current.setPlatform('android'));
+  await waitFor(()=>expect(result.current.readiness.state).toBe('ready'));
+  act(()=>{result.current.setMode('strict');result.current.setCasePath('android.fsq.yaml');});
+  await waitFor(()=>expect(result.current.canStart).toBe(true));
+  await act(async()=>result.current.start());
+  expect(result.current.casePath).toBe('android.fsq.yaml');
+  expect(result.current.requestId).toBeNull();
+  expect(result.current.startError?.code).toBe('android_preflight_failed');
+});
 
 it('applies explicit macOS diagnostic intent when switching an existing Devices workspace',async()=>{
   const ok={status:'ready' as const,message:'Ready',action:''};

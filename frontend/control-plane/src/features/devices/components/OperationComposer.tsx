@@ -35,6 +35,7 @@ interface OperationComposerProps {
   onCaseChange: (path: string) => void;
   onStart: () => void;
   macos?: boolean;
+  android?: boolean;
   starting?: boolean;
   blockedReason?: string;
   onRecheck?: () => void;
@@ -126,9 +127,9 @@ export function OperationComposer(props: OperationComposerProps) {
       {props.cases.length > selectableCases.length && <p className="field-help">{props.cases.length - selectableCases.length} invalid or platform-mismatched case(s) are unavailable.</p>}
     </div>}
     </fieldset>
-    <PreflightStatus mode={props.mode} workspace={props.readiness?.workspace} provider={props.readiness?.provider} target={props.readiness?.target} strict={props.readiness?.strict} requiresProvider={selectedCase?.requiresAiAssertion} loading={props.discoveryLoading} diagnostics={props.readiness} macos={props.macos} onRecheck={props.onRecheck} onRepair={props.onRepair} locked={props.starting}/>
+    <PreflightStatus mode={props.mode} workspace={props.readiness?.workspace} provider={props.readiness?.provider} target={props.readiness?.target} strict={props.readiness?.strict} requiresProvider={selectedCase?.requiresAiAssertion} loading={props.discoveryLoading} diagnostics={props.readiness} macos={props.macos} android={props.android} onRecheck={props.onRecheck} onRepair={props.onRepair} locked={props.starting}/>
     {props.errorMessage && <div className="inline-error" role="alert"><strong>{props.errorMessage}</strong>{props.errorAction && <span>{props.errorAction}</span>}</div>}
-    {props.macos && !props.canStart && <p id="start-blocked-reason" className="field-help">{props.blockedReason}</p>}
-    <button className="button button--primary start-button" type="button" disabled={!props.canStart} aria-describedby={props.macos&&!props.canStart?'start-blocked-reason':undefined} onClick={props.onStart}>{props.starting && props.macos?'Checking environment…':props.mode === 'explore' ? 'Start exploration' : 'Start strict replay'}</button>
+    {(props.macos || props.android) && !props.canStart && <p id="start-blocked-reason" className="field-help">{props.blockedReason}</p>}
+    <button className="button button--primary start-button" type="button" disabled={!props.canStart} aria-describedby={(props.macos||props.android)&&!props.canStart?'start-blocked-reason':undefined} onClick={props.onStart}>{props.starting && (props.macos||props.android)?'Checking environment…':props.mode === 'explore' ? 'Start exploration' : 'Start strict replay'}</button>
   </div>;
 }

@@ -39,6 +39,10 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const [bootstrap, setBootstrap] = useState<RequestResource<BootstrapResponse>>(emptyResource);
   const [platform, setPlatformState] = useState<PlatformId | ''>('');
   const [targetId, setTargetId] = useState('');
+  const targetRef = useRef('');
+  useEffect(() => {targetRef.current=targetId;}, [targetId]);
+  const diagnosisGeneration = useRef(0);
+  const diagnosisController = useRef<AbortController | null>(null);
   const [mode, setMode] = useState<RunMode>('explore');
   const [goal, setGoal] = useState('');
   const [casePath, setCasePath] = useState('');
@@ -60,26 +64,53 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const consumedLaunchIntentRef = useRef<number | null>(null);
   const { snapshot, connection, error: streamError } = useRunStream(requestId, client);
 
+  const loadAndroidDiagnosis = useCallback((selectedWorkspace: string, selectedTarget: string) => {
+    diagnosisController.current?.abort();
+    const controller = new AbortController();
+    diagnosisController.current = controller;
+    const generation = ++diagnosisGeneration.current;
+    setReadiness(loadingResource());
+    void client.readiness(selectedWorkspace, 'android', controller.signal, selectedTarget || null).then(data => {
+      if (controller.signal.aborted || generation !== diagnosisGeneration.current) return;
+      if (selectedTarget && data.targetId !== selectedTarget) {
+        setReadiness({state:'error',data:null,error:{code:'device_binding_mismatch',message:'Diagnosis does not match the selected device.',action:'Recheck environment.'}});
+        return;
+      }
+      setReadiness({state:'ready',data,error:null});
+    }).catch(error => {if (!controller.signal.aborted && generation===diagnosisGeneration.current) setReadiness({state:'error',data:null,error:toApiError(error)});});
+  }, [client]);
+
+  useEffect(() => () => { diagnosisController.current?.abort(); ++diagnosisGeneration.current; }, [workspaceName, platform]);
+
   const loadDiscovery = useCallback((selectedWorkspace: string, selectedPlatform: PlatformId, clearSelection: boolean) => {
+    diagnosisController.current?.abort();
+    ++diagnosisGeneration.current;
     discoveryControllerRef.current?.abort();
     const controller = new AbortController();
     discoveryControllerRef.current = controller;
     const generation = ++generationRef.current;
-    if (clearSelection) { setTargetId(''); setCasePath(''); }
+    if (clearSelection) { targetRef.current=''; setTargetId(''); setCasePath(''); }
     setReadiness((value) => loadingResource(!clearSelection && value.data?.workspaceName === selectedWorkspace && value.data.platformId === selectedPlatform ? value.data : null));
     setTargets((value) => loadingResource(!clearSelection && value.data?.platform === selectedPlatform ? value.data : null));
     setCases((value) => loadingResource(!clearSelection && value.data?.platform === selectedPlatform ? value.data : null));
 
     const applies = () => generationRef.current === generation && !controller.signal.aborted;
-    void client.readiness(selectedWorkspace, selectedPlatform, controller.signal).then((data) => { if (applies()) setReadiness({ state: 'ready', data, error: null }); }).catch((error) => { if (applies()) setReadiness({ state: 'error', data: null, error: toApiError(error) }); });
+    if (selectedPlatform !== 'android') void client.readiness(selectedWorkspace, selectedPlatform, controller.signal).then((data) => { if (applies()) setReadiness({ state: 'ready', data, error: null }); }).catch((error) => { if (applies()) setReadiness({ state: 'error', data: null, error: toApiError(error) }); });
     void client.targets(selectedWorkspace, selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setTargets({ state: 'ready', data, error: null });
+      if (selectedPlatform === 'android') {
+        const next = targetRef.current || data.targets.find(target=>target.selectable && target.isDefault)?.id || '';
+        targetRef.current=next;
+        setTargetId(next);
+        loadAndroidDiagnosis(selectedWorkspace,next);
+        return;
+      }
       setTargetId((current) => {
         if (data.targets.some((target) => target.id === current && target.selectable)) return current;
         return data.targets.find((target) => target.selectable && target.isDefault)?.id ?? data.targets.find((target) => target.selectable)?.id ?? '';
       });
-    }).catch((error) => { if (applies()) setTargets({ state: 'error', data: null, error: toApiError(error) }); });
+    }).catch((error) => { if (applies()) {setTargets({ state: 'error', data: null, error: toApiError(error) }); if(selectedPlatform==='android') loadAndroidDiagnosis(selectedWorkspace,targetRef.current);} });
     void client.cases(selectedWorkspace, selectedPlatform, controller.signal).then((data) => {
       if (!applies()) return;
       setCases({ state: 'ready', data, error: null });
@@ -89,7 +120,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
         return data.cases.some((item) => item.path === candidate && item.selectable) ? candidate : '';
       });
     }).catch((error) => { if (applies()) setCases({ state: 'error', data: null, error: toApiError(error) }); });
-  }, [client]);
+  }, [client, loadAndroidDiagnosis]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -198,6 +229,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     && readiness.data?.workspace.status === 'ready'
     && readiness.data?.platform.status === 'ready'
     && readiness.data.target.status === 'ready'
+    && (platform !== 'android' || readiness.data.targetId === targetId)
     && selectedTarget?.selectable === true;
   const sourceReady = mode === 'explore'
     ? goal.trim().length > 0 && readiness.data?.provider.status === 'ready'
@@ -206,7 +238,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
       && readiness.data?.strict.status === 'ready'
       && (!selectedCase.requiresAiAssertion || readiness.data.provider.status === 'ready');
   const macosVerdict = mode==='explore'?readiness.data?.commands?.caseCreate:readiness.data?.commands?.caseTest;
-  const canStart = Boolean(commonReady && sourceReady && !active && !starting && bootstrap.state === 'ready' && !bootstrap.data?.busy && (platform!=='macos'||macosVerdict?.status==='ready'));
+  const canStart = Boolean(commonReady && sourceReady && !active && !starting && bootstrap.state === 'ready' && !bootstrap.data?.busy && (!['macos','android'].includes(platform)||macosVerdict?.status==='ready'));
   const blockedReason = (() => {
     if (starting) return 'Checking the environment before starting.';
     if (!workspaceName || !platform) return 'Select a Workspace and platform.';
@@ -214,7 +246,7 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
     if (readiness.state !== 'ready') return readiness.error?.message || 'Recheck the environment to obtain current results.';
     if (targets.state === 'loading') return 'Wait for target discovery to finish.';
     if (targets.state !== 'ready') return targets.error?.message || 'Refresh target discovery.';
-    if (platform === 'macos' && macosVerdict?.status !== 'ready') return macosVerdict?.message || 'Environment readiness has not been confirmed.';
+    if (['macos','android'].includes(platform) && macosVerdict?.status !== 'ready') return macosVerdict?.message || 'Environment readiness has not been confirmed.';
     if (!selectedTarget?.selectable) return 'Select an available target.';
     if (mode === 'strict') {
       if (cases.state === 'loading') return 'Wait for Case discovery to finish.';
@@ -232,6 +264,12 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
       pendingCasePathRef.current = null;
       setPlatformState(next);
     }
+  };
+  const selectTarget = (next: string) => {
+    if (controlsLocked) return;
+    targetRef.current=next;
+    setTargetId(next);
+    if (platform==='android' && workspaceName) loadAndroidDiagnosis(workspaceName,next);
   };
   const refresh = () => { if (!controlsLocked && readiness.state!=='loading' && workspaceName && platform) {setStartError(null);loadDiscovery(workspaceName, platform, false);} };
   const start = async () => {
@@ -290,13 +328,13 @@ export function useDeviceWorkspace(context: DeviceWorkspaceContext, client: Cont
   const connectionLabel = useMemo(() => {
     if (active) return connection === 'polling' ? 'Polling' : connection === 'reconnecting' ? 'Reconnecting' : 'Live';
     if (targets.state === 'loading') return 'Discovering';
-    if (platform==='macos' && (readiness.state!=='ready'||readiness.data?.target.status!=='ready')) return readiness.state==='loading'?'Checking':'Unavailable';
+    if (['macos','android'].includes(platform) && (readiness.state!=='ready'||readiness.data?.target.status!=='ready')) return readiness.state==='loading'?'Checking':'Unavailable';
     if (selectedTarget?.selectable) return 'Ready';
     return 'Unavailable';
   }, [active, connection, selectedTarget, targets.state, platform, readiness]);
 
   return {
-    bootstrap, workspaceName, platform, setPlatform, targetId, setTargetId, mode, setMode, goal, setGoal, casePath, setCasePath,
+    bootstrap, workspaceName, platform, setPlatform, targetId, setTargetId: selectTarget, mode, setMode, goal, setGoal, casePath, setCasePath,
     readiness, targets, cases, selectedTarget, selectedCase, requestId, snapshot, streamError, startError,
     evidenceTab, setEvidenceTab, selectedStepId, setSelectedStepId, saveYamlState, controlsLocked, canStart, starting, blockedReason, connection, connectionLabel, refresh, start, cancel, saveYaml, newRun,
   };

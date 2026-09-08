@@ -503,6 +503,13 @@ def _render_doctor(result: object) -> None:
         click.echo(f"\n{platform.platform.capitalize()}")
         if platform.prerequisites:
             labels = {
+                "adb_cli": "ADB CLI",
+                "uiautomator2_runtime": "uiautomator2 dependency",
+                "adb_server": "Existing ADB server",
+                "device_connection": "Device connection/authorization",
+                "device_selection": "Device selection",
+                "application_identifier": "Application ID",
+                "application_installation": "Application installation",
                 "xcode_installation": "Full Xcode",
                 "xcode_developer_directory": "Xcode developer directory",
                 "appium_cli": "Appium CLI",
@@ -518,6 +525,10 @@ def _render_doctor(result: object) -> None:
                     click.echo(f"      {detail.message}")
                 if detail.status != "ready" and detail.action:
                     click.echo(f"      Action: {detail.action}")
+                if detail.code:
+                    click.echo(f"      Code: {detail.code}")
+                for command in detail.commands:
+                    click.echo(f"      Run manually: {command}")
         click.echo("  Checks")
         for name in check_labels:
             detail = getattr(platform.checks, name)
