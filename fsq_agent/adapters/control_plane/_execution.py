@@ -255,7 +255,12 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
             request_id,
             status=result.status,
             summary=projection.safe_text(result.verification.summary),
-            result={"status": result.status, "durationMs": result.duration_ms},
+            result={
+                "status": result.status,
+                "durationMs": result.duration_ms,
+                "suggestedCaseName": execution.recording.case_name if execution.recording else None,
+                "recordingDraft": execution.recording.draft if execution.recording else None,
+            },
             report_available=result.report.path.exists(),
         )
     except asyncio.CancelledError:

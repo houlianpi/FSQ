@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import os
 import re
-import tempfile
 import time
 import webbrowser
 from dataclasses import dataclass
@@ -17,9 +15,9 @@ from threading import Thread
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fsq_agent.application import ApplicationError
+from fsq_agent.application import ApplicationError, CaseSaveRequest, save_recorded_case
 from fsq_agent.case_dsl import FSQ_CASE_SUFFIX
-from fsq_agent.models import FsqAgentError
+from fsq_agent.models import ConfigurationError, FsqAgentError
 
 from ._cases import discover_cases, resolve_case
 from ._config import ConfigAPIError, get_config, map_config_exception, require_config_access, require_same_origin_write, save_azure_config, test_saved_connection
@@ -52,6 +50,10 @@ _SAVE_CASE_FORBIDDEN = re.compile(r"[<>\"|\\/:*?\[\]\x00-\x1f\x7f-\x9f]")
 
 
 class _RunNotTerminalError(RuntimeError):
+    pass
+
+
+class _CasePublicationConflictError(RuntimeError):
     pass
 
 
@@ -269,6 +271,10 @@ class ControlPlaneServer:
             return 413, _exception_error("body_too_large", exc, "Upload a smaller replay video.")
         except _RunNotTerminalError as exc:
             return 409, _exception_error("run_not_terminal", exc, "Wait for the run to finish.")
+        except _CasePublicationConflictError as exc:
+            return 409, _exception_error("case.publication_conflict", exc, "Choose another Case name.")
+        except ConfigurationError:
+            return 400, _error("case.invalid", "Generated Case is invalid.", "Inspect the candidate Case.")
         except OSError as exc:
             return 503, _exception_error("save_yaml_failed", exc, "Check workspace file permissions and retry.")
         else:
@@ -301,10 +307,16 @@ class ControlPlaneServer:
             destination.relative_to(cases_dir)
         except ValueError as exc:
             raise ValueError("Saved YAML path escapes the configured cases directory.") from exc
-        _atomic_copy(recorded_case_path, destination)
+        saved = save_recorded_case(CaseSaveRequest(candidate_path=recorded_case_path, destination_directory=cases_dir, platform=snapshot["platform"], case_name=case_name))
+        if saved.outcome == "conflict":
+            raise _CasePublicationConflictError("A different Case already uses this name.")
+        if saved.outcome == "failed":
+            raise OSError("Unable to save Case.")
         return {
             "savedPath": destination.relative_to(cases_dir).as_posix(),
-            "message": f"Saved YAML to cases/{snapshot['platform']}/{destination.name}.",
+            "outcome": saved.outcome,
+            "draft": saved.draft,
+            "message": f"{'Draft: ' if saved.draft else ''}{'Already saved' if saved.outcome == 'unchanged' else 'Saved YAML'} to cases/{snapshot['platform']}/{destination.name}.",
         }
 
     def handle_replay_video_file(self, request_id: str, range_header: str | None) -> tuple[int, bytes, dict[str, str]]:
@@ -546,34 +558,6 @@ def _strict_case_steps(prepared) -> list[dict[str, Any]]:
             }
         )
     return summaries
-
-
-def _atomic_copy(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
-    try:
-        with (
-            source.open("rb") as source_file,
-            tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=destination.parent,
-                prefix=f".{destination.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temporary_file,
-        ):
-            temporary_path = Path(temporary_file.name)
-            while chunk := source_file.read(1024 * 1024):
-                temporary_file.write(chunk)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-        temporary_path.replace(destination)
-    finally:
-        if temporary_path is not None and temporary_path.exists():
-            try:
-                temporary_path.unlink()
-            except OSError:
-                pass
 
 
 def _save_case_name(body: dict[str, Any]) -> str:

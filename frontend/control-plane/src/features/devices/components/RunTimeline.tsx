@@ -19,7 +19,6 @@ interface RunTimelineProps {
 
 const emptySaveYamlState: RequestResource<SaveYamlResponse> = { state: 'idle', data: null, error: null };
 const FSQ_CASE_SUFFIX = '.fsq.yaml';
-const MAX_DEFAULT_CASE_NAME_LENGTH = 60;
 
 function formatTime(value?: string) {
   if (!value) return '';
@@ -126,7 +125,7 @@ function StrictActionSummary({ snapshot, events, selectedStepId, onSelectStep }:
 }
 
 function defaultCaseName(snapshot: RunSnapshot) {
-  return (snapshot.runId || 'recorded-case').replace(/\.fsq\.yaml$/i, '').slice(0, MAX_DEFAULT_CASE_NAME_LENGTH);
+  return snapshot.suggestedCaseName || '';
 }
 
 function invalidCaseName(caseName: string) {
@@ -325,7 +324,7 @@ export function RunTimeline({ snapshot, connection, selectedStepId, onSelectStep
     </div>}
     {snapshot.terminal && snapshot.mode === 'explore' && saveDialogOpen && <div className="config-dialog-backdrop" role="presentation">
       <section ref={saveDialogRef} className="config-dialog save-yaml-dialog" role="dialog" aria-modal="true" aria-labelledby="save-yaml-title">
-        <h2 id="save-yaml-title">Save YAML case</h2>
+        <h2 id="save-yaml-title">Save YAML case</h2>{snapshot.recordingDraft && <p role="status">Draft recording: review this Case before use.</p>}
         <p className="config-dialog-intro">Confirm the case name before saving this generated recording.</p>
         <label className="save-yaml-name-field" htmlFor="save-yaml-case-name"><span>Case name</span><span className="save-yaml-name-input"><input ref={saveNameInputRef} id="save-yaml-case-name" aria-label="Case name" value={caseName} onChange={(event) => setCaseName(event.target.value)} aria-invalid={Boolean(saveNameError)} aria-describedby="save-yaml-path-preview save-yaml-name-error" /><strong>{FSQ_CASE_SUFFIX}</strong></span></label>
         {saveNameError && <p id="save-yaml-name-error" className="config-error" role="alert"><strong>{saveNameError}</strong></p>}
