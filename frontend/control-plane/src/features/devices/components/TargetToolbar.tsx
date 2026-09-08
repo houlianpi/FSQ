@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react';
 import type { PlatformId, PlatformOption, TargetsResponse, WorkspaceRegistryEntry } from '../../../api/types';
 
 interface TargetToolbarProps {
@@ -31,13 +32,13 @@ export function TargetToolbar({ workspaces, workspaceName, platforms, platform, 
       </select>
     </label>
     <label className="toolbar-select toolbar-select--target"><span>{targets?.targetLabel ?? (platform === 'android' ? 'Device' : platform === 'web' ? 'Browser' : 'Application')}</span>
-      <select aria-label={targets?.targetLabel ?? 'Target'} value={targetId} disabled={locked || loading} onChange={(event) => onTargetChange(event.target.value)}>
-        <option value="">{loading ? 'Discovering…' : 'Select a target'}</option>
+      <select aria-label={targets?.targetLabel ?? 'Target'} value={targetId} disabled={locked || loading || !workspaceName || !platform} onChange={(event) => onTargetChange(event.target.value)}>
+        <option value="">{!platform ? 'Select a platform first' : loading ? 'Discovering…' : 'Select a target'}</option>
         {platform==='android' && targetId && !targets?.targets.some(target=>target.id===targetId) && <option value={targetId} disabled>Selected device unavailable — choose another</option>}
         {targets?.targets.map((target) => <option key={target.id} value={target.id} disabled={!target.selectable}>{target.label}{target.selectable ? '' : ` — ${target.status}`}</option>)}
       </select>
     </label>
-    <span className={`connection-status connection-status--${connectionLabel.toLowerCase()}`} role="status"><span aria-hidden="true">●</span>{connectionLabel}</span>
-    <button className="button button--secondary" type="button" disabled={locked || loading || !workspaceName || !platform} onClick={onRefresh} aria-label="Refresh readiness, targets, and cases">↻ Refresh</button>
+    <span className={`connection-status connection-status--${connectionLabel.toLowerCase().replaceAll(' ', '-')}`} role="status"><span aria-hidden="true">●</span>{connectionLabel}</span>
+    <button className="button button--secondary" type="button" disabled={locked || loading || !workspaceName || !platform} onClick={onRefresh} aria-label="Refresh readiness, targets, and cases"><RefreshCw aria-hidden="true"/>Refresh</button>
   </div>;
 }

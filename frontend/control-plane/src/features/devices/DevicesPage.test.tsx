@@ -17,6 +17,7 @@ it('shows completed macOS preflight while Explore case discovery is still pendin
   });
   render(<DevicesPage workspaces={[{name:'mac',rootPath:'/mac',status:'available',message:'Ready',platforms:[{platform:'macos',status:'available',message:'Ready',configPath:'/mac/config'}]}]} workspaceRegistryReady selectedWorkspaceName="mac" onWorkspaceChange={vi.fn()} renderShell={(toolbar,content)=><>{toolbar}{content}</>}/>);
   expect(screen.getByText('macOS is ready')).toBeVisible();
+  expect(screen.queryByRole('region', { name: 'Live evidence' })).not.toBeInTheDocument();
   expect(screen.queryByText('Start is unavailable until checks complete.')).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'Start exploration'})).toBeEnabled();
 });
@@ -45,10 +46,30 @@ it('announces live run truth and locks target controls without moving focus', ()
     selectedWorkspaceName="test" onWorkspaceChange={vi.fn()} renderShell={(toolbar, content) => <>{toolbar}{content}</>}
   />);
 
-  expect(screen.getByLabelText('Workspace')).toBeDisabled();
-  expect(screen.getByLabelText('Platform')).toBeDisabled();
-  expect(screen.getByLabelText('Browser')).toBeDisabled();
+  expect(screen.queryByRole('combobox', { name: 'Workspace' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Run context')).toHaveTextContent('test');
   expect(document.querySelector('.operation-body')).toHaveClass('operation-body--run');
   expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('Run running. Executing step 1. Live.');
   expect(document.body).toHaveFocus();
+});
+
+it('shows neutral guidance before platform selection and renders no evidence placeholders', () => {
+  const current=vi.mocked(useDeviceWorkspace).getMockImplementation()?.({} as never);
+  if (!current) throw new Error("Device workspace fixture is missing");
+  vi.mocked(useDeviceWorkspace).mockReturnValue({...current,platform:'',requestId:null,snapshot:null,controlsLocked:false,canStart:false,connectionLabel:'Unavailable',selectedTarget:null});
+  render(<DevicesPage workspaces={[]} workspaceRegistryReady selectedWorkspaceName="test" onWorkspaceChange={vi.fn()} renderShell={(_,content)=><>{content}</>}/>);
+  expect(screen.queryByText('Readiness is unavailable.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('region',{name:'Live evidence'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Start exploration'})).toHaveAccessibleDescription('Select a platform to check its environment.');
+});
+
+it('keeps reconnecting visible in the execution context without changing run status', () => {
+ const current=vi.mocked(useDeviceWorkspace).getMockImplementation()?.({} as never);
+ if(!current)throw new Error('Missing fixture');
+ const snapshot:RunSnapshot={requestId:'r',runId:'run',workspaceName:'test',platform:'web',targetId:'chrome',mode:'explore',status:'running',source:{goal:'Verify'},startedAt:'',completedAt:null,cancelRequested:false,events:[],activeStep:null,result:null,summary:'Running',screenshotRevision:0,uiSnapshotRevision:0,evidenceAvailable:false,reportAvailable:false,terminal:false};
+ vi.mocked(useDeviceWorkspace).mockReturnValue({...current,platform:'web',requestId:'r',snapshot,connection:'reconnecting',connectionLabel:'Reconnecting'});
+ render(<DevicesPage workspaces={[]} workspaceRegistryReady selectedWorkspaceName="test" onWorkspaceChange={vi.fn()} renderShell={(_,content)=><>{content}</>}/>);
+ expect(screen.getByText('Reconnecting')).toBeVisible();
+ expect(screen.getByText('Reconnecting')).toHaveAttribute('role','status');
+ expect(screen.getByLabelText('Run context')).toHaveTextContent('running');
 });

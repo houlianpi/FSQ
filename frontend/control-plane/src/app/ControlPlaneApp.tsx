@@ -15,6 +15,7 @@ type DevicesLaunchRequest =
 export function ControlPlaneApp() {
   const [activePage, setActivePage] = useState<'overview' | 'workspace' | 'devices' | 'config'>('overview');
   const [configDirty, setConfigDirty] = useState(false);
+  const [workspacePending,setWorkspacePending] = useState(false);
   const [workspaceDirty, setWorkspaceDirty] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceRegistryEntry[]>([]);
   const [workspaceRegistryLoading, setWorkspaceRegistryLoading] = useState(true);
@@ -38,6 +39,7 @@ export function ControlPlaneApp() {
   const workspaceCreateInitiator = useRef<{ element: HTMLElement; id: string | null } | null>(null);
   const workspaceCreateFocusRestore = useRef<(() => void) | null>(null);
   const workspaceCreatePreviousSelection = useRef<string | null>(null);
+  const workspaceCreateReturnPage = useRef<'overview' | 'workspace'>('workspace');
   const focusCreatedWorkspace = useRef(false);
   const workspaceRegistryReady = !workspaceRegistryLoading && workspaceRegistryError === null;
   const authoritativeWorkspaces = workspaceRegistryReady ? workspaces : [];
@@ -105,7 +107,7 @@ export function ControlPlaneApp() {
   }, [selectedWorkspaceName, selectedWorkspace]);
 
   const canDiscardDraft = (destination: ControlPlanePageId) => {
-    if (startPendingRef.current) return false;
+    if (startPendingRef.current || workspacePending) return false;
     if (activePage === 'config' && destination !== 'config' && configDirty && !window.confirm('Discard unsaved Azure changes?')) return false;
     if (activePage === 'workspace' && workspaceDirty && !window.confirm('Discard unsaved workspace changes?')) return false;
     return true;
@@ -139,6 +141,7 @@ export function ControlPlaneApp() {
       ? { element: activeElement, id: activeElement.id || null }
       : null;
     workspaceCreateFocusRestore.current = restoreFocus ?? null;
+    workspaceCreateReturnPage.current = !restoreFocus && activePage === 'overview' ? 'overview' : 'workspace';
     workspaceCreatePreviousSelection.current = selectedWorkspaceName;
     setWorkspaceDirty(false);
     setWorkspaceOutletPresentation('default');
@@ -162,24 +165,24 @@ export function ControlPlaneApp() {
     setWorkspaceDirty(false);
     setWorkspaceOutletPresentation('default');
     setSelectedWorkspaceName(workspaceCreatePreviousSelection.current);
-    void refreshWorkspaces();
-    requestAnimationFrame(() => {
-      const restoreFocus = workspaceCreateFocusRestore.current;
-      const initiator = workspaceCreateInitiator.current;
+    setActivePage(workspaceCreateReturnPage.current);
+    const restoreFocus = workspaceCreateFocusRestore.current;
+    const initiator = workspaceCreateInitiator.current;
+    workspaceCreateInitiator.current = null;
+    workspaceCreateFocusRestore.current = null;
+    workspaceCreatePreviousSelection.current = null;
+    void refreshWorkspaces().then(() => requestAnimationFrame(() => {
       if (restoreFocus) restoreFocus();
       else {
         const target = initiator?.element.isConnected
           ? initiator.element
           : initiator?.id ? document.getElementById(initiator.id) : null;
-        target?.focus();
+        (target ?? document.getElementById('overview-change-workspace'))?.focus();
       }
-      workspaceCreateInitiator.current = null;
-      workspaceCreateFocusRestore.current = null;
-      workspaceCreatePreviousSelection.current = null;
-    });
+    }));
   };
 
-  const selectWorkspace = (name: string) => {
+  const selectWorkspace = (name: string, configurationOpen = false) => {
     if (!canDiscardDraft('workspace')) return;
     setDiagnosticWorkspaceName(null);
     setWorkspaceDirty(false);
@@ -189,8 +192,12 @@ export function ControlPlaneApp() {
     setWorkspaceOutletPresentation('default');
     setCreateRequested(false);
     setSelectedWorkspaceName(name);
-    setWorkspaceConfigurationOpen(false);
+    setWorkspaceConfigurationOpen(configurationOpen);
     setActivePage('workspace');
+    requestAnimationFrame(() => {
+      const heading = document.getElementById('workspace-heading');
+      if (heading?.textContent === name) heading.focus();
+    });
   };
 
   const workspaceNavigation: WorkspaceNavigationItem[] = authoritativeWorkspaces.map((workspace) => ({
@@ -203,12 +210,12 @@ export function ControlPlaneApp() {
     message: workspace.status === 'unavailable' ? `${workspace.message} ${workspace.action}` : undefined,
   }));
   const shellWorkspaceProps = {
-    interactionLocked: startPending,
+    interactionLocked: startPending || workspacePending,
     workspaces: workspaceNavigation,
     selectedWorkspaceId: selectedWorkspace?.name ?? null,
     workspaceRegistryStatus: workspaceRegistryLoading ? 'loading' as const : workspaceRegistryError ? 'error' as const : 'ready' as const,
     workspaceRegistryError: workspaceRegistryError?.message,
-    onRetryWorkspaces: refreshWorkspaces,
+    onRetryWorkspaces: () => { void refreshWorkspaces(); },
     onCreateWorkspace: requestCreateWorkspace,
     onSelectWorkspace: selectWorkspace,
     onDiagnoseWorkspace:(name:string)=>{
@@ -219,7 +226,7 @@ export function ControlPlaneApp() {
     },
   };
   if (activePage === 'overview') return <ControlPlaneShell
-    activePage="overview" title="Overview" description="Set up this Workspace and complete your first evidence-backed run."
+    activePage="overview" title="Home" description="Choose a Workspace and start testing."
     onNavigate={navigate} {...shellWorkspaceProps}
   ><OverviewPage
       workspaces={authoritativeWorkspaces}
@@ -228,19 +235,20 @@ export function ControlPlaneApp() {
       registryError={workspaceRegistryError?.message}
       provider={overviewProvider}
       onNavigate={navigate}
-      onCreateWorkspace={requestCreateWorkspace}
+      onCreateWorkspace={() => requestCreateWorkspace()}
       onSelectWorkspace={(name) => { setSelectedWorkspaceName(name); setActivePage('overview'); }}
       onClearWorkspace={() => setSelectedWorkspaceName(null)}
       onOpenWorkspace={selectWorkspace}
-      onConfigureWorkspace={(name) => { setSelectedWorkspaceName(name); setCreateRequested(false); setWorkspaceConfigurationOpen(true); setWorkspaceOutletPresentation('default'); setActivePage('workspace'); }}
-      onRetryWorkspaces={refreshWorkspaces}
-      onRetryProvider={refreshOverviewProvider}
+      onRecordCase={(name) => launchDevices({ mode: 'explore', workspaceName: name })}
+      onConfigureWorkspace={(name) => selectWorkspace(name, true)}
+      onRetryWorkspaces={() => { void refreshWorkspaces(); }}
+      onRetryProvider={() => { void refreshOverviewProvider(); }}
     /></ControlPlaneShell>;
 
   if (activePage === 'workspace') return <ControlPlaneShell
-    activePage="workspace" title="Workspace" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
+    activePage="workspace" title="Workspaces" description="Manage registered workspace targets and inspect cases and knowledge without exposing private configuration."
     outletPresentation={workspaceOutletPresentation}
-    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onConfigure={() => { setWorkspaceOutletPresentation('default'); setWorkspaceConfigurationOpen(true); }} /> : undefined}
+    titleContent={selectedWorkspace && !createRequested ? <WorkspaceTitlebar workspace={selectedWorkspace} onRecordCase={() => launchDevices({mode:'explore',workspaceName:selectedWorkspace.name})} recordDisabled={workspacePending || !selectedWorkspace.platforms.some(p=>p.status==='available')} recordDisabledReason={workspacePending ? 'Wait for the Workspace configuration to finish saving.' : undefined} /> : undefined}
     onNavigate={navigate} {...shellWorkspaceProps}
   ><WorkspacePage
       selectedName={diagnosticWorkspace?.name ?? selectedWorkspace?.name ?? null}
@@ -248,20 +256,20 @@ export function ControlPlaneApp() {
       createRequested={createRequested}
       configurationOpen={workspaceConfigurationOpen}
       registryError={workspaceRegistryError}
-      onRetryRegistry={refreshWorkspaces}
-      onRequestCreate={requestCreateWorkspace}
+      onRetryRegistry={() => { void refreshWorkspaces(); }}
+      onRequestCreate={() => requestCreateWorkspace()}
       onCancelCreate={cancelWorkspaceCreation}
-      onConfigurationOpenChange={(open)=>{setWorkspaceConfigurationOpen(open);if(!open&&diagnosticWorkspace){setDevicesLaunchIntent({id:++devicesLaunchSequence.current,mode:'diagnostic',workspaceName:diagnosticWorkspace.name,platform:'macos'});setActivePage('devices');}}}
+      onConfigurationOpenChange={(open)=>{setWorkspaceDirty(false);setWorkspaceConfigurationOpen(open);if(!open&&diagnosticWorkspace){setDevicesLaunchIntent({id:++devicesLaunchSequence.current,mode:'diagnostic',workspaceName:diagnosticWorkspace.name,platform:'macos'});setActivePage('devices');}}}
       onPresentationChange={setWorkspaceOutletPresentation}
-      onRecordCase={() => !diagnosticWorkspace && selectedWorkspace && launchDevices({ mode: 'explore', workspaceName: selectedWorkspace.name })}
       onReplayCase={(platform, casePath) => !diagnosticWorkspace && selectedWorkspace && launchDevices({ mode: 'strict', workspaceName: selectedWorkspace.name, platform, casePath })}
       onCreated={(detail) => { workspaceCreateInitiator.current = null; workspaceCreateFocusRestore.current = null; workspaceCreatePreviousSelection.current = null; focusCreatedWorkspace.current = true; setCreateRequested(false); setSelectedWorkspaceName(detail.name); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onRegistryChanged={() => { setCreateRequested(false); setWorkspaceDirty(false); setWorkspaceOutletPresentation('default'); refreshWorkspaces(); }}
       onDirtyChange={setWorkspaceDirty}
+      onPendingChange={setWorkspacePending}
     /></ControlPlaneShell>;
 
   if (activePage === 'config') return <ControlPlaneShell
-    activePage="config" title="Config" description="Manage the active model provider used by the next complete FSQ task."
+    activePage="config" title="Settings" description="Manage the active model provider used by the next complete FSQ task."
     onNavigate={navigate} {...shellWorkspaceProps}
   ><ConfigPage onDirtyChange={setConfigDirty} /></ControlPlaneShell>;
 
@@ -271,7 +279,7 @@ export function ControlPlaneApp() {
     launchIntent={devicesLaunchIntent}
     onLaunchIntentConsumed={(intentId) => setDevicesLaunchIntent((current) => current?.id === intentId ? null : current)}
     renderShell={(toolbar, content) => <ControlPlaneShell
-    activePage="devices" title="Device workspace"
+    activePage="devices" title="Test Runner"
     description="Select a target, choose how FSQ should test it, and follow real evidence while the run progresses."
     titleActions={toolbar} onNavigate={navigate} {...shellWorkspaceProps}
   >{content}</ControlPlaneShell>} />;
