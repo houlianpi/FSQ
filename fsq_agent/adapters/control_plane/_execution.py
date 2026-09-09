@@ -259,9 +259,10 @@ async def _run_explore(prepared: PreparedRun, state: ControlPlaneState) -> None:
             },
             report_available=result.report.path.exists(),
         )
-    except asyncio.CancelledError as exc:
+    except (asyncio.CancelledError, TaskCancelledError) as exc:
         _finish_explore_error(prepared, state, projection, exc, cancelled=True)
-        raise
+        if isinstance(exc, asyncio.CancelledError):
+            raise
     except Exception as exc:  # noqa: BLE001 - background failures are normalized into task state.
         _finish_explore_error(prepared, state, projection, exc)
 

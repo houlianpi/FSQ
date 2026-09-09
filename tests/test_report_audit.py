@@ -304,14 +304,14 @@ def test_claimed_source_hash_without_retained_bytes_is_not_comparable(tmp_path):
 
 def test_sanitizer_preserves_case_structure_and_removes_private_display(tmp_path):
     root, facts, bundle = _fixture(tmp_path)
-    text = "required_runtime_secret_names: []\n---\n- closeBrowser: {}\n"
-    (root / "candidate.fsq.yaml").write_text(text)
+    content = b"required_runtime_secret_names: []\n---\n- closeBrowser: {}\n"
+    (root / "candidate.fsq.yaml").write_bytes(content)
     bundle["artifacts"].append({"artifact_id": "candidate", "kind": "text", "metadata": {"source_kind": "case"}, "path": "candidate.fsq.yaml"})
     _write_frozen(root, summary="See /opt/company/runtime.log token=private-value")
     report = RunReportService().project(root, facts, bundle)
     output = RunReportService().export(report, RunReportExportOptions(format="bundle", destination=tmp_path / "bundle.zip"))
     with zipfile.ZipFile(output.path) as archive:
-        assert archive.read(f"runs/{root.name}/candidate.fsq.yaml").decode() == text
+        assert archive.read(f"runs/{root.name}/candidate.fsq.yaml") == content
         assert b"/opt/company" not in archive.read("report.json")
         assert b"private-value" not in archive.read("report.json")
 

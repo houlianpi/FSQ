@@ -131,6 +131,26 @@ def test_state_holds_single_active_task_through_cancellation() -> None:
     assert replacement != request_id
 
 
+@pytest.mark.asyncio
+async def test_explore_cancelled_before_async_task_starts_remains_cancelled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path, "web")
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_runtime_settings", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda *_args: None)
+    state = ControlPlaneState()
+    request_id = state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Cancel immediately"})
+    prepared = prepare_run(
+        request_id=request_id,
+        settings=settings,
+        body={"mode": "explore", "workspaceName": "checkout", "platform": "web", "targetId": "chrome", "goal": "Cancel immediately"},
+    )
+    state.request_cancel(request_id)
+    await _run_explore(prepared, state)
+    snapshot = state.snapshot(request_id)
+    assert snapshot["status"] == "cancelled"
+    assert snapshot["summary"] == "Run cancelled."
+
+
 def test_state_sequences_resumable_snapshots_and_releases_only_after_finalizing() -> None:
     state = ControlPlaneState()
     request_id = state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="strict", source={"casePath": "a.fsq.yaml"})
