@@ -243,6 +243,22 @@ def _azure_openai_settings(*, api_key: str = "dummy") -> OpenAIAgentsSettings:
     return settings
 
 
+async def _run_in_context(runtime, task, knowledge, skills, run_id, event_sink=None):
+    from fsq_agent.core.evidence import EvidenceRecorder
+    from fsq_agent.models import RunExecutionContext
+
+    run_dir = runtime.settings.output.runs_dir / run_id
+    return await runtime.run_task(
+        task,
+        knowledge,
+        skills,
+        run_id,
+        event_sink,
+        context=RunExecutionContext(run_id=run_id, run_dir=run_dir, platform=runtime.settings.harness.platform),
+        evidence_sink=EvidenceRecorder(run_id=run_id, output_dir=run_dir),
+    )
+
+
 @pytest.mark.asyncio
 async def test_runtime_failure_returns_failed_step() -> None:
     settings = Settings(openai_agents=_azure_openai_settings())
@@ -254,7 +270,7 @@ async def test_runtime_failure_returns_failed_step() -> None:
         acceptance_criteria=["A failed step is returned."],
     )
 
-    results = await runtime.run_task(task, KnowledgeBundle(), [], "runtime-failure-2026-05-09_00-00-00")
+    results = await _run_in_context(runtime, task, KnowledgeBundle(), [], "runtime-failure-2026-05-09_00-00-00")
 
     assert results[0].status == "failed"
     assert results[0].tool_name == "openai_agents.runner"
@@ -268,7 +284,7 @@ async def test_runtime_emits_startup_events_before_main_planning(monkeypatch: py
     task = Task(id="startup", name="Startup", description="Run startup.")
     events: list[Any] = []
 
-    results = await runtime.run_task(task, KnowledgeBundle(), [], "startup-run", event_sink=events.append)
+    results = await _run_in_context(runtime, task, KnowledgeBundle(), [], "startup-run", event_sink=events.append)
 
     assert results[-1].status == "success"
     titles = [event.title for event in events]
@@ -319,7 +335,7 @@ async def test_runtime_emits_one_dynamic_agent_token_usage_event_from_sdk_aggreg
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     events: list[Any] = []
 
-    results = await runtime.run_task(Task(id="usage", description="Measure usage."), KnowledgeBundle(), [], "usage-run", events.append)
+    results = await _run_in_context(runtime, Task(id="usage", description="Measure usage."), KnowledgeBundle(), [], "usage-run", events.append)
 
     assert results[-1].status == "success"
     usage_events = [event for event in events if event.type == "dynamic_agent_token_usage"]
@@ -342,7 +358,7 @@ async def test_runtime_does_not_estimate_or_emit_token_usage_without_sdk_usage(m
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     events: list[Any] = []
 
-    await runtime.run_task(Task(id="no-usage", description="No usage."), KnowledgeBundle(), [], "no-usage-run", events.append)
+    await _run_in_context(runtime, Task(id="no-usage", description="No usage."), KnowledgeBundle(), [], "no-usage-run", events.append)
 
     assert all(event.type != "dynamic_agent_token_usage" for event in events)
 
@@ -366,7 +382,7 @@ async def test_runtime_emits_available_sdk_usage_when_main_stream_fails(monkeypa
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     events: list[Any] = []
 
-    results = await runtime.run_task(Task(id="failed-usage", description="Fail after usage."), KnowledgeBundle(), [], "failed-usage-run", events.append)
+    results = await _run_in_context(runtime, Task(id="failed-usage", description="Fail after usage."), KnowledgeBundle(), [], "failed-usage-run", events.append)
 
     assert results[0].status == "failed"
     usage_events = [event for event in events if event.type == "dynamic_agent_token_usage"]
@@ -396,7 +412,8 @@ async def test_runtime_does_not_retry_usage_event_when_sink_fails_after_receivin
         if event.type == "dynamic_agent_token_usage":
             raise RuntimeError("downstream sink failed after persistence")
 
-    results = await runtime.run_task(
+    results = await _run_in_context(
+        runtime,
         Task(id="usage-sink-failure", description="Fail the usage sink."),
         KnowledgeBundle(),
         [],
@@ -418,7 +435,7 @@ async def test_runtime_constructs_sdk_agents_with_explicit_medium_model_settings
     task = Task(id="explicit-model-settings", name="Model Settings", description="Run with stable SDK settings.")
 
     await runtime.run_pre_plan("Open the app.", KnowledgeBundle(), [], "explicit-model-settings-run")
-    await runtime.run_task(task, KnowledgeBundle(), [], "explicit-model-settings-run")
+    await _run_in_context(runtime, task, KnowledgeBundle(), [], "explicit-model-settings-run")
     await runtime.run_verification(task, [], "explicit-model-settings-run", None)
 
     assert [agent.kwargs["name"] for agent in _FakeAgent.instances] == [
@@ -444,7 +461,7 @@ async def test_runtime_harness_construction_failure_is_visible(monkeypatch: pyte
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), fail_harness)
     events: list[Any] = []
 
-    results = await runtime.run_task(Task(id="failure", description="Fail startup."), KnowledgeBundle(), [], "failure-run", events.append)
+    results = await _run_in_context(runtime, Task(id="failure", description="Fail startup."), KnowledgeBundle(), [], "failure-run", events.append)
 
     assert results[0].status == "failed"
     assert "device connect failed" in str(results[0].error)
@@ -466,7 +483,7 @@ async def test_runtime_harness_construction_timeout_is_visible(monkeypatch: pyte
     runtime = OpenAIAgentsRuntime(settings, _EmptyToolFactory(), slow_harness)
     events: list[Any] = []
 
-    results = await runtime.run_task(Task(id="timeout", description="Timeout startup."), KnowledgeBundle(), [], "timeout-run", events.append)
+    results = await _run_in_context(runtime, Task(id="timeout", description="Timeout startup."), KnowledgeBundle(), [], "timeout-run", events.append)
 
     assert results[0].status == "failed"
     assert "Harness setup timed out after 1 seconds" in str(results[0].error)
@@ -513,7 +530,7 @@ async def test_runtime_classifies_sdk_content_filter_incomplete(monkeypatch: pyt
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
     events: list[Any] = []
 
-    results = await runtime.run_task(Task(id="content-filter", description="Trigger content filter."), KnowledgeBundle(), [], "content-filter-run", events.append)
+    results = await _run_in_context(runtime, Task(id="content-filter", description="Trigger content filter."), KnowledgeBundle(), [], "content-filter-run", events.append)
 
     assert results[0].status == "failed"
     assert results[0].actual_outcome == "OpenAI Agents SDK run ended with an incomplete provider response due to content filtering."
@@ -964,7 +981,7 @@ async def test_harness_tool_adapter_applies_evidence_policy_to_mutating_action()
     assert [ref["kind"] for ref in payload["artifact_refs"]] == ["screenshot", "ui_snapshot", "screenshot", "ui_snapshot"]
     assert payload["result"]["artifact_refs"] == payload["artifact_refs"]
     assert payload["runner_result"]["phase_reports"][0]["phase"] == "prepare"
-    assert payload["runner_result"]["phase_reports"][2]["phase"] == "finalize"
+    assert payload["runner_result"]["phase_reports"][-1]["phase"] == "finalize"
     assert harness.steps[0].action_name == "tap_on"
     assert harness.steps[0].metadata["authored_action_name"] == "tapOn"
     assert harness.steps[0].kind == "action"
@@ -1206,7 +1223,7 @@ async def test_runtime_uses_sdk_stream_events_for_agent_tools(monkeypatch: pytes
     runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), tool_factory, _fake_harness_factory)
     task = Task(id="agent-tools", name="Agent Tools", description="Run with AgentTools.")
 
-    await runtime.run_task(task, KnowledgeBundle(), [], "agent-tools-run", event_sink=lambda _event: None)
+    await _run_in_context(runtime, task, KnowledgeBundle(), [], "agent-tools-run", event_sink=lambda _event: None)
 
     assert tool_factory.kwargs is not None
     assert tool_factory.kwargs["event_sink"] is None
@@ -1774,3 +1791,42 @@ def test_coding_agent_adapter_does_not_import_agent_private_modules() -> None:
             if isinstance(node, ast.Import):
                 private_imports.extend(f"{source_path.name}:{node.lineno}:{alias.name}" for alias in node.names if alias.name.startswith("fsq_agent.agent._"))
     assert private_imports == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_main_stream_preserves_available_usage_once(monkeypatch):
+    import asyncio
+
+    import agents
+
+    class CancelledResult(_FakeRunResult):
+        async def stream_events(self):
+            raise asyncio.CancelledError()
+            yield None
+
+    class CancelledRunner:
+        @staticmethod
+        def run_streamed(*args, **kwargs):
+            return CancelledResult(usage=SimpleNamespace(requests=1, input_tokens=120, output_tokens=9, total_tokens=129))
+
+    _patch_runtime_sdk(monkeypatch)
+    monkeypatch.setattr(agents, "Runner", CancelledRunner)
+    runtime = OpenAIAgentsRuntime(Settings(openai_agents=_azure_openai_settings()), _EmptyToolFactory(), _fake_harness_factory)
+    events = []
+    with pytest.raises(asyncio.CancelledError):
+        await _run_in_context(runtime, Task(id="cancel-usage", description="cancel"), KnowledgeBundle(), [], "cancel-usage", events.append)
+    usage = [event for event in events if event.type == "dynamic_agent_token_usage"]
+    assert len(usage) == 1
+    assert usage[0].payload["total_tokens"] == 129
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_sdk_argument_redaction_preserves_shape_and_removes_credentials(as_json):
+    runtime = OpenAIAgentsRuntime(Settings(), _EmptyToolFactory(), _fake_harness_factory)
+    arguments = {"password": "CANARY_PASSWORD", "authorization": "Bearer CANARY_AUTH", "nested": {"token": "CANARY_TOKEN"}, "key": "Enter", "textType": "runtimeSecret", "text": "PASSWORD_REFERENCE"}
+    value = json.dumps(arguments) if as_json else arguments
+    redacted = runtime._redact(value)
+    parsed = json.loads(redacted) if as_json else redacted
+    assert "CANARY" not in json.dumps(parsed)
+    assert parsed["key"] == "Enter"
+    assert parsed["text"] == "PASSWORD_REFERENCE"

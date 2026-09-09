@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from fsq_agent.drivers._factory import _DriverFactoryImplementation
 from fsq_agent.harnesses._android import AndroidHarness
 from fsq_agent.harnesses._macos import MacOSHarness
 from fsq_agent.harnesses._web import WebHarness
@@ -64,8 +63,8 @@ class _HarnessFactoryProtocol(Protocol):
 
 
 class _HarnessFactoryImplementation:
-    def __init__(self, driver_factory: _DriverFactoryProtocol | None = None) -> None:
-        self.driver_factory = driver_factory or _DriverFactoryImplementation()
+    def __init__(self, driver_factory: _DriverFactoryProtocol) -> None:
+        self.driver_factory = driver_factory
 
     def create_harness(
         self,

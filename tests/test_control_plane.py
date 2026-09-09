@@ -35,14 +35,13 @@ from fsq_agent.control_plane import ControlPlaneServer, ControlPlaneServerOption
 from fsq_agent.models import (
     AndroidDevice,
     AndroidDeviceDiscoveryResult,
+    DynamicAgentOutcome,
     HarnessActionResult,
     HarnessArtifactRef,
     HarnessContext,
-    ReportArtifact,
     RunEvent,
     RunnerEvent,
     RunnerStepResult,
-    TaskResult,
     VerificationResult,
 )
 
@@ -132,6 +131,26 @@ def test_state_holds_single_active_task_through_cancellation() -> None:
     assert replacement != request_id
 
 
+@pytest.mark.asyncio
+async def test_explore_cancelled_before_async_task_starts_remains_cancelled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings(tmp_path, "web")
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_target", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_runtime_settings", lambda *_args: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_provider", lambda *_args: None)
+    state = ControlPlaneState()
+    request_id = state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Cancel immediately"})
+    prepared = prepare_run(
+        request_id=request_id,
+        settings=settings,
+        body={"mode": "explore", "workspaceName": "checkout", "platform": "web", "targetId": "chrome", "goal": "Cancel immediately"},
+    )
+    state.request_cancel(request_id)
+    await _run_explore(prepared, state)
+    snapshot = state.snapshot(request_id)
+    assert snapshot["status"] == "cancelled"
+    assert snapshot["summary"] == "Run cancelled."
+
+
 def test_state_sequences_resumable_snapshots_and_releases_only_after_finalizing() -> None:
     state = ControlPlaneState()
     request_id = state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="strict", source={"casePath": "a.fsq.yaml"})
@@ -151,7 +170,7 @@ def test_state_sequences_resumable_snapshots_and_releases_only_after_finalizing(
     assert state.snapshot(request_id)["terminal"] is True
 
 
-def test_state_cancellation_during_finalizing_overrides_later_success() -> None:
+def test_state_cancellation_during_finalizing_preserves_execution_authority() -> None:
     state = ControlPlaneState()
     request_id = state.reserve(workspace_name="checkout", platform="web", target_id="chrome", mode="explore", source={"goal": "Go"})
     state.transition(request_id, "running")
@@ -161,9 +180,10 @@ def test_state_cancellation_during_finalizing_overrides_later_success() -> None:
     state.finish(request_id, status="success", summary="completed", result={"status": "success"}, report_available=True)
 
     snapshot = state.snapshot(request_id)
-    assert snapshot["status"] == "cancelled"
-    assert snapshot["summary"] == "Run cancelled."
-    assert snapshot["result"] == {"status": "cancelled"}
+    assert snapshot["status"] == "success"
+    assert snapshot["summary"] == "completed"
+    assert snapshot["result"] == {"status": "success"}
+    assert snapshot["cancelRequested"] is True
 
 
 def test_state_cancel_on_terminal_task_is_idempotent_and_does_not_mutate() -> None:
@@ -503,6 +523,9 @@ def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Pa
     prepared.request_id = request_id
 
     class FakeHarness:
+        def __init__(self, store):
+            self.store = store
+
         def get_context(self):
             return HarnessContext(platform="android", session_id="fake")
 
@@ -519,12 +542,13 @@ def test_strict_execution_composes_real_lifecycle_with_fake_harness(tmp_path: Pa
             return None
 
         def capture_artifact(self, kind, reason, context, step_id, phase):
-            return HarnessArtifactRef(artifact_id=f"{step_id}-{kind}", kind=kind, path=Path(f"artifacts/{step_id}.{kind}"))
+            ref = self.store.write_bytes(kind=kind, step_id=step_id, phase=phase, name=reason, data=b"evidence")
+            return HarnessArtifactRef(**ref.model_dump(exclude={"step_id", "step_execution_id", "phase"}))
 
         def classify_error(self, error, phase, step):
             return "unknown"
 
-    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.HarnessFactory.create_harness", lambda *_args, **_kwargs: FakeHarness())
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.HarnessFactory.create_harness", lambda *_args, **kwargs: FakeHarness(kwargs["artifact_store"]))
 
     _run_strict(prepared, state)
 
@@ -550,15 +574,13 @@ async def test_explore_execution_delegates_to_agent_and_records_without_changing
     captured: dict[str, object] = {}
 
     class FakeAgent:
-        async def run(self, task, event_sink=None):
+        async def run_in_context(self, task, context, event_sink=None, **kwargs):
             captured["task"] = task
-            event_sink(RunEvent(run_id="run-1", task_id=task.id, type="run_started", title="Started"))
-            return TaskResult(
-                task_id=task.id,
-                status="failed",
+            event_sink(RunEvent(run_id=context.run_id, task_id=task.id, type="run_started", title="Started"))
+            return DynamicAgentOutcome(
+                task=task,
                 steps=[],
                 verification=VerificationResult(status="failed", summary="Expected failure"),
-                report=ReportArtifact(run_id="run-1", path=report_path),
             )
 
     monkeypatch.setattr(
@@ -679,8 +701,8 @@ def test_terminal_strict_steps_without_results_are_marked_skipped() -> None:
 
     steps = state.snapshot(request_id)["source"]["caseSteps"]
     assert steps[0]["status"] == "failed"
-    assert steps[1]["status"] == "skipped"
-    assert steps[1]["message"] == "Action was not executed."
+    assert steps[1]["status"] == "incomplete"
+    assert steps[1]["message"] == "No authoritative final result is available for this action."
 
 
 def test_persisted_manifest_hydrates_strict_case_step_results(tmp_path: Path) -> None:
@@ -866,7 +888,7 @@ def test_terminal_step_artifacts_and_replay_frames_are_contained_and_ordered(tmp
     step = read_step_artifacts(run_dir, "step-1")
     replay = read_replay_frames(run_dir)
 
-    assert [(item["kind"], item["phase"]) for item in step["artifacts"]] == [
+    assert [(item["kind"], item["phase"]) for item in step["artifacts"] if "error" not in item] == [
         ("screenshot", "before"),
         ("screenshot", "after"),
         ("ui_snapshot", "before"),
@@ -1354,8 +1376,8 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
     monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.RecordingService.record", lambda _self, **_kwargs: None)
 
     class FakeAgent:
-        async def run(self, task, event_sink=None):
-            run_id = f"explore-{task.id}"
+        async def run_in_context(self, task, context, event_sink=None, **kwargs):
+            run_id = context.run_id
             event_sink(RunEvent(run_id=run_id, task_id=task.id, type="run_started", title="Explore started"))
             if "cancel" in task.description.casefold():
                 await asyncio.Event().wait()
@@ -1363,12 +1385,10 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
             run_dir.mkdir(parents=True, exist_ok=True)
             report = run_dir / "report.md"
             report.write_text("report", encoding="utf-8")
-            return TaskResult(
-                task_id=task.id,
-                status="success",
+            return DynamicAgentOutcome(
+                task=task,
                 steps=[],
                 verification=VerificationResult(status="success", summary="Explore complete"),
-                report=ReportArtifact(run_id=run_id, path=report),
             )
 
     class FakeHarness:
@@ -1442,3 +1462,45 @@ def test_server_actual_http_run_paths_sse_evidence_and_cancellation(tmp_path: Pa
         assert terminal["status"] == "cancelled"
     finally:
         server.stop()
+
+
+def test_control_plane_cancellation_reaches_eligible_teardown(tmp_path, monkeypatch):
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.require_android_preflight", lambda *_a, **_kw: None)
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.validate_strict_core_settings", lambda *_a, **_kw: None)
+    settings = _settings(tmp_path)
+    _case(settings.cases.dir / "cleanup.fsq.yaml", command="launchApp: {}\n- waitMs: {duration_ms: 1}\n- killApp: {}")
+    state = ControlPlaneState()
+    request_id = state.reserve(workspace_name="checkout", platform="android", target_id="device", mode="strict", source={"casePath": "cleanup.fsq.yaml"})
+    prepared = prepare_run(request_id=request_id, settings=settings, body={"mode": "strict", "workspaceName": "checkout", "platform": "android", "targetId": "device", "casePath": "cleanup.fsq.yaml"})
+    called = []
+
+    class Harness:
+        def __init__(self, store):
+            self.store = store
+
+        def get_context(self):
+            return HarnessContext(platform="android")
+
+        def before_action(self, step, context):
+            return None
+
+        def invoke_action(self, step, context):
+            called.append(step.action_name)
+            if step.action_name == "launch_app":
+                state.request_cancel(request_id)
+            return HarnessActionResult(status="passed", action_name=step.action_name)
+
+        def after_action(self, *args):
+            return None
+
+        def capture_artifact(self, kind, reason, context, step_id, phase):
+            ref = self.store.write_bytes(kind=kind, step_id=step_id, phase=phase, name=reason, data=b"evidence")
+            return HarnessArtifactRef(**ref.model_dump(exclude={"step_id", "step_execution_id", "phase"}))
+
+        def classify_error(self, *args):
+            return "unknown"
+
+    monkeypatch.setattr("fsq_agent.adapters.control_plane._execution.HarnessFactory.create_harness", lambda *a, **kw: Harness(kw["artifact_store"]))
+    _run_strict(prepared, state)
+    assert called == ["launch_app", "kill_app"]
+    assert state.snapshot(request_id)["status"] == "cancelled"

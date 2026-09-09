@@ -9,11 +9,16 @@ Own concrete runtime gateways that combine inherited CommonTools, one injected p
 - `core.interfaces`: Harness, Driver, observation, evaluator, secret, and factory contracts.
 - `core.evidence`: run-local artifact storage.
 - `models`: canonical steps, contexts, schemas, artifacts, and results.
+- `capabilities`: neutral declaration/catalog metadata for inherited CommonTools.
 - `drivers`: only internal capability metadata composition and driver instances supplied through public interfaces; Harnesses must not import concrete backend modules.
 
 ## Public Interface
 
 Concrete Android, Web, Windows, and macOS harness classes remain private. `core.interfaces.HarnessFactory` is the stable public construction boundary and returns `HarnessInterface`.
+
+`core.interfaces._factories` is the sole approved external importer of private `_factory._HarnessFactoryImplementation` for that wrapper. This named composition exception preserves lazy factory construction; Harness implementations consume Core protocol definitions and never import the factory wrapper.
+
+Private platform Harness modules consume only the named Drivers capability-metadata helpers approved in `drivers/SPEC.md`, using injected driver instances. This is a declaration-composition boundary, not permission to import concrete backend classes or factory selectors.
 
 ## Internal Structure
 
@@ -40,4 +45,5 @@ Harnesses classify backend failures through normalized contracts, preserve cance
 - CommonTools route to the inherited platform provider; PlatformTools delegate to the injected driver.
 - Harnesses do not duplicate driver action bodies.
 - Concrete harness selection is lazy and hidden behind `core.interfaces.HarnessFactory`.
+- Capture services preserve unique execution identity, phase and capture reason, independent screenshot/UI snapshot outcomes, and driver-supplied snapshot coverage/compaction metadata. Unknown coverage remains unknown; compact or clipped observations are not represented as complete application state. Artifact allocation and durable capture acknowledgements use the injected Core evidence boundaries rather than manually constructed paths or a second journal.
 - Old `core.harness` imports forward to canonical Drivers, Harnesses, or Core Interfaces without duplicate state.

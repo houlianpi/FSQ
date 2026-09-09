@@ -177,9 +177,14 @@ def test_non_core_package_code_does_not_import_core_private_modules() -> None:
 
 
 def test_fake_harness_satisfies_runtime_protocol() -> None:
+    from contextlib import nullcontext
+
     from fsq_agent.core.harness import HarnessInterface
 
     class FakeHarness:
+        def capture_scope(self, callback):
+            return nullcontext()
+
         def get_context(self) -> HarnessContext:
             return HarnessContext(platform="android", session_id="session-1")
 
