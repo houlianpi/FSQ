@@ -183,6 +183,8 @@ def test_playwright_web_driver_runs_page_operations_on_one_worker_thread() -> No
         "url": "https://example.com/two",
         "snapshot_type": "aria",
         "snapshot": '- document "Example" [ref=e1]',
+        "coverage": {"status": "complete", "scope": "observed_aria_snapshot", "reason": "backend_observation_retained_without_clipping"},
+        "truncated": False,
     }
     assert driver.fake_page.aria_kwargs == {"mode": "ai"}
     assert context["current_url"] == "https://example.com/two"

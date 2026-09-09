@@ -635,8 +635,14 @@ def test_record_dynamic_goal_publication_failure_preserves_recording_and_existin
     published_path = published_path.with_name("unrelated.fsq.yaml")
     published_path.write_text("existing", encoding="utf-8")
 
+    import os
+
+    original_replace = os.replace
+
     def fail_replace(_source: Path, _destination: Path) -> None:
-        raise OSError("replace failed")
+        if Path(_destination).parent == settings.cases.dir:
+            raise OSError("replace failed")
+        original_replace(_source, _destination)
 
     monkeypatch.setattr("fsq_agent.execution.recording.os.link", fail_replace)
 
@@ -654,6 +660,8 @@ def test_record_dynamic_goal_publication_failure_preserves_recording_and_existin
     assert published_path.read_text(encoding="utf-8") == "existing"
     assert list(settings.cases.dir.iterdir()) == [published_path]
     assert any("publication" in warning.lower() for warning in recording.warnings)
+    assert recording.publication_status == "failed"
+    assert recording.publication_errors
     manifest = json.loads((run_dir / "recording.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "recorded"
     assert manifest["validation_status"] == "passed"

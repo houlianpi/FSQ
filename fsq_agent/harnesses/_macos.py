@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+from contextlib import nullcontext
 from typing import ClassVar
 
 from pydantic import BaseModel, ValidationError
@@ -55,6 +56,9 @@ class MacOSHarness:
             platform="macos",
         )
         self._configure_driver_ai_assertion_tool()
+
+    def capture_scope(self, callback):
+        return self.artifact_store.capture_scope(callback) if self.artifact_store is not None else nullcontext()
 
     def get_context(self) -> HarnessContext:
         context = self.driver.context()
@@ -186,6 +190,11 @@ class MacOSHarness:
             kind=data["kind"],
             path=data["path"],
             mime_type=data.get("mime_type"),
+            size_bytes=data.get("size_bytes"),
+            sha256=data.get("sha256"),
+            availability=data.get("availability", "available"),
+            unavailable_reason=data.get("unavailable_reason"),
+            capture_occurrence=data.get("capture_occurrence"),
             created_at=data["created_at"],
             metadata=dict(data.get("metadata") or {}),
         )

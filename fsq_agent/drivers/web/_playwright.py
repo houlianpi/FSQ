@@ -287,7 +287,17 @@ class PlaywrightWebDriver(AIAssertionBackendToolMixin):
             if isinstance(snapshot, str):
                 self._snapshot_refs = self._snapshot_reference_map(snapshot)
             if not isinstance(snapshot, str) or snapshot.strip():
-                return {"url": self._page_url(), "snapshot_type": "aria", "snapshot": snapshot}
+                return {
+                    "url": self._page_url(),
+                    "snapshot_type": "aria",
+                    "snapshot": snapshot,
+                    "coverage": {
+                        "status": "complete" if isinstance(snapshot, str) else "unknown",
+                        "scope": "observed_aria_snapshot",
+                        "reason": "backend_observation_retained_without_clipping" if isinstance(snapshot, str) else "backend_snapshot_shape_unknown",
+                    },
+                    "truncated": False if isinstance(snapshot, str) else None,
+                }
         return self._text_ui_snapshot()
 
     def _text_ui_snapshot(self) -> dict[str, object]:

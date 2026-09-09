@@ -55,7 +55,7 @@ class SequenceHarness:
         step_id: str,
         phase: StepPhase,
     ) -> HarnessArtifactRef:
-        return HarnessArtifactRef(artifact_id=f"{kind}-1", kind="log", path=Path(f"runs/{step_id}-{phase}-{reason}.log"))
+        return HarnessArtifactRef(artifact_id=f"{kind}-{step_id}-{phase}-{reason}", kind="log", path=Path(f"runs/{step_id}-{phase}-{reason}.log"))
 
     def classify_error(self, error: BaseException, phase: StepPhase, step: ExecutableStep) -> FailureCategory:
         return "unknown"
@@ -96,9 +96,11 @@ def test_step_sequence_runner_runs_steps_in_order_and_records_evidence(tmp_path:
         "invoke:step-1",
         "after:step-1:passed",
         "get_context",
+        "get_context",
         "before:step-2",
         "invoke:step-2",
         "after:step-2:passed",
+        "get_context",
     ]
 
 
@@ -109,7 +111,9 @@ def test_step_sequence_runner_stops_after_first_failed_step(tmp_path: Path) -> N
 
     bundle = runner.run_steps(run_id="run-1", steps=[_step("step-1", "tapOn"), _step("step-2", "inputText")])
 
-    assert [step.step_id for step in bundle.steps] == ["step-1"]
+    assert [step.step_id for step in bundle.steps] == ["step-1", "step-2"]
+    assert bundle.steps[1].status == "skipped"
+    assert bundle.steps[1].blocked_by_step == bundle.steps[0].step_execution_id
     assert bundle.steps[0].status == "failed"
     assert "before:step-2" not in harness.calls
 
@@ -125,8 +129,8 @@ def test_step_sequence_runner_runs_teardown_after_failed_normal_step(tmp_path: P
         teardown_steps=[_step("teardown-1", "killApp")],
     )
 
-    assert [step.step_id for step in bundle.steps] == ["step-1", "teardown-1"]
-    assert [step.status for step in bundle.steps] == ["failed", "passed"]
+    assert [step.step_id for step in bundle.steps] == ["step-1", "step-2", "teardown-1"]
+    assert [step.status for step in bundle.steps] == ["failed", "skipped", "passed"]
     assert "before:step-2" not in harness.calls
     assert harness.calls == [
         "get_context",
@@ -134,9 +138,11 @@ def test_step_sequence_runner_runs_teardown_after_failed_normal_step(tmp_path: P
         "invoke:step-1",
         "after:step-1:failed",
         "get_context",
+        "get_context",
         "before:teardown-1",
         "invoke:teardown-1",
         "after:teardown-1:passed",
+        "get_context",
     ]
 
 
@@ -185,13 +191,16 @@ def test_step_sequence_runner_records_executed_steps_without_sequence_sleep(
         "invoke:step-1",
         "after:step-1:passed",
         "get_context",
+        "get_context",
         "before:step-2",
         "invoke:step-2",
         "after:step-2:passed",
         "get_context",
+        "get_context",
         "before:teardown-1",
         "invoke:teardown-1",
         "after:teardown-1:passed",
+        "get_context",
     ]
 
 

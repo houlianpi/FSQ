@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 
 from fsq_agent.application import ApplicationError, ApplicationErrorCode, CaseCreateRequest, create_case
+from fsq_agent.config import Settings
 from fsq_agent.execution import DynamicExecutionResult, RecordingResult
-from fsq_agent.models import ReportArtifact, Task, TaskResult, VerificationResult
+from fsq_agent.models import DynamicAgentOutcome, ReportArtifact, Task, TaskResult, VerificationResult
 
 
 class _FakeAgent:
@@ -18,10 +19,22 @@ class _FakeAgent:
         self.task: Task | None = None
         self.event_sink: Any = None
 
-    async def run(self, task: Task, event_sink=None) -> TaskResult:
+    async def run_in_context(self, task: Task, context, event_sink=None, **execution_context) -> DynamicAgentOutcome:
         self.task = task
         self.event_sink = event_sink
-        return self.result
+        from fsq_agent.models import ExecutableStep, RunnerEvent, RunnerStepResult
+
+        sink = execution_context["evidence_sink"]
+        step = sink.allocate_step_identity(ExecutableStep(step_id="observed", action_name="observe", kind="observation", params={}))
+        sink.record_event(
+            RunnerEvent(
+                run_id=context.run_id, event_type="step_start", step_id=step.step_id, source_step_id=step.source_step_id, step_execution_id=step.step_execution_id, invocation_path=step.invocation_path
+            )
+        )
+        sink.record_step_result(
+            RunnerStepResult(step_id=step.step_id, source_step_id=step.source_step_id, step_execution_id=step.step_execution_id, invocation_path=step.invocation_path, status="passed")
+        )
+        return DynamicAgentOutcome(task=task, steps=self.result.steps, verification=self.result.verification, duration_ms=1)
 
 
 def _task_result(tmp_path: Path) -> TaskResult:
@@ -38,7 +51,9 @@ def _task_result(tmp_path: Path) -> TaskResult:
 async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = tmp_path
     monkeypatch.setattr("fsq_agent.application.cases.require_initialized_workspace", lambda _request: type("Workspace", (), {"workspace": workspace})())
-    settings = object()
+    settings = Settings()
+    settings.workspace.root_dir = tmp_path
+    settings.output.runs_dir = tmp_path / "runs"
     loaded: list[tuple[str, Path]] = []
     agent = _FakeAgent(_task_result(tmp_path))
 
@@ -54,9 +69,9 @@ async def test_create_case_builds_goal_task_and_delegates_to_agent(tmp_path: Pat
     assert agent.task.name == "Verify product search"
     assert agent.task.planning_reference_kind == "goal"
     assert agent.task.planning_reference_text == "Verify product search"
-    assert result.run_id == "run-1"
+    assert result.run_id.startswith("verify-product-search-")
     assert result.status == "success"
-    assert result.report_path == tmp_path / "runs" / "run-1" / "report.md"
+    assert result.report_path.parent == tmp_path / "runs" / result.run_id
     assert result.candidate_case_path is None
 
 
@@ -66,11 +81,14 @@ async def test_create_case_forwards_transport_neutral_event_sink(tmp_path: Path,
     agent = _FakeAgent(_task_result(tmp_path))
     events: list[object] = []
     sink = events.append
+    settings = Settings()
+    settings.workspace.root_dir = tmp_path
+    settings.output.runs_dir = tmp_path / "runs"
 
     await create_case(
         CaseCreateRequest(current_directory=tmp_path, platform="web", goal="Verify product search"),
         event_sink=sink,
-        settings_loader=lambda _platform, _path: object(),
+        settings_loader=lambda _platform, _path: settings,
         agent_factory=lambda _settings: agent,
     )
 

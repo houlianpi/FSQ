@@ -115,6 +115,7 @@ it('shows selected Action screenshot comparison and UI Tree diff', async () => {
       { kind: 'ui_snapshot', phase: 'before', timestamp: null, mimeType: 'application/json', content: '{"value":"before"}' },
       { kind: 'ui_snapshot', phase: 'after', timestamp: null, mimeType: 'application/json', content: '{"value":"after"}' },
     ],
+    comparison: { status: 'changed', rows: [{ kind: 'changed', before: 'before', after: 'after', before_number: 1, after_number: 1 }] },
   });
   const { container, rerender } = render(<LiveEvidencePanel tab="screen" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
   expect(await screen.findByRole('img', { name: /web before screenshot for Chrome, selected Action/ })).toBeInTheDocument();
@@ -165,6 +166,7 @@ it('diffs selected XML UI Tree evidence after structured formatting', async () =
       { kind: 'ui_snapshot', phase: 'before', timestamp: null, mimeType: 'application/xml', content: '<hierarchy><node text="Before" class="Text" /></hierarchy>' },
       { kind: 'ui_snapshot', phase: 'after', timestamp: null, mimeType: 'application/xml', content: '<hierarchy><node text="After" class="Text" /></hierarchy>' },
     ],
+    comparison: { status: 'changed', rows: [{ kind: 'changed', before: 'node text="Before" class="Text"', after: 'node text="After" class="Text"', before_number: 1, after_number: 1 }] },
   });
   render(<LiveEvidencePanel tab="ui-tree" snapshot={terminal} selectedStepId="step-1" platform="web" targetLabel="Chrome" onTabChange={vi.fn()} onClearStep={vi.fn()} />);
 

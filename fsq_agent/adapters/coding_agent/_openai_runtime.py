@@ -5,11 +5,13 @@ import asyncio
 import inspect
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fsq_agent._capability_bootstrap import build_capability_registry
 from fsq_agent.adapters.coding_agent._harness_tools import HarnessToolAdapter
@@ -199,7 +201,15 @@ class OpenAIAgentsRuntime:
         skills: list[SkillBundle],
         run_id: str,
         event_sink: RunEventSink | None = None,
+        *,
+        context=None,
+        evidence_sink=None,
+        cancellation_check=None,
     ) -> list[StepResult]:
+        if evidence_sink is None or context is None or context.run_id != run_id:
+            raise ConfigurationError("Runtime execution requires an allocated context and evidence sink.")
+        if cancellation_check is not None:
+            cancellation_check()
         validate_runtime_settings(self.settings)
         started = time.perf_counter()
         try:
@@ -291,6 +301,8 @@ class OpenAIAgentsRuntime:
                     post_action_delay_seconds=self.settings.execution.post_action_delay_seconds,
                     runtime_secret_store=self._runtime_secret_store(),
                     platform=self.settings.harness.platform,
+                    evidence_sink=evidence_sink,
+                    cancellation_check=cancellation_check,
                 )
                 self._harness_tool_names = harness_adapter.tool_names
                 self._harness_tool_schemas = harness_adapter.schemas_by_name
@@ -417,6 +429,16 @@ class OpenAIAgentsRuntime:
                     tool_output=failure_metadata,
                 )
             ]
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            if result is not None and not usage_event_emitted:
+                usage_event = self._dynamic_agent_token_usage_event(result, run_id, task.id)
+                if usage_event is not None:
+                    usage_event_emitted = True
+                    try:
+                        await self._emit(event_sink, usage_event)
+                    except Exception:  # noqa: BLE001, S110 - cancellation remains primary if diagnostics cannot persist.
+                        pass
+            raise
         finally:
             if provider_session is not None:
                 await provider_session.close()
@@ -885,7 +907,7 @@ class OpenAIAgentsRuntime:
         return HarnessFactory().create_harness(
             platform=self.settings.harness.platform,
             harness_settings=self.settings.harness,
-            artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id),
+            artifact_store=ArtifactStore(self.settings.output.runs_dir / run_id, secret_values=tuple(self.settings.runtime_secrets.private_values().values())),
             ai_assertion_evaluator=build_ai_assertion_evaluator(self.settings),
             runtime_secret_settings=self.settings.runtime_secrets,
             app_id=self.settings.harness.android.app_id,
@@ -1104,14 +1126,45 @@ class OpenAIAgentsRuntime:
         return value
 
     def _redact(self, value: Any) -> Any:
-        sensitive = ("token", "key", "secret", "password", "authorization", "cookie")
+        sensitive = {
+            "token",
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "api_key",
+            "apikey",
+            "api-key",
+            "client_secret",
+            "secret",
+            "password",
+            "passwd",
+            "authorization",
+            "proxy_authorization",
+            "cookie",
+            "set_cookie",
+            "private_value",
+        }
         secret_values = self._runtime_secret_values()
         if isinstance(value, dict):
-            return {key: "***" if any(part in str(key).lower() for part in sensitive) else self._redact(item) for key, item in value.items()}
+            return {
+                key: "***" if re.sub(r"([a-z0-9])([A-Z])", lambda match: match[1] + "_" + match[2], unquote(str(key))).casefold().replace("-", "_") in sensitive else self._redact(item)
+                for key, item in value.items()
+            }
         if isinstance(value, list):
             return [self._redact(item) for item in value]
         if isinstance(value, str):
-            return self._replace_secret_values(value, secret_values)
+            if value.lstrip().startswith(("{", "[")):
+                try:
+                    parsed = json.loads(value)
+                except (ValueError, RecursionError):
+                    parsed = None
+                if isinstance(parsed, (dict, list)):
+                    return json.dumps(self._redact(parsed), ensure_ascii=False)
+            value = self._replace_secret_values(value, secret_values)
+            value = re.sub(r"(?im)\b(authorization|proxy[-_]authorization|cookie|set[-_]cookie)\s*[:=]\s*[^\r\n]*", r"\1=[REDACTED]", value)
+            value = re.sub(r"(?i)\b(?:Bearer|Basic)\s+[^\s,;]+", "[REDACTED_AUTH]", value)
+            value = re.sub(r"(?i)\b((?:access|refresh|id)[_-]?token|token|client[_-]?secret|password|passwd|pwd|api[_-]?key|authorization|cookie|secret)\s*[:=]\s*[^\s,;]+", r"\1=[REDACTED]", value)
+            return value
         return value
 
     def _offset_step_ids(self, steps: list[StepResult], offset: int) -> list[StepResult]:
@@ -1240,6 +1293,8 @@ class OpenAIAgentsRuntime:
             "replay",
             "safe_replay_params",
             "runner_step_id",
+            "source_step_id",
+            "step_execution_id",
         }
         for key in safe_keys:
             if key in parsed:

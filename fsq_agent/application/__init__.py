@@ -50,10 +50,11 @@ from fsq_agent.application.contracts import (
     result_record,
 )
 from fsq_agent.application.contracts.cases import CaseFormatDiagnostic, CaseFormatRequest, CaseFormatResult, CaseSaveRequest, CaseSaveResult
+from fsq_agent.application.contracts.runs import ExportRunReportRequest, ExportRunReportResult, GetRunReportRequest, GetRunReportResult, ResolvedRunArtifact, ResolveRunArtifactRequest
 from fsq_agent.application.doctor import diagnose_platform_settings, diagnose_registered_platform, diagnose_workspace
 from fsq_agent.application.environments import list_environments
 from fsq_agent.application.providers import complete_github_configuration, configure_azure_openai, provider_status, request_github_device_code
-from fsq_agent.application.runs import generate_run_html, list_runs, read_run_logs, show_run
+from fsq_agent.application.runs import export_run_report, generate_run_html, get_run_report, list_runs, read_run_logs, resolve_run_artifact, show_run
 from fsq_agent.application.workspace import add_workspace_platform, create_workspace, initialize_workspace, require_initialized_workspace, resolve_workspace_target, update_workspace_platform
 
 __all__ = [
@@ -80,8 +81,12 @@ __all__ = [
     "DoctorStatusDetail",
     "DoctorWorkspaceSummary",
     "EnvironmentSummary",
+    "ExportRunReportRequest",
+    "ExportRunReportResult",
     "GenerateRunHtmlRequest",
     "GenerateRunHtmlResult",
+    "GetRunReportRequest",
+    "GetRunReportResult",
     "ListRunsRequest",
     "ListRunsResult",
     "ProviderConfigurationResult",
@@ -89,6 +94,8 @@ __all__ = [
     "ReadRunLogsRequest",
     "ReadRunLogsResult",
     "RegisteredPlatformDoctorRequest",
+    "ResolveRunArtifactRequest",
+    "ResolvedRunArtifact",
     "RunArtifactIndex",
     "RunDetail",
     "RunLogEvent",
@@ -113,8 +120,10 @@ __all__ = [
     "diagnose_registered_platform",
     "diagnose_workspace",
     "event_record",
+    "export_run_report",
     "format_case",
     "generate_run_html",
+    "get_run_report",
     "initialize_workspace",
     "list_environments",
     "list_runs",
@@ -123,6 +132,7 @@ __all__ = [
     "read_run_logs",
     "request_github_device_code",
     "require_initialized_workspace",
+    "resolve_run_artifact",
     "resolve_workspace_target",
     "result_record",
     "save_recorded_case",

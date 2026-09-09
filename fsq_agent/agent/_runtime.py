@@ -9,11 +9,23 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from fsq_agent.config import Settings
-    from fsq_agent.models import GoalPrePlan, KnowledgeBundle, RunEvent, SkillBundle, StepResult, Task
+    from fsq_agent.core.interfaces import EvidenceJournalSink
+    from fsq_agent.models import GoalPrePlan, KnowledgeBundle, RunEvent, RunEventSink, RunExecutionContext, SkillBundle, StepResult, Task, TaskResult
 
 
 class CodingAgentRuntime(Protocol):
-    async def run_task(self, task: Task, knowledge: KnowledgeBundle, skills: list[SkillBundle], run_id: str, event_sink: Callable[[RunEvent], Awaitable[None]] | None = None) -> list[StepResult]: ...
+    async def run_task(
+        self,
+        task: Task,
+        knowledge: KnowledgeBundle,
+        skills: list[SkillBundle],
+        run_id: str,
+        event_sink: Callable[[RunEvent], Awaitable[None]] | None = None,
+        *,
+        context: RunExecutionContext | None = None,
+        evidence_sink: EvidenceJournalSink | None = None,
+        cancellation_check: Callable[[], None] | None = None,
+    ) -> list[StepResult]: ...
 
     async def run_pre_plan(
         self,
@@ -31,3 +43,7 @@ class CodingAgentRuntime(Protocol):
 
 class CodingAgentRuntimeFactory(Protocol):
     def __call__(self, settings: Settings, *, harness_factory: Any | None = None) -> CodingAgentRuntime: ...
+
+
+class RunCoordinator(Protocol):
+    async def __call__(self, task: Task, event_sink: RunEventSink | None = None) -> TaskResult: ...

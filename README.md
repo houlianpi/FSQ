@@ -205,7 +205,7 @@ Platform target options for `fsq init`:
   knowledge/<platform>/
 ```
 
-Use `fsq runs list`, `fsq runs show RUN_ID`, and `fsq runs logs RUN_ID`. `fsq runs show RUN_ID --open` creates an offline static HTML report without calling a Provider or operating the UI. Evidence can contain visible application data; review it before sharing. Do not commit `.fsq`, credentials, reports, screenshots, or private target data.
+Use `fsq runs list`, `fsq runs show RUN_ID`, and `fsq runs logs RUN_ID`, or open historical Runs in the Control Plane. `fsq runs show RUN_ID --open` rebuilds an offline HTML report. `fsq runs export RUN_ID --format json|junit|html|bundle` creates a non-interactive export without a Provider or UI execution. Reports link failure facts, steps, metrics, screenshots, snapshot differences, and recorded replay provenance. See [CI evidence](docs/ci-evidence.md) and the [public evidence demo](examples/evidence-demo/README.md). Evidence can contain visible application data; review it before sharing. Do not commit `.fsq`, credentials, reports, screenshots, or private target data.
 
 Provider configuration is stored under `~/.fsq` and shared by the CLI and local Control Plane. Supported first-release Providers are GitHub Copilot and Azure OpenAI.
 

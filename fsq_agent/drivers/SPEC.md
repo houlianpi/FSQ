@@ -16,6 +16,16 @@ Drivers must not import adapters, Application, Execution, concrete harnesses, Co
 
 The root package exports no concrete backend classes. Each platform package is a canonical implementation owner consumed through `core.interfaces` and composition factories. Driver capability metadata discovery is available through a narrow package-internal composition boundary; callers do not import concrete backend modules merely to inspect capability definitions.
 
+`core.interfaces._factories` is the sole approved external importer of private `_factory._DriverFactoryImplementation` for the stable `DriverFactory` wrapper. This named composition exception exposes no concrete backend type; Driver implementations depend only on Core protocol definitions, never the factory wrapper.
+
+Metadata-only composition is a separate named exception:
+
+- `core._default_capabilities` may use `_factory._driver_class_for_backend` and `_capabilities._discover_driver_capability_definitions` to inspect declarations without constructing or connecting a driver.
+- `harnesses._android`, `harnesses._web`, `harnesses._windows`, and `harnesses._macos` may use `_capabilities._capability_matches`, `_discover_driver_capability_definitions`, `_schema_from_capability_definition`, and `_with_driver_metadata` against injected driver instances.
+- Compatibility module `core.harness._driver_tools` aliases `drivers._capabilities` and retains canonical module/symbol identity without a second implementation. It is not a new application-facing discovery API.
+
+These exceptions keep registry bootstrap and Harness adaptation on one declaration implementation while preserving lazy runtime construction. They do not permit arbitrary private-backend access or backend construction during metadata inspection. Any additional importer, helper, or runtime-selection purpose requires a separate boundary decision.
+
 ## Internal Structure
 
 - `android/`: uiautomator2 backend and Android action/observation implementation.
