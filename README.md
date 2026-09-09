@@ -16,6 +16,12 @@
 </p>
 
 <p align="center">
+  <img src="docs/media/fsq-control-plane-demo.gif" alt="FSQ turns a natural-language Goal into inspectable evidence, a reviewable YAML Case, deterministic Strict Replay, and a durable Runs report with portable HTML export" width="960">
+</p>
+
+<p align="center"><strong>Goal → Evidence → Candidate YAML → Strict Replay → Runs report → Portable HTML</strong></p>
+
+<p align="center">
   <a href="#five-minute-quickstart">Quickstart</a> ·
   <a href="README.zh-CN.md">中文</a> ·
   <a href="#coding-agent-workflow">Coding agents</a> ·
@@ -48,7 +54,7 @@ Configure an LLM Provider, then use `fsq case create --platform web --goal "..."
 
 ## See FSQ in action
 
-Watch FSQ turn a natural-language goal into live UI execution, captured evidence, a reviewable Case, and deterministic replay.
+Watch the full v0.1.0 demo after the 20-second current Control Plane tour above.
 
 https://github.com/user-attachments/assets/aa9d0a12-2f93-4894-8349-52a013424939
 
